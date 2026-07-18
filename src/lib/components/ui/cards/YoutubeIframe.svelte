@@ -1,0 +1,129 @@
+<script lang='ts'>
+  import VolumeX from 'lucide-svelte/icons/volume-x'
+  import { createEventDispatcher, onDestroy, tick } from 'svelte'
+
+  import Volume2 from '$lib/components/icons/Volume2.svelte'
+  import { click } from '$lib/modules/navigate'
+
+  export let id: string
+
+  const dispatch = createEventDispatcher<{hide: boolean}>()
+
+  async function ytMessage (e: MessageEvent) {
+    if (e.origin !== 'https://www.youtube-nocookie.com') return
+    clearInterval(timeout)
+    const json = JSON.parse(e.data as string) as { event: string, info: {videoData: {isPlayable: boolean}, playerState?: number} }
+    if (json.event === 'onReady') ytCall('setVolume', '[30]')
+
+    if (json.event === 'initialDelivery' && !json.info.videoData.isPlayable) {
+      dispatch('hide', true)
+    }
+
+    if (json.event === 'infoDelivery') {
+      if (json.info.playerState === 1) {
+        hide = false
+        dispatch('hide', false)
+      } else if (json.info.playerState === 0) {
+        // youtube started being annoying with buttons, playlist is required for loop to work, but it force shows extra buttons
+        // so we loop the video manually
+        const last = id
+        id = ''
+        await tick()
+        id = last
+      }
+    }
+  }
+
+  let muted = true
+  function toggleMute () {
+    if (muted) {
+      ytCall('unMute')
+    } else {
+      ytCall('mute')
+    }
+    muted = !muted
+  }
+
+  let hide = true
+
+  let frame: HTMLIFrameElement
+  function ytCall (action: string, arg: string | null = null) {
+    frame.contentWindow?.postMessage('{"event":"command", "func":"' + action + '", "args":' + arg + '}', '*')
+  }
+
+  let timeout: ReturnType<typeof setInterval>
+
+  function initFrame () {
+    timeout = setInterval(() => {
+      frame.contentWindow?.postMessage('{"event":"listening","id":1,"channel":"widget"}', '*')
+    }, 100)
+    frame.contentWindow?.postMessage('{"event":"listening","id":1,"channel":"widget"}', '*')
+  }
+
+  onDestroy(() => {
+    clearInterval(timeout)
+  })
+  const params = new URLSearchParams({
+    autoplay: '1',
+    controls: '0',
+    disablekb: '1',
+    cc_lang_pref: 'ja',
+    rel: '0',
+    playsinline: '1',
+    fs: '0',
+    mute: muted ? '1' : '0'
+  })
+</script>
+
+<svelte:window on:message={ytMessage} />
+
+<!-- indivious is nice because its faster, but not reliable -->
+<!-- <video src={`https://inv.tux.pizza/latest_version?id=${media.trailer.id}&itag=18`}
+    class='size-full position-absolute left-0'
+    class:d-none={hide}
+    playsinline
+    preload='none'
+    loop
+    use:volume
+    bind:muted
+    on:loadeddata={() => { hide = false }}
+    autoplay /> -->
+
+<div class='size-full overflow-clip absolute top-0 rounded-t'>
+  <div class='absolute z-10 top-0 right-0 p-3' class:hide use:click={toggleMute}>
+    {#if muted}
+      <VolumeX size='1rem' fill='currentColor' class='pointer-events-none' />
+    {:else}
+      <Volume2 size='1rem' fill='currentColor' class='pointer-events-none' />
+    {/if}
+  </div>
+  <iframe
+    credentialless
+    class='w-full border-0 absolute left-0 h-[calc(100%+200px)] top-1/2 transform-gpu -translate-y-1/2 pointer-events-none'
+    class:hide
+    title='trailer'
+    allow='autoplay'
+    bind:this={frame}
+    on:load={initFrame}
+    src='https://www.youtube-nocookie.com/embed/{id}?{params}&enablejsapi=1'
+  />
+</div>
+<div class='size-full overflow-clip absolute top-0 rounded-t blur-2xl saturate-200 -z-10 pointer-events-none'>
+  <iframe
+    credentialless
+    class='w-full border-0 absolute left-0 h-[calc(100%+200px)] top-1/2 transform-gpu -translate-y-1/2'
+    class:hide
+    title='trailer'
+    allow='autoplay'
+    src='https://www.youtube-nocookie.com/embed/{id}?{params}'
+  />
+</div>
+
+<style>
+  .absolute {
+    transition: opacity 0.3s;
+  }
+  .absolute.hide {
+    opacity: 0;
+  }
+</style>

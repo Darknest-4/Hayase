@@ -1,0 +1,145 @@
+<script lang='ts' context='module'>
+  import { derived } from 'svelte/store'
+
+  import { resolveFilesPoorly } from './resolver'
+
+  import { server } from '$lib/modules/torrent'
+
+  const active = derived(server.active, $active => resolveFilesPoorly($active))
+</script>
+
+<script lang='ts'>
+  import { persisted } from 'svelte-persisted-store'
+
+  import Mediahandler from './mediahandler.svelte'
+
+  import { goto } from '$app/navigation'
+  import { page } from '$app/stores'
+  import { isPlaying } from '$lib/modules/idle'
+  import { cn } from '$lib/utils'
+
+  $: isMiniplayer = $page.route.id !== '/app/player'
+
+  function openPlayer () {
+    if (!isMiniplayer) return
+    if (!dragging) goto('/#/app/player')
+  }
+
+  let wrapper: HTMLDivElement
+
+  let dragging = false
+
+  const bottom = persisted('player-bottom', '0px')
+  const right = persisted('player-right', '100%')
+
+  let firstX = 0
+  let firstY = 0
+
+  function calculatePosition (e: PointerEvent) {
+    if (!isMiniplayer) return
+    if (firstX === 0) {
+      firstX = e.offsetX
+      firstY = e.offsetY
+    } else if (!dragging && Math.abs(firstX - e.offsetX) > 3 && Math.abs(firstY - e.offsetY) > 3) {
+      dragging = true
+    }
+    if (!dragging) return
+    $bottom = e.offsetY - initialY + 'px'
+    $right = e.offsetX - initialX + 'px'
+  }
+
+  function endHover () {
+    if (!isMiniplayer) return
+    dragging = false
+    firstX = 0
+    firstY = 0
+  }
+
+  let initialX = 0
+  let initialY = 0
+
+  function startDragging ({ offsetX, offsetY, pointerId }: PointerEvent) {
+    if (!isMiniplayer) return
+    initialX = offsetX
+    initialY = offsetY
+
+    if (pointerId) wrapper.setPointerCapture(pointerId)
+  }
+  function endDragging ({ pointerId, clientX, clientY }: PointerEvent) {
+    if (!isMiniplayer) return
+    const istop = window.innerHeight / 2 - clientY >= 0
+    const isleft = window.innerWidth / 2 - clientX >= 0
+    $bottom = istop ? '-100vb' : '0px'
+    $right = isleft ? '-100vi' : '100%'
+    dragging = false
+    if (pointerId) wrapper.releasePointerCapture(pointerId)
+  }
+</script>
+
+<div class={cn('size-full', isMiniplayer && 'z-[49] absolute top-0 left-0 pointer-events-none cursor-pointer touch-none')}
+  bind:this={wrapper}
+  on:pointerup|self={openPlayer}
+  on:pointerdown={startDragging}
+  on:pointerup={endDragging}
+  on:pointermove|self={calculatePosition}
+  on:pointerleave|self={endHover}
+  on:pointercancel|self={endHover}>
+  <div class={cn(
+    'w-full flex',
+    isMiniplayer ? 'pointer-events-auto max-w-[22rem] px-4 absolute bottom-0 right-0 [&>*]:rounded-lg [&>*]:overflow-clip miniplayer transition-transform duration-[500ms] ease-[cubic-bezier(0.3,1.5,0.8,1)]' : 'size-full',
+    dragging && isMiniplayer && 'dragging',
+    !$isPlaying && 'paused desktop:select:paused-show mobile:active:paused-show mobile:focus-visible:paused-show'
+  )} style:--top={$bottom} style:--left={$right}>
+    {#if $active}
+      {#await $active}
+        <div class='w-full flex flex-col gap-2 justify-center items-center bg-background {isMiniplayer ? 'aspect-video' : 'h-full' } text-center text-foreground' on:click={openPlayer}>
+          <div class='border-[3px] rounded-[50%] w-10 h-10 drop-shadow-lg border-transparent border-t-primary animate-spin' />
+          Loading torrent metadata,<br />
+          this might take a minute...
+        </div>
+      {:then mediaInfo}
+        {#if mediaInfo}
+          <Mediahandler {mediaInfo} />
+        {/if}
+      {/await}
+    {/if}
+  </div>
+</div>
+
+<style>
+  .paused {
+    --padding-right: calc(100% - 3rem);
+    --padding-left: calc(-100vi + 3rem);
+  }
+  .miniplayer {
+    transform: translate3d(
+      clamp(
+        calc(var(--padding-left, -100vi + 100%)),
+        var(--left),
+        var(--padding-right, 0px)
+      ),
+      clamp(
+        calc(-100vb + 100% + 1rem),
+        var(--top),
+        -1rem
+      ),
+      0
+    );
+  }
+
+  .dragging {
+    transform: translate3d(
+      clamp(
+        calc(-100vi + 10%),
+        calc(-100vi + 100% + var(--left)),
+        90%
+      ),
+      clamp(
+        calc(-100vb + 10%),
+        calc(-100vb + 100% + var(--top)),
+        90%
+      ),
+      0
+    ) !important;
+  }
+</style>
