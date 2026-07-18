@@ -1,0 +1,192 @@
+import { settings } from '../settings'
+
+import type { ScheduleMedia } from './queries'
+import type { Media, MediaEdge } from './types'
+import type { ResultOf } from 'gql.tada'
+
+export function banner (media: Pick<Media, 'trailer' | 'bannerImage' | 'coverImage'>): string | undefined {
+  if (media.bannerImage) return media.bannerImage
+  if (media.trailer?.id) return `https://i.ytimg.com/vi/${media.trailer.id}/maxresdefault.jpg`
+  return media.coverImage?.extraLarge as string | undefined
+}
+
+export const STATUS_LABELS = {
+  CURRENT: 'Watching',
+  PLANNING: 'Plan to Watch',
+  COMPLETED: 'Completed',
+  PAUSED: 'Paused',
+  DROPPED: 'Dropped',
+  REPEATING: 'Re-Watching'
+}
+
+export function cover (media: Pick<Media, 'trailer' | 'bannerImage' | 'coverImage'>): string | undefined {
+  return media.coverImage?.extraLarge ?? banner(media)
+}
+
+export function coverMedium (media: Pick<Media, 'trailer' | 'bannerImage' | 'coverImage'>): string | undefined {
+  return media.coverImage?.medium?.replace('/small/', '/medium/') ?? banner(media)
+}
+
+export function coverSmall (media: Pick<Media, 'trailer' | 'bannerImage' | 'coverImage'>): string | undefined {
+  return media.coverImage?.medium ?? banner(media)
+}
+
+let titleType = 'ANILIST' as 'ANILIST' | 'ROMAJI' | 'ENGLISH' | 'NATIVE'
+
+settings.subscribe(s => {
+  titleType = s.titleType
+})
+
+export function title (media: Pick<Media, 'title'>): string {
+  const _default = media.title?.userPreferred ?? 'TBA'
+  if (titleType === 'ANILIST') return _default
+  if (titleType === 'ENGLISH') return media.title?.english ?? _default
+  if (titleType === 'NATIVE') return media.title?.native ?? _default
+  return media.title?.romaji ?? _default
+}
+
+export function getParentForSpecial (media: Media) {
+  if (!['SPECIAL', 'OVA', 'ONA'].some(format => media.format === format)) return false
+  const animeRelations = (media.relations?.edges?.filter(edge => edge?.node?.type === 'ANIME') ?? []) as MediaEdge[]
+
+  return getRelation(animeRelations, 'PARENT') ?? getRelation(animeRelations, 'PREQUEL') ?? getRelation(animeRelations, 'SEQUEL')
+}
+
+export function getRelation (list: MediaEdge[], type: MediaEdge['relationType']) {
+  return list.find(edge => edge.relationType === type)?.node?.id
+}
+
+const STATUS_MAP = {
+  RELEASING: 'Releasing',
+  NOT_YET_RELEASED: 'Not Yet Released',
+  FINISHED: 'Finished',
+  CANCELLED: 'Cancelled',
+  HIATUS: 'Hiatus'
+}
+
+export function status (media: Pick<Media, 'status'>): string {
+  if (media.status != null) return STATUS_MAP[media.status]
+
+  return 'N/A'
+}
+
+const RELATION_MAP = {
+  ADAPTATION: 'Adaptation',
+  PREQUEL: 'Prequel',
+  SEQUEL: 'Sequel',
+  PARENT: 'Parent',
+  SIDE_STORY: 'Side Story',
+  CHARACTER: 'Character',
+  SUMMARY: 'Summary',
+  ALTERNATIVE: 'Alternative',
+  SPIN_OFF: 'Spin Off',
+  OTHER: 'Other',
+  SOURCE: 'Source',
+  COMPILATION: 'Compilation',
+  CONTAINS: 'Contains'
+}
+
+export function relation (relation: 'ADAPTATION' | 'PREQUEL' | 'SEQUEL' | 'PARENT' | 'SIDE_STORY' | 'CHARACTER' | 'SUMMARY' | 'ALTERNATIVE' | 'SPIN_OFF' | 'OTHER' | 'SOURCE' | 'COMPILATION' | 'CONTAINS' | null) {
+  if (!relation) return 'N/A'
+  return RELATION_MAP[relation]
+}
+
+const FORMAT_MAP = {
+  TV: 'TV Series',
+  TV_SHORT: 'TV Short',
+  MOVIE: 'Movie',
+  SPECIAL: 'Special',
+  OVA: 'OVA',
+  ONA: 'ONA',
+  MUSIC: 'Music',
+  MANGA: 'Manga',
+  NOVEL: 'Novel',
+  ONE_SHOT: 'One Shot'
+}
+
+export function format (media: Pick<Media, 'format'>): string {
+  if (media.format != null) return FORMAT_MAP[media.format]
+
+  return 'N/A'
+}
+
+export function episodes (media: Pick<Media, 'aired' | 'notaired' | 'episodes' | 'id'>, eps?: { episodeCount?: number | null } | null): number {
+  if (media.episodes) return media.episodes
+
+  const upcoming = media.aired?.n?.at(-1)?.e ?? 0
+  const past = media.notaired?.n?.at(-1)?.e ?? 0
+  const mappings = eps?.episodeCount ?? 0
+
+  return Math.max(upcoming, past, mappings)
+}
+
+export function season (media: Pick<Media, 'season' | 'seasonYear' | 'startDate'>) {
+  return [media.season?.toLowerCase() ?? (media.startDate?.month && getSeasonForMonth(media.startDate.month).toLowerCase()), media.seasonYear ?? media.startDate?.year].filter(s => s).join(' ')
+}
+
+export function duration (media: Pick<Media, 'duration'>) {
+  if (!media.duration) return
+  return `${media.duration} Minute${media.duration > 1 ? 's' : ''}`
+}
+
+export function desc (media: Pick<Media, 'description'>) {
+  return notes(media.description?.replace(/<[^>]+>/g, '').replace(/\n+/g, '\n') ?? 'No description available.')
+}
+
+export function notes (string: string) {
+  return string.replace(/\n?\(?Source: [^)]+\)?\n?/m, '').replace(/\n?Notes?:[ |\n][^\n]+\n?/m, '')
+}
+
+export function isMovie (media: Pick<Media, 'format' | 'title' | 'synonyms' | 'duration' | 'episodes'>) {
+  if (media.format === 'MOVIE') return true
+  if ([...Object.values(media.title ?? {}), ...media.synonyms ?? []].some(title => title?.toLowerCase().includes('movie'))) return true
+  // if (!getParentForSpecial(media)) return true // this is good for checking movies, but false positives with normal TV shows
+  return (media.duration ?? 0) > 80 && media.episodes === 1
+}
+
+export function isSingleEpisode (media: Pick<Media, 'format' | 'title' | 'synonyms' | 'duration' | 'episodes'>) {
+  return media.episodes === 1 || (isMovie(media) && !media.episodes)
+}
+
+function getSeasonForMonth (month: number) {
+  return ['WINTER', 'SPRING', 'SUMMER', 'FALL'].at(Math.floor((month / 12) * 4) % 4) as 'WINTER' | 'SPRING' | 'SUMMER' | 'FALL'
+}
+
+export function seasonsForDate (date: Date) {
+  const month = date.getMonth()
+  const year = date.getFullYear()
+  const current = getSeasonForMonth(month)
+  const next = getSeasonForMonth(month + 3)
+  const nextYear = year + (next === 'WINTER' ? 1 : 0)
+  const last = getSeasonForMonth(month - 3)
+  const lastYear = year - (last === 'FALL' ? 1 : 0)
+  return { current, year, next, nextYear, last, lastYear }
+}
+
+const date = new Date()
+const month = date.getMonth()
+export const currentSeason = getSeasonForMonth(month)
+export const currentYear = date.getFullYear()
+export const nextSeason = getSeasonForMonth(month + 3)
+export const nextYear = currentYear + (nextSeason === 'WINTER' ? 1 : 0)
+export const lastSeason = getSeasonForMonth(month - 3)
+export const lastYear = currentYear - (lastSeason === 'FALL' ? 1 : 0)
+
+export function dedupeAiring (media: ResultOf<typeof ScheduleMedia>) {
+  return [...media.aired?.n ?? [], ...media.notaired?.n ?? []].filter((v, i, a) => v != null && a.findIndex(s => s?.e === v.e) === i) as Array<{ a: number, e: number }>
+}
+
+export function getBGColorForRating (rating: number) {
+  if (rating >= 75) return 'bg-green-700 select:bg-green-800'
+  if (rating >= 65) return 'bg-orange-400 select:bg-orange-500'
+  return 'bg-red-400 select:bg-red-500'
+}
+
+export function getTextColorForRating (rating: number) {
+  if (rating >= 75) return 'text-green-700'
+  if (rating >= 65) return 'text-orange-400'
+  return 'text-red-500'
+}
+
+// for some reason diacritics started breaking AL search, probs all the bot attacks
+export const removeDiacritics = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
