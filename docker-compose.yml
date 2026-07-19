@@ -1,0 +1,51 @@
+# Yume — local development infrastructure
+# Usage: docker compose up -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: yume
+      POSTGRES_PASSWORD: yume
+      POSTGRES_DB: yume
+    ports: ['5432:5432']
+    volumes: ['pgdata:/var/lib/postgresql/data']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U yume']
+      interval: 5s
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports: ['6379:6379']
+    volumes: ['redisdata:/data']
+
+  opensearch:
+    image: opensearchproject/opensearch:2
+    environment:
+      discovery.type: single-node
+      plugins.security.disabled: 'true'
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: 'Dev-only-password-1!'
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+    ports: ['9200:9200']
+    volumes: ['osdata:/usr/share/opensearch/data']
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: yume
+      MINIO_ROOT_PASSWORD: yume-dev-secret
+    ports: ['9000:9000', '9001:9001']
+    volumes: ['miniodata:/data']
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports: ['5672:5672', '15672:15672']
+    volumes: ['rabbitdata:/var/lib/rabbitmq']
+
+volumes:
+  pgdata:
+  redisdata:
+  osdata:
+  miniodata:
+  rabbitdata:

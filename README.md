@@ -1,41 +1,80 @@
-# Hayase — HTML/CSS/JS build (`html-web` branch)
+# Yume (夢)
 
-This branch is a rebuild of the Hayase interface using **only plain HTML, CSS and JavaScript** — no framework, no build step, no dependencies. Open `index.html` and it works.
+**Yume** is an anime streaming platform born from the Hayase codebase but
+rebuilt as its own product: its own identity, its own design system, a real
+backend with a scalable database, and an extension **store** instead of
+URL-pasted plugins. Two ideas are inherited and kept sacred:
 
-The `master`/main branch keeps the original Svelte application untouched.
+1. **The platform hosts zero content** — video sources are resolved by
+   sandboxed, permission-scoped extensions.
+2. **Accuracy is earned, not claimed** — the runtime measures what data an
+   extension actually used and caps how confident its results may look.
 
-## Running
+## Repository layout
 
-No build needed. Either open `index.html` directly, or serve the folder:
-
-```sh
-# any static server works
-python3 -m http.server 8080
-# or: npx serve .
+```
+├─ docs/                  Architecture, database, API and extension docs
+│  ├─ architecture.md     Services, caching, queue, search, scaling, ADRs
+│  ├─ database.md         Schema guide: domains, ER, indexing, partitioning
+│  ├─ api.md              REST + GraphQL reference
+│  └─ extensions.md       Extension platform: manifest, permissions, store
+├─ db/migrations/         PostgreSQL 16 schema — 7 domain migrations,
+│                         ~100 relations, fully commented, verified clean
+├─ server/                API gateway — Fastify + TypeScript (Node 22)
+│                         auth (JWT + rotating refresh), RBAC, catalogue,
+│                         library/progress, extension store endpoints
+├─ packages/
+│  └─ design-tokens/      Yume design system tokens (CSS + JSON):
+│                         colors, type scale, spacing, motion, dark/light
+├─ web/                   Web client (framework-free HTML/CSS/JS SPA,
+│                         being migrated onto the design tokens + API)
+└─ docker-compose.yml     Local infra: Postgres, Redis, OpenSearch,
+                          MinIO, RabbitMQ
 ```
 
-## What it does
+## Quick start
 
-Everything is fetched live from public APIs, exactly like the original app:
+```sh
+docker compose up -d                 # infrastructure
+cd server
+cp .env.example .env
+npm install
+npm run migrate                      # applies db/migrations in order
+npm run dev                          # API on :4000
+```
 
-| Source | Used for |
-|---|---|
-| [AniList GraphQL](https://docs.anilist.co) | search, trending/popular sections, anime details, relations, characters, recommendations, airing schedule |
-| [Jikan v4 (MyAnimeList)](https://docs.api.jikan.moe) | episode list fallback via MAL id |
-| [ani.zip](https://api.ani.zip) | episode titles, thumbnails, air dates, id mappings |
-| filler-scrape | filler episode markers |
+Smoke test:
 
-Features:
+```sh
+curl localhost:4000/v1/health
+curl -X POST localhost:4000/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","username":"you","password":"correct-horse-9"}'
+```
 
-- **Home** — hero banner, Continue Watching, Your List, Popular This Season, Trending, genre rows
-- **Search** — full-text + genre/season/year/format/status/sort filters, pagination
-- **Anime page** — banner, info, genres, trailer (YouTube), episode list with thumbnails/air dates/filler flags, official streaming links, relations, characters, recommendations
-- **Schedule** — weekly airing calendar grouped by day
-- **My List** — watching/planning/completed/… statuses, episode progress, favourites; stored in `localStorage`, with JSON export/import
-- **Quick search** — `Ctrl+K` or `S`
-- **Settings** — themes (dark/light/catppuccin — same palettes as the app), NSFW toggle, cache and data management
-- API responses cached in `localStorage` to respect rate limits
+## Status & roadmap
 
-## Not included
+Delivered:
 
-Torrent playback, watch-together, IRC chat and extensions need the native (desktop) client and its Node backend — a plain static page cannot torrent. Episode "watch" clicks track your progress instead, and official streaming links are shown when AniList has them.
+- [x] Full PostgreSQL schema (identity/RBAC, catalogue, streaming,
+      community, profiles/gamification, extension store, analytics) —
+      applies cleanly, documented table-by-table in the SQL + docs
+- [x] Architecture, API and extension-platform documentation
+- [x] API foundation: auth with rotating refresh tokens, RBAC plugin,
+      catalogue browse/detail/schedule, library + watch progress,
+      extension store browse/install — typechecked, exercised end-to-end
+- [x] Design tokens (dark default + light), local infra compose file
+
+Next phases:
+
+- [ ] Web client rebuilt on the design system (Home rails, Search,
+      Details, Watch, Profile, Settings, Community, Extension Store UI)
+- [ ] Workers: notifications, stats rollups, metadata importers,
+      OpenSearch indexing, extension review pipeline
+- [ ] GraphQL endpoint over the same service layer
+- [ ] WebSocket: notifications, chat, watch-together sync
+- [ ] Developer portal + admin dashboard UIs
+
+## License
+
+BUSL-1.1 (inherited from the Hayase interface codebase — see LICENSE).
