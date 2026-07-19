@@ -32,6 +32,27 @@ URL-pasted plugins. Two ideas are inherited and kept sacred:
                           MinIO, RabbitMQ
 ```
 
+
+## Screenshots
+
+Every page and feature of the web client — the platform features
+(accounts, comments, store, admin, developer portal) are captured running
+against the live API + PostgreSQL. Full gallery in
+[`docs/screenshots/`](docs/screenshots/).
+
+| | |
+|---|---|
+| **Home** — hero, Continue Watching + curated rails<br>![Home](docs/screenshots/01-home.png) | **Search** — full-text + filters (genre/season/year/format/status/sort)<br>![Search](docs/screenshots/02-search.png) |
+| **Anime detail** — banner, stats, list controls, genres<br>![Detail](docs/screenshots/03-anime-detail.png) | **Episodes** — thumbnails, air dates, watched toggles<br>![Episodes](docs/screenshots/04-episodes.png) |
+| **Comments** — threaded, spoiler-aware, likes, reports<br>![Comments](docs/screenshots/05-comments.png) | **Watch** — custom player, Skip intro (AniSkip), progress tracking<br>![Watch](docs/screenshots/06-watch-player.png) |
+| **Schedule** — weekly airing calendar<br>![Schedule](docs/screenshots/07-schedule.png) | **Library** — statuses, progress controls, favourites<br>![Library](docs/screenshots/08-library.png) |
+| **Profile** — XP/level, watch stats, library breakdown<br>![Profile](docs/screenshots/09-profile.png) | **Community** — live discussion feed (Yume API)<br>![Community](docs/screenshots/10-community.png) |
+| **Extension Store** — live registry with ratings + verified devs<br>![Store](docs/screenshots/11-extension-store.png) | **Developer Portal** — listings + review status<br>![Dev portal](docs/screenshots/12-developer-portal.png) |
+| **Developer analytics** — installs, errors, version pipeline<br>![Dev analytics](docs/screenshots/13-developer-analytics.png) | **Admin overview** — users, watch stats, trending, job health<br>![Admin](docs/screenshots/14-admin-overview.png) |
+| **Admin users** — search, suspend/ban/restore<br>![Admin users](docs/screenshots/15-admin-users.png) | **Settings** — profile, theme, server, account, data<br>![Settings](docs/screenshots/16-settings.png) |
+| **Quick search** — Ctrl+K palette<br>![Quick search](docs/screenshots/17-quick-search.png) | **Light theme** — same tokens, one attribute flip<br>![Light](docs/screenshots/18-light-theme.png) |
+| **Mobile** — bottom navigation layout<br>![Mobile](docs/screenshots/19-mobile-home.png) | |
+
 ## Quick start
 
 ```sh
