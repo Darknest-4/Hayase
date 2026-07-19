@@ -77,9 +77,13 @@ Search API: full-text with fuzziness, autocomplete suggester, and a
 "semantic" mode that expands the query with tag vectors (AI search).
 Postgres `tsvector`/trigram indexes remain as a degraded-mode fallback.
 
-### Queue (RabbitMQ)
-Topic exchange `yume.events`; workers are separate deployables in
-`server/src/workers/` (same codebase, different entrypoint):
+### Queue
+Durable Postgres-backed job queue (`jobs` table, `FOR UPDATE SKIP LOCKED`,
+retries with exponential backoff, dedupe keys) — transactional with the
+data it acts on and zero extra infrastructure. RabbitMQ (topic exchange
+`yume.events`) is the drop-in upgrade path once fan-out volume demands it.
+Workers are separate deployables in `server/src/workers/`
+(`npm run worker`, or `worker:once` to drain — used by tests and cron):
 
 | Queue | Job |
 |---|---|

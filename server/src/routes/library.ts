@@ -2,6 +2,7 @@
 // All routes require auth + X-Profile-Id header (must belong to the user).
 
 import { query, queryOne } from '../db.ts'
+import { enqueue } from '../lib/queue.ts'
 
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 
@@ -145,16 +146,42 @@ const routes: FastifyPluginAsync = async fastify => {
 
     // NOTE: direct write; swaps for the Redis write-behind path at scale
     // without changing this contract.
-    const row = await queryOne(
+    const row = await queryOne<{ position_sec: string, completed: boolean, was_completed: boolean, updated_at: string }>(
       `INSERT INTO watch_progress (profile_id, episode_id, anime_id, position_sec, duration_sec, completed)
        VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (profile_id, episode_id) DO UPDATE SET
          position_sec = $4, duration_sec = coalesce($5, watch_progress.duration_sec),
          completed = watch_progress.completed OR $6, updated_at = now()
-       RETURNING position_sec, completed, updated_at`,
+       RETURNING position_sec, completed,
+                 (SELECT completed FROM watch_progress wp2 WHERE wp2.profile_id = $1 AND wp2.episode_id = $2) AS was_completed,
+                 updated_at`,
       [profileId, episodeId, episode.anime_id, positionSec, durationSec ?? null, completed]
     )
-    return row
+
+    // first completion of this episode → history entry, XP, stats refresh
+    if (completed && row?.completed) {
+      const fresh = await queryOne<{ exists: boolean }>(
+        `SELECT EXISTS (
+           SELECT 1 FROM watch_history
+           WHERE profile_id = $1 AND episode_id = $2 AND finished AND started_at > now() - interval '6 hours'
+         ) AS exists`,
+        [profileId, episodeId]
+      )
+      if (!fresh?.exists) {
+        await query(
+          `INSERT INTO watch_history (profile_id, episode_id, anime_id, watched_sec, finished, started_at, ended_at)
+           VALUES ($1, $2, $3, $4, true, now(), now())`,
+          [profileId, episodeId, episode.anime_id, Math.round(positionSec)]
+        )
+        await query(
+          `INSERT INTO xp_events (profile_id, amount, reason, ref_id) VALUES ($1, 10, 'episode_watched', $2)`,
+          [profileId, episodeId]
+        )
+        await enqueue('stats', { profileId, dedupe: `profile:${profileId}` })
+      }
+    }
+
+    return { position_sec: row?.position_sec, completed: row?.completed, updated_at: row?.updated_at }
   })
 }
 

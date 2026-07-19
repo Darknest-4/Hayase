@@ -79,10 +79,17 @@ Next phases:
       refresh tokens), threaded spoiler-aware comments with likes on
       anime pages, platform-wide recent-discussion feed; backed by new
       /v1/comments API and an AniList-id → catalogue bridge
-- [ ] Workers: notifications, stats rollups, metadata importers,
-      OpenSearch indexing, extension review pipeline
+- [x] Background workers on a durable Postgres job queue (SKIP LOCKED,
+      retries with backoff, dedupe): profile-stats recompute, daily watch
+      rollups, trending scores, partition creation + retention pruning,
+      and an anime-offline-database catalogue importer (idempotent);
+      progress completions now write watch_history + XP automatically
+- [ ] OpenSearch indexing and extension review pipeline workers
 - [ ] GraphQL endpoint over the same service layer
-- [ ] WebSocket: notifications, chat, watch-together sync
+- [x] WebSocket layer (/ws): JWT-authenticated channels — live
+      notifications (comment replies push instantly), persisted chat with
+      membership checks, watch-together rooms (REST registry + play/seek
+      sync + presence)
 - [ ] Developer portal + admin dashboard UIs
 
 ## License

@@ -3,6 +3,7 @@
 // of nesting (top-level + replies), which is what the client renders.
 
 import { query, queryOne, transaction } from '../db.ts'
+import { notify } from '../workers/notify.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
 
@@ -89,15 +90,17 @@ const routes: FastifyPluginAsync = async fastify => {
     }
 
     let path = ''
+    let parentAuthor: string | null = null
     if (parentId) {
-      const parent = await queryOne<{ id: string, path: string, subject_id: string }>(
-        'SELECT id, path, subject_id FROM comments WHERE id = $1 AND hidden_at IS NULL',
+      const parent = await queryOne<{ id: string, path: string, subject_id: string, author_id: string }>(
+        'SELECT id, path, subject_id, author_id FROM comments WHERE id = $1 AND hidden_at IS NULL',
         [parentId]
       )
       if (!parent || parent.subject_id !== subjectId) {
         return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404, detail: 'Unknown parent comment' })
       }
       path = parent.path ? `${parent.path}.${parent.id}` : parent.id
+      parentAuthor = parent.author_id
     }
 
     const comment = await transaction(async client => {
@@ -112,6 +115,15 @@ const routes: FastifyPluginAsync = async fastify => {
       }
       return rows[0] as Record<string, unknown>
     })
+
+    // notify the parent comment's author about the reply (not self-replies).
+    // Inline: one insert + live WS push. Mass fan-out (episode_aired) goes
+    // through the notify queue instead.
+    if (parentAuthor && parentAuthor !== request.user.sub) {
+      await notify(parentAuthor, 'comment_reply', {
+        commentId: comment.id, by: request.user.username, subjectType, subjectId, preview: body.slice(0, 120)
+      })
+    }
 
     return reply.code(201).send({ ...comment, author: request.user.username })
   })
