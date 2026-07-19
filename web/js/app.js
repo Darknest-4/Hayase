@@ -8,6 +8,8 @@ const App = {
     search: (root, params) => PageSearch.render(root, params),
     schedule: (root, params) => PageSchedule.render(root, params),
     list: (root, params) => PageList.render(root, params),
+    profile: (root, params) => PageProfile.render(root, params),
+    extensions: (root, params) => PageExtensions.render(root, params),
     settings: (root, params) => PageSettings.render(root, params),
     anime: (root, params, arg) => PageAnime.render(root, params, arg)
   },

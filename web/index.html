@@ -1,53 +1,68 @@
 <!doctype html>
-<html lang="en" class="dark-mode" style="color-scheme: dark;">
+<html lang="en">
 
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Hayase</title>
-  <meta name="description" content="Hayase — anime tracking and discovery. Pure HTML/CSS/JS build." />
+  <title>Yume</title>
+  <meta name="description" content="Yume — anime tracking and discovery." />
   <link rel="preconnect" href="https://graphql.anilist.co/">
   <link rel="preconnect" href="https://api.jikan.moe/">
   <link rel="preconnect" href="https://www.youtube-nocookie.com">
-  <link rel="icon" href="assets/logo_white_fit.svg" />
+  <link rel="icon" href="assets/yume.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300..800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/tokens.css">
   <link rel="stylesheet" href="css/style.css">
 </head>
 
 <body>
-  <!-- global banner image behind everything -->
+  <!-- ambient banner behind everything -->
   <div id="global-banner" class="global-banner"></div>
 
   <div class="app-shell">
     <!-- ===== Sidebar ===== -->
     <nav class="sidebar" id="sidebar">
-      <a class="sidebar-logo" href="#/home" title="Hayase">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 113.50625 113.50625" fill="currentColor">
-          <path d="M89.693749 72.830671v-19.84375l-18.520833-10.31875-14.552084-8.202083-33.072916 18.520833v19.84375l33.072916-18.520833ZM23.547916 47.695254l23.547916-13.229167L23.547916 21.23692Z" />
-          <path d="m23.547916 77.990044 33.072916 18.52084 33.072917-18.52084-18.520833-10.318746-14.552084 8.202083-14.552083-8.202083S23.547916 78.122337 23.547916 77.990044z" />
-          <path d="m56.620832 59.601503 10.054167 5.55625v.000001l-10.054167 5.55625-10.054166-5.55625v-.000001z"/>
+      <a class="sidebar-logo" href="#/home" title="Yume">
+        <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <path d="M23.5 4.5A13 13 0 1 0 27.5 21 10.5 10.5 0 0 1 23.5 4.5Z" fill="currentColor"/>
+          <circle cx="23" cy="9" r="1.6" fill="var(--accent)"/>
+          <circle cx="27" cy="14" r="1" fill="var(--accent)"/>
         </svg>
+        <span class="sidebar-logo-text">yume</span>
       </a>
 
-      <a class="sidebar-btn" href="#/home" data-route="home" title="Home">
+      <a class="sidebar-btn" href="#/home" data-route="home">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <span>Home</span>
       </a>
-      <a class="sidebar-btn" href="#/search" data-route="search" title="Search">
+      <a class="sidebar-btn" href="#/search" data-route="search">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <span>Search</span>
       </a>
-      <a class="sidebar-btn" href="#/schedule" data-route="schedule" title="Schedule">
+      <a class="sidebar-btn" href="#/schedule" data-route="schedule">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
+        <span>Schedule</span>
       </a>
-      <a class="sidebar-btn" href="#/list" data-route="list" title="My list">
+      <a class="sidebar-btn" href="#/list" data-route="list">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+        <span>Library</span>
+      </a>
+      <a class="sidebar-btn" href="#/extensions" data-route="extensions">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M17.5 13v8M13.5 17h8"/></svg>
+        <span>Extensions</span>
+      </a>
+      <a class="sidebar-btn" href="#/profile" data-route="profile">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span>Profile</span>
       </a>
 
       <div class="sidebar-spacer"></div>
 
-      <a class="sidebar-btn" href="#/settings" data-route="settings" title="Settings">
+      <a class="sidebar-btn" href="#/settings" data-route="settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        <span>Settings</span>
       </a>
     </nav>
 
@@ -73,12 +88,15 @@
   <script src="js/util.js"></script>
   <script src="js/store.js"></script>
   <script src="js/api.js"></script>
+  <script src="js/yume-api.js"></script>
   <script src="js/components.js"></script>
   <script src="js/pages/home.js"></script>
   <script src="js/pages/search.js"></script>
   <script src="js/pages/anime.js"></script>
   <script src="js/pages/schedule.js"></script>
   <script src="js/pages/list.js"></script>
+  <script src="js/pages/profile.js"></script>
+  <script src="js/pages/extensions.js"></script>
   <script src="js/pages/settings.js"></script>
   <script src="js/app.js"></script>
 </body>

@@ -7,9 +7,23 @@ const PageSettings = {
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
 
-    pad.append(U.el('h1', { class: 'section-title', style: 'font-size:1.6rem;margin-bottom:1.25rem;', text: 'Settings' }))
+    pad.append(U.el('h1', { class: 'page-title', text: 'Settings' }))
 
     const settings = Store.settings()
+
+    // ---- profile name ----
+    pad.append(U.el('div', { class: 'setting-card' }, [
+      U.el('h3', { text: 'Profile name' }),
+      U.el('p', { text: 'Shown on your profile page.' }),
+      U.el('input', {
+        class: 'input',
+        type: 'text',
+        maxlength: '50',
+        value: settings.profileName ?? '',
+        placeholder: 'Dreamer',
+        onchange: e => Store.saveSettings({ profileName: e.target.value.trim() || undefined })
+      })
+    ]))
 
     // ---- theme ----
     const themeSelect = U.el('select', {
@@ -20,14 +34,29 @@ const PageSettings = {
       }
     }, [
       ['default', 'Dark (default)'],
-      ['light', 'Light'],
-      ['catppuccin', 'Catppuccin']
+      ['light', 'Light']
     ].map(([value, label]) => U.el('option', { value, text: label, ...(settings.theme === value ? { selected: '' } : {}) })))
 
     pad.append(U.el('div', { class: 'setting-card' }, [
       U.el('h3', { text: 'Theme' }),
-      U.el('p', { text: 'Interface color scheme — same palettes as the desktop app.' }),
+      U.el('p', { text: 'Yume design system — dark by default, light for daylight.' }),
       themeSelect
+    ]))
+
+    // ---- Yume API endpoint ----
+    pad.append(U.el('div', { class: 'setting-card' }, [
+      U.el('h3', { text: 'Yume server' }),
+      U.el('p', { text: 'Backend endpoint for platform features (extension store, sync). Leave as-is for local development.' }),
+      U.el('input', {
+        class: 'input',
+        type: 'url',
+        style: 'min-width:20rem;',
+        value: window.YumeAPI.base(),
+        onchange: e => {
+          window.YumeAPI.setBase(e.target.value)
+          U.toast('Yume server updated')
+        }
+      })
     ]))
 
     // ---- NSFW ----
@@ -71,7 +100,7 @@ const PageSettings = {
               settings: Store.settings()
             }
             const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-            const a = U.el('a', { href: URL.createObjectURL(blob), download: 'hayase-data.json' })
+            const a = U.el('a', { href: URL.createObjectURL(blob), download: 'yume-data.json' })
             a.click()
             URL.revokeObjectURL(a.href)
           }
@@ -97,7 +126,7 @@ const PageSettings = {
         }, [document.createTextNode('Import data')]),
         U.el('button', {
           class: 'btn btn-sm',
-          style: 'background:var(--destructive);color:var(--destructive-foreground);',
+          style: 'background:var(--danger);color:white;',
           onclick: () => {
             if (window.confirm('Delete ALL local data (list, favourites, settings)?')) {
               Store.clearAll()
@@ -111,7 +140,7 @@ const PageSettings = {
     // ---- about ----
     pad.append(U.el('div', { class: 'setting-card' }, [
       U.el('h3', { text: 'About' }),
-      U.el('p', { html: 'Hayase — pure HTML/CSS/JS build. Data from <a href="https://anilist.co" target="_blank" rel="noopener" style="text-decoration:underline;">AniList</a>, <a href="https://jikan.moe" target="_blank" rel="noopener" style="text-decoration:underline;">Jikan (MyAnimeList)</a> and <a href="https://api.ani.zip" target="_blank" rel="noopener" style="text-decoration:underline;">ani.zip</a>. This build has no torrent playback — that requires the desktop app with its native client.' })
+      U.el('p', { html: 'Yume (夢) — framework-free web client on the Yume design system. Data from <a href="https://anilist.co" target="_blank" rel="noopener" style="text-decoration:underline;">AniList</a>, <a href="https://jikan.moe" target="_blank" rel="noopener" style="text-decoration:underline;">Jikan (MyAnimeList)</a> and <a href="https://api.ani.zip" target="_blank" rel="noopener" style="text-decoration:underline;">ani.zip</a>. This build has no torrent playback — that requires the desktop app with its native client.' })
     ]))
   }
 }

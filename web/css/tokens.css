@@ -1,0 +1,135 @@
+/* ===========================================================================
+   Yume Design Tokens — single source of truth for every client surface.
+   Generated values also exist as JSON (tokens.json) for native platforms.
+
+   Identity: "yume" (夢, dream) — deep indigo night surfaces with a warm
+   amber accent. Deliberately NOT Hayase's rose-on-black, not Netflix red,
+   not AniList blue.
+   =========================================================================== */
+
+:root {
+  /* ---- color primitives ---- */
+  --yume-indigo-950: hsl(243 47% 7%);
+  --yume-indigo-900: hsl(243 40% 10%);
+  --yume-indigo-850: hsl(243 34% 13%);
+  --yume-indigo-800: hsl(243 28% 17%);
+  --yume-indigo-700: hsl(243 22% 24%);
+  --yume-indigo-300: hsl(240 25% 72%);
+  --yume-indigo-100: hsl(240 33% 94%);
+
+  --yume-amber-500: hsl(38 92% 58%);   /* primary accent */
+  --yume-amber-600: hsl(32 90% 50%);
+  --yume-violet-500: hsl(258 84% 68%); /* secondary accent (live/beta chips) */
+  --yume-green-500: hsl(152 60% 44%);
+  --yume-red-500: hsl(354 72% 54%);
+  --yume-blue-500: hsl(210 90% 60%);
+
+  /* ---- semantic: dark (default) ---- */
+  --bg: var(--yume-indigo-950);
+  --bg-raised: var(--yume-indigo-900);      /* cards, rails */
+  --bg-overlay: var(--yume-indigo-850);     /* modals, popovers */
+  --bg-sunken: hsl(243 50% 5%);             /* player background, wells */
+  --fg: var(--yume-indigo-100);
+  --fg-muted: var(--yume-indigo-300);
+  --fg-faint: hsl(240 15% 52%);
+  --border: var(--yume-indigo-800);
+  --border-strong: var(--yume-indigo-700);
+  --accent: var(--yume-amber-500);
+  --accent-hover: var(--yume-amber-600);
+  --accent-fg: hsl(243 47% 8%);             /* text on accent */
+  --accent-soft: hsl(38 92% 58% / .14);     /* accent-tinted surfaces */
+  --ok: var(--yume-green-500);
+  --danger: var(--yume-red-500);
+  --info: var(--yume-blue-500);
+  --live: var(--yume-violet-500);
+
+  /* ---- status colors (library states) ---- */
+  --status-watching: var(--yume-green-500);
+  --status-planning: var(--yume-blue-500);
+  --status-completed: var(--yume-violet-500);
+  --status-paused: var(--yume-amber-500);
+  --status-dropped: var(--yume-red-500);
+
+  /* ---- typography ---- */
+  --font-sans: 'Outfit', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, monospace;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.185rem;
+  --text-xl: 1.42rem;
+  --text-2xl: 1.7rem;
+  --text-3xl: 2.4rem;   /* modular scale ~1.2 */
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-bold: 700;
+  --weight-black: 800;
+  --leading-tight: 1.15;
+  --leading-normal: 1.5;
+
+  /* ---- spacing (4px base) ---- */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+
+  /* ---- radii ---- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 999px;
+
+  /* ---- elevation ---- */
+  --shadow-1: 0 1px 3px hsl(243 50% 3% / .5);
+  --shadow-2: 0 6px 18px hsl(243 50% 3% / .5);
+  --shadow-3: 0 16px 48px hsl(243 50% 3% / .6);
+
+  /* ---- motion ---- */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 350ms;
+
+  /* ---- layout ---- */
+  --sidebar-w: 4.5rem;
+  --sidebar-w-expanded: 15rem;
+  --content-max: 90rem;
+  --card-w: 10rem;
+  --card-ratio: 2 / 3;
+
+  color-scheme: dark;
+}
+
+/* ---- light mode ---- */
+[data-theme='light'] {
+  --bg: hsl(240 30% 98%);
+  --bg-raised: hsl(0 0% 100%);
+  --bg-overlay: hsl(0 0% 100%);
+  --bg-sunken: hsl(240 20% 94%);
+  --fg: hsl(243 45% 12%);
+  --fg-muted: hsl(243 15% 38%);
+  --fg-faint: hsl(240 10% 55%);
+  --border: hsl(240 20% 88%);
+  --border-strong: hsl(240 18% 78%);
+  --accent: var(--yume-amber-600);
+  --accent-fg: hsl(0 0% 100%);
+  --accent-soft: hsl(32 90% 50% / .12);
+  --shadow-1: 0 1px 3px hsl(243 30% 40% / .12);
+  --shadow-2: 0 6px 18px hsl(243 30% 40% / .14);
+  --shadow-3: 0 16px 48px hsl(243 30% 40% / .18);
+  color-scheme: light;
+}
+
+/* ---- reduced motion ---- */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+    --dur-slow: 0ms;
+  }
+}

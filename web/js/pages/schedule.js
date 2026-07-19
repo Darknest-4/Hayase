@@ -5,7 +5,7 @@
 const PageSchedule = {
   async render (root) {
     const pad = U.el('div', { class: 'page-pad' })
-    pad.append(U.el('h1', { class: 'section-title', style: 'font-size:1.6rem;', text: 'Airing Schedule' }))
+    pad.append(U.el('h1', { class: 'page-title', text: 'Airing Schedule' }))
     root.append(pad)
 
     const container = U.el('div', {}, [U.el('div', { class: 'spinner' })])

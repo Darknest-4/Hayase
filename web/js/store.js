@@ -120,9 +120,14 @@ const Store = {
   // ---- theme ----
 
   applyTheme () {
+    // Yume design tokens: dark is the :root default, light is [data-theme='light'].
+    // Older saved values ('default', 'catppuccin') map to dark.
     const { theme } = this.settings()
-    document.documentElement.className = theme === 'default' ? 'dark-mode' : `theme-${theme}`
-    document.documentElement.style.colorScheme = theme === 'light' ? 'light' : 'dark'
+    if (theme === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light')
+    } else {
+      document.documentElement.removeAttribute('data-theme')
+    }
   },
 
   clearCache () {

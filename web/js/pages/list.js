@@ -7,7 +7,7 @@ const PageList = {
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
 
-    pad.append(U.el('h1', { class: 'section-title', style: 'font-size:1.6rem;margin-bottom:1rem;', text: 'My List' }))
+    pad.append(U.el('h1', { class: 'page-title', text: 'Library' }))
 
     const state = { tab: params.get('tab') ?? 'CURRENT' }
 

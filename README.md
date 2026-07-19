@@ -67,8 +67,11 @@ Delivered:
 
 Next phases:
 
-- [ ] Web client rebuilt on the design system (Home rails, Search,
-      Details, Watch, Profile, Settings, Community, Extension Store UI)
+- [x] Web client rebuilt on the design system: Yume identity, expanded
+      sidebar navigation, Home/Search/Details/Schedule/Library pages
+      restyled, new Profile (stats, XP/levels) and Extension Store pages
+      (live against the API), dark + light themes, mobile bottom-nav
+- [ ] Watch page (player UI) and Community pages on the web client
 - [ ] Workers: notifications, stats rollups, metadata importers,
       OpenSearch indexing, extension review pipeline
 - [ ] GraphQL endpoint over the same service layer
