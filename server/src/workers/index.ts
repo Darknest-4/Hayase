@@ -7,13 +7,15 @@ import { drain, enqueue, runWorker } from '../lib/queue.ts'
 import { handleImportJob } from './importer.ts'
 import { handleMaintenanceJob } from './maintenance.ts'
 import { handleNotifyJob } from './notify.ts'
+import { handleReviewJob } from './review.ts'
 import { handleStatsJob } from './stats.ts'
 
 const handlers = {
   stats: handleStatsJob,
   notify: handleNotifyJob,
   maintenance: handleMaintenanceJob,
-  import: handleImportJob
+  import: handleImportJob,
+  'ext-review': handleReviewJob
 } as const
 
 async function scheduleRecurring (): Promise<void> {

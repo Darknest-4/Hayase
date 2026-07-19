@@ -65,7 +65,7 @@ Delivered:
       extension store browse/install — typechecked, exercised end-to-end
 - [x] Design tokens (dark default + light), local infra compose file
 
-Next phases:
+Remaining:
 
 - [x] Web client rebuilt on the design system: Yume identity, expanded
       sidebar navigation, Home/Search/Details/Schedule/Library pages
@@ -96,7 +96,15 @@ Next phases:
       overview) — every action logged to moderation_actions + audit_logs —
       and an Admin dashboard in the client (Overview / Users / Reports)
       that appears only for privileged accounts
-- [ ] Developer portal UI (extension publishing/analytics)
+- [x] Developer portal: enrol as a developer (grants the developer
+      role), create extension listings, upload immutable semver versions
+      into a review pipeline, per-extension analytics (installs, ratings,
+      30-day update/error/load-failure counts, version review status) —
+      backend /v1/dev API plus a client Developer Portal page
+- [x] Extension review worker: static manifest/permission analysis —
+      auto-approves + publishes low-risk versions, flags sensitive
+      permissions (net:fetch, query:media) for human review, rejects
+      invalid manifests / wildcard hosts, notifies the developer
 
 ## License
 

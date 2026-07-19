@@ -10,7 +10,10 @@ const PageExtensions = {
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
 
-    pad.append(U.el('h1', { class: 'page-title', text: 'Extension Store' }))
+    pad.append(U.el('div', { style: 'display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;' }, [
+      U.el('h1', { class: 'page-title', style: 'margin:0;', text: 'Extension Store' }),
+      U.el('a', { class: 'btn btn-secondary btn-sm', href: '#/developer' }, [document.createTextNode('Developer Portal →')])
+    ]))
 
     const state = { type: params.get('type') ?? '', sort: 'installs' }
 
