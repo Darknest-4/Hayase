@@ -99,16 +99,19 @@ const YumeAPI = {
   async register (email, username, password) {
     const tokens = await this._request('/v1/auth/register', { method: 'POST', body: { email, username, password } })
     this._saveTokens(tokens)
+    this._perms = null
     return this.user()
   },
 
   async login (identifier, password) {
     const tokens = await this._request('/v1/auth/login', { method: 'POST', body: { identifier, password } })
     this._saveTokens(tokens)
+    this._perms = null
     return this.user()
   },
 
   async logout () {
+    this._perms = null
     const tokens = this._tokens()
     if (tokens) {
       await this._request('/v1/auth/logout', { method: 'POST', body: { refreshToken: tokens.refreshToken }, auth: true }).catch(() => {})
@@ -168,6 +171,45 @@ const YumeAPI = {
 
   likeComment (id) {
     return this._request(`/v1/comments/${id}/like`, { method: 'POST', auth: true })
+  },
+
+  // ---- permissions (cached per session) ----
+
+  _perms: null,
+
+  async myPermissions () {
+    if (!this.user()) return []
+    if (this._perms) return this._perms
+    try {
+      const { permissions } = await this._request('/v1/auth/permissions', { auth: true })
+      this._perms = permissions
+      return permissions
+    } catch (e) {
+      return []
+    }
+  },
+
+  // ---- reports & moderation ----
+
+  report (subjectType, subjectId, reason, details) {
+    return this._request('/v1/reports', { method: 'POST', auth: true, body: { subjectType, subjectId, reason, details } })
+  },
+
+  admin: {
+    users: (query, status) => {
+      const params = new URLSearchParams()
+      if (query) params.set('query', query)
+      if (status) params.set('status', status)
+      return YumeAPI._request('/v1/admin/users?' + params.toString(), { auth: true })
+    },
+    setUserStatus: (id, status, reason) =>
+      YumeAPI._request(`/v1/admin/users/${id}/status`, { method: 'POST', auth: true, body: { status, reason } }),
+    reports: (status = 'open') =>
+      YumeAPI._request(`/v1/admin/reports?status=${status}`, { auth: true }),
+    resolveReport: (id, action, reason) =>
+      YumeAPI._request(`/v1/admin/reports/${id}/resolve`, { method: 'POST', auth: true, body: { action, reason } }),
+    overview: () =>
+      YumeAPI._request('/v1/admin/analytics/overview', { auth: true })
   },
 
   // ---- extension store ----

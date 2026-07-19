@@ -260,6 +260,18 @@ const C = {
                     if (node.querySelector('.comment-form')) return
                     node.append(form(comment.id, () => load()))
                   }
+                }),
+                U.el('button', {
+                  class: 'comment-action',
+                  text: 'Report',
+                  onclick: async () => {
+                    const reason = window.prompt('Reason (spam / harassment / nsfw / spoiler / illegal / other):', 'spam')
+                    if (!reason) return
+                    try {
+                      await YumeAPI.report('comment', comment.id, ['spam', 'harassment', 'nsfw', 'spoiler', 'illegal'].includes(reason) ? reason : 'other', reason)
+                      U.toast('Report submitted — thank you')
+                    } catch (err) { U.toast(err.message, 'error') }
+                  }
                 })
               ])
             ])

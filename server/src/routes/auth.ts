@@ -133,6 +133,19 @@ const routes: FastifyPluginAsync = async fastify => {
     return issueTokens({ id: session.user_id, username: session.username }, request.ip, request.headers['user-agent'])
   })
 
+  // the client uses this to decide whether to show moderation/admin UI
+  fastify.get('/permissions', { preHandler: fastify.authenticate }, async request => {
+    const rows = await query<{ slug: string }>(
+      `SELECT DISTINCT p.slug
+       FROM user_roles ur
+       JOIN role_permissions rp ON rp.role_id = ur.role_id
+       JOIN permissions p ON p.id = rp.permission_id
+       WHERE ur.user_id = $1`,
+      [request.user.sub]
+    )
+    return { permissions: rows.map(row => row.slug) }
+  })
+
   fastify.post('/logout', { preHandler: fastify.authenticate }, async (request, reply) => {
     const { refreshToken } = (request.body ?? {}) as { refreshToken?: string }
     if (refreshToken) {

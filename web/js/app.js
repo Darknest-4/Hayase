@@ -12,6 +12,7 @@ const App = {
     community: (root, params) => PageCommunity.render(root, params),
     watch: (root, params, arg) => PageWatch.render(root, params, arg),
     extensions: (root, params) => PageExtensions.render(root, params),
+    admin: (root, params) => PageAdmin.render(root, params),
     settings: (root, params) => PageSettings.render(root, params),
     anime: (root, params, arg) => PageAnime.render(root, params, arg)
   },
@@ -123,8 +124,17 @@ const App = {
     })
   },
 
+  async refreshAdminNav () {
+    /* global YumeAPI */
+    const nav = document.getElementById('nav-admin')
+    if (!nav) return
+    const perms = window.YumeAPI.user() ? await window.YumeAPI.myPermissions() : []
+    nav.classList.toggle('hidden', !perms.some(p => p === 'community.moderate' || p.startsWith('admin.')))
+  },
+
   init () {
     Store.applyTheme()
+    this.refreshAdminNav()
     this.initSearchModal()
     window.addEventListener('hashchange', () => this.navigate())
     this.navigate()

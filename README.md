@@ -90,7 +90,13 @@ Next phases:
       notifications (comment replies push instantly), persisted chat with
       membership checks, watch-together rooms (REST registry + play/seek
       sync + presence)
-- [ ] Developer portal + admin dashboard UIs
+- [x] Moderation & admin: content reporting (dedup per reporter),
+      permission-gated /v1/admin API (user search/suspend/ban with session
+      revocation, moderation queue with hide/restore/dismiss, analytics
+      overview) — every action logged to moderation_actions + audit_logs —
+      and an Admin dashboard in the client (Overview / Users / Reports)
+      that appears only for privileged accounts
+- [ ] Developer portal UI (extension publishing/analytics)
 
 ## License
 
