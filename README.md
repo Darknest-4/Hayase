@@ -71,7 +71,14 @@ Next phases:
       sidebar navigation, Home/Search/Details/Schedule/Library pages
       restyled, new Profile (stats, XP/levels) and Extension Store pages
       (live against the API), dark + light themes, mobile bottom-nav
-- [ ] Watch page (player UI) and Community pages on the web client
+- [x] Watch page: full custom player (seek/buffered bar, volume, speed,
+      PiP, fullscreen, keyboard shortcuts, auto-hide controls), AniSkip
+      intro/outro skipping, resume positions and automatic progress
+      tracking; plays any direct stream URL, links official streams
+- [x] Community: accounts in the client (register/sign-in with rotating
+      refresh tokens), threaded spoiler-aware comments with likes on
+      anime pages, platform-wide recent-discussion feed; backed by new
+      /v1/comments API and an AniList-id → catalogue bridge
 - [ ] Workers: notifications, stats rollups, metadata importers,
       OpenSearch indexing, extension review pipeline
 - [ ] GraphQL endpoint over the same service layer

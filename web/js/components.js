@@ -135,6 +135,193 @@ const C = {
     return wrap
   },
 
+  // ---- Yume account sign-in/register card ----
+  authCard (onAuthed = () => {}) {
+    /* global YumeAPI */
+    const wrap = U.el('div', { class: 'setting-card' })
+
+    const render = () => {
+      wrap.replaceChildren()
+      const user = YumeAPI.user()
+
+      if (user) {
+        wrap.append(
+          U.el('h3', { text: 'Yume account' }),
+          U.el('p', { text: `Signed in as ${user.username}.` }),
+          U.el('button', {
+            class: 'btn btn-secondary btn-sm',
+            onclick: async () => { await YumeAPI.logout(); render(); onAuthed() }
+          }, [document.createTextNode('Sign out')])
+        )
+        return
+      }
+
+      let mode = 'login'
+      const email = U.el('input', { class: 'input', type: 'email', placeholder: 'Email', autocomplete: 'email' })
+      const identifier = U.el('input', { class: 'input', type: 'text', placeholder: 'Email or username', autocomplete: 'username' })
+      const username = U.el('input', { class: 'input', type: 'text', placeholder: 'Username', autocomplete: 'username' })
+      const password = U.el('input', { class: 'input', type: 'password', placeholder: 'Password (min 8 chars)', autocomplete: 'current-password' })
+      const fields = U.el('div', { style: 'display:flex;flex-direction:column;gap:.6rem;max-width:22rem;' })
+      const switchBtn = U.el('button', { class: 'btn btn-ghost btn-sm' })
+      const submitBtn = U.el('button', { class: 'btn btn-primary btn-sm' })
+
+      const renderMode = () => {
+        fields.replaceChildren(...(mode === 'login' ? [identifier, password] : [email, username, password]))
+        submitBtn.textContent = mode === 'login' ? 'Sign in' : 'Create account'
+        switchBtn.textContent = mode === 'login' ? 'New here? Register' : 'Have an account? Sign in'
+      }
+      switchBtn.addEventListener('click', () => { mode = mode === 'login' ? 'register' : 'login'; renderMode() })
+
+      submitBtn.addEventListener('click', async () => {
+        try {
+          submitBtn.disabled = true
+          if (mode === 'login') await YumeAPI.login(identifier.value.trim(), password.value)
+          else await YumeAPI.register(email.value.trim(), username.value.trim(), password.value)
+          U.toast(`Signed in as ${YumeAPI.user().username}`)
+          render()
+          onAuthed()
+        } catch (e) {
+          U.toast(e.message, 'error')
+        } finally {
+          submitBtn.disabled = false
+        }
+      })
+      password.addEventListener('keydown', e => { if (e.key === 'Enter') submitBtn.click() })
+
+      renderMode()
+      wrap.append(
+        U.el('h3', { text: 'Yume account' }),
+        U.el('p', { text: 'Sign in to join the discussion and sync with the platform.' }),
+        fields,
+        U.el('div', { style: 'display:flex;gap:.6rem;margin-top:.75rem;' }, [submitBtn, switchBtn])
+      )
+    }
+
+    render()
+    return wrap
+  },
+
+  // ---- comment rendering (spoiler-aware, plain text) ----
+  commentBody (comment) {
+    const body = U.el('div', { class: 'comment-body', text: comment.body })
+    if (!comment.spoiler) return body
+    const shield = U.el('div', {
+      class: 'comment-spoiler',
+      text: 'Spoiler — click to reveal',
+      onclick: e => { e.stopPropagation(); shield.replaceWith(body) }
+    })
+    return shield
+  },
+
+  // ---- per-anime comment section (detail page) ----
+  commentsSection (media) {
+    const wrap = U.el('div')
+    const list = U.el('div', {}, [U.el('div', { class: 'spinner' })])
+
+    const load = async () => {
+      const yumeId = await YumeAPI.yumeAnimeId(media)
+      list.replaceChildren()
+
+      if (yumeId) {
+        try {
+          const { data } = await YumeAPI.comments('anime', yumeId)
+          if (!data.length) {
+            list.append(U.el('div', { class: 'empty-state', style: 'padding:1.5rem;', text: 'No comments yet.' }))
+          }
+          const byParent = new Map()
+          for (const c of data) {
+            const key = c.parent_id ?? 'root'
+            if (!byParent.has(key)) byParent.set(key, [])
+            byParent.get(key).push(c)
+          }
+          const renderThread = (comment, depth) => {
+            const node = U.el('div', { class: 'comment', style: depth ? `margin-left:${Math.min(depth, 4) * 1.5}rem;` : null }, [
+              U.el('div', { class: 'comment-head' }, [
+                U.el('span', { class: 'comment-author', text: comment.author }),
+                U.el('span', { class: 'comment-time', text: U.relTime(new Date(comment.created_at)) })
+              ]),
+              this.commentBody(comment),
+              U.el('div', { class: 'comment-actions' }, [
+                U.el('button', {
+                  class: 'comment-action',
+                  text: `♥ ${comment.like_count}`,
+                  onclick: async e => {
+                    try {
+                      const { liked } = await YumeAPI.likeComment(comment.id)
+                      comment.like_count += liked ? 1 : -1
+                      e.target.textContent = `♥ ${comment.like_count}`
+                    } catch (err) { U.toast(err.message, 'error') }
+                  }
+                }),
+                U.el('button', {
+                  class: 'comment-action',
+                  text: 'Reply',
+                  onclick: () => {
+                    if (node.querySelector('.comment-form')) return
+                    node.append(form(comment.id, () => load()))
+                  }
+                })
+              ])
+            ])
+            list.append(node)
+            for (const child of byParent.get(comment.id) ?? []) renderThread(child, depth + 1)
+          }
+          for (const comment of byParent.get('root') ?? []) renderThread(comment, 0)
+        } catch (e) {
+          list.append(U.el('div', { class: 'error-state', text: 'Failed to load comments: ' + e.message }))
+        }
+      } else {
+        list.append(U.el('div', { class: 'empty-state', style: 'padding:1.5rem;', text: 'No comments yet.' }))
+      }
+
+      // composer / auth prompt
+      if (YumeAPI.user()) {
+        if (!list.querySelector('.comment-form-root')) list.append(form(null, () => load(), true))
+      } else {
+        list.append(U.el('div', { class: 'callout', html: 'Sign in to your <a href="#/community" style="text-decoration:underline">Yume account</a> to join the discussion.' }))
+      }
+    }
+
+    const form = (parentId, done, root = false) => {
+      const textarea = U.el('textarea', { class: 'input comment-input', rows: '3', placeholder: parentId ? 'Write a reply…' : 'Share your thoughts… (no spoilers unmarked!)' })
+      const spoiler = U.el('input', { type: 'checkbox' })
+      const submit = U.el('button', { class: 'btn btn-primary btn-sm', text: 'Post' })
+      submit.addEventListener('click', async () => {
+        const body = textarea.value.trim()
+        if (!body) return
+        try {
+          submit.disabled = true
+          const yumeId = await YumeAPI.yumeAnimeId(media, { create: true })
+          await YumeAPI.postComment('anime', yumeId, body, { parentId, spoiler: spoiler.checked })
+          U.toast('Comment posted')
+          done()
+        } catch (e) {
+          U.toast(e.message, 'error')
+        } finally {
+          submit.disabled = false
+        }
+      })
+      return U.el('div', { class: 'comment-form' + (root ? ' comment-form-root' : '') }, [
+        textarea,
+        U.el('div', { style: 'display:flex;gap:.75rem;align-items:center;margin-top:.5rem;' }, [
+          submit,
+          U.el('label', { style: 'display:flex;gap:.4rem;align-items:center;font-size:.78rem;color:var(--fg-faint);cursor:pointer;' }, [spoiler, document.createTextNode('Spoiler')])
+        ])
+      ])
+    }
+
+    YumeAPI.available().then(ok => {
+      if (!ok) {
+        wrap.remove() // no backend → no comment section at all, no dead UI
+        return
+      }
+      wrap.append(U.el('h2', { class: 'detail-section-title', text: 'Comments' }), list)
+      load()
+    })
+
+    return wrap
+  },
+
   trailerModal (trailer) {
     if (!trailer?.id || trailer.site !== 'youtube') {
       U.toast('No trailer available', 'error')

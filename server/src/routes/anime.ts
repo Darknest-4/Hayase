@@ -110,6 +110,63 @@ const routes: FastifyPluginAsync = async fastify => {
     return { data }
   })
 
+  // ---- AniList id bridge ----
+  // The web client browses AniList ids until the catalogue import lands.
+  // These endpoints map anilist_id → Yume anime id so platform features
+  // (comments, library sync) can attach to catalogue rows.
+
+  fastify.get('/by-anilist/:anilistId', {
+    schema: { params: { type: 'object', properties: { anilistId: { type: 'integer' } } } }
+  }, async (request, reply) => {
+    const { anilistId } = request.params as { anilistId: number }
+    const row = await queryOne<{ id: string, canonical_title: string }>(
+      `SELECT a.id, a.canonical_title FROM anime_mappings m JOIN anime a ON a.id = m.anime_id WHERE m.anilist_id = $1`,
+      [anilistId]
+    )
+    if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    return row
+  })
+
+  fastify.post('/resolve', {
+    preHandler: fastify.authenticate,
+    schema: {
+      body: {
+        type: 'object',
+        required: ['anilistId', 'title'],
+        properties: {
+          anilistId: { type: 'integer', minimum: 1 },
+          title: { type: 'string', minLength: 1, maxLength: 500 },
+          format: { enum: ['TV', 'TV_SHORT', 'MOVIE', 'SPECIAL', 'OVA', 'ONA', 'MUSIC'] },
+          status: { enum: ['NOT_YET_RELEASED', 'RELEASING', 'FINISHED', 'CANCELLED', 'HIATUS'] },
+          episodes: { type: 'integer', minimum: 0 },
+          isAdult: { type: 'boolean' }
+        }
+      }
+    }
+  }, async request => {
+    const body = request.body as { anilistId: number, title: string, format?: string, status?: string, episodes?: number, isAdult?: boolean }
+
+    const existing = await queryOne<{ id: string }>(
+      'SELECT anime_id AS id FROM anime_mappings WHERE anilist_id = $1',
+      [body.anilistId]
+    )
+    if (existing) return existing
+
+    // minimal stub row; the metadata importer enriches it later
+    const created = await queryOne<{ id: string }>(
+      `WITH new_anime AS (
+         INSERT INTO anime (canonical_title, format, status, episode_count, is_adult)
+         VALUES ($1, coalesce($2, 'TV')::anime_format, coalesce($3, 'FINISHED')::anime_status, $4, coalesce($5, false))
+         RETURNING id
+       )
+       INSERT INTO anime_mappings (anime_id, anilist_id)
+       SELECT id, $6 FROM new_anime
+       RETURNING anime_id AS id`,
+      [body.title, body.format ?? null, body.status ?? null, body.episodes ?? null, body.isAdult ?? null, body.anilistId]
+    )
+    return created
+  })
+
   fastify.get('/:id', {
     schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {

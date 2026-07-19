@@ -9,6 +9,8 @@ const App = {
     schedule: (root, params) => PageSchedule.render(root, params),
     list: (root, params) => PageList.render(root, params),
     profile: (root, params) => PageProfile.render(root, params),
+    community: (root, params) => PageCommunity.render(root, params),
+    watch: (root, params, arg) => PageWatch.render(root, params, arg),
     extensions: (root, params) => PageExtensions.render(root, params),
     settings: (root, params) => PageSettings.render(root, params),
     anime: (root, params, arg) => PageAnime.render(root, params, arg)
@@ -32,7 +34,7 @@ const App = {
     if (route !== 'home') U.setBanner(null)
 
     document.querySelectorAll('.sidebar-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.route === route || (route === 'anime' && btn.dataset.route === 'home'))
+      btn.classList.toggle('active', btn.dataset.route === route || ((route === 'anime' || route === 'watch') && btn.dataset.route === 'home'))
     })
 
     const handler = this.routes[route] ?? this.routes.home

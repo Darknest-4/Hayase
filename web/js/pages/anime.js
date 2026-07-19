@@ -159,6 +159,9 @@ const PageAnime = {
       for (const rec of recs) row.append(C.card(rec))
       body.append(U.el('h2', { class: 'detail-section-title', text: 'Recommendations' }), row)
     }
+
+    // ---- comments (platform feature; renders only when a Yume API is up) ----
+    body.append(C.commentsSection(media))
   },
 
   async renderEpisodes (wrap, media) {
@@ -189,17 +192,25 @@ const PageAnime = {
 
         wrap.append(U.el('div', {
           class: 'episode',
-          title: watched ? 'Click to mark as unwatched' : 'Click to mark as watched',
-          onclick: () => {
-            // toggling: clicking an unwatched episode sets progress there,
-            // clicking the newest watched one steps back
-            Store.setProgress(media, watched && progress === ep.episode ? ep.episode - 1 : ep.episode)
-            render()
-          }
+          title: `Watch episode ${ep.episode}`,
+          onclick: () => { window.location.hash = `#/watch/${media.id}:${ep.episode}` }
         }, [
           thumb,
           U.el('div', { class: 'episode-body' }, [
-            U.el('div', { class: 'episode-title', text: ep.title ?? `Episode ${ep.episode}` }),
+            U.el('div', { style: 'display:flex;align-items:center;gap:.5rem;' }, [
+              U.el('div', { class: 'episode-title', style: 'flex-grow:1;', text: ep.title ?? `Episode ${ep.episode}` }),
+              U.el('button', {
+                class: 'icon-btn',
+                title: watched ? 'Mark as unwatched' : 'Mark as watched',
+                style: watched ? 'color:var(--accent);border-color:var(--accent);' : null,
+                onclick: e => {
+                  e.stopPropagation()
+                  // clicking the newest watched episode steps back one
+                  Store.setProgress(media, watched && progress === ep.episode ? ep.episode - 1 : ep.episode)
+                  render()
+                }
+              }, [U.svg(C.CHECK, 13)])
+            ]),
             metaText ? U.el('div', { class: 'episode-meta', text: metaText }) : null,
             ep.summary ? U.el('div', { class: 'episode-summary', text: ep.summary }) : null
           ])

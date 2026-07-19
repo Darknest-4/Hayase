@@ -8,6 +8,7 @@ import { config } from './config.ts'
 import authPlugin from './plugins/auth.ts'
 import animeRoutes from './routes/anime.ts'
 import authRoutes from './routes/auth.ts'
+import commentRoutes from './routes/comments.ts'
 import extensionRoutes from './routes/extensions.ts'
 import libraryRoutes from './routes/library.ts'
 
@@ -28,6 +29,7 @@ export async function buildApp (): Promise<FastifyInstance> {
   await app.register(animeRoutes, { prefix: '/v1/anime' })
   await app.register(libraryRoutes, { prefix: '/v1/me' })
   await app.register(extensionRoutes, { prefix: '/v1/extensions' })
+  await app.register(commentRoutes, { prefix: '/v1/comments' })
 
   // RFC 9457 problem+json for unhandled errors
   app.setErrorHandler((error: FastifyError, request, reply) => {

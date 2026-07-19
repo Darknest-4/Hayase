@@ -1,4 +1,4 @@
-/* global window, document, U, Store */
+/* global window, document, U, C, Store */
 // Settings page — theme, NSFW toggle, cache/data management.
 // The theme values are the same ones the original app ships (app.css).
 
@@ -58,6 +58,9 @@ const PageSettings = {
         }
       })
     ]))
+
+    // ---- Yume account ----
+    pad.append(C.authCard())
 
     // ---- NSFW ----
     const nsfwToggle = U.el('label', { class: 'switch' }, [
