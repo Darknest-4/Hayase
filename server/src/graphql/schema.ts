@@ -274,7 +274,7 @@ export const resolvers: IResolvers = {
 
     async schedule (_root, args: { from: string, to: string }) {
       const rows = await query(
-        `SELECT e.id AS episode_id, e.anime_id, e.number, e.air_date
+        `SELECT e.id AS episode_id, e.anime_id, e.number, e.air_date::text AS air_date
          FROM episodes e WHERE e.air_date >= $1 AND e.air_date < $2 ORDER BY e.air_date`,
         [args.from, args.to]
       )
@@ -553,7 +553,7 @@ export const loaders: MercuriusLoaders = {
     async episodes (queries) {
       const ids = queries.map(q => (q.obj as { id: string }).id)
       const rows = await query<Record<string, unknown> & { anime_id: string }>(
-        `SELECT id, anime_id, number, title, synopsis, air_date, duration, is_filler, is_recap
+        `SELECT id, anime_id, number, title, synopsis, air_date::text AS air_date, duration, is_filler, is_recap
          FROM episodes WHERE anime_id = ANY($1) ORDER BY number`, [ids]
       )
       const byId = new Map<string, unknown[]>()

@@ -64,6 +64,19 @@ npm run migrate                      # applies db/migrations in order
 npm run dev                          # API on :4000
 ```
 
+### Seed a real catalogue
+
+Fill the database with the full anime-offline-database dump — ~25k real
+anime with titles, synonyms, external ids (AniList/MAL/AniDB/Kitsu),
+covers, genres/tags, the relation graph, per-episode rows generated from
+real episode counts with season-anchored air dates, and real
+community-sourced filler flags:
+
+```sh
+curl -o /tmp/aod.json https://raw.githubusercontent.com/manami-project/anime-offline-database/2022-26/anime-offline-database-minified.json
+npm run seed /tmp/aod.json           # ~2 minutes, idempotent
+```
+
 Smoke test:
 
 ```sh

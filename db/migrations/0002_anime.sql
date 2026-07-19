@@ -24,7 +24,7 @@ CREATE TABLE anime (
   format         anime_format NOT NULL,
   status         anime_status NOT NULL,
   season         anime_season,
-  season_year    smallint CHECK (season_year BETWEEN 1917 AND 2100),
+  season_year    smallint CHECK (season_year BETWEEN 1900 AND 2100),
   start_date     date,
   end_date       date,
   episode_count  smallint CHECK (episode_count >= 0),   -- planned total; null while unknown
