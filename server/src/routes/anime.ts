@@ -110,6 +110,43 @@ const routes: FastifyPluginAsync = async fastify => {
     return { data }
   })
 
+  // full-text + typo-tolerant search (tsvector + trigram, incl. synonyms)
+  fastify.get('/search', {
+    schema: {
+      querystring: {
+        type: 'object',
+        required: ['q'],
+        properties: {
+          q: { type: 'string', minLength: 1, maxLength: 200 },
+          limit: { type: 'integer', minimum: 1, maximum: 50, default: 10 },
+          nsfw: { type: 'boolean', default: false }
+        }
+      }
+    }
+  }, async request => {
+    const { q, limit, nsfw } = request.query as { q: string, limit?: number, nsfw?: boolean }
+    const rows = await query(
+      `SELECT DISTINCT ON (a.id) a.id, a.canonical_title, a.format, a.status, a.season, a.season_year,
+              a.episode_count, a.average_score, a.is_adult,
+              img.object_key AS cover_key,
+              greatest(
+                similarity(a.canonical_title, $1),
+                coalesce((SELECT max(similarity(s.synonym, $1)) FROM anime_synonyms s WHERE s.anime_id = a.id), 0)
+              ) AS sim
+       FROM anime a
+       LEFT JOIN anime_images img ON img.anime_id = a.id AND img.kind = 'cover' AND img.is_primary
+       WHERE (${nsfw ? 'true' : 'NOT a.is_adult'})
+         AND (a.search @@ websearch_to_tsquery('simple', $1)
+              OR a.canonical_title % $1
+              OR EXISTS (SELECT 1 FROM anime_synonyms s WHERE s.anime_id = a.id AND s.synonym % $1))
+       ORDER BY a.id, sim DESC
+       LIMIT 200`,
+      [q]
+    )
+    rows.sort((x, y) => Number(y.sim) - Number(x.sim))
+    return { data: rows.slice(0, limit ?? 10) }
+  })
+
   // ---- AniList id bridge ----
   // The web client browses AniList ids until the catalogue import lands.
   // These endpoints map anilist_id → Yume anime id so platform features

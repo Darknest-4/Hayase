@@ -2,9 +2,11 @@
 // index.ts so tests can build an app without binding a port).
 
 import cors from '@fastify/cors'
+import mercurius from 'mercurius'
 import Fastify from 'fastify'
 
 import { config } from './config.ts'
+import { schema, resolvers, loaders } from './graphql/schema.ts'
 import wsPlugin from './lib/ws.ts'
 import authPlugin from './plugins/auth.ts'
 import animeRoutes from './routes/anime.ts'
@@ -28,6 +30,34 @@ export async function buildApp (): Promise<FastifyInstance> {
   await app.register(cors, { origin: config.corsOrigins })
   await app.register(authPlugin)
   await app.register(wsPlugin)
+
+  // GraphQL over the same service layer. Auth is optional per-request:
+  // a valid bearer token populates userId/username; X-Profile-Id scopes
+  // profile data (ownership re-checked in requireProfile).
+  await app.register(mercurius, {
+    schema,
+    resolvers,
+    loaders,
+    graphiql: !config.isProd,
+    context: async request => {
+      const ctx: { userId?: string, username?: string, profileId?: string } = {}
+      const auth = request.headers.authorization
+      if (auth?.startsWith('Bearer ')) {
+        try {
+          const payload = app.jwt.verify<{ sub: string, username: string }>(auth.slice(7))
+          ctx.userId = payload.sub
+          ctx.username = payload.username
+          const profileHeader = request.headers['x-profile-id']
+          if (typeof profileHeader === 'string') {
+            const { queryOne } = await import('./db.ts')
+            const owned = await queryOne('SELECT 1 FROM user_profiles WHERE id = $1 AND user_id = $2', [profileHeader, payload.sub])
+            if (owned) ctx.profileId = profileHeader
+          }
+        } catch { /* anonymous */ }
+      }
+      return ctx
+    }
+  })
 
   app.get('/v1/health', async () => ({ status: 'ok' }))
 

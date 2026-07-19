@@ -85,7 +85,12 @@ Remaining:
       and an anime-offline-database catalogue importer (idempotent);
       progress completions now write watch_history + XP automatically
 - [ ] OpenSearch indexing and extension review pipeline workers
-- [ ] GraphQL endpoint over the same service layer
+- [x] GraphQL endpoint (/graphql, GraphiQL in dev) over the same service
+      layer: anime/animePage/search/schedule/extensionPage/me queries with
+      batched child-field loaders (titles, genres, mappings, episodes,
+      relations, viewerEntry — no N+1s), library/progress/notification
+      mutations; plus REST /v1/anime/search — both backed by typo-tolerant
+      tsvector + trigram search over titles and synonyms
 - [x] WebSocket layer (/ws): JWT-authenticated channels — live
       notifications (comment replies push instantly), persisted chat with
       membership checks, watch-together rooms (REST registry + play/seek

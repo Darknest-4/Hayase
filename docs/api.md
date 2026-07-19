@@ -4,8 +4,11 @@ One service, two protocols over the same service layer:
 
 - **REST** under `/v1/*` — canonical, fully specified in OpenAPI
   (generated from route schemas, served at `/v1/docs`).
-- **GraphQL** at `/graphql` — for clients that want to compose views
-  (the web app's detail pages), schema below.
+- **GraphQL** at `/graphql` — implemented with mercurius; GraphiQL is
+  served in development. Child collections resolve through batched
+  loaders (one query per field per request). Auth is optional per
+  request: a bearer token unlocks `me` and `viewerEntry`, and
+  `X-Profile-Id` scopes profile data (ownership verified).
 
 ## Conventions
 
