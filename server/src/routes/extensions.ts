@@ -1,6 +1,7 @@
 // /v1/extensions — store browse/detail/install; /v1/me/extensions sync.
 
 import { query, queryOne, transaction } from '../db.ts'
+import { emitEvent } from '../lib/webhooks.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
 
@@ -94,6 +95,8 @@ const routes: FastifyPluginAsync = async fastify => {
       )
       return rows[0]
     })
+    const counts = await queryOne<{ install_count: number }>('SELECT install_count FROM extensions WHERE id = $1', [latest.extension_id])
+    await emitEvent('extension.installed', { slug, action: 'install', installCount: counts?.install_count })
     return reply.code(201).send(install)
   })
 

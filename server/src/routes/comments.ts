@@ -3,6 +3,7 @@
 // of nesting (top-level + replies), which is what the client renders.
 
 import { query, queryOne, transaction } from '../db.ts'
+import { emitEvent } from '../lib/webhooks.ts'
 import { notify } from '../workers/notify.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
@@ -124,6 +125,10 @@ const routes: FastifyPluginAsync = async fastify => {
         commentId: comment.id, by: request.user.username, subjectType, subjectId, preview: body.slice(0, 120)
       })
     }
+
+    await emitEvent('comment.created', {
+      author: request.user.username, subject: subjectType, preview: body.slice(0, 200)
+    })
 
     return reply.code(201).send({ ...comment, author: request.user.username })
   })

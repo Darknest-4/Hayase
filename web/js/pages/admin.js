@@ -1,4 +1,4 @@
-/* global window, document, U, YumeAPI */
+/* global window, document, U, C, YumeAPI */
 // Admin dashboard — overview analytics, user management and the
 // moderation queue. Only reachable with the right permissions; the
 // server enforces them regardless.
@@ -13,8 +13,9 @@ const PageAdmin = {
     const canUsers = perms.includes('admin.users.manage')
     const canModerate = perms.includes('community.moderate')
     const canAnalytics = perms.includes('admin.analytics.view')
+    const canWebhooks = perms.includes('admin.webhooks.manage')
 
-    if (!canUsers && !canModerate && !canAnalytics) {
+    if (!canUsers && !canModerate && !canAnalytics && !canWebhooks) {
       pad.append(U.el('div', { class: 'callout', text: 'You need moderator or admin permissions to see this page.' }))
       return
     }
@@ -22,7 +23,8 @@ const PageAdmin = {
     const TABS = [
       canAnalytics && ['overview', 'Overview'],
       canUsers && ['users', 'Users'],
-      canModerate && ['reports', 'Reports']
+      canModerate && ['reports', 'Reports'],
+      canWebhooks && ['webhooks', 'Webhooks']
     ].filter(Boolean)
 
     const state = { tab: TABS[0][0] }
@@ -41,7 +43,8 @@ const PageAdmin = {
       content.replaceChildren(U.el('div', { class: 'spinner' }))
       if (state.tab === 'overview') this.renderOverview(content)
       else if (state.tab === 'users') this.renderUsers(content)
-      else this.renderReports(content)
+      else if (state.tab === 'reports') this.renderReports(content)
+      else this.renderWebhooks(content)
     }
 
     renderTabs()
@@ -195,6 +198,135 @@ const PageAdmin = {
     } catch (e) {
       content.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
     }
+  },
+
+  // ---- webhooks ----
+
+  EVENT_LABELS: {
+    'user.registered': 'New user registered',
+    'user.moderated': 'User suspended/banned/restored',
+    'comment.created': 'New comment',
+    'report.created': 'Content reported',
+    'report.resolved': 'Report resolved',
+    'extension.submitted': 'Extension version submitted',
+    'extension.reviewed': 'Extension reviewed',
+    'extension.installed': 'Extension installed',
+    'w2g.room_created': 'Watch Together room opened',
+    'stats.daily': 'Daily stats digest',
+    'stats.trending': 'Trending refreshed',
+    'catalogue.imported': 'Catalogue import finished',
+    'job.failed': 'Background job failed',
+    'webhook.test': 'Manual test'
+  },
+
+  async renderWebhooks (content) {
+    try {
+      const [{ events }, { data }] = await Promise.all([
+        YumeAPI.admin.webhookEvents(),
+        YumeAPI.admin.webhooks()
+      ])
+      content.replaceChildren()
+
+      content.append(U.el('div', { style: 'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:1rem;' }, [
+        U.el('p', { class: 'list-row-sub', style: 'max-width:40rem;', text: 'Outbound webhooks fire on the events you subscribe each one to. Discord endpoints get rich embeds; generic endpoints get signed JSON.' }),
+        U.el('button', { class: 'btn btn-primary btn-sm', onclick: () => this.webhookForm(content, events, null) }, [document.createTextNode('+ New webhook')])
+      ]))
+
+      if (!data.length) {
+        content.append(U.el('div', { class: 'empty-state', text: 'No webhooks yet. Add one to start receiving events.' }))
+        return
+      }
+
+      for (const hook of data) {
+        const healthy = hook.enabled && hook.failure_count === 0
+        content.append(U.el('div', { class: 'setting-card', style: 'max-width:none;' }, [
+          U.el('div', { style: 'display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;' }, [
+            U.el('span', { style: `width:.6rem;height:.6rem;border-radius:50%;background:${healthy ? 'var(--ok)' : hook.enabled ? 'var(--status-paused)' : 'var(--fg-faint)'};` }),
+            U.el('h3', { style: 'margin:0;', text: hook.name }),
+            U.el('span', { class: 'ext-type-chip', text: hook.format }),
+            U.el('span', { class: 'list-row-sub', text: `${hook.events.length} events • ${hook.delivery_count} deliveries` }),
+            hook.last_error ? U.el('span', { class: 'badge', style: 'background:var(--danger);color:white;', text: 'last error: ' + hook.last_error }) : null
+          ]),
+          U.el('div', { class: 'list-row-sub', style: 'margin:.4rem 0;word-break:break-all;', text: hook.url.replace(/\/[^/]+$/, '/•••') }),
+          U.el('div', { style: 'display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.6rem;' }, [
+            U.el('button', { class: 'btn btn-secondary btn-sm', onclick: async e => {
+              e.target.disabled = true
+              try { await YumeAPI.admin.testWebhook(hook.id); U.toast('Test delivered ✓') }
+              catch (err) { U.toast('Test failed: ' + err.message, 'error') }
+              finally { e.target.disabled = false }
+            } }, [document.createTextNode('Send test')]),
+            U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => this.webhookForm(content, events, hook) }, [document.createTextNode('Edit')]),
+            U.el('button', {
+              class: 'btn btn-ghost btn-sm',
+              onclick: async () => {
+                await YumeAPI.admin.updateWebhook(hook.id, { enabled: !hook.enabled })
+                this.renderWebhooks(content)
+              }
+            }, [document.createTextNode(hook.enabled ? 'Disable' : 'Enable')]),
+            U.el('button', { class: 'btn btn-sm', style: 'background:var(--danger);color:white;', onclick: async () => {
+              if (!window.confirm(`Delete webhook "${hook.name}"?`)) return
+              await YumeAPI.admin.deleteWebhook(hook.id)
+              U.toast('Webhook deleted')
+              this.renderWebhooks(content)
+            } }, [document.createTextNode('Delete')])
+          ])
+        ]))
+      }
+    } catch (e) {
+      content.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+    }
+  },
+
+  webhookForm (content, events, hook) {
+    const isEdit = !!hook
+    const name = U.el('input', { class: 'input', style: 'width:100%;', placeholder: 'Name', value: hook?.name ?? '' })
+    const url = U.el('input', { class: 'input', type: 'url', style: 'width:100%;', placeholder: 'https://discord.com/api/webhooks/…', value: hook?.url ?? '' })
+    const format = U.el('select', { class: 'select' }, [
+      U.el('option', { value: 'discord', text: 'Discord (rich embeds)', ...(hook?.format !== 'json' ? { selected: '' } : {}) }),
+      U.el('option', { value: 'json', text: 'Generic JSON (HMAC signed)', ...(hook?.format === 'json' ? { selected: '' } : {}) })
+    ])
+
+    const subscribed = new Set(hook?.events ?? events) // new hooks default to all events
+    const checkboxes = events.map(ev => {
+      const cb = U.el('input', { type: 'checkbox', value: ev, ...(subscribed.has(ev) ? { checked: '' } : {}) })
+      return U.el('label', { style: 'display:flex;gap:.5rem;align-items:center;font-size:.8rem;padding:.15rem 0;cursor:pointer;' }, [
+        cb, U.el('span', {}, [document.createTextNode(this.EVENT_LABELS[ev] ?? ev), U.el('code', { style: 'color:var(--fg-faint);margin-left:.4rem;font-family:var(--font-mono);font-size:.85em;', text: ev })])
+      ])
+    })
+    const eventGrid = U.el('div', { style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:.1rem .75rem;margin-top:.4rem;' }, checkboxes)
+
+    const toggleAll = on => checkboxes.forEach(l => { l.querySelector('input').checked = on })
+
+    const modal = C.modalShell(isEdit ? 'Edit webhook' : 'New webhook', [
+      U.el('div', { class: 'filter-group' }, [U.el('label', { text: 'Name' }), name]),
+      U.el('div', { class: 'filter-group' }, [U.el('label', { text: 'URL' }), url]),
+      U.el('div', { class: 'filter-group' }, [U.el('label', { text: 'Format' }), format]),
+      U.el('div', {}, [
+        U.el('div', { style: 'display:flex;justify-content:space-between;align-items:center;' }, [
+          U.el('label', { class: 'filter-group', style: 'display:block;', text: 'Events' }),
+          U.el('div', {}, [
+            U.el('button', { class: 'section-more', style: 'margin-right:.75rem;', onclick: () => toggleAll(true) }, [document.createTextNode('All')]),
+            U.el('button', { class: 'section-more', onclick: () => toggleAll(false) }, [document.createTextNode('None')])
+          ])
+        ]),
+        eventGrid
+      ])
+    ], async () => {
+      const body = {
+        name: name.value.trim(),
+        url: url.value.trim(),
+        format: format.value,
+        events: checkboxes.filter(l => l.querySelector('input').checked).map(l => l.querySelector('input').value)
+      }
+      if (!body.name || !body.url) return U.toast('Name and URL are required', 'error')
+      try {
+        if (isEdit) await YumeAPI.admin.updateWebhook(hook.id, body)
+        else await YumeAPI.admin.createWebhook(body)
+        U.toast(isEdit ? 'Webhook updated' : 'Webhook created')
+        modal.remove()
+        this.renderWebhooks(content)
+      } catch (e) { U.toast(e.message, 'error') }
+    })
   }
 }
 

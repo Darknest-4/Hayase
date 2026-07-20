@@ -103,6 +103,20 @@ One service, two protocols over the same service layer:
 | GET | `/v1/admin/users` · POST `/:id/ban` etc. | user management (`admin.users.manage`) |
 | GET | `/v1/admin/reports` · POST actions | moderation queue |
 | GET | `/v1/admin/analytics/*` | views/watch/search/perf dashboards |
+| GET/POST/PATCH/DELETE | `/v1/admin/webhooks` | outbound webhooks (`admin.webhooks.manage`) |
+| POST | `/v1/admin/webhooks/:id/test` | fire a test event synchronously |
+| GET | `/v1/admin/webhooks/events` · `/:id/deliveries` | event catalog + delivery log |
+
+### Outbound webhooks
+Admin-configured endpoints subscribe per-event. Discord URLs receive rich
+embeds; generic JSON endpoints receive `{event, data, at}` signed with
+`X-Yume-Signature: sha256=…` (HMAC of the body using the webhook secret)
+and `X-Yume-Event`. Delivery runs through the job queue (retries with
+backoff); 20 consecutive failures auto-disable the hook. Events:
+`user.registered`, `user.moderated`, `comment.created`, `report.created`,
+`report.resolved`, `extension.submitted`, `extension.reviewed`,
+`extension.installed`, `w2g.room_created`, `stats.daily`, `stats.trending`,
+`catalogue.imported`, `job.failed`, `webhook.test`.
 | GET | `/v1/health` · `/v1/version` | liveness, build info |
 
 ### WebSocket (`/ws`)

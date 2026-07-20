@@ -209,7 +209,15 @@ const YumeAPI = {
     resolveReport: (id, action, reason) =>
       YumeAPI._request(`/v1/admin/reports/${id}/resolve`, { method: 'POST', auth: true, body: { action, reason } }),
     overview: () =>
-      YumeAPI._request('/v1/admin/analytics/overview', { auth: true })
+      YumeAPI._request('/v1/admin/analytics/overview', { auth: true }),
+    // webhooks
+    webhookEvents: () => YumeAPI._request('/v1/admin/webhooks/events', { auth: true }),
+    webhooks: () => YumeAPI._request('/v1/admin/webhooks', { auth: true }),
+    createWebhook: body => YumeAPI._request('/v1/admin/webhooks', { method: 'POST', auth: true, body }),
+    updateWebhook: (id, body) => YumeAPI._request(`/v1/admin/webhooks/${id}`, { method: 'PATCH', auth: true, body }),
+    deleteWebhook: id => YumeAPI._request(`/v1/admin/webhooks/${id}`, { method: 'DELETE', auth: true }),
+    testWebhook: id => YumeAPI._request(`/v1/admin/webhooks/${id}/test`, { method: 'POST', auth: true, body: {} }),
+    webhookDeliveries: id => YumeAPI._request(`/v1/admin/webhooks/${id}/deliveries`, { auth: true })
   },
 
   // ---- extension store ----

@@ -15,6 +15,7 @@ import commentRoutes from './routes/comments.ts'
 import w2gRoutes from './routes/w2g.ts'
 import adminRoutes from './routes/admin.ts'
 import devRoutes from './routes/dev.ts'
+import webhookRoutes from './routes/webhooks.ts'
 import reportRoutes from './routes/reports.ts'
 import extensionRoutes from './routes/extensions.ts'
 import libraryRoutes from './routes/library.ts'
@@ -70,6 +71,7 @@ export async function buildApp (): Promise<FastifyInstance> {
   await app.register(reportRoutes, { prefix: '/v1/reports' })
   await app.register(adminRoutes, { prefix: '/v1/admin' })
   await app.register(devRoutes, { prefix: '/v1/dev' })
+  await app.register(webhookRoutes, { prefix: '/v1/admin/webhooks' })
 
   // RFC 9457 problem+json for unhandled errors
   app.setErrorHandler((error: FastifyError, request, reply) => {

@@ -5,6 +5,7 @@ import { randomBytes } from 'node:crypto'
 
 import { query, queryOne } from '../db.ts'
 import { presence } from '../lib/ws.ts'
+import { emitEvent } from '../lib/webhooks.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
 
@@ -36,6 +37,7 @@ const routes: FastifyPluginAsync = async fastify => {
        RETURNING id, code, episode_id, is_public, created_at`,
       [code, profile.id, episodeId ?? null, isPublic ?? false]
     )
+    await emitEvent('w2g.room_created', { code, host: profile.id })
     return reply.code(201).send(room)
   })
 

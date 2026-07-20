@@ -2,6 +2,7 @@
 // consumes these lives under /v1/admin/reports.
 
 import { queryOne } from '../db.ts'
+import { emitEvent } from '../lib/webhooks.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
 
@@ -41,6 +42,7 @@ const routes: FastifyPluginAsync = async fastify => {
        RETURNING id, status, created_at`,
       [request.user.sub, subjectType, subjectId, reason, details ?? null]
     )
+    await emitEvent('report.created', { subjectType, reason, reporter: request.user.username })
     return reply.code(201).send(report)
   })
 }

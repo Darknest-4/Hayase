@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto'
 
 import { query, queryOne, transaction } from '../db.ts'
 import { enqueue } from '../lib/queue.ts'
+import { emitEvent } from '../lib/webhooks.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
 
@@ -186,6 +187,7 @@ const routes: FastifyPluginAsync = async fastify => {
 
     // queue the static-analysis review step
     await enqueue('ext-review', { versionId: version.id, dedupe: `review:${version.id}` })
+    await emitEvent('extension.submitted', { slug, version: body.version, developer: request.user.username })
 
     return reply.code(201).send(version)
   })

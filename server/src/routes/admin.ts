@@ -3,6 +3,7 @@
 // moderation_actions / audit_logs.
 
 import { query, queryOne, transaction } from '../db.ts'
+import { emitEvent } from '../lib/webhooks.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
 
@@ -93,6 +94,8 @@ const routes: FastifyPluginAsync = async fastify => {
         [request.user.sub, id, { status: before.status }, { status }]
       )
     })
+    const actor = await queryOne<{ username: string }>('SELECT username FROM users WHERE id = $1', [id])
+    await emitEvent('user.moderated', { username: actor?.username, action: status === 'active' ? 'restore' : status, reason })
     return { id, status }
   })
 
@@ -173,6 +176,7 @@ const routes: FastifyPluginAsync = async fastify => {
         [request.user.sub, action === 'dismiss' ? 'dismiss_report' : action, report.subject_type, report.subject_id, id, reason]
       )
     })
+    await emitEvent('report.resolved', { action, moderator: request.user.username, reason })
     return { id, action }
   })
 

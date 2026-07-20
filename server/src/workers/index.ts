@@ -4,6 +4,7 @@
 
 import { pool } from '../db.ts'
 import { drain, enqueue, runWorker } from '../lib/queue.ts'
+import { handleWebhookJob } from '../lib/webhooks.ts'
 import { handleImportJob } from './importer.ts'
 import { handleMaintenanceJob } from './maintenance.ts'
 import { handleNotifyJob } from './notify.ts'
@@ -15,7 +16,8 @@ const handlers = {
   notify: handleNotifyJob,
   maintenance: handleMaintenanceJob,
   import: handleImportJob,
-  'ext-review': handleReviewJob
+  'ext-review': handleReviewJob,
+  webhook: handleWebhookJob
 } as const
 
 async function scheduleRecurring (): Promise<void> {
@@ -23,6 +25,7 @@ async function scheduleRecurring (): Promise<void> {
   await enqueue('stats', { trending: true, dedupe: 'trending' })
   const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
   await enqueue('stats', { rollupDay: yesterday, dedupe: `rollup:${yesterday}` })
+  await enqueue('stats', { dailyDigest: true, dedupe: `digest:${yesterday}` })
 }
 
 const once = process.argv.includes('--once')

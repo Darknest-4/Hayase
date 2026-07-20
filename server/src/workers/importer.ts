@@ -11,6 +11,7 @@
 import { readFile } from 'node:fs/promises'
 
 import { pool, query } from '../db.ts'
+import { emitEvent } from '../lib/webhooks.ts'
 
 import type { Job } from '../lib/queue.ts'
 import type pg from 'pg'
@@ -327,5 +328,6 @@ export async function applyFillerData (fillerByAnilistId: Record<string, number[
 
 export async function handleImportJob (job: Job): Promise<void> {
   const { file } = job.payload as { file: string }
-  await importFile(file)
+  const stats = await importFile(file)
+  await emitEvent('catalogue.imported', stats)
 }

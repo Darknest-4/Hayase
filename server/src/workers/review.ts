@@ -10,6 +10,7 @@
 
 import { query, queryOne } from '../db.ts'
 import { notify } from './notify.ts'
+import { emitEvent } from '../lib/webhooks.ts'
 
 import type { Job } from '../lib/queue.ts'
 
@@ -92,6 +93,7 @@ export async function reviewVersion (versionId: string): Promise<ReviewResult> {
   await notify(version.owner_id, 'extension_review', {
     slug: version.slug, version: version.version, decision: result.decision, notes: result.notes
   })
+  await emitEvent('extension.reviewed', { slug: version.slug, version: version.version, decision: result.decision, notes: result.notes })
 
   return result
 }

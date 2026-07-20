@@ -7,6 +7,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { config } from '../config.ts'
 import { query, queryOne, transaction } from '../db.ts'
 import { hashPassword, verifyPassword } from '../lib/password.ts'
+import { emitEvent } from '../lib/webhooks.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
 
@@ -86,6 +87,7 @@ const routes: FastifyPluginAsync = async fastify => {
       return { id: userId, username }
     })
 
+    await emitEvent('user.registered', { username: user.username })
     const tokens = await issueTokens(user, request.ip, request.headers['user-agent'])
     return reply.code(201).send(tokens)
   })

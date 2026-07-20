@@ -418,6 +418,23 @@ const C = {
     return wrap
   },
 
+  // generic form modal (shared by developer portal and admin webhooks)
+  modalShell (title, fields, onSubmit) {
+    const submit = U.el('button', { class: 'btn btn-primary btn-sm', onclick: onSubmit }, [document.createTextNode('Save')])
+    const backdrop = U.el('div', { class: 'modal-backdrop', onclick: e => { if (e.target === backdrop) backdrop.remove() } }, [
+      U.el('div', { class: 'search-modal', style: 'padding:1.25rem;max-width:40rem;width:min(40rem,calc(100vw - 2rem));' }, [
+        U.el('h3', { style: 'margin:0 0 1rem;font-size:1.1rem;font-weight:800;', text: title }),
+        U.el('div', { style: 'display:flex;flex-direction:column;gap:.85rem;max-height:65vh;overflow-y:auto;' }, fields),
+        U.el('div', { style: 'display:flex;gap:.6rem;margin-top:1.25rem;' }, [
+          submit,
+          U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => backdrop.remove() }, [document.createTextNode('Cancel')])
+        ])
+      ])
+    ])
+    document.body.append(backdrop)
+    return backdrop
+  },
+
   trailerModal (trailer) {
     if (!trailer?.id || trailer.site !== 'youtube') {
       U.toast('No trailer available', 'error')

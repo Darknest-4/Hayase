@@ -5,6 +5,7 @@
 //   { trending: true }    → recompute anime.trending from recent activity
 
 import { query } from '../db.ts'
+import { emitEvent } from '../lib/webhooks.ts'
 
 import type { Job } from '../lib/queue.ts'
 
@@ -63,6 +64,14 @@ export async function rollupDay (day: string): Promise<void> {
 }
 
 export async function recomputeTrending (): Promise<void> {
+  await _recomputeTrending()
+  const top = await query<{ canonical_title: string }>(
+    'SELECT canonical_title FROM anime WHERE trending > 0 ORDER BY trending DESC LIMIT 5'
+  )
+  if (top.length) await emitEvent('stats.trending', { top: top.map(t => t.canonical_title) })
+}
+
+async function _recomputeTrending (): Promise<void> {
   // trending = watch activity (7d, recency-weighted) + list adds (7d)
   await query(
     `UPDATE anime a SET trending = coalesce(sub.score, 0)
@@ -82,8 +91,30 @@ export async function recomputeTrending (): Promise<void> {
 }
 
 export async function handleStatsJob (job: Job): Promise<void> {
-  const { profileId, rollupDay: day, trending } = job.payload as { profileId?: string, rollupDay?: string, trending?: boolean }
+  const { profileId, rollupDay: day, trending, dailyDigest } = job.payload as { profileId?: string, rollupDay?: string, trending?: boolean, dailyDigest?: boolean }
   if (profileId) await recomputeProfileStats(profileId)
   if (day) await rollupDay(day)
   if (trending) await recomputeTrending()
+  if (dailyDigest) await emitDailyDigest()
+}
+
+// daily digest webhook: platform-wide numbers for the previous day
+export async function emitDailyDigest (): Promise<void> {
+  const [users, watch, comments] = await Promise.all([
+    query(`SELECT count(*) AS total,
+                  count(*) FILTER (WHERE created_at > now() - interval '7 days') AS new_7d,
+                  count(*) FILTER (WHERE last_login_at > now() - interval '1 day') AS active_1d
+           FROM users WHERE deleted_at IS NULL`),
+    query(`SELECT coalesce(sum(minutes_watched),0) AS minutes, coalesce(sum(completions),0) AS completions
+           FROM watch_stats_daily WHERE day = current_date - 1`),
+    query(`SELECT count(*) AS total FROM comments WHERE created_at > now() - interval '1 day'`)
+  ])
+  const u = users[0] as Record<string, string>
+  const w = watch[0] as Record<string, string>
+  await emitEvent('stats.daily', {
+    day: new Date(Date.now() - 86400000).toISOString().slice(0, 10),
+    users: u.total, newUsers7d: u.new_7d, active1d: u.active_1d,
+    minutesWatched: w.minutes, completions: w.completions,
+    comments: (comments[0] as Record<string, string>).total
+  })
 }

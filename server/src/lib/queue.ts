@@ -4,7 +4,7 @@
 
 import { pool, query, queryOne } from '../db.ts'
 
-export type QueueName = 'stats' | 'notify' | 'maintenance' | 'import' | 'search-index' | 'ext-review'
+export type QueueName = 'stats' | 'notify' | 'maintenance' | 'import' | 'search-index' | 'ext-review' | 'webhook'
 
 export interface Job {
   id: string
@@ -68,6 +68,15 @@ async function fail (job: Job, error: Error): Promise<void> {
      WHERE id = $1`,
     [job.id, error.message.slice(0, 2000)]
   )
+
+  // retries exhausted → surface it (never for webhook jobs: avoids loops)
+  const exhausted = await queryOne<{ done: boolean }>(
+    'SELECT attempts >= max_attempts AS done FROM jobs WHERE id = $1', [job.id]
+  )
+  if (exhausted?.done && job.queue !== 'webhook') {
+    const { emitEvent } = await import('./webhooks.ts')
+    await emitEvent('job.failed', { queue: job.queue, jobId: job.id, error: error.message.slice(0, 300) }).catch(() => {})
+  }
 }
 
 export interface WorkerOptions {
