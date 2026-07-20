@@ -6,10 +6,12 @@ const PageHistory = {
   render (root) {
     const profile = Store.activeProfile()
     root.append(window.C.spotlight('Watch History', { subtitle: profile ? `${profile.avatar ?? ''} ${profile.name}` : null }))
-
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
+    this.body(pad)
+  },
 
+  body (pad) {
     pad.append(U.el('div', { style: 'display:flex;justify-content:flex-end;margin-bottom:.5rem;' }, [
       U.el('button', {
         class: 'btn btn-ghost btn-sm',

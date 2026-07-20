@@ -1,49 +1,70 @@
-/* global window, document, U, C, Store */
-// Profile page — identity card + statistics computed from the local
-// library and progress data (mirrors profile_stats on the backend).
+/* global window, document, U, C, Store, PageAnalytics, PageAchievements, PageHistory */
+// Profile — a hub for everything personal to the active profile. Overview
+// shows identity + headline stats; the Analytics, Achievements and History
+// tabs embed those modules' bodies so they don't need their own routes.
 
 const PageProfile = {
-  render (root) {
+  TABS: [
+    { key: 'overview', label: 'Overview' },
+    { key: 'analytics', label: 'Analytics' },
+    { key: 'achievements', label: 'Achievements' },
+    { key: 'history', label: 'History' }
+  ],
+
+  render (root, params) {
+    const profile = Store.activeProfile()
+    const name = profile?.name ?? Store.settings().profileName ?? 'Dreamer'
+
+    // level for the header subtitle
+    const entries = Object.values(Store.list())
+    const episodesWatched = entries.reduce((s, e) => s + (e.progress ?? 0), 0)
+    const xp = episodesWatched * 10 + entries.filter(e => e.status === 'COMPLETED').length * 100
+    const level = Math.floor(Math.sqrt(xp / 100)) + 1
+
+    root.append(C.spotlight(name, { subtitle: `Level ${level} · ${xp.toLocaleString()} XP · ${entries.length} in library` }))
+
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
 
+    const active = params.get('tab') ?? 'overview'
+    const tabs = U.el('div', { class: 'tabs' })
+    for (const t of this.TABS) {
+      tabs.append(U.el('a', {
+        class: 'tab' + (t.key === active ? ' active' : ''),
+        href: t.key === 'overview' ? '#/profile' : `#/profile?tab=${t.key}`
+      }, [document.createTextNode(t.label)]))
+    }
+    pad.append(tabs)
+
+    const content = U.el('div', { style: 'margin-top:1.25rem;' })
+    pad.append(content)
+
+    if (active === 'analytics') PageAnalytics.body(content)
+    else if (active === 'achievements') PageAchievements.body(content)
+    else if (active === 'history') PageHistory.body(content)
+    else this.overview(content)
+  },
+
+  overview (pad) {
     const entries = Object.values(Store.list())
     const favs = Store.favourites()
 
-    // ---- derived statistics ----
     const completed = entries.filter(e => e.status === 'COMPLETED')
     const episodesWatched = entries.reduce((sum, e) => sum + (e.progress ?? 0), 0)
-    // 24 min average runtime — same assumption the backend stats worker uses
-    // until per-episode durations are synced
-    const minutesWatched = episodesWatched * 24
+    const minutesWatched = entries.reduce((s, e) => s + (e.progress ?? 0) * (e.media?.duration || 24), 0)
     const scored = entries.filter(e => e.score > 0)
     const meanScore = scored.length ? (scored.reduce((sum, e) => sum + e.score, 0) / scored.length).toFixed(1) : null
-
-    // XP model matches the backend: 10 xp / episode, 100 / completion
-    const xp = episodesWatched * 10 + completed.length * 100
-    const level = Math.floor(Math.sqrt(xp / 100)) + 1
-    const nextLevelXp = Math.pow(level, 2) * 100
-
-    const name = Store.settings().profileName ?? 'Dreamer'
-
-    pad.append(U.el('div', { class: 'profile-head' }, [
-      U.el('div', { class: 'profile-avatar', text: name.slice(0, 1).toUpperCase() }),
-      U.el('div', {}, [
-        U.el('h1', { class: 'profile-name', text: name }),
-        U.el('div', { class: 'profile-level', text: `Level ${level} • ${xp.toLocaleString()} / ${nextLevelXp.toLocaleString()} XP` })
-      ])
-    ]))
 
     const hours = Math.floor(minutesWatched / 60)
     const statDefs = [
       [String(entries.length), 'Anime in library'],
       [String(completed.length), 'Completed'],
-      [String(episodesWatched.toLocaleString()), 'Episodes watched'],
+      [episodesWatched.toLocaleString(), 'Episodes watched'],
       [hours >= 24 ? `${Math.floor(hours / 24)}d ${hours % 24}h` : `${hours}h`, 'Watch time'],
       [meanScore ?? '—', 'Mean score'],
       [String(favs.length), 'Favourites']
     ]
-    pad.append(U.el('div', { class: 'stat-cards' },
+    pad.append(U.el('div', { class: 'stat-cards', style: 'margin-top:0;' },
       statDefs.map(([value, label]) => U.el('div', { class: 'stat-card' }, [
         U.el('b', { text: value }),
         U.el('span', { text: label })

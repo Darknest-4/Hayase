@@ -96,11 +96,22 @@ Szoba létrehozás / csatlakozás kóddal; szobanézet: házigazda, élő
 nézőszám, eseménylista (ki lépett be, ki tekert), kód-másolás; a
 lejátszóval WebSocketen szinkronizál (play/pause/seek).
 
-### Profile (`#/profile`)
-Avatar + profilnév, **XP és szint** (a backenddel azonos képlet),
-stat-kártyák (listaelem, befejezett, epizódok, nézési idő, átlag-
-pontszám, kedvencek), library-bontás színezett sávokkal, friss
-aktivitás sor.
+### Profile (`#/profile`) — hub füles elrendezéssel
+Random-anime **spotlight banner** fejléc (a bannert egy random népszerű
+anime adja, jobb alul halványan kiírva melyik), alatta fülek:
+- **Overview**: avatar/profilnév, **XP és szint** (a backenddel azonos
+  képlet), stat-kártyák, library-bontás színezett sávokkal, friss aktivitás.
+- **Analytics** (`#/profile?tab=analytics`): személyes „év összegzése"
+  grafikonok saját SVG chart-motorral (`web/js/charts.js`) — napi aktivitás,
+  műfaj/formátum-fánk, státusz-eloszlás, pontszám-hisztogram, top stúdiók.
+- **Achievements** (`#/profile?tab=achievements`): 16 elemű, fokozatos
+  (bronze/silver/gold) katalógus haladássávokkal + XP/szint-sáv; a slugek
+  megegyeznek a backend `achievements` táblájával.
+- **History** (`#/profile?tab=history`): profilonkénti előzmény napokra
+  bontva.
+
+A régi `#/analytics`, `#/achievements`, `#/history` linkek automatikusan
+átirányítanak a megfelelő fülre.
 
 ### Extensions (`#/extensions`) + Developer Portal (`#/developer`)
 - **Store**: típus-fülek, kártyák (fejlesztő ✓ verified, telepítések,
@@ -123,17 +134,9 @@ szerint, folytatás, hamarosan adásba kerülő epizódok, gyors statok,
 „majdnem meglévő" achievementek, legutóbbi értesítések, top műfajok.
 Minden helyi adatból számol — hálózat nélkül is működik.
 
-### Analytics (`#/analytics`)
-Személyes „év összegzése" jellegű grafikonok, saját függőség nélküli
-SVG chart-motorral (`web/js/charts.js`): napi aktivitás oszlopdiagram,
-műfaj- és formátum-fánkdiagram, státusz-eloszlás, pontszám-hisztogram,
-top stúdiók rangsor. A könyvtár + előzmények pillanatképeiből.
-
-### Achievements (`#/achievements`)
-16 elemű, **fokozatos (bronze/silver/gold) achievement-katalógus**
-haladássávokkal, valamint XP/szint-sáv. A feltételeket a kliens
-értékeli a könyvtár és az előzmények alapján; a slugek megegyeznek a
-backend `achievements` táblájával, így belépve összeegyeztethetők.
+> **Megjegyzés:** az Analytics, Achievements és Watch History korábban
+> külön oldalak voltak, de mivel gyakorlatilag egy-egy szekcióból álltak,
+> beépültek a **Profile** hub füleibe (fent).
 
 ### Notifications (`#/notifications`)
 Szűrhető **értesítési központ**: adásba kerülő epizódok (könyvtárból),
@@ -141,17 +144,22 @@ félbehagyott folytatás, achievement-feloldások. Típusonként ki/be
 kapcsolható (Settings › Notifications), olvasott/elvetett állapot
 profilonként megmarad, a sidebar harangon olvasatlan-számláló.
 
-### Theme Engine (`#/themes`)
-Alap (dark/light) + **kurált akcentus-presetek** + **egyéni színválasztó**
-+ opcionális felület-árnyalás; élőben alkalmazva CSS-változó
-felülírásokkal, valós idejű előnézettel. Profilonként mentve.
-
 ### Settings (`#/settings`)
 **Kategorizált, füles elrendezés** (Account / Appearance / Content /
-Notifications / Data / About): profilnév és profilkezelés, **Yume-fiók**
-(regisztráció/belépés/kilépés), Yume szerver végpont, téma + Theme Engine,
-cím-nyelv, NSFW, autoplay, intro-átugrás, értesítés-preferenciák,
-API-cache törlés, adat export/import/törlés.
+Notifications / Data / About):
+- **Appearance**: a teljes **Theme Engine** ide épült be — alap (dark/light),
+  kurált akcentus-presetek, egyéni színválasztó, felület-árnyalás, élő
+  előnézet (CSS-változó felülírásokkal, profilonként mentve), + cím-nyelv.
+  A régi `#/themes` link ide irányít át.
+- **Account / Content / Notifications / Data / About**: profilnév és
+  profilkezelés, Yume-fiók, szerver végpont, NSFW, autoplay, intro-átugrás,
+  értesítés-preferenciák, API-cache, adat export/import/törlés.
+
+### Footer
+Minden tartalmi oldal alján **lábléc**: yume logó + tagline, linkoszlopok
+(Discover / Library / Community / Yume) és adatforrás-kredit (AniList,
+Jikan, ani.zip). Az immerzív oldalakon (Watch, Watch Together, profilváltó)
+nem jelenik meg.
 
 ---
 

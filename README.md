@@ -55,7 +55,7 @@ for reproducible shots. Click any section below to expand it. Full gallery in
 </details>
 
 <details>
-<summary><b>📊 Dashboard</b> — customizable widget landing page (drag-free reorder + toggle)</summary>
+<summary><b>📊 Dashboard</b> — customizable widget landing page (reorder + toggle)</summary>
 
 <br>
 
@@ -159,20 +159,7 @@ for reproducible shots. Click any section below to expand it. Full gallery in
 </details>
 
 <details>
-<summary><b>⏳ Watch History</b> — per-profile chronological log grouped by day</summary>
-
-<br>
-
-![⏳ Watch History — desktop](docs/screenshots/10-history.png)
-
-<sub>📱 Mobile</sub>
-
-<img src="docs/screenshots/10-history-mobile.png" alt="⏳ Watch History — mobile" width="300">
-
-</details>
-
-<details>
-<summary><b>👤 Profile</b> — XP / level, watch stats, library breakdown</summary>
+<summary><b>👤 Profile</b> — a hub with Overview / Analytics / Achievements / History tabs, over a random-anime spotlight banner</summary>
 
 <br>
 
@@ -181,6 +168,45 @@ for reproducible shots. Click any section below to expand it. Full gallery in
 <sub>📱 Mobile</sub>
 
 <img src="docs/screenshots/11-profile-mobile.png" alt="👤 Profile — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>📈 Analytics</b> — Profile tab — personal viewing charts (activity, genres, formats, studios, scores)</summary>
+
+<br>
+
+![📈 Analytics — desktop](docs/screenshots/13-analytics.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/13-analytics-mobile.png" alt="📈 Analytics — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>🏆 Achievements</b> — Profile tab — tiered catalogue with progress bars and XP / levels</summary>
+
+<br>
+
+![🏆 Achievements — desktop](docs/screenshots/14-achievements.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/14-achievements-mobile.png" alt="🏆 Achievements — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>⏳ Watch History</b> — Profile tab — per-profile log grouped by day</summary>
+
+<br>
+
+![⏳ Watch History — desktop](docs/screenshots/10-history.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/10-history-mobile.png" alt="⏳ Watch History — mobile" width="300">
 
 </details>
 
@@ -194,32 +220,6 @@ for reproducible shots. Click any section below to expand it. Full gallery in
 <sub>📱 Mobile</sub>
 
 <img src="docs/screenshots/12-profiles-mobile.png" alt="🎭 Profiles — mobile" width="300">
-
-</details>
-
-<details>
-<summary><b>📈 Analytics</b> — personal viewing charts — activity, genres, formats, studios, scores</summary>
-
-<br>
-
-![📈 Analytics — desktop](docs/screenshots/13-analytics.png)
-
-<sub>📱 Mobile</sub>
-
-<img src="docs/screenshots/13-analytics-mobile.png" alt="📈 Analytics — mobile" width="300">
-
-</details>
-
-<details>
-<summary><b>🏆 Achievements</b> — tiered catalogue with progress bars and XP / levels</summary>
-
-<br>
-
-![🏆 Achievements — desktop](docs/screenshots/14-achievements.png)
-
-<sub>📱 Mobile</sub>
-
-<img src="docs/screenshots/14-achievements-mobile.png" alt="🏆 Achievements — mobile" width="300">
 
 </details>
 
@@ -302,7 +302,7 @@ for reproducible shots. Click any section below to expand it. Full gallery in
 </details>
 
 <details>
-<summary><b>🎨 Theme Engine</b> — accent presets + custom colour with a live preview</summary>
+<summary><b>🎨 Theme Engine</b> — in Settings › Appearance — accent presets + custom colour with a live preview</summary>
 
 <br>
 
@@ -350,6 +350,19 @@ for reproducible shots. Click any section below to expand it. Full gallery in
 <sub>📱 Mobile</sub>
 
 <img src="docs/screenshots/24-light-theme-mobile.png" alt="☀️ Light theme — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>🔗 Site footer</b> — navigation columns and data-source credits on every content page</summary>
+
+<br>
+
+![🔗 Site footer — desktop](docs/screenshots/25-footer.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/25-footer-mobile.png" alt="🔗 Site footer — mobile" width="300">
 
 </details>
 
