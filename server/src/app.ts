@@ -15,6 +15,7 @@ import commentRoutes from './routes/comments.ts'
 import w2gRoutes from './routes/w2g.ts'
 import adminRoutes from './routes/admin.ts'
 import devRoutes from './routes/dev.ts'
+import profileRoutes from './routes/profiles.ts'
 import webhookRoutes from './routes/webhooks.ts'
 import reportRoutes from './routes/reports.ts'
 import extensionRoutes from './routes/extensions.ts'
@@ -65,6 +66,7 @@ export async function buildApp (): Promise<FastifyInstance> {
   await app.register(authRoutes, { prefix: '/v1/auth' })
   await app.register(animeRoutes, { prefix: '/v1/anime' })
   await app.register(libraryRoutes, { prefix: '/v1/me' })
+  await app.register(profileRoutes, { prefix: '/v1/profiles' })
   await app.register(extensionRoutes, { prefix: '/v1/extensions' })
   await app.register(commentRoutes, { prefix: '/v1/comments' })
   await app.register(w2gRoutes, { prefix: '/v1/w2g' })

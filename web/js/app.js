@@ -9,6 +9,8 @@ const App = {
     schedule: (root, params) => PageSchedule.render(root, params),
     list: (root, params) => PageList.render(root, params),
     profile: (root, params) => PageProfile.render(root, params),
+    profiles: (root, params) => PageProfiles.render(root, params),
+    history: (root, params) => PageHistory.render(root, params),
     community: (root, params) => PageCommunity.render(root, params),
     w2g: (root, params, arg) => PageW2G.render(root, params, arg),
     watch: (root, params, arg) => PageWatch.render(root, params, arg),
@@ -134,8 +136,50 @@ const App = {
     nav.classList.toggle('hidden', !perms.some(p => p === 'community.moderate' || p.startsWith('admin.')))
   },
 
+  refreshProfileAvatar () {
+    const p = Store.activeProfile()
+    const el = document.getElementById('sidebar-avatar')
+    if (el && p) el.textContent = p.avatar ?? p.name.slice(0, 1).toUpperCase()
+  },
+
+  initProfileSwitcher () {
+    const btn = document.getElementById('profile-switcher')
+    if (!btn) return
+    btn.addEventListener('click', () => {
+      // close any existing menu
+      document.getElementById('profile-menu')?.remove()
+      const active = Store.activeProfileId()
+      const menu = U.el('div', { class: 'profile-menu', id: 'profile-menu' }, [
+        ...Store.profiles().map(p => U.el('button', {
+          class: 'profile-menu-item' + (p.id === active ? ' active' : ''),
+          onclick: () => {
+            if (p.id !== active) { Store.setActiveProfile(p.id); window.location.reload() }
+            menu.remove()
+          }
+        }, [
+          U.el('span', { class: 'profile-menu-avatar', text: p.avatar ?? p.name.slice(0, 1).toUpperCase() }),
+          U.el('span', { text: p.name }),
+          p.id === active ? U.el('span', { style: 'margin-left:auto;color:var(--accent);', text: '✓' }) : null
+        ])),
+        U.el('div', { class: 'profile-menu-sep' }),
+        U.el('a', { class: 'profile-menu-item', href: '#/profile', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '📊' }), document.createTextNode('View profile & stats')]),
+        U.el('a', { class: 'profile-menu-item', href: '#/profiles?manage=1', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '⚙' }), document.createTextNode('Manage profiles')]),
+        U.el('a', { class: 'profile-menu-item', href: '#/profiles', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '🔄' }), document.createTextNode('Switch profile')])
+      ])
+      document.body.append(menu)
+      const rect = btn.getBoundingClientRect()
+      menu.style.left = (rect.right + 8) + 'px'
+      menu.style.bottom = (window.innerHeight - rect.bottom) + 'px'
+      const close = e => { if (!menu.contains(e.target) && e.target !== btn) { menu.remove(); document.removeEventListener('click', close) } }
+      setTimeout(() => document.addEventListener('click', close), 0)
+    })
+  },
+
   init () {
+    Store.ensureProfiles()
     Store.applyTheme()
+    this.refreshProfileAvatar()
+    this.initProfileSwitcher()
     // icon-rail sidebar: hidden labels become native tooltips
     document.querySelectorAll('.sidebar-btn').forEach(btn => {
       const label = btn.querySelector('span')?.textContent

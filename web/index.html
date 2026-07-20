@@ -57,14 +57,17 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
         <span>Library</span>
       </a>
+      <a class="sidebar-btn" href="#/history" data-route="history">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+        <span>History</span>
+      </a>
       <a class="sidebar-btn" href="#/extensions" data-route="extensions">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M17.5 13v8M13.5 17h8"/></svg>
         <span>Extensions</span>
       </a>
-      <a class="sidebar-btn" href="#/profile" data-route="profile">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        <span>Profile</span>
-      </a>
+      <button class="sidebar-btn sidebar-profile" id="profile-switcher" title="Profile">
+        <span class="sidebar-avatar" id="sidebar-avatar">🦊</span>
+      </button>
 
       <a class="sidebar-btn hidden" href="#/admin" data-route="admin" id="nav-admin">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
@@ -112,6 +115,8 @@
   <script src="js/pages/community.js"></script>
   <script src="js/pages/w2g.js"></script>
   <script src="js/pages/profile.js"></script>
+  <script src="js/pages/profiles.js"></script>
+  <script src="js/pages/history.js"></script>
   <script src="js/pages/extensions.js"></script>
   <script src="js/pages/developer.js"></script>
   <script src="js/pages/admin.js"></script>

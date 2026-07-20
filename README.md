@@ -90,6 +90,11 @@ curl -X POST localhost:4000/v1/auth/register \
 ## Status & roadmap
 
 Delivered:
+- [x] Multiple profiles per account (Netflix-style): per-profile library,
+      history, favourites, continue-watching and settings; profile picker,
+      sidebar switcher and manager; backend `/v1/profiles` CRUD; expanded
+      permission catalog (45 slugs across catalogue/community/moderation/
+      developer/analytics/system)
 
 - [x] Full PostgreSQL schema (identity/RBAC, catalogue, streaming,
       community, profiles/gamification, extension store, analytics) —

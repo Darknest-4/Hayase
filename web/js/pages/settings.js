@@ -115,9 +115,9 @@ const PageSettings = {
             input.onchange = async () => {
               try {
                 const data = JSON.parse(await input.files[0].text())
-                if (data.animelist) Store._write('animelist', data.animelist)
-                if (data.favourites) Store._write('favourites', data.favourites)
-                if (data.settings) Store._write('settings', data.settings)
+                if (data.animelist) Store._write(Store._profileKey('animelist'), data.animelist)
+                if (data.favourites) Store._write(Store._profileKey('favourites'), data.favourites)
+                if (data.settings) Store._write(Store._profileKey('settings'), data.settings)
                 Store.applyTheme()
                 U.toast('Data imported')
               } catch (e) {
