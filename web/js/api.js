@@ -64,6 +64,7 @@ const API = {
       nextAiringEpisode { episode airingAt }
       startDate { year month day }
       studios(isMain: true) { nodes { name } }
+      relations { edges { relationType node { id status } } }
     }`,
 
   async al (query, variables = {}) {

@@ -43,7 +43,8 @@ against the live API + PostgreSQL. Full gallery in
 | | |
 |---|---|
 | **Home** — hero, Continue Watching + curated rails<br>![Home](docs/screenshots/01-home.png) | **Search** — full-text + filters (genre/season/year/format/status/sort)<br>![Search](docs/screenshots/02-search.png) |
-| **Anime detail** — banner, stats, list controls, genres<br>![Detail](docs/screenshots/03-anime-detail.png) | **Episodes** — thumbnails, air dates, watched toggles<br>![Episodes](docs/screenshots/04-episodes.png) |
+| **Hover preview** — trailer + quick actions on card hover<br>![Preview](docs/screenshots/01b-hover-preview.png) | **Anime detail** — banner, stats, list controls, genres<br>![Detail](docs/screenshots/03-anime-detail.png) |
+| **Episodes** — Hayase-style rows: thumbs, air dates, filler, watched toggles<br>![Episodes](docs/screenshots/04-episodes.png) | **Watch Together** — rooms with live playback sync<br>![W2G](docs/screenshots/10b-watch-together.png) |
 | **Comments** — threaded, spoiler-aware, likes, reports<br>![Comments](docs/screenshots/05-comments.png) | **Watch** — custom player, Skip intro (AniSkip), progress tracking<br>![Watch](docs/screenshots/06-watch-player.png) |
 | **Schedule** — weekly airing calendar<br>![Schedule](docs/screenshots/07-schedule.png) | **Library** — statuses, progress controls, favourites<br>![Library](docs/screenshots/08-library.png) |
 | **Profile** — XP/level, watch stats, library breakdown<br>![Profile](docs/screenshots/09-profile.png) | **Community** — live discussion feed (Yume API)<br>![Community](docs/screenshots/10-community.png) |

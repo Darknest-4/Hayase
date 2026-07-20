@@ -39,6 +39,22 @@ const PageHome = {
         }))
     }
 
+    // Sequels You Missed — sequels of completed shows that aren't on the list
+    const completedIds = Object.values(Store.list()).filter(e => e.status === 'COMPLETED').map(e => e.media.id)
+    if (completedIds.length) {
+      sections.append(C.section('Sequels You Missed',
+        API.search({ ids: completedIds.slice(0, 25), perPage: 25 }).then(async page => {
+          const inList = new Set(Object.keys(Store.list()).map(Number))
+          const sequelIds = [...new Set((page.media ?? []).flatMap(m =>
+            (m.relations?.edges ?? [])
+              .filter(e => e?.relationType === 'SEQUEL' && e.node && ['FINISHED', 'RELEASING'].includes(e.node.status) && !inList.has(e.node.id))
+              .map(e => e.node.id)))]
+          if (!sequelIds.length) return []
+          const res = await API.search({ ids: sequelIds.slice(0, 25), perPage: 25 })
+          return res.media ?? []
+        })))
+    }
+
     const planningIds = Store.planningIds()
     if (planningIds.length) {
       sections.append(C.section('Your List',
@@ -70,6 +86,19 @@ const PageHome = {
   renderHero (hero, media) {
     U.setBanner(media.bannerImage)
 
+    // muted looping trailer behind the hero, like the original app;
+    // stays invisible until the frame actually loads
+    if (media.trailer?.id && media.trailer.site === 'youtube') {
+      const frame = U.el('iframe', {
+        class: 'hero-trailer',
+        src: `https://www.youtube-nocookie.com/embed/${media.trailer.id}?autoplay=1&mute=1&controls=0&rel=0&playsinline=1&loop=1&playlist=${media.trailer.id}`,
+        allow: 'autoplay',
+        title: 'trailer'
+      })
+      frame.addEventListener('load', () => frame.classList.add('loaded'))
+      hero.append(frame)
+    }
+
     const meta = [
       U.format(media),
       U.seasonYear(media),
@@ -98,11 +127,13 @@ const PageHome = {
         metaRow,
         U.el('p', { class: 'hero-desc', text: U.plainDesc(media.description) }),
         U.el('div', { class: 'hero-buttons' }, [
-          U.el('a', { class: 'btn btn-primary', href: `#/anime/${media.id}` }, [U.svg(C.PLAY, 15), document.createTextNode('View')]),
-          U.el('button', {
-            class: 'btn btn-secondary',
-            onclick: () => C.trailerModal(media.trailer)
-          }, [document.createTextNode('Trailer')])
+          U.el('a', { class: 'btn btn-primary', href: `#/watch/${media.id}:${(Store.entry(media.id)?.progress ?? 0) + 1}` }, [U.svg(C.PLAY, 15), document.createTextNode('Watch now')]),
+          Store.entry(media.id)
+            ? U.el('a', { class: 'btn btn-secondary', href: `#/anime/${media.id}` }, [document.createTextNode('Details')])
+            : U.el('button', {
+                class: 'btn btn-secondary',
+                onclick: e => { Store.saveEntry(media, { status: 'PLANNING' }); U.toast('Added to Planning'); e.target.textContent = '✓ In your list' }
+              }, [document.createTextNode('+ Add to list')])
         ])
       ])
     )

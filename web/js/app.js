@@ -10,6 +10,7 @@ const App = {
     list: (root, params) => PageList.render(root, params),
     profile: (root, params) => PageProfile.render(root, params),
     community: (root, params) => PageCommunity.render(root, params),
+    w2g: (root, params, arg) => PageW2G.render(root, params, arg),
     watch: (root, params, arg) => PageWatch.render(root, params, arg),
     extensions: (root, params) => PageExtensions.render(root, params),
     developer: (root, params) => PageDeveloper.render(root, params),

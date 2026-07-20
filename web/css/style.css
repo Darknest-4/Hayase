@@ -463,25 +463,27 @@ a.badge:hover { color: var(--accent); border-color: var(--accent); }
 /* ===== episodes ===== */
 
 .episodes {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
-  gap: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 60rem;
 }
 
 .episode {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   background: var(--bg-raised);
-  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   overflow: clip;
   cursor: pointer;
-  transition: border-color var(--dur-fast) var(--ease-out), transform var(--dur-base) var(--ease-spring);
+  transition: background var(--dur-fast) var(--ease-out), transform var(--dur-base) var(--ease-spring);
   position: relative;
 }
-.episode:hover { border-color: var(--accent); transform: translateY(-2px); }
+.episode:hover { background: var(--border); transform: translateX(3px); }
 
 .episode-thumb {
+  width: 14rem;
+  flex-shrink: 0;
   aspect-ratio: 16/9;
   background: var(--bg-sunken);
   position: relative;
@@ -517,7 +519,7 @@ a.badge:hover { color: var(--accent); border-color: var(--accent); }
 }
 .episode-thumb .ep-watched-overlay svg { width: 2rem; height: 2rem; color: var(--accent); }
 
-.episode-body { padding: var(--space-2) var(--space-3) var(--space-3); }
+.episode-body { padding: var(--space-3) var(--space-4); min-width: 0; align-self: center; flex-grow: 1; }
 .episode-title {
   font-size: var(--text-sm);
   font-weight: var(--weight-bold);
@@ -943,7 +945,81 @@ a.badge:hover { color: var(--accent); border-color: var(--accent); }
   .hero-title { font-size: var(--text-2xl); }
   .detail-body { padding: 0 var(--space-4); }
   .error-state { margin: var(--space-4); }
+  .episode-thumb { width: 8.5rem; }
 }
+
+/* ===== hover preview panel ===== */
+
+.preview-panel {
+  position: fixed;
+  width: 320px;
+  z-index: 90;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  overflow: clip;
+  box-shadow: var(--shadow-3);
+  opacity: 0;
+  transform: scale(.96);
+  transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-spring);
+  pointer-events: auto;
+}
+.preview-panel.open { opacity: 1; transform: none; }
+
+.preview-media {
+  aspect-ratio: 16/9;
+  background-size: cover;
+  background-position: center;
+  position: relative;
+  background-color: var(--bg-sunken);
+}
+.preview-trailer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  opacity: 0;
+  transition: opacity var(--dur-slow) var(--ease-out);
+  pointer-events: none;
+}
+.preview-trailer.loaded { opacity: 1; }
+
+.preview-body { padding: var(--space-3) var(--space-4) var(--space-4); }
+.preview-title { font-weight: var(--weight-black); font-size: var(--text-base); }
+.preview-meta { font-size: var(--text-xs); color: var(--fg-faint); font-weight: var(--weight-bold); margin-top: .1rem; }
+.preview-desc {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  margin-top: var(--space-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ===== hero trailer (muted, behind content) ===== */
+
+.hero-trailer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: calc(100% + 220px);
+  top: -110px;
+  border: 0;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 1.2s var(--ease-out);
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+}
+.hero-trailer.loaded { opacity: .55; }
+
+/* ===== watch together ===== */
+
+.w2g-feed { margin-top: var(--space-3); display: flex; flex-direction: column; gap: .25rem; }
+.w2g-event { font-size: var(--text-xs); color: var(--fg-faint); font-weight: var(--weight-medium); }
 
 /* ===== watch page / player ===== */
 

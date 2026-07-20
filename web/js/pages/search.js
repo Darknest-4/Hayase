@@ -55,8 +55,57 @@ const PageSearch = {
       oninput: U.debounce(e => { state.search = e.target.value; reset() })
     })
 
+    // image search (trace.moe): button, paste or drop a frame anywhere
+    const imageSearch = async blob => {
+      results.replaceChildren(U.el('div', { class: 'spinner' }))
+      loadMoreWrap.replaceChildren()
+      try {
+        const res = await fetch('https://api.trace.moe/search?anilistInfo&cutBorders', { method: 'POST', body: blob })
+        if (!res.ok) throw new Error('trace.moe ' + res.status)
+        const json = await res.json()
+        const hits = (json.result ?? []).filter(r => r.similarity >= 0.8 && r.anilist?.id)
+        const ids = [...new Set(hits.map(r => r.anilist.id))].slice(0, 10)
+        if (!ids.length) {
+          results.replaceChildren(U.el('div', { class: 'empty-state', text: 'No confident match for that frame.' }))
+          return
+        }
+        const page = await API.search({ ids, perPage: 20 })
+        results.replaceChildren(C.grid(page.media ?? []))
+        U.toast(`Best match: ${Math.round(hits[0].similarity * 100)}% • episode ${hits[0].episode ?? '?'}`)
+      } catch (e) {
+        results.replaceChildren(U.el('div', { class: 'error-state', text: 'Image search failed: ' + e.message }))
+      }
+    }
+
+    const filePick = U.el('input', { type: 'file', accept: 'image/*', style: 'display:none;' })
+    filePick.addEventListener('change', () => { if (filePick.files[0]) imageSearch(filePick.files[0]) })
+    const imageBtn = U.el('button', { class: 'btn btn-ghost', title: 'Search by image (or paste/drop a frame)', onclick: () => filePick.click() }, [document.createTextNode('🖼 Image')])
+
+    const onPaste = e => {
+      const item = [...(e.clipboardData?.items ?? [])].find(i => i.type.startsWith('image/'))
+      if (item) imageSearch(item.getAsFile())
+    }
+    const onDrop = e => {
+      e.preventDefault()
+      const file = [...(e.dataTransfer?.files ?? [])].find(f => f.type.startsWith('image/'))
+      if (file) imageSearch(file)
+    }
+    document.addEventListener('paste', onPaste)
+    document.addEventListener('dragover', e => e.preventDefault())
+    document.addEventListener('drop', onDrop)
+    const cleanup = new MutationObserver(() => {
+      if (!document.body.contains(pad)) {
+        document.removeEventListener('paste', onPaste)
+        document.removeEventListener('drop', onDrop)
+        cleanup.disconnect()
+      }
+    })
+    cleanup.observe(document.getElementById('page'), { childList: true })
+
     pad.append(U.el('div', { class: 'filters' }, [
       U.el('div', { class: 'filter-group', style: 'flex-grow:1;' }, [U.el('label', { text: 'Search' }), searchInput]),
+      U.el('div', { class: 'filter-group' }, [U.el('label', { text: '\u00a0' }), imageBtn]),
+      filePick,
       mkSelect('Genre', 'genre', this.GENRES),
       mkSelect('Season', 'season', Object.keys(U.seasonMap), v => U.seasonMap[v]),
       mkSelect('Year', 'year', years),

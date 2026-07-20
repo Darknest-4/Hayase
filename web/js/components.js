@@ -33,11 +33,95 @@ const C = {
 
     const sub = subline ?? [U.format(media), U.seasonYear(media), media.episodes ? `${media.episodes} ep` : null].filter(Boolean).join(' • ')
 
-    return U.el('a', { class: 'card', href: `#/anime/${media.id}` }, [
+    const card = U.el('a', { class: 'card', href: `#/anime/${media.id}` }, [
       cover,
       U.el('div', { class: 'card-title', text: U.title(media) }),
       U.el('div', { class: 'card-sub', text: sub })
     ])
+    this._attachPreview(card, media)
+    return card
+  },
+
+  // ---- hover preview (like the original app's preview cards) ----
+  _preview: null,
+  _previewTimer: null,
+
+  _closePreview () {
+    clearTimeout(this._previewTimer)
+    this._previewTimer = null
+    this._preview?.remove()
+    this._preview = null
+  },
+
+  _attachPreview (card, media) {
+    if (!window.matchMedia('(hover: hover)').matches) return
+
+    card.addEventListener('pointerenter', () => {
+      clearTimeout(this._previewTimer)
+      this._previewTimer = setTimeout(() => this._openPreview(card, media), 500)
+    })
+    card.addEventListener('pointerleave', () => {
+      clearTimeout(this._previewTimer)
+      // small grace period so the pointer can travel onto the panel
+      this._previewTimer = setTimeout(() => {
+        if (!this._preview?.matches(':hover')) this._closePreview()
+      }, 150)
+    })
+  },
+
+  _openPreview (card, media) {
+    this._closePreview()
+    const entry = Store.entry(media.id)
+    const next = (entry?.progress ?? 0) + 1
+
+    const head = U.el('div', { class: 'preview-media' })
+    if (media.trailer?.id && media.trailer.site === 'youtube') {
+      const frame = U.el('iframe', {
+        class: 'preview-trailer',
+        src: `https://www.youtube-nocookie.com/embed/${media.trailer.id}?autoplay=1&mute=1&controls=0&rel=0&playsinline=1&loop=1&playlist=${media.trailer.id}`,
+        allow: 'autoplay',
+        title: 'trailer preview'
+      })
+      frame.addEventListener('load', () => frame.classList.add('loaded'))
+      head.append(frame)
+    }
+    if (media.bannerImage) head.style.backgroundImage = `url("${media.bannerImage}")`
+    else if (U.cover(media)) head.style.backgroundImage = `url("${U.cover(media)}")`
+
+    const meta = [U.format(media), U.seasonYear(media), media.episodes ? media.episodes + ' ep' : null, media.averageScore ? media.averageScore + '%' : null].filter(Boolean).join(' • ')
+
+    const panel = U.el('div', { class: 'preview-panel' }, [
+      head,
+      U.el('div', { class: 'preview-body' }, [
+        U.el('div', { class: 'preview-title', text: U.title(media) }),
+        U.el('div', { class: 'preview-meta', text: meta }),
+        U.el('div', { class: 'preview-desc', text: U.plainDesc(media.description) }),
+        U.el('div', { style: 'display:flex;gap:.5rem;margin-top:.6rem;' }, [
+          U.el('a', { class: 'btn btn-primary btn-sm', href: `#/watch/${media.id}:${next}`, onclick: () => this._closePreview() },
+            [U.svg(this.PLAY, 12), document.createTextNode(entry?.progress ? `Ep ${next}` : 'Watch')]),
+          entry
+            ? U.el('span', { class: 'badge badge-outline', style: 'align-self:center;', text: U.listStatusMap[entry.status] })
+            : U.el('button', {
+                class: 'btn btn-secondary btn-sm',
+                onclick: e => { Store.saveEntry(media, { status: 'PLANNING' }); U.toast('Added to Planning'); e.target.replaceWith(U.el('span', { class: 'badge badge-outline', text: 'Planning' })) }
+              }, [document.createTextNode('+ Add to list')])
+        ])
+      ])
+    ])
+
+    panel.addEventListener('pointerleave', () => this._closePreview())
+    panel.addEventListener('click', e => { if (e.target === panel) this._closePreview() })
+
+    document.body.append(panel)
+    const rect = card.getBoundingClientRect()
+    const width = 320
+    let left = rect.left + rect.width / 2 - width / 2
+    left = Math.max(8, Math.min(left, window.innerWidth - width - 8))
+    const top = Math.max(8, Math.min(rect.top - 40, window.innerHeight - 320))
+    panel.style.left = left + 'px'
+    panel.style.top = top + 'px'
+    this._preview = panel
+    requestAnimationFrame(() => panel.classList.add('open'))
   },
 
   skeletonCard () {

@@ -30,12 +30,14 @@ const PageWatch = {
 
     const total = media.episodes ?? (media.nextAiringEpisode ? media.nextAiringEpisode.episode - 1 : episode)
 
+    const w2gCode = params.get('w2g') ?? window.sessionStorage.getItem('w2g-pending')
+
     if (!src) {
       this.renderSourcePicker(root, media, episode)
       return
     }
 
-    this.renderPlayer(root, media, episode, total, decodeURIComponent(src))
+    this.renderPlayer(root, media, episode, total, decodeURIComponent(src), w2gCode)
   },
 
   // ---- source picker: shown when no stream URL was passed ----
@@ -98,7 +100,7 @@ const PageWatch = {
 
   // ---- the actual player ----
 
-  renderPlayer (root, media, episode, total, src) {
+  renderPlayer (root, media, episode, total, src, w2gCode = null) {
     const posKey = `watchpos:${media.id}:${episode}`
 
     const video = U.el('video', { class: 'player-video', src, autoplay: '', playsinline: '' })
@@ -287,6 +289,46 @@ const PageWatch = {
 
     // skip segments via AniSkip (community intro/outro data, by MAL id)
     this._loadSkips(media, episode, video, skipBtn)
+
+    // watch-together: relay play/pause/seek with the room
+    if (w2gCode) this._wireW2G(shell, video, w2gCode)
+  },
+
+  async _wireW2G (shell, video, code) {
+    /* global PageW2G */
+    const badge = U.el('span', { class: 'badge badge-theme', style: 'margin-left:.5rem;', text: '● syncing…' })
+    shell.querySelector('.player-ep-label')?.after(badge)
+
+    try {
+      await PageW2G.connect(code)
+    } catch (e) {
+      badge.textContent = '● sync failed'
+      U.toast('Watch Together: ' + e.message, 'error')
+      return
+    }
+    badge.textContent = '● room ' + code
+
+    let applying = false
+    const channel = 'w2g:' + code
+    const send = (action, position) => {
+      if (!applying) PageW2G.send({ type: 'w2g', channel, action, position })
+    }
+
+    video.addEventListener('play', () => send('play', video.currentTime))
+    video.addEventListener('pause', () => send('pause', video.currentTime))
+    video.addEventListener('seeked', () => send('seek', video.currentTime))
+
+    PageW2G.onMessage(msg => {
+      if (msg.type !== 'w2g' || !document.body.contains(shell)) return
+      applying = true
+      try {
+        if (msg.action === 'seek') video.currentTime = msg.position
+        if (msg.action === 'play') { if (Math.abs(video.currentTime - msg.position) > 2) video.currentTime = msg.position; video.play() }
+        if (msg.action === 'pause') video.pause()
+      } finally {
+        setTimeout(() => { applying = false }, 250)
+      }
+    })
   },
 
   _skips: null,
