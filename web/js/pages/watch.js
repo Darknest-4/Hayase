@@ -1,16 +1,18 @@
-/* global window, document, U, API, Store */
-// Watch page — full player UI: custom controls, keyboard shortcuts,
-// skip-intro/outro (AniSkip), resume positions and automatic progress
-// tracking. Plays any direct stream URL (extension/webseed/own file);
-// official external streams are linked out when AniList knows them.
+/* global window, document, localStorage, U, C, API, Store */
+// Watch page — classic anime-site layout: embedded 16:9 player up top,
+// prev/next + actions under it, numbered episode picker, episode info and
+// comments below. The player keeps custom controls, keyboard shortcuts,
+// AniSkip intro/outro skipping, resume positions, auto progress tracking
+// and Watch Together sync.
 
 const PageWatch = {
   async render (root, params, arg) {
-    // route: #/watch/{animeId}/{episode}?src=<encoded-url>
+    // route: #/watch/{animeId}:{episode}?src=<encoded-url>[&w2g=code]
     const [idPart, epPart] = (arg ?? '').split(':')
     const animeId = Number(idPart)
     const episode = Math.max(1, Number(epPart) || 1)
     const src = params.get('src')
+    const w2gCode = params.get('w2g') ?? window.sessionStorage.getItem('w2g-pending')
 
     if (!animeId) {
       root.append(U.el('div', { class: 'error-state', text: 'Invalid watch link.' }))
@@ -30,33 +32,96 @@ const PageWatch = {
 
     const total = media.episodes ?? (media.nextAiringEpisode ? media.nextAiringEpisode.episode - 1 : episode)
 
-    const w2gCode = params.get('w2g') ?? window.sessionStorage.getItem('w2g-pending')
-
-    if (!src) {
-      this.renderSourcePicker(root, media, episode)
-      return
-    }
-
-    this.renderPlayer(root, media, episode, total, decodeURIComponent(src), w2gCode)
-  },
-
-  // ---- source picker: shown when no stream URL was passed ----
-
-  renderSourcePicker (root, media, episode) {
-    const pad = U.el('div', { class: 'page-pad', style: 'max-width:52rem;' })
+    const pad = U.el('div', { class: 'page-pad watch-page' })
     root.append(pad)
 
+    // ---- header ----
     pad.append(
-      U.el('a', { class: 'player-back', href: `#/anime/${media.id}`, text: '‹ ' + U.title(media) }),
-      U.el('h1', { class: 'page-title', text: `Episode ${episode}` })
+      U.el('div', { class: 'watch-head' }, [
+        U.el('a', { class: 'player-back', href: `#/anime/${media.id}`, text: '‹ ' + U.title(media) }),
+        U.el('h1', { class: 'watch-title' }, [
+          document.createTextNode(`${episode}. rész`),
+          total ? U.el('span', { class: 'watch-total', text: ` / ${total}` }) : null
+        ])
+      ])
     )
 
-    // direct stream URL (what an extension / webseed / own server provides)
+    // ---- player box (or source picker inside the same frame) ----
+    const playerBox = U.el('div', { class: 'player-box' })
+    pad.append(playerBox)
+
+    if (src) {
+      this.mountPlayer(playerBox, media, episode, total, decodeURIComponent(src), w2gCode)
+    } else {
+      this.mountSourcePicker(playerBox, media, episode)
+    }
+
+    // ---- actions row under the player ----
+    const watched = (Store.entry(media.id)?.progress ?? 0) >= episode
+    const markBtn = U.el('button', {
+      class: 'btn btn-sm ' + (watched ? 'btn-theme' : 'btn-secondary'),
+      onclick: () => {
+        const progress = Store.entry(media.id)?.progress ?? 0
+        Store.setProgress(media, watched && progress === episode ? episode - 1 : episode)
+        U.toast(watched ? `Episode ${episode} unmarked` : `Episode ${episode} marked as watched`)
+        window.App.navigate()
+      }
+    }, [U.svg(C.CHECK, 13), document.createTextNode(watched ? 'Watched' : 'Mark watched')])
+
+    const keepSrc = src ? `?src=${encodeURIComponent(decodeURIComponent(src))}` : ''
+    pad.append(U.el('div', { class: 'watch-actions' }, [
+      U.el('a', {
+        class: 'btn btn-secondary btn-sm' + (episode <= 1 ? ' hidden' : ''),
+        href: `#/watch/${media.id}:${episode - 1}`
+      }, [document.createTextNode('‹ Previous')]),
+      U.el('a', {
+        class: 'btn btn-secondary btn-sm' + (episode >= total ? ' hidden' : ''),
+        href: `#/watch/${media.id}:${episode + 1}`
+      }, [document.createTextNode('Next ›')]),
+      U.el('div', { style: 'flex-grow:1;' }),
+      markBtn,
+      src ? U.el('a', { class: 'btn btn-ghost btn-sm', href: `#/watch/${media.id}:${episode}` }, [document.createTextNode('Change source')]) : null
+    ]))
+
+    // ---- numbered episode picker ----
+    if (total > 1) {
+      const progress = Store.entry(media.id)?.progress ?? 0
+      const grid = U.el('div', { class: 'ep-grid' })
+      for (let n = 1; n <= total; n++) {
+        grid.append(U.el('a', {
+          class: 'ep-num-btn' + (n === episode ? ' active' : '') + (n <= progress ? ' watched' : ''),
+          href: `#/watch/${media.id}:${n}${n === episode ? keepSrc : ''}`,
+          text: String(n)
+        }))
+      }
+      pad.append(U.el('h2', { class: 'detail-section-title', text: 'Episodes' }), grid)
+    }
+
+    // ---- episode metadata (title/summary/air date) ----
+    API.episodes(media).then(list => {
+      const ep = list[episode - 1]
+      if (!ep || (!ep.title && !ep.summary)) return
+      const info = U.el('div', { class: 'watch-ep-info' }, [
+        U.el('div', { class: 'episode-title', style: '-webkit-line-clamp:2;', text: `${episode}. ${ep.title ?? 'Episode ' + episode}` }),
+        ep.airdate ? U.el('div', { class: 'episode-meta', text: U.airDate(ep.airdate) + (ep.filler ? ' • FILLER' : '') }) : null,
+        ep.summary ? U.el('div', { class: 'watch-ep-summary', text: ep.summary }) : null
+      ])
+      const anchor = pad.querySelector('.ep-grid') ?? pad.querySelector('.watch-actions')
+      anchor.after(info)
+    }).catch(() => {})
+
+    // ---- comments ----
+    pad.append(C.commentsSection(media))
+  },
+
+  // ---- source picker inside the player frame ----
+
+  mountSourcePicker (box, media, episode) {
     const input = U.el('input', {
       class: 'input',
       type: 'url',
-      style: 'flex-grow:1;min-width:0;',
-      placeholder: 'https://… direct video stream (mp4 / webm / HLS-mp4)'
+      style: 'width:100%;',
+      placeholder: 'https://… direct video stream (mp4 / webm)'
     })
     const play = () => {
       const url = input.value.trim()
@@ -65,47 +130,31 @@ const PageWatch = {
     }
     input.addEventListener('keydown', e => { if (e.key === 'Enter') play() })
 
-    pad.append(U.el('div', { class: 'setting-card' }, [
-      U.el('h3', { text: 'Play a stream' }),
-      U.el('p', { text: 'Paste a direct video URL — from an extension source, a webseed, or your own server. The desktop client fills this automatically from torrent sources.' }),
-      U.el('div', { style: 'display:flex;gap:.6rem;' }, [
-        input,
-        U.el('button', { class: 'btn btn-primary', onclick: play }, [document.createTextNode('Play')])
-      ])
-    ]))
-
     const streams = (media.externalLinks ?? []).filter(l => l.type === 'STREAMING')
-    if (streams.length) {
-      pad.append(U.el('div', { class: 'setting-card' }, [
-        U.el('h3', { text: 'Official streams' }),
-        U.el('p', { text: 'Watch this episode on a licensed service.' }),
-        U.el('div', { class: 'badges' }, streams.map(link =>
-          U.el('a', { class: 'badge badge-theme', href: link.url, target: '_blank', rel: 'noopener', text: link.site })))
-      ]))
-    }
 
-    pad.append(U.el('div', { class: 'setting-card' }, [
-      U.el('h3', { text: 'Already watched elsewhere?' }),
-      U.el('p', { text: 'Mark the episode watched to keep your progress in sync.' }),
-      U.el('button', {
-        class: 'btn btn-secondary btn-sm',
-        onclick: () => {
-          Store.setProgress(media, episode)
-          U.toast(`Episode ${episode} marked as watched`)
-          window.location.hash = `#/anime/${media.id}`
-        }
-      }, [document.createTextNode(`Mark episode ${episode} watched`)])
+    box.append(U.el('div', { class: 'player-pick' }, [
+      U.el('div', { class: 'player-pick-inner' }, [
+        U.el('h3', { style: 'margin:0 0 .35rem;font-weight:800;', text: 'Pick a source' }),
+        U.el('p', { style: 'margin:0 0 .9rem;color:var(--fg-faint);font-size:.85rem;', text: 'Paste a direct stream URL — extensions and the desktop client fill this automatically from torrent sources.' }),
+        U.el('div', { style: 'display:flex;gap:.6rem;' }, [input, U.el('button', { class: 'btn btn-primary', onclick: play }, [document.createTextNode('Play')])]),
+        streams.length
+          ? U.el('div', { style: 'margin-top:1rem;' }, [
+              U.el('div', { style: 'font-size:.75rem;font-weight:800;color:var(--fg-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.4rem;', text: 'Official streams' }),
+              U.el('div', { class: 'badges' }, streams.map(link =>
+                U.el('a', { class: 'badge badge-theme', href: link.url, target: '_blank', rel: 'noopener', text: link.site })))
+            ])
+          : null
+      ])
     ]))
   },
 
-  // ---- the actual player ----
+  // ---- the embedded player ----
 
-  renderPlayer (root, media, episode, total, src, w2gCode = null) {
+  mountPlayer (box, media, episode, total, src, w2gCode = null) {
     const posKey = `watchpos:${media.id}:${episode}`
 
     const video = U.el('video', { class: 'player-video', src, autoplay: '', playsinline: '' })
 
-    // --- control elements ---
     const playBtn = U.el('button', { class: 'player-btn player-play', 'aria-label': 'Play/Pause' })
     const timeLabel = U.el('span', { class: 'player-time', text: '0:00 / 0:00' })
     const seekFill = U.el('div', { class: 'player-seek-fill' })
@@ -118,24 +167,6 @@ const PageWatch = {
     const fsBtn = U.el('button', { class: 'player-btn', text: '⛶', 'aria-label': 'Fullscreen', title: 'Fullscreen' })
     const skipBtn = U.el('button', { class: 'btn btn-primary btn-sm player-skip hidden', text: 'Skip intro' })
 
-    const fmt = s => {
-      if (!isFinite(s)) return '0:00'
-      const h = Math.floor(s / 3600); const m = Math.floor(s % 3600 / 60); const sec = Math.floor(s % 60)
-      return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(sec).padStart(2, '0')
-    }
-
-    // --- header / navigation ---
-    const prevBtn = U.el('a', {
-      class: 'btn btn-ghost btn-sm' + (episode <= 1 ? ' hidden' : ''),
-      href: `#/watch/${media.id}:${episode - 1}`,
-      text: '‹ Ep ' + (episode - 1)
-    })
-    const nextBtn = U.el('a', {
-      class: 'btn btn-ghost btn-sm' + (episode >= total ? ' hidden' : ''),
-      href: `#/watch/${media.id}:${episode + 1}`,
-      text: 'Ep ' + (episode + 1) + ' ›'
-    })
-
     const controls = U.el('div', { class: 'player-controls' }, [
       seekBar,
       U.el('div', { class: 'player-controls-row' }, [
@@ -145,23 +176,12 @@ const PageWatch = {
       ])
     ])
 
-    const shell = U.el('div', { class: 'player-shell' }, [
-      video,
-      U.el('div', { class: 'player-top' }, [
-        U.el('a', { class: 'player-back', href: `#/anime/${media.id}`, text: '‹ ' + U.title(media) }),
-        U.el('span', { class: 'player-ep-label', text: `Episode ${episode}${total ? ' / ' + total : ''}` }),
-        U.el('div', { style: 'flex-grow:1;' }),
-        prevBtn, nextBtn
-      ]),
-      skipBtn,
-      controls
-    ])
-    root.append(shell)
+    const shell = U.el('div', { class: 'player-shell' }, [video, skipBtn, controls])
+    box.append(shell)
 
     // --- state wiring ---
     const setPlayIcon = () => { playBtn.textContent = video.paused ? '▶' : '❚❚' }
     setPlayIcon()
-
     const togglePlay = () => { video.paused ? video.play() : video.pause() }
     playBtn.addEventListener('click', togglePlay)
     video.addEventListener('click', togglePlay)
@@ -169,10 +189,11 @@ const PageWatch = {
     video.addEventListener('pause', setPlayIcon)
 
     video.addEventListener('error', () => {
-      shell.replaceChildren(U.el('div', { class: 'error-state', style: 'margin:auto;', html:
-        `Could not play this stream. The URL may be offline, region-locked or an unsupported codec.<br><br>` }),
-      U.el('div', { style: 'text-align:center;' }, [
-        U.el('a', { class: 'btn btn-secondary btn-sm', href: `#/watch/${media.id}:${episode}` }, [document.createTextNode('Pick another source')])
+      shell.replaceChildren(U.el('div', { class: 'player-pick' }, [
+        U.el('div', { class: 'player-pick-inner', style: 'text-align:center;' }, [
+          U.el('p', { style: 'color:var(--danger);font-weight:700;', text: 'Could not play this stream — offline, region-locked or unsupported codec.' }),
+          U.el('a', { class: 'btn btn-secondary btn-sm', href: `#/watch/${media.id}:${episode}` }, [document.createTextNode('Pick another source')])
+        ])
       ]))
     })
 
@@ -182,16 +203,15 @@ const PageWatch = {
       if (saved > 5 && saved < video.duration - 10) video.currentTime = saved
     })
 
-    // time + seek + buffered
+    // time + seek + buffered + auto watched at 85%
     let completedFired = false
     video.addEventListener('timeupdate', () => {
       const { currentTime, duration } = video
-      timeLabel.textContent = `${fmt(currentTime)} / ${fmt(duration)}`
+      timeLabel.textContent = `${U.fmtTime(currentTime)} / ${U.fmtTime(duration)}`
       if (duration) seekFill.style.width = (currentTime / duration * 100) + '%'
       if (video.buffered.length && duration) {
         seekBuffer.style.width = (video.buffered.end(video.buffered.length - 1) / duration * 100) + '%'
       }
-      // 85% → progress tracked, same threshold as the backend
       if (!completedFired && duration && currentTime / duration >= 0.85) {
         completedFired = true
         Store.setProgress(media, episode)
@@ -200,21 +220,21 @@ const PageWatch = {
       this._updateSkip(skipBtn, video)
     })
 
-    // persist position every 5s while playing
+    // persist position; teardown when the page node leaves the DOM
     const saveTimer = setInterval(() => {
       if (!video.paused && video.currentTime > 5) localStorage.setItem(posKey, String(video.currentTime))
     }, 5000)
-    // cleared when the page node is removed (hash navigation replaces content)
     const observer = new MutationObserver(() => {
       if (!document.body.contains(shell)) {
         clearInterval(saveTimer)
         observer.disconnect()
+        document.removeEventListener('keydown', keys)
         video.pause()
         video.removeAttribute('src')
         video.load()
       }
     })
-    observer.observe(root.parentElement ?? document.body, { childList: true, subtree: true })
+    observer.observe(document.getElementById('page') ?? document.body, { childList: true, subtree: true })
 
     const seekTo = clientX => {
       const rect = seekBar.getBoundingClientRect()
@@ -230,7 +250,6 @@ const PageWatch = {
       seekBar.addEventListener('pointerup', up)
     })
 
-    // volume / mute
     volSlider.addEventListener('input', () => {
       video.volume = Number(volSlider.value)
       video.muted = video.volume === 0
@@ -241,7 +260,6 @@ const PageWatch = {
       muteBtn.textContent = video.muted ? '🔇' : '🔊'
     })
 
-    // speed cycle
     const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
     speedBtn.addEventListener('click', () => {
       const next = SPEEDS[(SPEEDS.indexOf(video.playbackRate) + 1) % SPEEDS.length]
@@ -249,7 +267,6 @@ const PageWatch = {
       speedBtn.textContent = next + '×'
     })
 
-    // PiP / fullscreen
     pipBtn.addEventListener('click', () => {
       if (document.pictureInPictureElement) document.exitPictureInPicture()
       else video.requestPictureInPicture?.().catch(() => U.toast('Picture-in-picture unavailable', 'error'))
@@ -259,7 +276,6 @@ const PageWatch = {
       else shell.requestFullscreen?.()
     })
 
-    // keyboard shortcuts (active while the player is on screen)
     const keys = e => {
       if (!document.body.contains(shell) || /^(input|textarea|select)$/i.test(document.activeElement?.tagName ?? '')) return
       switch (e.key.toLowerCase()) {
@@ -275,9 +291,8 @@ const PageWatch = {
       }
     }
     document.addEventListener('keydown', keys)
-    observer.observe(document.body, { childList: true, subtree: true })
 
-    // auto-hide controls
+    // auto-hide controls while playing
     let hideTimer
     const poke = () => {
       shell.classList.remove('player-idle')
@@ -287,17 +302,14 @@ const PageWatch = {
     shell.addEventListener('pointermove', poke)
     poke()
 
-    // skip segments via AniSkip (community intro/outro data, by MAL id)
     this._loadSkips(media, episode, video, skipBtn)
-
-    // watch-together: relay play/pause/seek with the room
-    if (w2gCode) this._wireW2G(shell, video, w2gCode)
+    if (w2gCode) this._wireW2G(box, video, w2gCode)
   },
 
-  async _wireW2G (shell, video, code) {
+  async _wireW2G (box, video, code) {
     /* global PageW2G */
-    const badge = U.el('span', { class: 'badge badge-theme', style: 'margin-left:.5rem;', text: '● syncing…' })
-    shell.querySelector('.player-ep-label')?.after(badge)
+    const badge = U.el('span', { class: 'badge badge-theme w2g-badge', text: '● syncing…' })
+    box.before(badge)
 
     try {
       await PageW2G.connect(code)
@@ -319,7 +331,7 @@ const PageWatch = {
     video.addEventListener('seeked', () => send('seek', video.currentTime))
 
     PageW2G.onMessage(msg => {
-      if (msg.type !== 'w2g' || !document.body.contains(shell)) return
+      if (msg.type !== 'w2g' || !document.body.contains(video)) return
       applying = true
       try {
         if (msg.action === 'seek') video.currentTime = msg.position

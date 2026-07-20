@@ -68,39 +68,63 @@ const PageAnime = {
       rel: 'noopener'
     }, [document.createTextNode('AniList ↗')]))
 
-    const stats = U.el('div', { class: 'stats-row' })
-    const statDefs = [
-      ['Score', media.averageScore ? media.averageScore + '%' : '—'],
-      ['Popularity', media.popularity?.toLocaleString() ?? '—'],
-      ['Favourites', media.favourites?.toLocaleString() ?? '—'],
-      ['Source', media.source ? media.source.replaceAll('_', ' ') : '—']
-    ]
+    // next-airing callout lives above the description when releasing
     if (media.nextAiringEpisode) {
-      statDefs.push(['Next episode', `Ep ${media.nextAiringEpisode.episode} ${U.relTime(new Date(media.nextAiringEpisode.airingAt * 1000))}`])
+      badges.append(U.el('span', { class: 'badge badge-theme', text: `Ep ${media.nextAiringEpisode.episode} ${U.relTime(new Date(media.nextAiringEpisode.airingAt * 1000))}` }))
     }
-    for (const [label, value] of statDefs) {
-      stats.append(U.el('div', {}, [U.el('b', { text: String(value) }), document.createTextNode(label)]))
-    }
+
+    // ---- left info panel (AniList/onianime-style data sheet) ----
+    const infoRows = [
+      ['Format', U.format(media)],
+      ['Episodes', media.episodes ?? (media.nextAiringEpisode ? (media.nextAiringEpisode.episode - 1) + '+' : '?')],
+      ['Duration', media.duration ? media.duration + ' min' : null],
+      ['Status', U.statusMap[media.status]],
+      ['Season', U.seasonYear(media)],
+      ['Studio', media.studios?.nodes?.[0]?.name],
+      ['Source', media.source ? media.source.replaceAll('_', ' ') : null],
+      ['Score', media.averageScore ? media.averageScore + '%' : null],
+      ['Popularity', media.popularity?.toLocaleString()],
+      ['Favourites', media.favourites?.toLocaleString()]
+    ].filter(([, v]) => v != null && v !== '')
+
+    const infoPanel = U.el('aside', { class: 'info-panel' }, [
+      U.el('div', { class: 'detail-cover' }, [U.el('img', { src: U.cover(media), alt: U.title(media) })]),
+      U.el('a', {
+        class: 'btn btn-primary',
+        style: 'width:100%;margin-top:.75rem;',
+        href: `#/watch/${media.id}:${(Store.entry(media.id)?.progress ?? 0) + 1}`
+      }, [U.svg(C.PLAY, 14), document.createTextNode('Watch now')]),
+      U.el('div', { class: 'info-rows' }, infoRows.map(([label, value]) =>
+        U.el('div', { class: 'info-row' }, [
+          U.el('span', { class: 'info-label', text: label }),
+          U.el('span', { class: 'info-value', text: String(value) })
+        ]))),
+      (media.synonyms ?? []).length
+        ? U.el('div', { class: 'info-rows' }, [
+            U.el('div', { class: 'info-label', style: 'margin-bottom:.35rem;', text: 'Alternative titles' }),
+            ...media.synonyms.slice(0, 5).map(syn => U.el('div', { class: 'info-alt', text: syn }))
+          ])
+        : null
+    ])
+
+    const body = U.el('div', { class: 'detail-body' })
 
     root.append(
       banner,
-      U.el('div', { class: 'detail-head' }, [
-        U.el('div', { class: 'detail-cover' }, [U.el('img', { src: U.cover(media), alt: U.title(media) })]),
-        U.el('div', { class: 'detail-info' }, [
+      U.el('div', { class: 'detail-grid' }, [
+        infoPanel,
+        U.el('div', { class: 'detail-main' }, [
           U.el('h1', { class: 'detail-title', text: U.title(media) }),
           U.el('div', { class: 'detail-native', text: media.title?.native ?? '' }),
           meta,
           badges,
           actions,
-          stats,
           desc,
-          descToggle
+          descToggle,
+          body
         ])
       ])
     )
-
-    const body = U.el('div', { class: 'detail-body' })
-    root.append(body)
 
     // ---- streaming links (official external streams from AniList) ----
     const streams = (media.externalLinks ?? []).filter(l => l.type === 'STREAMING')
