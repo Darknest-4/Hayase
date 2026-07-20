@@ -133,7 +133,10 @@ const Store = {
       format: media.format,
       status: media.status,
       episodes: media.episodes,
+      duration: media.duration,
       averageScore: media.averageScore,
+      genres: media.genres ?? [],
+      studios: media.studios ? { nodes: (media.studios.nodes ?? []).slice(0, 1) } : undefined,
       season: media.season,
       seasonYear: media.seasonYear,
       startDate: media.startDate,
@@ -201,6 +204,129 @@ const Store = {
       .map(e => e.media.id)
   },
 
+  // ---- notifications ----
+  // Per-profile notification inbox. Some notifications are *generated* from
+  // local state (airing episodes, stalled continue-watching, achievement
+  // unlocks) with stable ids so their read/dismissed flags survive re-sync;
+  // read/dismissed state is stored separately keyed by notification id.
+
+  _notifState () {
+    return this._read(this._profileKey('notif-state'), { read: {}, dismissed: {}, seenAch: null })
+  },
+
+  _saveNotifState (state) {
+    this._write(this._profileKey('notif-state'), state)
+  },
+
+  // regenerate the notification set from current local data, preserving flags
+  syncNotifications () {
+    const state = this._notifState()
+    const now = Date.now()
+    const items = []
+
+    // 1) airing episodes for anime in the library
+    for (const entry of Object.values(this.list())) {
+      const media = entry.media
+      const air = media?.nextAiringEpisode
+      if (!air?.airingAt) continue
+      const at = air.airingAt * 1000
+      const soon = at - now < 3 * 86400000 // within 3 days (future) …
+      const recent = now - at < 2 * 86400000 // … or aired in the last 2 days
+      if (!soon && !recent) continue
+      const future = at > now
+      items.push({
+        id: `airing:${media.id}:${air.episode}`,
+        type: 'airing',
+        icon: '📺',
+        title: U.title(media),
+        body: future ? `Episode ${air.episode} airs ${U.relTime(new Date(at))}` : `Episode ${air.episode} just aired`,
+        mediaId: media.id,
+        href: `#/anime/${media.id}`,
+        at
+      })
+    }
+
+    // 2) stalled "continue watching" — started but untouched for 10+ days
+    for (const entry of Object.values(this.list())) {
+      if (entry.status !== 'CURRENT' && entry.status !== 'REPEATING') continue
+      if (!entry.progress) continue
+      const idle = now - (entry.updatedAt ?? now)
+      if (idle < 10 * 86400000) continue
+      items.push({
+        id: `resume:${entry.media.id}:${entry.progress}`,
+        type: 'resume',
+        icon: '⏳',
+        title: entry.media && U.title(entry.media),
+        body: `You left off at episode ${entry.progress} — pick it back up?`,
+        mediaId: entry.media.id,
+        href: `#/watch/${entry.media.id}:${entry.progress + 1}`,
+        at: entry.updatedAt ?? now
+      })
+    }
+
+    // 3) achievement unlocks (diff against last-seen snapshot)
+    if (window.PageAchievements) {
+      const unlocked = window.PageAchievements.unlockedSlugs()
+      const seen = state.seenAch
+      for (const slug of unlocked) {
+        const meta = window.PageAchievements.meta(slug)
+        if (!meta) continue
+        // once seen, keep showing as a (read) notification so the log persists
+        items.push({
+          id: `ach:${slug}`,
+          type: 'achievement',
+          icon: meta.icon,
+          title: 'Achievement unlocked',
+          body: `${meta.name} — ${meta.desc}`,
+          href: '#/achievements',
+          at: now,
+          // brand-new unlocks (not in the previous snapshot) start unread
+          fresh: seen !== null && !seen.includes(slug)
+        })
+      }
+      state.seenAch = unlocked
+      this._saveNotifState(state)
+    }
+
+    // honour per-type notification preferences (Settings › Notifications)
+    const prefs = this.settings().notifPrefs ?? { airing: true, resume: true, achievement: true }
+
+    // apply persisted read/dismissed flags
+    return items
+      .filter(n => prefs[n.type] !== false)
+      .filter(n => !state.dismissed[n.id])
+      .map(n => ({ ...n, read: n.fresh ? false : (state.read[n.id] ?? n.type === 'achievement') }))
+      .sort((a, b) => b.at - a.at)
+  },
+
+  unreadCount () {
+    return this.syncNotifications().filter(n => !n.read).length
+  },
+
+  markNotificationRead (id) {
+    const state = this._notifState()
+    state.read[id] = true
+    this._saveNotifState(state)
+  },
+
+  markAllNotificationsRead () {
+    const state = this._notifState()
+    for (const n of this.syncNotifications()) state.read[n.id] = true
+    this._saveNotifState(state)
+  },
+
+  dismissNotification (id) {
+    const state = this._notifState()
+    state.dismissed[id] = true
+    this._saveNotifState(state)
+  },
+
+  clearNotifications () {
+    const state = this._notifState()
+    for (const n of this.syncNotifications()) state.dismissed[n.id] = true
+    this._saveNotifState(state)
+  },
+
   // ---- favourites ----
 
   favourites () {
@@ -223,14 +349,41 @@ const Store = {
   // ---- theme ----
 
   applyTheme () {
-    // Yume design tokens: dark is the :root default, light is [data-theme='light'].
-    // Older saved values ('default', 'catppuccin') map to dark.
-    const { theme } = this.settings()
-    if (theme === 'light') {
-      document.documentElement.setAttribute('data-theme', 'light')
-    } else {
-      document.documentElement.removeAttribute('data-theme')
+    // Theme engine: a base (dark | light) plus an optional custom accent.
+    // dark is the :root default, light is [data-theme='light']. Legacy
+    // saved values ('default'/'catppuccin' -> dark, 'light' -> light base).
+    const s = this.settings()
+    const base = s.themeBase ?? (s.theme === 'light' ? 'light' : 'dark')
+    if (base === 'light') document.documentElement.setAttribute('data-theme', 'light')
+    else document.documentElement.removeAttribute('data-theme')
+
+    // accent + surface tint overrides via a single injected <style>
+    let style = document.getElementById('theme-overrides')
+    if (!style) {
+      style = document.createElement('style')
+      style.id = 'theme-overrides'
+      document.head.append(style)
     }
+    const rules = []
+    if (s.themeAccent) {
+      rules.push(`--accent:${s.themeAccent}`)
+      rules.push(`--accent-hover:color-mix(in srgb, ${s.themeAccent} 82%, #000)`)
+      rules.push(`--accent-soft:color-mix(in srgb, ${s.themeAccent} 14%, transparent)`)
+    }
+    if (s.themeTint) {
+      // subtly tint the raised surfaces toward the accent for a richer look
+      rules.push(`--bg-raised:color-mix(in srgb, ${s.themeAccent ?? 'var(--accent)'} 6%, var(--bg))`)
+    }
+    style.textContent = rules.length ? `:root, [data-theme='light'] { ${rules.join(';')} }` : ''
+  },
+
+  setTheme ({ base, accent, tint } = {}) {
+    const patch = {}
+    if (base !== undefined) { patch.themeBase = base; patch.theme = base } // keep legacy key in sync
+    if (accent !== undefined) patch.themeAccent = accent || undefined
+    if (tint !== undefined) patch.themeTint = tint
+    this.saveSettings(patch)
+    this.applyTheme()
   },
 
   clearCache () {
