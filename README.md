@@ -35,26 +35,323 @@ URL-pasted plugins. Two ideas are inherited and kept sacred:
 
 ## Screenshots
 
-Every page and feature of the web client — the platform features
-(accounts, comments, store, admin, developer portal) are captured running
-against the live API + PostgreSQL. Full gallery in
+Every page and feature of the web client, in **desktop and mobile** layouts.
+Platform features (accounts, comments, store, admin, developer portal) are
+captured running against the live API + PostgreSQL; anime metadata is mocked
+for reproducible shots. Click any section below to expand it. Full gallery in
 [`docs/screenshots/`](docs/screenshots/).
 
-| | |
-|---|---|
-| **Home** — hero, Continue Watching + curated rails<br>![Home](docs/screenshots/01-home.png) | **Search** — full-text + filters (genre/season/year/format/status/sort)<br>![Search](docs/screenshots/02-search.png) |
-| **Hover preview** — trailer + quick actions on card hover<br>![Preview](docs/screenshots/01b-hover-preview.png) | **Anime detail** — banner, stats, list controls, genres<br>![Detail](docs/screenshots/03-anime-detail.png) |
-| **Episodes** — Hayase-style rows: thumbs, air dates, filler, watched toggles<br>![Episodes](docs/screenshots/04-episodes.png) | **Watch Together** — rooms with live playback sync<br>![W2G](docs/screenshots/10b-watch-together.png) |
-| **Comments** — threaded, spoiler-aware, likes, reports<br>![Comments](docs/screenshots/05-comments.png) | **Watch** — custom player, Skip intro (AniSkip), progress tracking<br>![Watch](docs/screenshots/06-watch-player.png) |
-| **Schedule** — weekly airing calendar<br>![Schedule](docs/screenshots/07-schedule.png) | **Library** — statuses, progress controls, favourites<br>![Library](docs/screenshots/08-library.png) |
-| **Profile** — XP/level, watch stats, library breakdown<br>![Profile](docs/screenshots/09-profile.png) | **Community** — live discussion feed (Yume API)<br>![Community](docs/screenshots/10-community.png) |
-| **Extension Store** — live registry with ratings + verified devs<br>![Store](docs/screenshots/11-extension-store.png) | **Developer Portal** — listings + review status<br>![Dev portal](docs/screenshots/12-developer-portal.png) |
-| **Developer analytics** — installs, errors, version pipeline<br>![Dev analytics](docs/screenshots/13-developer-analytics.png) | **Admin overview** — users, watch stats, trending, job health<br>![Admin](docs/screenshots/14-admin-overview.png) |
-| **Admin users** — search, suspend/ban/restore<br>![Admin users](docs/screenshots/15-admin-users.png) | **Settings** — categorized tabs (account, appearance, content, notifications, data)<br>![Settings](docs/screenshots/16-settings.png) |
-| **Quick search** — Ctrl+K palette<br>![Quick search](docs/screenshots/17-quick-search.png) | **Light theme** — same tokens, one attribute flip<br>![Light](docs/screenshots/18-light-theme.png) |
-| **Mobile** — bottom navigation layout<br>![Mobile](docs/screenshots/19-mobile-home.png) | **Dashboard** — customizable widget landing page<br>![Dashboard](docs/screenshots/20-dashboard.png) |
-| **Analytics** — personal viewing charts (activity, genres, studios)<br>![Analytics](docs/screenshots/21-analytics.png) | **Achievements** — tiered catalogue with XP/levels<br>![Achievements](docs/screenshots/22-achievements.png) |
-| **Notifications** — filterable inbox (airing, resume, achievements)<br>![Notifications](docs/screenshots/23-notifications.png) | **Theme Engine** — accent presets + custom colour, live preview<br>![Theme Engine](docs/screenshots/24-theme-engine.png) |
+<details>
+<summary><b>🏠 Home</b> — hero, Continue Watching + curated rails</summary>
+
+<br>
+
+![🏠 Home — desktop](docs/screenshots/01-home.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/01-home-mobile.png" alt="🏠 Home — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>📊 Dashboard</b> — customizable widget landing page (drag-free reorder + toggle)</summary>
+
+<br>
+
+![📊 Dashboard — desktop](docs/screenshots/02-dashboard.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/02-dashboard-mobile.png" alt="📊 Dashboard — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>🔍 Search</b> — full-text search with genre / season / year / format / status / sort filters</summary>
+
+<br>
+
+![🔍 Search — desktop](docs/screenshots/03-search.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/03-search-mobile.png" alt="🔍 Search — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>📺 Anime detail</b> — banner, stats, list controls, genres & spoiler-aware tags</summary>
+
+<br>
+
+![📺 Anime detail — desktop](docs/screenshots/04-anime-detail.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/04-anime-detail-mobile.png" alt="📺 Anime detail — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>🎬 Episodes</b> — Hayase-style rows: thumbnails, air dates, filler flags, watched toggles</summary>
+
+<br>
+
+![🎬 Episodes — desktop](docs/screenshots/05-episodes.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/05-episodes-mobile.png" alt="🎬 Episodes — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>💬 Comments</b> — threaded, spoiler-aware, likes and reports</summary>
+
+<br>
+
+![💬 Comments — desktop](docs/screenshots/06-comments.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/06-comments-mobile.png" alt="💬 Comments — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>▶️ Watch</b> — embedded player, Skip intro (AniSkip), progress tracking</summary>
+
+<br>
+
+![▶️ Watch — desktop](docs/screenshots/07-watch.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/07-watch-mobile.png" alt="▶️ Watch — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>🗓️ Schedule</b> — weekly airing calendar</summary>
+
+<br>
+
+![🗓️ Schedule — desktop](docs/screenshots/08-schedule.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/08-schedule-mobile.png" alt="🗓️ Schedule — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>📚 Library</b> — statuses, progress controls, favourites</summary>
+
+<br>
+
+![📚 Library — desktop](docs/screenshots/09-library.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/09-library-mobile.png" alt="📚 Library — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>⏳ Watch History</b> — per-profile chronological log grouped by day</summary>
+
+<br>
+
+![⏳ Watch History — desktop](docs/screenshots/10-history.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/10-history-mobile.png" alt="⏳ Watch History — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>👤 Profile</b> — XP / level, watch stats, library breakdown</summary>
+
+<br>
+
+![👤 Profile — desktop](docs/screenshots/11-profile.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/11-profile-mobile.png" alt="👤 Profile — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>🎭 Profiles</b> — Netflix-style “who’s watching” picker (per-profile data)</summary>
+
+<br>
+
+![🎭 Profiles — desktop](docs/screenshots/12-profiles.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/12-profiles-mobile.png" alt="🎭 Profiles — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>📈 Analytics</b> — personal viewing charts — activity, genres, formats, studios, scores</summary>
+
+<br>
+
+![📈 Analytics — desktop](docs/screenshots/13-analytics.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/13-analytics-mobile.png" alt="📈 Analytics — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>🏆 Achievements</b> — tiered catalogue with progress bars and XP / levels</summary>
+
+<br>
+
+![🏆 Achievements — desktop](docs/screenshots/14-achievements.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/14-achievements-mobile.png" alt="🏆 Achievements — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>🔔 Notifications</b> — filterable inbox (airing, continue-watching, achievements)</summary>
+
+<br>
+
+![🔔 Notifications — desktop](docs/screenshots/15-notifications.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/15-notifications-mobile.png" alt="🔔 Notifications — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>🗨️ Community</b> — live discussion feed (Yume API + WebSocket)</summary>
+
+<br>
+
+![🗨️ Community — desktop](docs/screenshots/16-community.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/16-community-mobile.png" alt="🗨️ Community — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>👥 Watch Together</b> — synced rooms with shared playback</summary>
+
+<br>
+
+![👥 Watch Together — desktop](docs/screenshots/17-watch-together.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/17-watch-together-mobile.png" alt="👥 Watch Together — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>🧩 Extension Store</b> — live registry with ratings and verified developers</summary>
+
+<br>
+
+![🧩 Extension Store — desktop](docs/screenshots/18-extension-store.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/18-extension-store-mobile.png" alt="🧩 Extension Store — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>🛠️ Developer Portal</b> — listings, review status and per-version analytics</summary>
+
+<br>
+
+![🛠️ Developer Portal — desktop](docs/screenshots/19-developer.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/19-developer-mobile.png" alt="🛠️ Developer Portal — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>🛡️ Admin</b> — users, watch stats, trending, job-queue health, reports</summary>
+
+<br>
+
+![🛡️ Admin — desktop](docs/screenshots/20-admin.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/20-admin-mobile.png" alt="🛡️ Admin — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>🎨 Theme Engine</b> — accent presets + custom colour with a live preview</summary>
+
+<br>
+
+![🎨 Theme Engine — desktop](docs/screenshots/21-theme-engine.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/21-theme-engine-mobile.png" alt="🎨 Theme Engine — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>⚙️ Settings</b> — categorized tabs — account, appearance, content, notifications, data</summary>
+
+<br>
+
+![⚙️ Settings — desktop](docs/screenshots/22-settings.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/22-settings-mobile.png" alt="⚙️ Settings — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>⌨️ Quick search</b> — Ctrl+K command palette</summary>
+
+<br>
+
+![⌨️ Quick search — desktop](docs/screenshots/23-quick-search.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/23-quick-search-mobile.png" alt="⌨️ Quick search — mobile" width="300">
+
+</details>
+
+<details>
+<summary><b>☀️ Light theme</b> — the same design tokens, one attribute flip</summary>
+
+<br>
+
+![☀️ Light theme — desktop](docs/screenshots/24-light-theme.png)
+
+<sub>📱 Mobile</sub>
+
+<img src="docs/screenshots/24-light-theme-mobile.png" alt="☀️ Light theme — mobile" width="300">
+
+</details>
 
 ## Quick start
 
