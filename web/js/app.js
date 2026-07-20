@@ -11,6 +11,11 @@ const App = {
     profile: (root, params) => PageProfile.render(root, params),
     profiles: (root, params) => PageProfiles.render(root, params),
     history: (root, params) => PageHistory.render(root, params),
+    analytics: (root, params) => PageAnalytics.render(root, params),
+    achievements: (root, params) => PageAchievements.render(root, params),
+    notifications: (root, params) => PageNotifications.render(root, params),
+    themes: (root, params) => PageThemes.render(root, params),
+    dashboard: (root, params) => PageDashboard.render(root, params),
     community: (root, params) => PageCommunity.render(root, params),
     w2g: (root, params, arg) => PageW2G.render(root, params, arg),
     watch: (root, params, arg) => PageWatch.render(root, params, arg),
@@ -142,6 +147,15 @@ const App = {
     if (el && p) el.textContent = p.avatar ?? p.name.slice(0, 1).toUpperCase()
   },
 
+  refreshNotifBadge () {
+    const badge = document.getElementById('notif-badge')
+    if (!badge) return
+    let count = 0
+    try { count = Store.unreadCount() } catch (e) { /* no data */ }
+    badge.textContent = count > 9 ? '9+' : String(count)
+    badge.classList.toggle('hidden', count === 0)
+  },
+
   initProfileSwitcher () {
     const btn = document.getElementById('profile-switcher')
     if (!btn) return
@@ -163,6 +177,8 @@ const App = {
         ])),
         U.el('div', { class: 'profile-menu-sep' }),
         U.el('a', { class: 'profile-menu-item', href: '#/profile', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '📊' }), document.createTextNode('View profile & stats')]),
+        U.el('a', { class: 'profile-menu-item', href: '#/analytics', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '📈' }), document.createTextNode('Analytics')]),
+        U.el('a', { class: 'profile-menu-item', href: '#/achievements', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '🏆' }), document.createTextNode('Achievements')]),
         U.el('a', { class: 'profile-menu-item', href: '#/profiles?manage=1', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '⚙' }), document.createTextNode('Manage profiles')]),
         U.el('a', { class: 'profile-menu-item', href: '#/profiles', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '🔄' }), document.createTextNode('Switch profile')])
       ])
@@ -179,6 +195,7 @@ const App = {
     Store.ensureProfiles()
     Store.applyTheme()
     this.refreshProfileAvatar()
+    this.refreshNotifBadge()
     this.initProfileSwitcher()
     // icon-rail sidebar: hidden labels become native tooltips
     document.querySelectorAll('.sidebar-btn').forEach(btn => {
@@ -192,4 +209,5 @@ const App = {
   }
 }
 
+window.App = App
 App.init()

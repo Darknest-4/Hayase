@@ -37,6 +37,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
         <span>Home</span>
       </a>
+      <a class="sidebar-btn" href="#/dashboard" data-route="dashboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+        <span>Dashboard</span>
+      </a>
       <a class="sidebar-btn" href="#/search" data-route="search">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <span>Search</span>
@@ -60,6 +64,11 @@
       <a class="sidebar-btn" href="#/history" data-route="history">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
         <span>History</span>
+      </a>
+      <a class="sidebar-btn" href="#/notifications" data-route="notifications">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        <span>Notifications</span>
+        <span class="notif-badge hidden" id="notif-badge"></span>
       </a>
       <a class="sidebar-btn" href="#/extensions" data-route="extensions">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M17.5 13v8M13.5 17h8"/></svg>
@@ -106,6 +115,7 @@
   <script src="js/api.js"></script>
   <script src="js/yume-api.js"></script>
   <script src="js/components.js"></script>
+  <script src="js/charts.js"></script>
   <script src="js/pages/home.js"></script>
   <script src="js/pages/search.js"></script>
   <script src="js/pages/anime.js"></script>
@@ -117,6 +127,11 @@
   <script src="js/pages/profile.js"></script>
   <script src="js/pages/profiles.js"></script>
   <script src="js/pages/history.js"></script>
+  <script src="js/pages/analytics.js"></script>
+  <script src="js/pages/achievements.js"></script>
+  <script src="js/pages/notifications.js"></script>
+  <script src="js/pages/themes.js"></script>
+  <script src="js/pages/dashboard.js"></script>
   <script src="js/pages/extensions.js"></script>
   <script src="js/pages/developer.js"></script>
   <script src="js/pages/admin.js"></script>
