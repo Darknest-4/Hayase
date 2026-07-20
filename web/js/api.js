@@ -110,6 +110,7 @@ const API = {
         query ($id: Int) {
           Media(id: $id, type: ANIME) {
             ...med
+            tags { name rank isMediaSpoiler isGeneralSpoiler isAdult }
             source
             countryOfOrigin
             favourites
