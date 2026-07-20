@@ -59,27 +59,64 @@ const PageAnime = {
         : null
     ])
 
-    const desc = U.el('div', { class: 'detail-desc clamped', text: U.plainDesc(media.description) })
-    desc.addEventListener('click', () => desc.classList.toggle('clamped'))
+    // star rating badge (reference: "★ 9.08")
+    const starRow = media.averageScore
+      ? U.el('div', { class: 'score-badges' }, [
+          U.el('span', { class: 'score-star' }, [
+            U.svg('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="currentColor" stroke="none"/>', 13),
+            document.createTextNode((media.averageScore / 10).toFixed(2))
+          ]),
+          media.favourites ? U.el('span', { class: 'score-favs', text: `${media.favourites.toLocaleString()} favourites` }) : null
+        ])
+      : null
+
+    const descText = U.plainDesc(media.description)
+    const desc = U.el('div', { class: 'detail-desc clamped', text: descText })
+    const moreBtn = descText.length > 220
+      ? U.el('button', {
+          class: 'showmore',
+          onclick: e => {
+            const clamped = desc.classList.toggle('clamped')
+            e.currentTarget.textContent = clamped ? 'Show more ⌄' : 'Show less ⌃'
+          }
+        }, [document.createTextNode('Show more ⌄')])
+      : null
 
     wrap.append(U.el('div', { class: 'detail-hero-row' }, [
       U.el('div', { class: 'detail-cover' }, [U.el('img', { src: U.cover(media), alt: mainTitle })]),
       U.el('div', { class: 'detail-headings' }, [
-        secondary ? U.el('h2', { class: 'detail-secondary', text: secondary }) : null,
         U.el('h1', { class: 'detail-title', text: mainTitle }),
+        secondary ? U.el('h2', { class: 'detail-secondary', style: 'margin-top:.1rem;', text: secondary }) : null,
+        starRow,
         chips,
-        desc
+        desc,
+        moreBtn
       ])
     ]))
 
-    // ---- action row: tinted Play + entry editor + icon buttons ----
-    const nextEp = (Store.entry(media.id)?.progress ?? 0) + 1
-    const actions = U.el('div', { class: 'detail-actions-row' })
+    // ---- action row: Continue Watching + list editor + icon buttons ----
+    const progress = Store.entry(media.id)?.progress ?? 0
+    // resume mid-episode? point at it; otherwise the next unwatched episode
+    const resumeNextEp = Store.getResume(media.id, progress + 1)
+    const resumeCurEp = progress > 0 ? Store.getResume(media.id, progress) : 0
+    const targetEp = resumeNextEp || !resumeCurEp ? progress + 1 : progress
+    const resumeAt = resumeNextEp || resumeCurEp
+    const estTotal = (media.duration || 24) * 60
 
+    const playLabel = progress || resumeAt ? 'Continue Watching' : 'Start Watching'
+    const playSub = resumeAt
+      ? `Episode ${targetEp} • ${U.fmtTime(resumeAt)} / ${U.fmtTime(estTotal)}`
+      : `Episode ${targetEp}`
+
+    const actions = U.el('div', { class: 'detail-actions-row' })
     const playGroup = U.el('div', { class: 'play-group' }, [
-      U.el('a', { class: 'play-btn', href: `#/watch/${media.id}:${nextEp}` }, [
-        U.svg(C.PLAY, 15),
-        document.createTextNode(Store.entry(media.id)?.progress ? ` Ep ${nextEp}` : ' Play')
+      U.el('a', { class: 'play-btn play-btn-rich', href: `#/watch/${media.id}:${targetEp}` }, [
+        U.svg(C.PLAY, 16),
+        U.el('span', { class: 'play-btn-text' }, [
+          U.el('b', { text: playLabel }),
+          U.el('small', { text: playSub })
+        ]),
+        resumeAt ? U.el('span', { class: 'play-btn-bar' }, [U.el('span', { style: `width:${Math.min(100, resumeAt / estTotal * 100)}%;` })]) : null
       ]),
       this.entrySelect(media)
     ])
@@ -143,21 +180,22 @@ const PageAnime = {
 
     wrap.append(actions)
 
-    // ---- genre + tag chips row (scrollable) ----
+    // ---- genre chips row (tags live in the sidebar card) ----
     const chipScroll = U.el('div', { class: 'chips-scroll' })
     for (const genre of media.genres ?? []) {
       chipScroll.append(U.el('a', { class: 'genre-chip', href: `#/search?genre=${encodeURIComponent(genre)}`, text: genre }))
     }
-    const tags = (media.tags ?? []).slice().sort((a, b) => (b?.rank ?? 0) - (a?.rank ?? 0))
-    for (const tag of tags.slice(0, 20)) {
-      if (!tag?.name || tag.isAdult) continue
-      const spoiler = tag.isMediaSpoiler || tag.isGeneralSpoiler
-      chipScroll.append(U.el('span', { class: 'tag-chip' + (spoiler ? ' spoiler' : ''), title: tag.rank ? tag.rank + '%' : null, text: tag.name }))
-    }
     if (chipScroll.children.length) wrap.append(chipScroll)
 
-    // ---- tabs: Episodes | Relations | Comments | Recommendations ----
-    const tabDefs = [['episodes', 'Episodes'], ['relations', 'Relations'], ['comments', 'Comments'], ['recommendations', 'Recommendations']]
+    // ---- underline tabs with icons ----
+    const TAB_ICONS = {
+      episodes: '<polygon points="6 3 20 12 6 21 6 3"/>',
+      relations: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="10.5" x2="15.4" y2="6.5"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/>',
+      characters: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+      comments: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+      recommendations: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>'
+    }
+    const tabDefs = [['episodes', 'Episodes'], ['relations', 'Relations'], ['characters', 'Characters'], ['comments', 'Comments'], ['recommendations', 'Recommendations']]
     const tabBar = U.el('div', { class: 'dtabs' })
     const tabContent = U.el('div', { class: 'dtab-content' })
     const rendered = {}
@@ -173,7 +211,10 @@ const PageAnime = {
     }
 
     for (const [name, label] of tabDefs) {
-      tabBar.append(U.el('button', { class: 'dtab', dataset: { tab: name }, text: label, onclick: () => select(name) }))
+      tabBar.append(U.el('button', { class: 'dtab', dataset: { tab: name }, onclick: () => select(name) }, [
+        U.svg(TAB_ICONS[name], 14),
+        document.createTextNode(label)
+      ]))
     }
 
     // two-column body: tabs on the left, info sidebar on the right
@@ -217,13 +258,36 @@ const PageAnime = {
     ].filter(([, v]) => v)
 
     side.append(U.el('div', { class: 'side-card' }, [
-      U.el('h3', { class: 'side-card-title', text: 'Details' }),
+      U.el('h3', { class: 'side-card-title', text: 'Information' }),
       U.el('div', { class: 'side-rows' }, rows.map(([label, value]) =>
         U.el('div', { class: 'side-row' }, [
           U.el('span', { class: 'side-row-label', text: label }),
           U.el('span', { class: 'side-row-value', text: value })
         ])))
     ]))
+
+    // your progress ring (only when the anime is on the list)
+    const entry = Store.entry(media.id)
+    if (entry && media.episodes) {
+      const done = entry.progress ?? 0
+      const pct = Math.min(100, Math.round(done / media.episodes * 100))
+      side.append(U.el('div', { class: 'side-card' }, [
+        U.el('h3', { class: 'side-card-title', text: 'Your Progress' }),
+        U.el('div', { class: 'side-progress' }, [
+          U.el('div', { class: 'side-ring', style: `--pct:${pct};` }, [
+            U.el('div', { class: 'side-ring-inner' }, [
+              U.el('b', { text: `${done} of ${media.episodes}` }),
+              U.el('span', { text: 'episodes' })
+            ])
+          ]),
+          U.el('div', { class: 'side-rows', style: 'flex-grow:1;' }, [
+            U.el('div', { class: 'side-row' }, [U.el('span', { class: 'side-row-label', text: 'Status' }), U.el('span', { class: 'side-row-value', text: U.listStatusMap[entry.status] ?? '—' })]),
+            entry.score ? U.el('div', { class: 'side-row' }, [U.el('span', { class: 'side-row-label', text: 'Your score' }), U.el('span', { class: 'side-row-value', text: entry.score + '/10' })]) : null,
+            Store.isFavourite(media.id) ? U.el('div', { class: 'side-row' }, [U.el('span', { class: 'side-row-label', text: 'Favourite' }), U.el('span', { class: 'side-row-value', text: '❤' })]) : null
+          ])
+        ])
+      ]))
+    }
 
     // official streaming links
     const streams = (media.externalLinks ?? []).filter(l => l.type === 'STREAMING')
@@ -235,6 +299,21 @@ const PageAnime = {
             U.el('span', { class: 'side-stream-dot', style: link.color ? `background:${link.color};` : null }),
             document.createTextNode(link.site)
           ])))
+      ]))
+    }
+
+    // tags card (spoilers blurred until hover)
+    const tags = (media.tags ?? []).filter(t => t?.name && !t.isAdult)
+      .sort((a, b) => (b?.rank ?? 0) - (a?.rank ?? 0)).slice(0, 14)
+    if (tags.length) {
+      side.append(U.el('div', { class: 'side-card' }, [
+        U.el('h3', { class: 'side-card-title', text: 'Tags' }),
+        U.el('div', { class: 'side-tags' }, tags.map(tag =>
+          U.el('span', {
+            class: 'tag-chip' + (tag.isMediaSpoiler || tag.isGeneralSpoiler ? ' spoiler' : ''),
+            title: tag.rank ? tag.rank + '%' : null,
+            text: tag.name
+          })))
       ]))
     }
 
@@ -266,7 +345,7 @@ const PageAnime = {
         window.App.navigate()
       }
     }, [
-      U.el('option', { value: '', text: entry ? '✕ Remove' : '+ Add' }),
+      U.el('option', { value: '', text: entry ? '✕ Remove from list' : '＋ Add to List' }),
       ...Object.entries(U.listStatusMap).map(([value, label]) =>
         U.el('option', { value, text: label, ...(entry?.status === value ? { selected: '' } : {}) }))
     ])
@@ -295,20 +374,23 @@ const PageAnime = {
       row.append(card)
     }
     wrap.append(row)
+  },
 
-    // characters live under relations, like supplementary info
+  renderTabCharacters (wrap, media) {
     const characters = media.characters?.edges ?? []
-    if (characters.length) {
-      const crow = U.el('div', { class: 'hscroll', style: 'padding-left:0;padding-right:0;' })
-      for (const edge of characters) {
-        crow.append(U.el('div', { class: 'char-card' }, [
-          U.el('img', { src: edge.node.image?.large ?? '', alt: edge.node.name?.userPreferred, loading: 'lazy' }),
-          U.el('div', { class: 'char-name', text: edge.node.name?.userPreferred ?? '' }),
-          U.el('div', { class: 'char-role', text: edge.role ?? '' })
-        ]))
-      }
-      wrap.append(U.el('h2', { class: 'detail-section-title', text: 'Characters' }), crow)
+    if (!characters.length) {
+      wrap.append(U.el('div', { class: 'empty-state', text: 'No character data.' }))
+      return
     }
+    const crow = U.el('div', { class: 'hscroll', style: 'padding-left:0;padding-right:0;flex-wrap:wrap;' })
+    for (const edge of characters) {
+      crow.append(U.el('div', { class: 'char-card' }, [
+        U.el('img', { src: edge.node.image?.large ?? '', alt: edge.node.name?.userPreferred, loading: 'lazy' }),
+        U.el('div', { class: 'char-name', text: edge.node.name?.userPreferred ?? '' }),
+        U.el('div', { class: 'char-role', text: edge.role ?? '' })
+      ]))
+    }
+    wrap.append(crow)
   },
 
   renderTabComments (wrap, media) {
@@ -332,12 +414,45 @@ const PageAnime = {
       return
     }
 
+    // range paging for long series (reference-style "1 – 25" chips)
+    const RANGE = 25
+    let rangeStart = 1
+    if (episodes.length > 30) {
+      const entryProg = Store.entry(media.id)?.progress ?? 0
+      rangeStart = Math.floor(Math.max(0, Math.min(entryProg, episodes.length - 1)) / RANGE) * RANGE + 1
+    }
+
     const render = () => {
       const entry = Store.entry(media.id)
       const progress = entry?.progress ?? 0
       wrap.replaceChildren()
 
-      for (const ep of episodes) {
+      // header: count + duration + range chips
+      const head = U.el('div', { class: 'eplist-head' }, [
+        U.el('div', { class: 'eplist-title' }, [
+          U.el('b', { text: 'Episodes' }),
+          U.el('span', { text: `${episodes.length} episodes${media.duration ? ` • ${media.duration} min each` : ''}` })
+        ])
+      ])
+      if (episodes.length > 30) {
+        const ranges = U.el('div', { class: 'eplist-ranges' })
+        for (let s = 1; s <= episodes.length; s += RANGE) {
+          const e = Math.min(s + RANGE - 1, episodes.length)
+          ranges.append(U.el('button', {
+            class: 'eplist-range' + (s === rangeStart ? ' active' : ''),
+            text: `${s} – ${e}`,
+            onclick: () => { rangeStart = s; render() }
+          }))
+        }
+        head.append(ranges)
+      }
+      wrap.append(head)
+
+      const visible = episodes.length > 30
+        ? episodes.filter(ep => ep.episode >= rangeStart && ep.episode < rangeStart + RANGE)
+        : episodes
+
+      for (const ep of visible) {
         const watched = progress >= ep.episode
         const thumb = U.el('div', { class: 'episode-thumb' }, [
           ep.image ? U.el('img', { src: ep.image, loading: 'lazy', alt: `Episode ${ep.episode}` }) : null,
@@ -371,7 +486,16 @@ const PageAnime = {
               }, [U.svg(C.CHECK, 13)])
             ]),
             metaText ? U.el('div', { class: 'episode-meta', text: metaText }) : null,
-            ep.summary ? U.el('div', { class: 'episode-summary', text: ep.summary }) : null
+            ep.summary ? U.el('div', { class: 'episode-summary', text: ep.summary }) : null,
+            (() => {
+              // in-episode resume position → thin progress bar (reference style)
+              const resume = Store.getResume(media.id, ep.episode)
+              if (!resume) return null
+              const totalSec = (ep.runtime ?? media.duration ?? 24) * 60
+              return U.el('div', { class: 'episode-resume' }, [
+                U.el('div', { style: `width:${Math.min(100, resume / totalSec * 100)}%;` })
+              ])
+            })()
           ])
         ]))
       }
