@@ -50,9 +50,9 @@ const PageW2G = {
   },
 
   async render (root, params, arg) {
+    root.append(window.C.spotlight('Watch Together', { subtitle: 'Synced rooms — play, pause and seeks stay together' }))
     const pad = U.el('div', { class: 'page-pad', style: 'max-width:44rem;' })
     root.append(pad)
-    pad.append(U.el('h1', { class: 'page-title', text: 'Watch Together' }))
 
     if (!await YumeAPI.available()) {
       pad.append(U.el('div', { class: 'callout', html: `Watch Together needs the Yume server. None reachable at <code>${YumeAPI.base()}</code> — start the backend or set it in <a href="#/settings" style="text-decoration:underline">Settings</a>.` }))
