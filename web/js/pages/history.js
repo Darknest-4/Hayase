@@ -4,12 +4,13 @@
 
 const PageHistory = {
   render (root) {
+    const profile = Store.activeProfile()
+    root.append(window.C.spotlight('Watch History', { subtitle: profile ? `${profile.avatar ?? ''} ${profile.name}` : null }))
+
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
 
-    const profile = Store.activeProfile()
-    pad.append(U.el('div', { style: 'display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;' }, [
-      U.el('h1', { class: 'page-title', style: 'margin:0;', text: 'Watch History' }),
+    pad.append(U.el('div', { style: 'display:flex;justify-content:flex-end;margin-bottom:.5rem;' }, [
       U.el('button', {
         class: 'btn btn-ghost btn-sm',
         onclick: () => {
@@ -20,7 +21,6 @@ const PageHistory = {
         }
       }, [document.createTextNode('Clear history')])
     ]))
-    if (profile) pad.append(U.el('p', { class: 'list-row-sub', style: 'margin-top:-.5rem;', text: `Profile: ${profile.avatar ?? ''} ${profile.name}` }))
 
     const history = Store.history()
     if (!history.length) {

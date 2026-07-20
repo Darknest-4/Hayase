@@ -8,16 +8,11 @@ const PageAnalytics = {
   PALETTE: ['#f43f6e', '#ff8fab', '#a78bfa', '#38bdf8', '#34d399', '#fbbf24', '#fb923c', '#f87171', '#818cf8', '#2dd4bf', '#e879f9', '#94a3b8'],
 
   render (root) {
+    const profile = Store.activeProfile()
+    root.append(C.spotlight('Analytics', { subtitle: profile ? `${profile.avatar ?? ''} ${profile.name} · your viewing at a glance` : 'Your viewing at a glance' }))
+
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
-
-    const profile = Store.activeProfile()
-    pad.append(U.el('div', { class: 'analytics-head' }, [
-      U.el('div', {}, [
-        U.el('h1', { class: 'page-title', style: 'margin:0;', text: 'Analytics' }),
-        profile ? U.el('p', { class: 'list-row-sub', style: 'margin:.25rem 0 0;', text: `${profile.avatar ?? ''} ${profile.name} · your viewing at a glance` }) : null
-      ])
-    ]))
 
     const entries = Object.values(Store.list())
     const history = Store.history()

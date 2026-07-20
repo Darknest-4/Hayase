@@ -13,31 +13,27 @@ const PageNotifications = {
   ],
 
   render (root, params) {
-    const pad = U.el('div', { class: 'page-pad' })
-    root.append(pad)
-
     const active = params.get('filter') ?? 'all'
     const all = Store.syncNotifications()
     const unread = all.filter(n => !n.read).length
 
-    // ---- header ----
-    pad.append(U.el('div', { class: 'analytics-head' }, [
-      U.el('div', {}, [
-        U.el('h1', { class: 'page-title', style: 'margin:0;', text: 'Notifications' }),
-        U.el('p', { class: 'list-row-sub', style: 'margin:.25rem 0 0;', text: unread ? `${unread} unread` : 'All caught up' })
-      ]),
-      U.el('div', { style: 'display:flex;gap:.5rem;' }, [
-        U.el('button', {
-          class: 'btn btn-ghost btn-sm',
-          disabled: unread ? null : '',
-          onclick: () => { Store.markAllNotificationsRead(); window.App.navigate(); window.App.refreshNotifBadge?.() }
-        }, [document.createTextNode('Mark all read')]),
-        U.el('button', {
-          class: 'btn btn-ghost btn-sm',
-          disabled: all.length ? null : '',
-          onclick: () => { if (window.confirm('Clear all notifications?')) { Store.clearNotifications(); window.App.navigate(); window.App.refreshNotifBadge?.() } }
-        }, [document.createTextNode('Clear all')])
-      ])
+    root.append(window.C.spotlight('Notifications', { subtitle: unread ? `${unread} unread` : 'All caught up' }))
+
+    const pad = U.el('div', { class: 'page-pad' })
+    root.append(pad)
+
+    // ---- toolbar ----
+    pad.append(U.el('div', { style: 'display:flex;gap:.5rem;justify-content:flex-end;margin-bottom:.5rem;' }, [
+      U.el('button', {
+        class: 'btn btn-ghost btn-sm',
+        disabled: unread ? null : '',
+        onclick: () => { Store.markAllNotificationsRead(); window.App.navigate(); window.App.refreshNotifBadge?.() }
+      }, [document.createTextNode('Mark all read')]),
+      U.el('button', {
+        class: 'btn btn-ghost btn-sm',
+        disabled: all.length ? null : '',
+        onclick: () => { if (window.confirm('Clear all notifications?')) { Store.clearNotifications(); window.App.navigate(); window.App.refreshNotifBadge?.() } }
+      }, [document.createTextNode('Clear all')])
     ]))
 
     // ---- filter tabs ----

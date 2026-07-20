@@ -31,6 +31,9 @@ const C = {
       ]))
     }
 
+    // play affordance revealed on hover
+    cover.append(U.el('div', { class: 'card-play' }, [U.svg(this.PLAY, 18)]))
+
     const sub = subline ?? [U.format(media), U.seasonYear(media), media.episodes ? `${media.episodes} ep` : null].filter(Boolean).join(' • ')
 
     const card = U.el('a', { class: 'card', href: `#/anime/${media.id}` }, [
@@ -40,6 +43,47 @@ const C = {
     ])
     this._attachPreview(card, media)
     return card
+  },
+
+  // ---- spotlight header: a full-bleed banner from a random popular anime ----
+  // The Yume catalogue DB stores metadata only, so banner artwork comes from
+  // the same AniList source the rest of the app already uses. The chosen title
+  // is credited, faintly, in the bottom-right corner.
+  _spotlightPool: null,
+
+  _spotlightPick () {
+    if (!this._spotlightPool) {
+      this._spotlightPool = (async () => {
+        try {
+          const page = await window.API.search({ sort: ['POPULARITY_DESC'], perPage: 50 })
+          return (page.media ?? []).filter(m => m.bannerImage)
+        } catch (e) { return [] }
+      })()
+    }
+    return this._spotlightPool.then(pool => pool.length ? pool[Math.floor(Math.random() * pool.length)] : null)
+  },
+
+  spotlight (title, { subtitle = null, actions = null } = {}) {
+    const bg = U.el('div', { class: 'spotlight-bg' })
+    const credit = U.el('a', { class: 'spotlight-credit hidden' })
+    const inner = U.el('div', { class: 'spotlight-inner' }, [
+      U.el('h1', { class: 'spotlight-title', text: title }),
+      subtitle ? U.el('p', { class: 'spotlight-sub', text: subtitle }) : null,
+      actions ?? null
+    ])
+    const header = U.el('div', { class: 'spotlight' }, [bg, U.el('div', { class: 'spotlight-scrim' }), inner, credit])
+
+    this._spotlightPick().then(m => {
+      if (!m) return
+      const url = m.bannerImage || U.cover(m)
+      if (!url) return
+      bg.style.backgroundImage = `url("${url}")`
+      requestAnimationFrame(() => bg.classList.add('loaded'))
+      credit.href = `#/anime/${m.id}`
+      credit.textContent = U.title(m)
+      credit.classList.remove('hidden')
+    })
+    return header
   },
 
   // ---- hover preview (like the original app's preview cards) ----

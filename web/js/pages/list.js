@@ -4,10 +4,11 @@
 
 const PageList = {
   render (root, params) {
+    const total = Object.keys(Store.list()).length
+    root.append(C.spotlight('Library', { subtitle: total ? `${total} ${total === 1 ? 'title' : 'titles'} tracked` : 'Your anime, tracked' }))
+
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
-
-    pad.append(U.el('h1', { class: 'page-title', text: 'Library' }))
 
     const state = { tab: params.get('tab') ?? 'CURRENT' }
 
