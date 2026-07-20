@@ -131,7 +131,7 @@ const C = {
 
     card.addEventListener('pointerenter', () => {
       clearTimeout(this._previewTimer)
-      this._previewTimer = setTimeout(() => this._openPreview(card, media), 500)
+      this._previewTimer = setTimeout(() => this._openPreview(card, media), 350)
     })
     card.addEventListener('pointerleave', () => {
       clearTimeout(this._previewTimer)
@@ -147,6 +147,8 @@ const C = {
     const entry = Store.entry(media.id)
     const next = (entry?.progress ?? 0) + 1
 
+    // media header: banner (or cover) + gradient + title overlaid; trailer
+    // fades in on top when available
     const head = U.el('div', { class: 'preview-media' })
     if (media.trailer?.id && media.trailer.site === 'youtube') {
       const frame = U.el('iframe', {
@@ -160,37 +162,72 @@ const C = {
     }
     if (media.bannerImage) head.style.backgroundImage = `url("${media.bannerImage}")`
     else if (U.cover(media)) head.style.backgroundImage = `url("${U.cover(media)}")`
+    head.append(
+      U.el('div', { class: 'preview-media-scrim' }),
+      U.el('div', { class: 'preview-media-title', text: U.title(media) })
+    )
+    if (media.averageScore) {
+      head.append(U.el('div', { class: 'preview-score' }, [U.svg(this.HEART, 11), U.el('span', { text: media.averageScore + '%' })]))
+    }
 
-    const meta = [U.format(media), U.seasonYear(media), media.episodes ? media.episodes + ' ep' : null, media.averageScore ? media.averageScore + '%' : null].filter(Boolean).join(' • ')
+    // meta chips instead of a plain dot-row
+    const metaChips = U.el('div', { class: 'preview-chips' },
+      [U.format(media), U.seasonYear(media), media.episodes ? media.episodes + ' ep' : null, U.statusMap[media.status]]
+        .filter(Boolean).map(t => U.el('span', { class: 'preview-chip', text: t })))
+
+    // actions: Play + add-to-list + favourite
+    const heart = U.svg(this.HEART, 14)
+    if (Store.isFavourite(media.id)) heart.style.fill = 'currentColor'
+    const favBtn = U.el('button', {
+      class: 'preview-icon-btn' + (Store.isFavourite(media.id) ? ' active' : ''),
+      title: 'Favourite',
+      onclick: e => {
+        const now = Store.toggleFavourite(media.id)
+        heart.style.fill = now ? 'currentColor' : 'none'
+        e.currentTarget.classList.toggle('active', now)
+      }
+    })
+    favBtn.append(heart)
+
+    const listBtn = entry
+      ? U.el('span', { class: 'badge badge-theme', style: 'align-self:center;', text: U.listStatusMap[entry.status] })
+      : U.el('button', {
+          class: 'preview-icon-btn', title: 'Add to Planning',
+          onclick: e => {
+            Store.saveEntry(media, { status: 'PLANNING' })
+            U.toast('Added to Planning')
+            e.currentTarget.replaceWith(U.el('span', { class: 'badge badge-theme', style: 'align-self:center;', text: 'Planning' }))
+          }
+        }, [U.svg(this.PLUS, 14)])
 
     const panel = U.el('div', { class: 'preview-panel' }, [
       head,
       U.el('div', { class: 'preview-body' }, [
-        U.el('div', { class: 'preview-title', text: U.title(media) }),
-        U.el('div', { class: 'preview-meta', text: meta }),
+        metaChips,
         U.el('div', { class: 'preview-desc', text: U.plainDesc(media.description) }),
-        U.el('div', { style: 'display:flex;gap:.5rem;margin-top:.6rem;' }, [
-          U.el('a', { class: 'btn btn-primary btn-sm', href: `#/watch/${media.id}:${next}`, onclick: () => this._closePreview() },
-            [U.svg(this.PLAY, 12), document.createTextNode(entry?.progress ? `Ep ${next}` : 'Watch')]),
-          entry
-            ? U.el('span', { class: 'badge badge-outline', style: 'align-self:center;', text: U.listStatusMap[entry.status] })
-            : U.el('button', {
-                class: 'btn btn-secondary btn-sm',
-                onclick: e => { Store.saveEntry(media, { status: 'PLANNING' }); U.toast('Added to Planning'); e.target.replaceWith(U.el('span', { class: 'badge badge-outline', text: 'Planning' })) }
-              }, [document.createTextNode('+ Add to list')])
+        (media.genres ?? []).length
+          ? U.el('div', { class: 'preview-genres' }, media.genres.slice(0, 4).map(g =>
+              U.el('a', { class: 'preview-genre', href: `#/search?genre=${encodeURIComponent(g)}`, text: g, onclick: () => this._closePreview() })))
+          : null,
+        U.el('div', { class: 'preview-actions' }, [
+          U.el('a', { class: 'btn btn-primary btn-sm', style: 'flex-grow:1;justify-content:center;', href: `#/watch/${media.id}:${next}`, onclick: () => this._closePreview() },
+            [U.svg(this.PLAY, 12), document.createTextNode(entry?.progress ? ` Continue Ep ${next}` : ' Watch now')]),
+          listBtn,
+          favBtn,
+          U.el('a', { class: 'preview-icon-btn', title: 'Details', href: `#/anime/${media.id}`, onclick: () => this._closePreview() },
+            [U.svg('<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>', 14)])
         ])
       ])
     ])
 
     panel.addEventListener('pointerleave', () => this._closePreview())
-    panel.addEventListener('click', e => { if (e.target === panel) this._closePreview() })
 
     document.body.append(panel)
     const rect = card.getBoundingClientRect()
-    const width = 320
+    const width = 360
     let left = rect.left + rect.width / 2 - width / 2
     left = Math.max(8, Math.min(left, window.innerWidth - width - 8))
-    const top = Math.max(8, Math.min(rect.top - 40, window.innerHeight - 320))
+    const top = Math.max(8, Math.min(rect.top - 48, window.innerHeight - 340))
     panel.style.left = left + 'px'
     panel.style.top = top + 'px'
     this._preview = panel

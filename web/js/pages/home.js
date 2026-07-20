@@ -15,7 +15,10 @@ const PageHome = {
     const defs = [
       { title: 'Popular This Season', vars: { sort: ['POPULARITY_DESC'], season, seasonYear: year } },
       { title: 'Trending Now', vars: { sort: ['TRENDING_DESC'] } },
+      { title: 'Airing Right Now', vars: { sort: ['POPULARITY_DESC'], status: ['RELEASING'] } },
       { title: 'All Time Popular', vars: { sort: ['POPULARITY_DESC'] } },
+      { title: 'Top Rated', vars: { sort: ['SCORE_DESC'] } },
+      { title: 'Movies', vars: { sort: ['POPULARITY_DESC'], format: ['MOVIE'] } },
       { title: 'Romance', vars: { sort: ['TRENDING_DESC'], genre: ['Romance'] } },
       { title: 'Action', vars: { sort: ['TRENDING_DESC'], genre: ['Action'] } },
       { title: 'Adventure', vars: { sort: ['TRENDING_DESC'], genre: ['Adventure'] } },
@@ -66,6 +69,8 @@ const PageHome = {
       const params = new URLSearchParams()
       if (def.vars.genre) params.set('genre', def.vars.genre[0])
       if (def.vars.season) { params.set('season', def.vars.season); params.set('year', def.vars.year ?? year) }
+      if (def.vars.format) params.set('format', def.vars.format[0])
+      if (def.vars.status) params.set('status', def.vars.status[0])
       params.set('sort', def.vars.sort[0])
 
       sections.append(C.section(def.title, API.search(def.vars).then(page => page.media ?? []), {

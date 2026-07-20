@@ -50,9 +50,15 @@ const PageWatch = {
       ])
     )
 
+    // ---- two-column layout: player + content left, episode list right ----
+    const left = U.el('div', { class: 'watch-main' })
+    const side = U.el('aside', { class: 'watch-side' })
+    pad.append(U.el('div', { class: 'watch-layout' }, [left, side]))
+    const col = left // content below the player goes here
+
     // ---- player box (or source picker inside the same frame) ----
     const playerBox = U.el('div', { class: 'player-box' })
-    pad.append(playerBox)
+    col.append(playerBox)
 
     if (src) {
       this.mountPlayer(playerBox, media, episode, total, decodeURIComponent(src), w2gCode)
@@ -74,7 +80,7 @@ const PageWatch = {
     }, [U.svg(C.CHECK, 13), document.createTextNode(watched ? 'Watched' : 'Mark watched')])
 
     const keepSrc = src ? `?src=${encodeURIComponent(decodeURIComponent(src))}` : ''
-    pad.append(U.el('div', { class: 'watch-actions' }, [
+    col.append(U.el('div', { class: 'watch-actions' }, [
       U.el('a', {
         class: 'btn btn-secondary btn-sm' + (episode <= 1 ? ' hidden' : ''),
         href: `#/watch/${media.id}:${episode - 1}`
@@ -95,25 +101,14 @@ const PageWatch = {
 
     // auto-save hint
     if (src) {
-      pad.append(U.el('div', { class: 'watch-autosave' }, [
+      col.append(U.el('div', { class: 'watch-autosave' }, [
         U.svg('<path d="M20 6 9 17l-5-5"/>', 12),
         document.createTextNode('Progress saves automatically — you’ll resume right where you left off.')
       ]))
     }
 
-    // ---- numbered episode picker ----
-    if (total > 1) {
-      const progress = Store.entry(media.id)?.progress ?? 0
-      const grid = U.el('div', { class: 'ep-grid' })
-      for (let n = 1; n <= total; n++) {
-        grid.append(U.el('a', {
-          class: 'ep-num-btn' + (n === episode ? ' active' : '') + (n <= progress ? ' watched' : ''),
-          href: `#/watch/${media.id}:${n}${n === episode ? keepSrc : ''}`,
-          text: String(n)
-        }))
-      }
-      pad.append(U.el('h2', { class: 'detail-section-title', text: 'Episodes' }), grid)
-    }
+    // ---- episode sidebar: rich vertical list, current highlighted ----
+    if (total > 1) this.mountEpisodeList(side, media, episode, total, keepSrc)
 
     // ---- episode metadata (title/summary/air date) ----
     API.episodes(media).then(list => {
@@ -124,12 +119,56 @@ const PageWatch = {
         ep.airdate ? U.el('div', { class: 'episode-meta', text: U.airDate(ep.airdate) + (ep.filler ? ' • FILLER' : '') }) : null,
         ep.summary ? U.el('div', { class: 'watch-ep-summary', text: ep.summary }) : null
       ])
-      const anchor = pad.querySelector('.ep-grid') ?? pad.querySelector('.watch-autosave') ?? pad.querySelector('.watch-actions')
+      const anchor = col.querySelector('.watch-autosave') ?? col.querySelector('.watch-actions')
       anchor.after(info)
     }).catch(() => {})
 
     // ---- comments ----
-    pad.append(C.commentsSection(media))
+    col.append(C.commentsSection(media))
+  },
+
+  // ---- episode sidebar (thumbnails + titles; falls back to plain rows) ----
+  mountEpisodeList (side, media, episode, total, keepSrc) {
+    const panel = U.el('div', { class: 'wep-panel' }, [
+      U.el('div', { class: 'wep-head' }, [
+        U.el('h3', { text: 'Episodes' }),
+        U.el('span', { class: 'wep-count', text: `${total}` })
+      ])
+    ])
+    const list = U.el('div', { class: 'wep-list' })
+    panel.append(list)
+    side.append(panel)
+
+    const progress = Store.entry(media.id)?.progress ?? 0
+
+    const renderRows = meta => {
+      list.replaceChildren()
+      for (let n = 1; n <= total; n++) {
+        const ep = meta?.[n - 1]
+        const active = n === episode
+        list.append(U.el('a', {
+          class: 'wep' + (active ? ' active' : '') + (n <= progress ? ' watched' : ''),
+          href: `#/watch/${media.id}:${n}${active ? keepSrc : ''}`
+        }, [
+          ep?.image
+            ? U.el('div', { class: 'wep-thumb' }, [
+                U.el('img', { src: ep.image, loading: 'lazy', alt: '' }),
+                active ? U.el('div', { class: 'wep-playing' }, [U.svg(C.PLAY, 12)]) : null
+              ])
+            : U.el('div', { class: 'wep-num', text: String(n) }),
+          U.el('div', { class: 'wep-body' }, [
+            U.el('div', { class: 'wep-title', text: ep?.title ? `${n}. ${ep.title}` : `Episode ${n}` }),
+            U.el('div', { class: 'wep-meta', text: [ep?.airdate ? U.airDate(ep.airdate) : null, ep?.filler ? 'FILLER' : null].filter(Boolean).join(' • ') || (n <= progress ? 'Watched' : '') })
+          ]),
+          n <= progress ? U.svg(C.CHECK, 13) : null
+        ]))
+      }
+      // keep the current episode in view
+      list.querySelector('.wep.active')?.scrollIntoView({ block: 'center' })
+    }
+
+    renderRows(null)
+    API.episodes(media).then(meta => { if (meta?.length) renderRows(meta) }).catch(() => {})
   },
 
   // ---- source picker inside the player frame ----

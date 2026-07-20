@@ -55,6 +55,15 @@ for reproducible shots. Click any section below to expand it. Full gallery in
 </details>
 
 <details>
+<summary><b>🖱️ Hover preview</b> — trailer/banner card with meta chips, genres and quick actions (desktop)</summary>
+
+<br>
+
+![🖱️ Hover preview — desktop](docs/screenshots/26-hover-preview.png)
+
+</details>
+
+<details>
 <summary><b>📊 Dashboard</b> — customizable widget landing page (reorder + toggle)</summary>
 
 <br>
@@ -81,7 +90,7 @@ for reproducible shots. Click any section below to expand it. Full gallery in
 </details>
 
 <details>
-<summary><b>📺 Anime detail</b> — banner, stats, list controls, genres & spoiler-aware tags</summary>
+<summary><b>📺 Anime detail</b> — two-column: tabs + info sidebar (facts, airing countdown, where to watch), banner, tinted chips</summary>
 
 <br>
 
@@ -120,7 +129,7 @@ for reproducible shots. Click any section below to expand it. Full gallery in
 </details>
 
 <details>
-<summary><b>▶️ Watch</b> — modern embedded player: automatic per-second resume, history + 85% auto-watched, up-next autoplay, AniSkip</summary>
+<summary><b>▶️ Watch</b> — two-column: player + episode sidebar (thumbs, titles, watched marks); automatic per-second resume, up-next autoplay, AniSkip</summary>
 
 <br>
 
