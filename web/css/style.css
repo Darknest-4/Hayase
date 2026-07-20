@@ -51,70 +51,56 @@ img { max-width: 100%; display: block; }
   pointer-events: none;
   -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
   mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
-  filter: brightness(.45) saturate(1.1);
+  filter: brightness(.4) saturate(1.05);
 }
-.global-banner.visible { opacity: .5; }
+.global-banner.visible { opacity: .55; }
 
-/* ===== sidebar — expanded rail (Spotify-like), collapses responsively ===== */
+/* ===== sidebar — slim icon rail (Hayase-style); labels are tooltips ===== */
 
 .sidebar {
-  width: var(--sidebar-w-expanded);
+  width: var(--sidebar-w);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  padding: var(--space-4) var(--space-3);
-  gap: var(--space-1);
+  align-items: center;
+  padding: var(--space-3) 0;
+  gap: var(--space-2);
   z-index: 30;
-  background: color-mix(in oklab, var(--bg) 70%, transparent);
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
-  border-right: 1px solid var(--border);
+  background: color-mix(in oklab, var(--bg) 55%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
 }
 
 .sidebar-logo {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  margin-bottom: var(--space-4);
+  justify-content: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  margin-bottom: var(--space-2);
   color: var(--fg);
 }
-.sidebar-logo svg { width: 1.9rem; height: 1.9rem; flex-shrink: 0; }
-.sidebar-logo-text {
-  font-size: var(--text-xl);
-  font-weight: var(--weight-black);
-  letter-spacing: .04em;
-}
+.sidebar-logo svg { width: 1.8rem; height: 1.8rem; flex-shrink: 0; }
+.sidebar-logo-text { display: none; }
 
 .sidebar-btn {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
+  justify-content: center;
+  width: 2.6rem;
+  height: 2.6rem;
   border-radius: var(--radius-md);
-  color: var(--fg-muted);
-  font-weight: var(--weight-medium);
-  font-size: var(--text-sm);
+  color: var(--fg-faint);
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
   position: relative;
 }
+.sidebar-btn span { display: none; }
 .sidebar-btn svg { width: 1.15rem; height: 1.15rem; flex-shrink: 0; }
 .sidebar-btn:hover { background: var(--bg-raised); color: var(--fg); }
 .sidebar-btn.active {
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-weight: var(--weight-bold);
-}
-.sidebar-btn.active::before {
-  content: '';
-  position: absolute;
-  left: -0.75rem;
-  top: 20%;
-  height: 60%;
-  width: 3px;
-  border-radius: var(--radius-full);
-  background: var(--accent);
+  background: var(--border-strong);
+  color: var(--fg);
 }
 .sidebar-spacer { flex-grow: 1; }
 
@@ -185,10 +171,10 @@ img { max-width: 100%; display: block; }
   justify-content: center;
   gap: var(--space-2);
   border: none;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   font-weight: var(--weight-bold);
   font-size: var(--text-sm);
-  padding: .6rem 1.4rem;
+  padding: .55rem 1.3rem;
   cursor: pointer;
   transition: transform var(--dur-fast) var(--ease-spring), filter var(--dur-fast) var(--ease-out);
   white-space: nowrap;
@@ -196,7 +182,8 @@ img { max-width: 100%; display: block; }
 .btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
 .btn:active { transform: translateY(0); }
 .btn svg { width: 1rem; height: 1rem; }
-.btn-primary, .btn-theme { background: var(--accent); color: var(--accent-fg); }
+.btn-primary { background: var(--primary); color: var(--primary-fg); }
+.btn-theme { background: var(--accent); color: var(--accent-fg); }
 .btn-secondary { background: var(--bg-raised); color: var(--fg); border: 1px solid var(--border-strong); }
 .btn-ghost { background: transparent; color: var(--fg); border: 1px solid var(--border-strong); }
 .btn-ghost:hover { background: var(--bg-raised); }
@@ -225,12 +212,9 @@ img { max-width: 100%; display: block; }
   font-weight: var(--weight-bold);
   color: var(--fg-faint);
   cursor: pointer;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-full);
-  padding: .2rem .8rem;
-  transition: all var(--dur-fast) var(--ease-out);
+  transition: color var(--dur-fast) var(--ease-out);
 }
-.section-more:hover { color: var(--accent); border-color: var(--accent); }
+.section-more:hover { color: var(--fg); }
 
 .hscroll {
   display: flex;
@@ -250,7 +234,7 @@ img { max-width: 100%; display: block; }
   position: relative;
   transition: transform var(--dur-base) var(--ease-spring);
 }
-.card:hover { transform: translateY(-4px); }
+.card:hover { transform: translateY(-3px); }
 
 .card-cover {
   width: 100%;
@@ -263,7 +247,7 @@ img { max-width: 100%; display: block; }
   transition: box-shadow var(--dur-base) var(--ease-out);
 }
 .card:hover .card-cover {
-  box-shadow: var(--shadow-2), 0 0 0 2px var(--accent);
+  box-shadow: var(--shadow-2);
 }
 .card-cover img {
   width: 100%; height: 100%;
@@ -603,7 +587,7 @@ a.badge:hover { color: var(--accent); border-color: var(--accent); }
   transition: all var(--dur-fast) var(--ease-out);
 }
 .tab:hover { color: var(--fg); border-color: var(--border-strong); }
-.tab.active { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.tab.active { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
 .tab .count { opacity: .65; margin-left: .3rem; }
 
 .list-row {
@@ -937,15 +921,6 @@ a.badge:hover { color: var(--accent); border-color: var(--accent); }
 
 /* ===== responsive ===== */
 
-/* tablet: collapse sidebar to icon rail */
-@media (max-width: 1100px) {
-  .sidebar { width: var(--sidebar-w); padding: var(--space-4) var(--space-2); align-items: center; }
-  .sidebar-logo-text, .sidebar-btn span { display: none; }
-  .sidebar-btn { justify-content: center; padding: var(--space-2); width: 2.7rem; }
-  .sidebar-btn.active::before { left: -0.55rem; }
-  .sidebar-logo { padding: var(--space-2); }
-}
-
 /* mobile: bottom navigation bar */
 @media (max-width: 720px) {
   .app-shell { flex-direction: column-reverse; }
@@ -954,12 +929,11 @@ a.badge:hover { color: var(--accent); border-color: var(--accent); }
     height: 3.6rem;
     flex-direction: row;
     justify-content: space-around;
-    border-right: none;
     border-top: 1px solid var(--border);
     padding: var(--space-1);
+    background: var(--bg);
   }
   .sidebar-logo, .sidebar-spacer { display: none; }
-  .sidebar-btn.active::before { display: none; }
   .detail-head { flex-direction: column; gap: var(--space-4); margin-top: -6rem; padding: 0 var(--space-4); }
   .detail-cover { width: 9rem; }
   .detail-info { padding-top: 0; }

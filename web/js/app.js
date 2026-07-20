@@ -135,6 +135,11 @@ const App = {
 
   init () {
     Store.applyTheme()
+    // icon-rail sidebar: hidden labels become native tooltips
+    document.querySelectorAll('.sidebar-btn').forEach(btn => {
+      const label = btn.querySelector('span')?.textContent
+      if (label) btn.title = label
+    })
     this.refreshAdminNav()
     this.initSearchModal()
     window.addEventListener('hashchange', () => this.navigate())
