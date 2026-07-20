@@ -63,20 +63,28 @@ Böngésző (web/)  ──►  AniList/Jikan/ani.zip  (katalógus-adat, közvetl
   filler-jelzéssel, pipával) | Relations (+ karakterek) | Comments
   (Yume-fiókos, fonalazott) | Recommendations.
 
-### Watch (`#/watch/{id}:{ep}`) — klasszikus anime-oldal elrendezés
+### Watch (`#/watch/{id}:{ep}`) — modern, beágyazott lejátszó
 - Fejléc: vissza-link + „N. rész / összes".
 - **Beágyazott 16:9 lejátszó** (nem egész oldalas): saját vezérlők
   (seek + puffer, hangerő, sebesség, PiP, fullscreen), billentyűk
   (szóköz/K, nyilak, F, M, 0–9), automatikusan elrejtőző kezelőfelület,
-  **Skip intro/outro** (AniSkip), folytatás mentett pozícióból, 85%-nál
-  auto-megnézett.
+  **Skip intro/outro** (AniSkip).
+- **Teljesen automatikus mentés** (profilonként):
+  - a pontos **másodperc**, ahol tartottál, folyamatosan mentődik → a
+    következő megnyitáskor onnan **folytat** („Resumed from 12:34");
+  - **előzménybe** kerül, amint elindítod (3 mp után);
+  - **85%-nál** automatikusan megnézettre vált (progress + XP);
+  - a végén **„Up next" kártya** — a következő rész (auto)lejátszása 5 mp
+    visszaszámlálással (a Settings › Content autoplay kapcsolójától függ).
+- **Watch Together** gomb a player alatt → **popup**: szoba létrehozás
+  vagy csatlakozás kóddal, meghívó-link másolás, élő eseménylista,
+  nézőszám; a lejátszás WebSocketen szinkronban megy (play/pause/seek),
+  a playeren „● Room …" jelvény jelzi. (A régi `?w2g=kód` deep link
+  továbbra is automatikusan csatlakoztat.)
 - Forrás nélkül a **forrásválasztó a player-keretben** jelenik meg
   (stream URL + hivatalos streamek).
-- Alatta: Previous/Next, **Watched** kapcsoló, Change source; **számozott
-  epizódrács** (aktív rózsa, nézett jelölve); epizód-infó (cím, dátum,
-  leírás); kommentek.
-- **Watch Together**: `?w2g=kód` esetén a lejátszás szinkronban megy a
-  szoba tagjaival („● room …" jelvény).
+- Alatta: „Progress saves automatically" jelzés, **számozott epizódrács**
+  (aktív rózsa, nézett jelölve), epizód-infó (cím, dátum, leírás), kommentek.
 
 ### Schedule (`#/schedule`)
 Heti adásnaptár napokra bontva (Today/Tomorrow/napnév), kártyák
@@ -92,9 +100,10 @@ Platform-szintű friss kommentek feedje (Yume API); bejelentkezés/
 regisztráció kártya, ha nincs fiók.
 
 ### Watch Together (`#/w2g`, `#/w2g/{kód}`)
-Szoba létrehozás / csatlakozás kóddal; szobanézet: házigazda, élő
-nézőszám, eseménylista (ki lépett be, ki tekert), kód-másolás; a
-lejátszóval WebSocketen szinkronizál (play/pause/seek).
+Elsősorban a **Watch oldalról, popupban** érhető el (lásd fent). A `#/w2g`
+oldal továbbra is megvan mint önálló lobби/szoba-nézet (kód-alapú
+létrehozás/csatlakozás, házigazda, nézőszám, eseménylista). A tényleges
+szinkron mindig a lejátszóhoz kötődik.
 
 ### Profile (`#/profile`) — hub füles elrendezéssel
 Random-anime **spotlight banner** fejléc (a bannert egy random népszerű

@@ -120,7 +120,7 @@ for reproducible shots. Click any section below to expand it. Full gallery in
 </details>
 
 <details>
-<summary><b>▶️ Watch</b> — embedded player, Skip intro (AniSkip), progress tracking</summary>
+<summary><b>▶️ Watch</b> — modern embedded player: automatic per-second resume, history + 85% auto-watched, up-next autoplay, AniSkip</summary>
 
 <br>
 
@@ -250,7 +250,7 @@ for reproducible shots. Click any section below to expand it. Full gallery in
 </details>
 
 <details>
-<summary><b>👥 Watch Together</b> — synced rooms with shared playback</summary>
+<summary><b>👥 Watch Together</b> — a popup under the player: create/join a room, copy invite, live activity, WebSocket play/pause/seek sync</summary>
 
 <br>
 

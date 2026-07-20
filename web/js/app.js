@@ -42,6 +42,7 @@ const App = {
     const { route, arg, params } = this.parseHash()
     if (this.REDIRECTS[route]) { window.location.replace(this.REDIRECTS[route]); return }
     const page = document.getElementById('page')
+    document.getElementById('w2g-modal')?.remove() // close the W2G popup on nav
     page.replaceChildren()
     page.scrollTop = 0
 
