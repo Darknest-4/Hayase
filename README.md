@@ -50,9 +50,11 @@ against the live API + PostgreSQL. Full gallery in
 | **Profile** — XP/level, watch stats, library breakdown<br>![Profile](docs/screenshots/09-profile.png) | **Community** — live discussion feed (Yume API)<br>![Community](docs/screenshots/10-community.png) |
 | **Extension Store** — live registry with ratings + verified devs<br>![Store](docs/screenshots/11-extension-store.png) | **Developer Portal** — listings + review status<br>![Dev portal](docs/screenshots/12-developer-portal.png) |
 | **Developer analytics** — installs, errors, version pipeline<br>![Dev analytics](docs/screenshots/13-developer-analytics.png) | **Admin overview** — users, watch stats, trending, job health<br>![Admin](docs/screenshots/14-admin-overview.png) |
-| **Admin users** — search, suspend/ban/restore<br>![Admin users](docs/screenshots/15-admin-users.png) | **Settings** — profile, theme, server, account, data<br>![Settings](docs/screenshots/16-settings.png) |
+| **Admin users** — search, suspend/ban/restore<br>![Admin users](docs/screenshots/15-admin-users.png) | **Settings** — categorized tabs (account, appearance, content, notifications, data)<br>![Settings](docs/screenshots/16-settings.png) |
 | **Quick search** — Ctrl+K palette<br>![Quick search](docs/screenshots/17-quick-search.png) | **Light theme** — same tokens, one attribute flip<br>![Light](docs/screenshots/18-light-theme.png) |
-| **Mobile** — bottom navigation layout<br>![Mobile](docs/screenshots/19-mobile-home.png) | |
+| **Mobile** — bottom navigation layout<br>![Mobile](docs/screenshots/19-mobile-home.png) | **Dashboard** — customizable widget landing page<br>![Dashboard](docs/screenshots/20-dashboard.png) |
+| **Analytics** — personal viewing charts (activity, genres, studios)<br>![Analytics](docs/screenshots/21-analytics.png) | **Achievements** — tiered catalogue with XP/levels<br>![Achievements](docs/screenshots/22-achievements.png) |
+| **Notifications** — filterable inbox (airing, resume, achievements)<br>![Notifications](docs/screenshots/23-notifications.png) | **Theme Engine** — accent presets + custom colour, live preview<br>![Theme Engine](docs/screenshots/24-theme-engine.png) |
 
 ## Quick start
 

@@ -116,10 +116,42 @@ egészség, hibacsoportok) | Users (keresés, suspend/ban/restore —
 session-visszavonással) | Reports (moderációs sor hide/dismiss
 akciókkal). Minden akció auditnaplózva.
 
+### Dashboard (`#/dashboard`)
+Személyes nyitóoldal **testreszabható widgetekkel** (sorrend + ki/be a
+„Layout szerkesztése" módban, profilonként mentve): üdvözlés napszak
+szerint, folytatás, hamarosan adásba kerülő epizódok, gyors statok,
+„majdnem meglévő" achievementek, legutóbbi értesítések, top műfajok.
+Minden helyi adatból számol — hálózat nélkül is működik.
+
+### Analytics (`#/analytics`)
+Személyes „év összegzése" jellegű grafikonok, saját függőség nélküli
+SVG chart-motorral (`web/js/charts.js`): napi aktivitás oszlopdiagram,
+műfaj- és formátum-fánkdiagram, státusz-eloszlás, pontszám-hisztogram,
+top stúdiók rangsor. A könyvtár + előzmények pillanatképeiből.
+
+### Achievements (`#/achievements`)
+16 elemű, **fokozatos (bronze/silver/gold) achievement-katalógus**
+haladássávokkal, valamint XP/szint-sáv. A feltételeket a kliens
+értékeli a könyvtár és az előzmények alapján; a slugek megegyeznek a
+backend `achievements` táblájával, így belépve összeegyeztethetők.
+
+### Notifications (`#/notifications`)
+Szűrhető **értesítési központ**: adásba kerülő epizódok (könyvtárból),
+félbehagyott folytatás, achievement-feloldások. Típusonként ki/be
+kapcsolható (Settings › Notifications), olvasott/elvetett állapot
+profilonként megmarad, a sidebar harangon olvasatlan-számláló.
+
+### Theme Engine (`#/themes`)
+Alap (dark/light) + **kurált akcentus-presetek** + **egyéni színválasztó**
++ opcionális felület-árnyalás; élőben alkalmazva CSS-változó
+felülírásokkal, valós idejű előnézettel. Profilonként mentve.
+
 ### Settings (`#/settings`)
-Profilnév, téma (dark/light), Yume szerver végpont, **Yume-fiók**
-(regisztráció/belépés/kilépés), NSFW kapcsoló, API-cache törlés,
-adat export/import/törlés.
+**Kategorizált, füles elrendezés** (Account / Appearance / Content /
+Notifications / Data / About): profilnév és profilkezelés, **Yume-fiók**
+(regisztráció/belépés/kilépés), Yume szerver végpont, téma + Theme Engine,
+cím-nyelv, NSFW, autoplay, intro-átugrás, értesítés-preferenciák,
+API-cache törlés, adat export/import/törlés.
 
 ---
 
@@ -141,15 +173,22 @@ adat export/import/törlés.
 
 ## 4. Mivel lehetne bővíteni? (priorizálva)
 
+### Kész modulok (ebben az iterációban elkészültek)
+- ✅ **Több profil** (Netflix-stílusú váltó, profilonkénti könyvtár,
+  előzmény, kedvencek, beállítások).
+- ✅ **Értesítési központ + sidebar-harang** olvasatlan-számlálóval.
+- ✅ **Analytics** grafikonokkal (saját SVG chart-motor).
+- ✅ **Achievementek/jelvények** a profilra — az XP-rendszerrel.
+- ✅ **Theme Engine** (egyéni akcentus, presetek, előnézet).
+- ✅ **Testreszabható Dashboard** widgetekkel.
+- ✅ **Kategorizált Settings** (füles elrendezés).
+
 ### Gyors győzelmek (a backend/séma már kész, csak UI kell)
-1. **Értesítési harang** a sidebarba — élő WS-push + inbox megvan;
-   lenyíló panel olvasatlan-számlálóval.
-2. **Egyéni listák + kollekciók** — `custom_lists`/`collections` táblák
+1. **Egyéni listák + kollekciók** — `custom_lists`/`collections` táblák
    készen: rendezhető, megosztható listák („2026 legjobbjai").
-3. **Review-k** csillagos értékeléssel az adatlapra (`reviews` tábla +
+2. **Review-k** csillagos értékeléssel az adatlapra (`reviews` tábla +
    hasznos-szavazás kész) — külön „Reviews" fül.
-4. **Telepített extensionök kezelése** a kliensben (ki/be, auto-update).
-5. **Achievementek/jelvények** a profilra — az XP-rendszer már számol.
+3. **Telepített extensionök kezelése** a kliensben (ki/be, auto-update).
 
 ### Közösségi réteg (séma kész, pár route + UI)
 6. **Fórumok** animénként és általános témákban (`forums/topics/posts`).
