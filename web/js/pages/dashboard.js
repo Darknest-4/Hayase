@@ -16,24 +16,20 @@ const PageDashboard = {
   ],
 
   render (root, params) {
-    const pad = U.el('div', { class: 'page-pad' })
-    root.append(pad)
-
     const editing = params.get('edit') === '1'
     const profile = Store.activeProfile()
     const layout = this._layout()
 
-    // ---- header ----
-    pad.append(U.el('div', { class: 'analytics-head' }, [
-      U.el('div', {}, [
-        U.el('h1', { class: 'page-title', style: 'margin:0;', text: `${this._greeting()}, ${profile?.name ?? 'Dreamer'}` }),
-        U.el('p', { class: 'list-row-sub', style: 'margin:.25rem 0 0;', text: 'Your dashboard' })
-      ]),
-      U.el('a', {
-        class: 'btn btn-ghost btn-sm',
+    root.append(window.C.spotlight(`${this._greeting()}, ${profile?.name ?? 'Dreamer'}`, {
+      subtitle: 'Your dashboard',
+      actions: U.el('a', {
+        class: 'btn btn-secondary btn-sm', style: 'margin-top:.8rem;',
         href: editing ? '#/dashboard' : '#/dashboard?edit=1'
-      }, [document.createTextNode(editing ? 'Done' : '⚙ Edit layout')])
-    ]))
+      }, [document.createTextNode(editing ? '✓ Done' : '⚙ Edit layout')])
+    }))
+
+    const pad = U.el('div', { class: 'page-pad' })
+    root.append(pad)
 
     if (editing) {
       pad.append(this._editor(layout))
@@ -147,7 +143,7 @@ const PageDashboard = {
       [episodes.toLocaleString(), 'Episodes'],
       [hours >= 24 ? `${Math.floor(hours / 24)}d ${hours % 24}h` : `${hours}h`, 'Watch time']
     ].map(([v, l]) => U.el('div', { class: 'stat-card' }, [U.el('b', { text: String(v) }), U.el('span', { text: l })])))
-    return this._section('Quick stats', cards, { link: '#/analytics', linkText: 'Analytics →' })
+    return this._section('Quick stats', cards, { link: '#/profile?tab=analytics', linkText: 'Analytics →' })
   },
 
   _widget_achievements () {
@@ -170,7 +166,7 @@ const PageDashboard = {
         U.el('span', { class: 'ach-progress-text', text: `${a.current}/${a.target}` })
       ]))
     }
-    return this._section('Almost there', list, { link: '#/achievements', linkText: 'Achievements →' })
+    return this._section('Almost there', list, { link: '#/profile?tab=achievements', linkText: 'Achievements →' })
   },
 
   _widget_notifications () {

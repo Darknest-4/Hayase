@@ -189,6 +189,30 @@ const Store = {
     this._write(this._profileKey('history'), [])
   },
 
+  // ---- per-profile resume positions (seconds), keyed "mediaId:episode" ----
+
+  _resumeMap () {
+    return this._read(this._profileKey('resume'), {})
+  },
+
+  getResume (mediaId, episode) {
+    return Number(this._resumeMap()[`${mediaId}:${episode}`]) || 0
+  },
+
+  setResume (mediaId, episode, seconds) {
+    const map = this._resumeMap()
+    const key = `${mediaId}:${episode}`
+    if (seconds > 5) map[key] = Math.floor(seconds)
+    else delete map[key]
+    this._write(this._profileKey('resume'), map)
+  },
+
+  clearResume (mediaId, episode) {
+    const map = this._resumeMap()
+    delete map[`${mediaId}:${episode}`]
+    this._write(this._profileKey('resume'), map)
+  },
+
   // ids of entries being watched, most recently updated first (for "Continue Watching")
   continueIds () {
     return Object.values(this.list())

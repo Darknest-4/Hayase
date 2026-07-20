@@ -27,14 +27,15 @@ const PageAchievements = {
   ],
 
   render (root) {
+    const profile = Store.activeProfile()
+    root.append(window.C.spotlight('Achievements', { subtitle: profile ? `${profile.avatar ?? ''} ${profile.name}` : null }))
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
+    this.body(pad)
+  },
 
+  body (pad) {
     const ctx = this._context()
-    const profile = Store.activeProfile()
-
-    pad.append(U.el('h1', { class: 'page-title', style: 'margin-bottom:.25rem;', text: 'Achievements' }))
-    if (profile) pad.append(U.el('p', { class: 'list-row-sub', text: `${profile.avatar ?? ''} ${profile.name}` }))
 
     const evaluated = this.CATALOG.map(a => {
       const value = Math.max(0, Math.floor(a.value(ctx)))

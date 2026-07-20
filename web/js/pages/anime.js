@@ -53,7 +53,10 @@ const PageAnime = {
       U.el('a', { class: 'chip', href: `#/search?format=${media.format ?? ''}`, text: U.format(media) }),
       U.el('a', { class: 'chip', href: `#/search?status=${media.status ?? ''}`, text: U.statusMap[media.status] ?? '' }),
       U.seasonYear(media) ? U.el('a', { class: 'chip', href: `#/search?season=${media.season ?? ''}&year=${media.seasonYear ?? ''}`, text: String(U.seasonYear(media)) }) : null,
-      media.averageScore ? U.el('span', { class: 'chip', style: `background:${ratingColor(media.averageScore)};color:white;`, text: media.averageScore + '%' }) : null
+      media.averageScore ? U.el('span', { class: 'chip', style: `background:${ratingColor(media.averageScore)};color:white;`, text: media.averageScore + '%' }) : null,
+      media.nextAiringEpisode?.airingAt
+        ? U.el('span', { class: 'chip chip-airing', text: `Ep ${media.nextAiringEpisode.episode} ${U.relTime(new Date(media.nextAiringEpisode.airingAt * 1000))}` })
+        : null
     ])
 
     const desc = U.el('div', { class: 'detail-desc clamped', text: U.plainDesc(media.description) })
@@ -172,8 +175,78 @@ const PageAnime = {
     for (const [name, label] of tabDefs) {
       tabBar.append(U.el('button', { class: 'dtab', dataset: { tab: name }, text: label, onclick: () => select(name) }))
     }
-    wrap.append(tabBar, tabContent)
+
+    // two-column body: tabs on the left, info sidebar on the right
+    const main = U.el('div', { class: 'detail-main-col' }, [tabBar, tabContent])
+    wrap.append(U.el('div', { class: 'detail-columns' }, [main, this.sidePanel(media)]))
     select('episodes')
+  },
+
+  // ---- right-hand info sidebar: facts, airing countdown, where to watch ----
+  sidePanel (media) {
+    const side = U.el('aside', { class: 'detail-side' })
+
+    // next airing countdown card
+    const air = media.nextAiringEpisode
+    if (air?.airingAt) {
+      side.append(U.el('div', { class: 'side-card side-airing' }, [
+        U.el('div', { class: 'side-airing-label', text: 'Next episode' }),
+        U.el('div', { class: 'side-airing-ep', text: `Episode ${air.episode}` }),
+        U.el('div', { class: 'side-airing-time', text: U.relTime(new Date(air.airingAt * 1000)) })
+      ]))
+    }
+
+    const prettify = v => v ? String(v).replaceAll('_', ' ').toLowerCase().replace(/^\w/, c => c.toUpperCase()) : null
+    const start = media.startDate?.year
+      ? [media.startDate.year, media.startDate.month, media.startDate.day].filter(Boolean).join('.')
+      : null
+
+    const rows = [
+      ['Format', U.format(media)],
+      ['Episodes', media.episodes ? String(media.episodes) : null],
+      ['Duration', media.duration ? `${media.duration} min` : null],
+      ['Status', U.statusMap[media.status]],
+      ['Season', U.seasonYear(media) || null],
+      ['Start date', start],
+      ['Studio', media.studios?.nodes?.[0]?.name],
+      ['Source', prettify(media.source)],
+      ['Country', media.countryOfOrigin],
+      ['Mean score', media.meanScore ? media.meanScore + '%' : null],
+      ['Popularity', media.popularity ? media.popularity.toLocaleString() : null],
+      ['Favourites', media.favourites ? media.favourites.toLocaleString() : null]
+    ].filter(([, v]) => v)
+
+    side.append(U.el('div', { class: 'side-card' }, [
+      U.el('h3', { class: 'side-card-title', text: 'Details' }),
+      U.el('div', { class: 'side-rows' }, rows.map(([label, value]) =>
+        U.el('div', { class: 'side-row' }, [
+          U.el('span', { class: 'side-row-label', text: label }),
+          U.el('span', { class: 'side-row-value', text: value })
+        ])))
+    ]))
+
+    // official streaming links
+    const streams = (media.externalLinks ?? []).filter(l => l.type === 'STREAMING')
+    if (streams.length) {
+      side.append(U.el('div', { class: 'side-card' }, [
+        U.el('h3', { class: 'side-card-title', text: 'Where to watch' }),
+        U.el('div', { class: 'side-streams' }, streams.slice(0, 8).map(link =>
+          U.el('a', { class: 'side-stream', href: link.url, target: '_blank', rel: 'noopener' }, [
+            U.el('span', { class: 'side-stream-dot', style: link.color ? `background:${link.color};` : null }),
+            document.createTextNode(link.site)
+          ])))
+      ]))
+    }
+
+    // synonyms (compact)
+    if (media.synonyms?.length) {
+      side.append(U.el('div', { class: 'side-card' }, [
+        U.el('h3', { class: 'side-card-title', text: 'Also known as' }),
+        U.el('div', { class: 'side-synonyms', text: media.synonyms.slice(0, 4).join(' · ') })
+      ]))
+    }
+
+    return side
   },
 
   // status editor attached to the Play button, like the original EntryEditor

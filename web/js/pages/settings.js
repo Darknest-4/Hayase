@@ -79,18 +79,10 @@ const PageSettings = {
   _appearance () {
     const wrap = U.el('div')
     const settings = Store.settings()
-    const base = settings.themeBase ?? (settings.theme === 'light' ? 'light' : 'dark')
 
-    const themeSelect = U.el('select', {
-      class: 'select',
-      onchange: e => { Store.setTheme({ base: e.target.value }) }
-    }, [['dark', 'Dark'], ['light', 'Light']].map(([value, label]) =>
-      U.el('option', { value, text: label, ...(base === value ? { selected: '' } : {}) })))
-
-    wrap.append(this._card('Base theme', 'Dark by default, light for daylight.', themeSelect))
-    wrap.append(this._card('Theme Engine', 'Custom accent colours, curated presets and a live preview.',
-      U.el('a', { class: 'btn btn-primary btn-sm', href: '#/themes' }, [document.createTextNode('Open Theme Engine →')])
-    ))
+    // full Theme Engine, embedded (base, accent presets, custom colour, preview)
+    wrap.append(U.el('p', { class: 'list-row-sub', style: 'margin:0 0 1rem;', text: 'Personalise Yume — base, accent and surface tint apply instantly and are saved for this profile.' }))
+    window.PageThemes.body(wrap)
 
     // title language
     const langSelect = U.el('select', {

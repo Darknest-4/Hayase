@@ -31,6 +31,9 @@ const C = {
       ]))
     }
 
+    // play affordance revealed on hover
+    cover.append(U.el('div', { class: 'card-play' }, [U.svg(this.PLAY, 18)]))
+
     const sub = subline ?? [U.format(media), U.seasonYear(media), media.episodes ? `${media.episodes} ep` : null].filter(Boolean).join(' • ')
 
     const card = U.el('a', { class: 'card', href: `#/anime/${media.id}` }, [
@@ -40,6 +43,76 @@ const C = {
     ])
     this._attachPreview(card, media)
     return card
+  },
+
+  // ---- spotlight header: a full-bleed banner from a random popular anime ----
+  // The Yume catalogue DB stores metadata only, so banner artwork comes from
+  // the same AniList source the rest of the app already uses. The chosen title
+  // is credited, faintly, in the bottom-right corner.
+  _spotlightPool: null,
+
+  _spotlightPick () {
+    if (!this._spotlightPool) {
+      this._spotlightPool = (async () => {
+        try {
+          const page = await window.API.search({ sort: ['POPULARITY_DESC'], perPage: 50 })
+          return (page.media ?? []).filter(m => m.bannerImage)
+        } catch (e) { return [] }
+      })()
+    }
+    return this._spotlightPool.then(pool => pool.length ? pool[Math.floor(Math.random() * pool.length)] : null)
+  },
+
+  spotlight (title, { subtitle = null, actions = null } = {}) {
+    const bg = U.el('div', { class: 'spotlight-bg' })
+    const credit = U.el('a', { class: 'spotlight-credit hidden' })
+    const inner = U.el('div', { class: 'spotlight-inner' }, [
+      U.el('h1', { class: 'spotlight-title', text: title }),
+      subtitle ? U.el('p', { class: 'spotlight-sub', text: subtitle }) : null,
+      actions ?? null
+    ])
+    const header = U.el('div', { class: 'spotlight' }, [bg, U.el('div', { class: 'spotlight-scrim' }), inner, credit])
+
+    this._spotlightPick().then(m => {
+      if (!m) return
+      const url = m.bannerImage || U.cover(m)
+      if (!url) return
+      bg.style.backgroundImage = `url("${url}")`
+      requestAnimationFrame(() => bg.classList.add('loaded'))
+      credit.href = `#/anime/${m.id}`
+      credit.textContent = U.title(m)
+      credit.classList.remove('hidden')
+    })
+    return header
+  },
+
+  // ---- site footer ----
+  footer () {
+    const col = (title, links) => U.el('div', { class: 'footer-col' }, [
+      U.el('h4', { text: title }),
+      ...links.map(([label, href]) => U.el('a', { href, text: label }))
+    ])
+
+    const year = new Date().getFullYear()
+    return U.el('footer', { class: 'site-footer' }, [
+      U.el('div', { class: 'footer-main' }, [
+        U.el('div', { class: 'footer-brand' }, [
+          U.el('div', { class: 'footer-logo' }, [
+            U.svg('<path d="M18 3.5A10 10 0 1 0 21 16 8 8 0 0 1 18 3.5Z" fill="currentColor" stroke="none"/>', 22),
+            U.el('span', { text: 'yume' })
+          ]),
+          U.el('p', { class: 'footer-tagline', text: 'Track, discover and watch anime — your list, your profiles, your way.' })
+        ]),
+        col('Discover', [['Home', '#/home'], ['Search', '#/search'], ['Schedule', '#/schedule'], ['Dashboard', '#/dashboard']]),
+        col('Library', [['My Library', '#/list'], ['Profile', '#/profile'], ['Watch History', '#/profile?tab=history'], ['Analytics', '#/profile?tab=analytics']]),
+        col('Community', [['Community', '#/community'], ['Watch Together', '#/w2g'], ['Extensions', '#/extensions']]),
+        col('Yume', [['Settings', '#/settings'], ['Notifications', '#/notifications'], ['Developer', '#/developer']])
+      ]),
+      U.el('div', { class: 'footer-bottom' }, [
+        U.el('span', { text: `© ${year} Yume · built on the Yume design system` }),
+        U.el('span', { class: 'footer-credits', html: 'Anime data from <a href="https://anilist.co" target="_blank" rel="noopener">AniList</a>, <a href="https://jikan.moe" target="_blank" rel="noopener">Jikan</a> &amp; <a href="https://api.ani.zip" target="_blank" rel="noopener">ani.zip</a>' })
+      ])
+    ])
   },
 
   // ---- hover preview (like the original app's preview cards) ----
@@ -58,7 +131,7 @@ const C = {
 
     card.addEventListener('pointerenter', () => {
       clearTimeout(this._previewTimer)
-      this._previewTimer = setTimeout(() => this._openPreview(card, media), 500)
+      this._previewTimer = setTimeout(() => this._openPreview(card, media), 350)
     })
     card.addEventListener('pointerleave', () => {
       clearTimeout(this._previewTimer)
@@ -74,6 +147,8 @@ const C = {
     const entry = Store.entry(media.id)
     const next = (entry?.progress ?? 0) + 1
 
+    // media header: banner (or cover) + gradient + title overlaid; trailer
+    // fades in on top when available
     const head = U.el('div', { class: 'preview-media' })
     if (media.trailer?.id && media.trailer.site === 'youtube') {
       const frame = U.el('iframe', {
@@ -87,37 +162,72 @@ const C = {
     }
     if (media.bannerImage) head.style.backgroundImage = `url("${media.bannerImage}")`
     else if (U.cover(media)) head.style.backgroundImage = `url("${U.cover(media)}")`
+    head.append(
+      U.el('div', { class: 'preview-media-scrim' }),
+      U.el('div', { class: 'preview-media-title', text: U.title(media) })
+    )
+    if (media.averageScore) {
+      head.append(U.el('div', { class: 'preview-score' }, [U.svg(this.HEART, 11), U.el('span', { text: media.averageScore + '%' })]))
+    }
 
-    const meta = [U.format(media), U.seasonYear(media), media.episodes ? media.episodes + ' ep' : null, media.averageScore ? media.averageScore + '%' : null].filter(Boolean).join(' • ')
+    // meta chips instead of a plain dot-row
+    const metaChips = U.el('div', { class: 'preview-chips' },
+      [U.format(media), U.seasonYear(media), media.episodes ? media.episodes + ' ep' : null, U.statusMap[media.status]]
+        .filter(Boolean).map(t => U.el('span', { class: 'preview-chip', text: t })))
+
+    // actions: Play + add-to-list + favourite
+    const heart = U.svg(this.HEART, 14)
+    if (Store.isFavourite(media.id)) heart.style.fill = 'currentColor'
+    const favBtn = U.el('button', {
+      class: 'preview-icon-btn' + (Store.isFavourite(media.id) ? ' active' : ''),
+      title: 'Favourite',
+      onclick: e => {
+        const now = Store.toggleFavourite(media.id)
+        heart.style.fill = now ? 'currentColor' : 'none'
+        e.currentTarget.classList.toggle('active', now)
+      }
+    })
+    favBtn.append(heart)
+
+    const listBtn = entry
+      ? U.el('span', { class: 'badge badge-theme', style: 'align-self:center;', text: U.listStatusMap[entry.status] })
+      : U.el('button', {
+          class: 'preview-icon-btn', title: 'Add to Planning',
+          onclick: e => {
+            Store.saveEntry(media, { status: 'PLANNING' })
+            U.toast('Added to Planning')
+            e.currentTarget.replaceWith(U.el('span', { class: 'badge badge-theme', style: 'align-self:center;', text: 'Planning' }))
+          }
+        }, [U.svg(this.PLUS, 14)])
 
     const panel = U.el('div', { class: 'preview-panel' }, [
       head,
       U.el('div', { class: 'preview-body' }, [
-        U.el('div', { class: 'preview-title', text: U.title(media) }),
-        U.el('div', { class: 'preview-meta', text: meta }),
+        metaChips,
         U.el('div', { class: 'preview-desc', text: U.plainDesc(media.description) }),
-        U.el('div', { style: 'display:flex;gap:.5rem;margin-top:.6rem;' }, [
-          U.el('a', { class: 'btn btn-primary btn-sm', href: `#/watch/${media.id}:${next}`, onclick: () => this._closePreview() },
-            [U.svg(this.PLAY, 12), document.createTextNode(entry?.progress ? `Ep ${next}` : 'Watch')]),
-          entry
-            ? U.el('span', { class: 'badge badge-outline', style: 'align-self:center;', text: U.listStatusMap[entry.status] })
-            : U.el('button', {
-                class: 'btn btn-secondary btn-sm',
-                onclick: e => { Store.saveEntry(media, { status: 'PLANNING' }); U.toast('Added to Planning'); e.target.replaceWith(U.el('span', { class: 'badge badge-outline', text: 'Planning' })) }
-              }, [document.createTextNode('+ Add to list')])
+        (media.genres ?? []).length
+          ? U.el('div', { class: 'preview-genres' }, media.genres.slice(0, 4).map(g =>
+              U.el('a', { class: 'preview-genre', href: `#/search?genre=${encodeURIComponent(g)}`, text: g, onclick: () => this._closePreview() })))
+          : null,
+        U.el('div', { class: 'preview-actions' }, [
+          U.el('a', { class: 'btn btn-primary btn-sm', style: 'flex-grow:1;justify-content:center;', href: `#/watch/${media.id}:${next}`, onclick: () => this._closePreview() },
+            [U.svg(this.PLAY, 12), document.createTextNode(entry?.progress ? ` Continue Ep ${next}` : ' Watch now')]),
+          listBtn,
+          favBtn,
+          U.el('a', { class: 'preview-icon-btn', title: 'Details', href: `#/anime/${media.id}`, onclick: () => this._closePreview() },
+            [U.svg('<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>', 14)])
         ])
       ])
     ])
 
     panel.addEventListener('pointerleave', () => this._closePreview())
-    panel.addEventListener('click', e => { if (e.target === panel) this._closePreview() })
 
     document.body.append(panel)
     const rect = card.getBoundingClientRect()
-    const width = 320
+    const width = 360
     let left = rect.left + rect.width / 2 - width / 2
     left = Math.max(8, Math.min(left, window.innerWidth - width - 8))
-    const top = Math.max(8, Math.min(rect.top - 40, window.innerHeight - 320))
+    const top = Math.max(8, Math.min(rect.top - 48, window.innerHeight - 340))
     panel.style.left = left + 'px'
     panel.style.top = top + 'px'
     this._preview = panel

@@ -19,10 +19,13 @@ const PageThemes = {
   render (root) {
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
-
     pad.append(U.el('h1', { class: 'page-title', text: 'Theme Engine' }))
     pad.append(U.el('p', { class: 'list-row-sub', style: 'margin-top:-.5rem;', text: 'Personalise Yume. Changes apply instantly and are saved for this profile.' }))
+    this.body(pad)
+  },
 
+  // embeddable body — used standalone and inside Settings › Appearance
+  body (pad) {
     const settings = Store.settings()
     const currentBase = settings.themeBase ?? (settings.theme === 'light' ? 'light' : 'dark')
     const currentAccent = settings.themeAccent ?? null
