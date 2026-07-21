@@ -59,6 +59,18 @@ const PageSettings = {
       })
     ))
     wrap.append(C.authCard())
+    if (window.YumeAPI.user()) {
+      const LABEL = { off: 'Not syncing', syncing: 'Syncing…', synced: '✓ Synced to your account', error: '⚠ Sync unavailable' }
+      const statusEl = U.el('span', { class: 'list-row-sub', style: 'align-self:center;', text: LABEL[window.LibrarySync?.status ?? 'off'] })
+      const syncBtn = U.el('button', { class: 'btn btn-secondary btn-sm', onclick: async () => {
+        statusEl.textContent = LABEL.syncing
+        await window.LibrarySync?.init()
+        statusEl.textContent = LABEL[window.LibrarySync?.status ?? 'off']
+        U.toast(window.LibrarySync?.status === 'synced' ? 'Library synced' : 'Sync unavailable', window.LibrarySync?.status === 'error' ? 'error' : 'success')
+      } }, [document.createTextNode('Sync now')])
+      wrap.append(this._card('Library sync', 'Your library status and episode progress sync to your account and follow you across devices while signed in.',
+        U.el('div', { style: 'display:flex;gap:.6rem;flex-wrap:wrap;' }, [syncBtn, statusEl])))
+    }
     wrap.append(this._card('Yume server', 'Backend endpoint for platform features (extension store, sync). Leave as-is for local development.',
       U.el('input', {
         class: 'input', type: 'url', style: 'min-width:20rem;',

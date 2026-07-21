@@ -27,7 +27,7 @@ const routes: FastifyPluginAsync = async fastify => {
 
   // the full permission catalogue, grouped for the UI
   fastify.get('/permissions', async () => {
-    const data = await query('SELECT slug, "group", description FROM permissions ORDER BY "group", slug')
+    const data = await query('SELECT slug, "group", description, status FROM permissions ORDER BY "group", slug')
     return { data }
   })
 

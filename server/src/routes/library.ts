@@ -38,9 +38,10 @@ const routes: FastifyPluginAsync = async fastify => {
     const data = await query(
       `SELECT le.anime_id, le.status, le.progress, le.score, le.rewatches, le.updated_at,
               a.canonical_title, a.format, a.episode_count, a.next_airing_ep,
-              img.object_key AS cover_key
+              m.anilist_id, img.object_key AS cover_key
        FROM library_entries le
        JOIN anime a ON a.id = le.anime_id
+       LEFT JOIN anime_mappings m ON m.anime_id = a.id
        LEFT JOIN anime_images img ON img.anime_id = a.id AND img.kind = 'cover' AND img.is_primary
        WHERE le.profile_id = $1 ${status ? 'AND le.status = $2' : ''}
        ORDER BY le.updated_at DESC`,

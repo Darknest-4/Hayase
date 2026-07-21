@@ -72,13 +72,22 @@ bővítmény‑rendszerrel.
 - [x] **Epizód hozzáadás / szerkesztés / törlés** (szám, cím, dátum, hossz, filler/recap, synopsis)
 - [x] A publikus `/v1/anime` végpontok (browse, search, schedule, detail, episodes) mind **szűrnek** a láthatóságra
 
+### #1 — DB library‑sync (kész)
+- [x] **Bejelentkezve a lokális könyvtár a fiókhoz szinkronizál** és eszközök közt követi a felhasználót
+- [x] **Push (lokál → DB):** minden könyvtár‑írás (`Store.saveEntry`/`setProgress`/`removeEntry`) tükröződik a DB‑be (státusz + epizód‑haladás), debounce‑olva
+- [x] **Pull (DB → lokál):** bejelentkezéskor a fiók könyvtára visszatöltődik, „legfrissebb nyer" ütközésfeloldással
+- [x] **Resume‑pozíció** (per‑epizód másodperc) best‑effort szinkron a `watch_progress`‑be (epizód‑UUID feloldással, cache‑elve)
+- [x] **Id‑hidak:** AniList‑id ↔ Yume‑UUID (`yumeAnimeId`), lokál profil → fiók default `user_profiles` (első bejelentkezéskor létrehozva); státusz‑leképezés `CURRENT↔WATCHING`, `REPEATING↔REWATCHING`
+- [x] **Settings › Account** „Library sync" kártya státusszal és „Sync now" gombbal
+- [x] Kliens‑modul: `web/js/library-sync.js` (`LibrarySync`)
+
 ---
 
 ## 3. Mi van hátra / tervben 🔜
 
-A felhasználó által kért sorrend (a #6 kész, ezek jönnek „folytasd"‑ra):
+A felhasználó által kért sorrend (a #6 és #1 kész, ezek jönnek „folytasd"‑ra):
 
-1. **#1 — DB library‑sync**: a kliens könyvtár/haladás/folytatás szinkronizálása a DB‑be bejelentkezéskor (a táblák [`library_entries`, `watch_progress`] már megvannak, a kliens‑kötés hiányzik)
+1. ~~**#1 — DB library‑sync**~~ ✅ **kész** (lásd fent)
 2. **#2 — Reviews** (értékelések): a `reviews`, `review_votes` táblák megvannak, UI+API hátra
 3. **#3 — Custom lists / Collections**: `custom_lists`, `custom_list_items`, `collections`, `collection_lists` táblák megvannak
 4. **#4 — Follows/Friendships + Forums/Clubs**: `follows`, `friendships`, `forums`, `clubs`, `topics`, `posts`, `club_members` táblák megvannak
@@ -134,7 +143,7 @@ Migrációk: `0001`…`0013` (a `db/migrations/`‑ben, filename szerint követv
 |--------|------|----------|
 | `/v1/auth` | `auth.ts` | regisztráció, login, refresh, logout, permissions |
 | `/v1/anime` | `anime.ts` | browse, schedule, search, by‑anilist, resolve, detail, episodes, relations *(láthatóságra szűr)* |
-| `/v1/me` | `library.ts` | könyvtár, haladás |
+| `/v1/me` | `library.ts` | könyvtár, haladás, continue‑watching, resume‑pozíció *(a kliens `LibrarySync` ehhez szinkronizál, `X-Profile-Id` fejléccel)* |
 | `/v1/profiles` | `profiles.ts` | profilok |
 | `/v1/extensions` | `extensions.ts` | store |
 | `/v1/comments` | `comments.ts` | kommentek |
@@ -194,6 +203,60 @@ kapja a jogait, felhasználóhoz a `user_roles` köti.
 
 Feloldás: `users → user_roles → role_permissions → permissions`
 (per‑request memo a `auth.ts` pluginban).
+
+### Jogosultság‑státusz — `active` vs `planned` (0014)
+
+A katalógus a platform teljes RBAC‑szótára, és **szándékosan a funkciók
+előtt jár**. Hogy semmi ne tűnjön „halottnak", minden jog `status` mezőt kap:
+
+- **`active`** — ma egy valós route kikényszeríti (`requirePermission` a kódban)
+- **`planned`** — katalogizált és kiosztható, de a funkciója még nincs kész (#2–#5)
+
+A Roles admin UI **LIVE / planned** jelvényt és csoportonkénti „n live" számot mutat.
+Jelenleg **15 `active`, 372 `planned`**. Ahogy egy modul beköt egy jogot,
+a státusza `active`‑ra vált (a `0014` UPDATE‑listáját bővítve).
+
+**A 15 élő jog:** `anime.view/create/edit/delete`, `episode.create/edit/delete`,
+`admin.analytics.view`, `admin.users.manage`, `admin.webhooks.manage`,
+`community.moderate`, `community.post`, `roles.manage`, `settings.system`,
+`extensions.publish`.
+
+> Miért nem több? A személyes végpontokat (saját könyvtár, profilok, like,
+> jelentés‑küldés) **helytelen** lenne joghoz kötni — ott sima `authenticate`
+> a helyes. A többi 372 jog a #2–#5 funkcióival válik élővé.
+
+---
+
+## 7b. Használat‑audit — mi él, mi séma (scaffolding)
+
+> Őszinte leltár: a séma előre ki van építve, hogy a következő modulok gyorsan
+> ráüljenek. Semmi sem „felesleges" — mindennek megvan a gazda‑modulja és státusza.
+
+**Táblák:** 90 logikai tábla (107 fizikai a havi particiókkal) — **55 használt
+(van rá szerver‑kód), 35 séma‑szintű**.
+
+| Réteg | Élő táblák (használt) | Séma‑szintű (jövőbeli modul) |
+|-------|----------------------|------------------------------|
+| Fiók/auth | `users`, `sessions` | `oauth_identities`, `api_keys`, `devices`, `user_settings` |
+| Katalógus | `anime`, `episodes`, `anime_titles/synonyms/mappings/genres/tags/companies/genres`, `anime_images`, `anime_relations` | `characters`, `people`, `anime_characters/staff`, `character_voices`, `anime_videos`, `anime_recommendations` |
+| Streaming | — (külső forrás) | `video_sources`, `source_mirrors`, `subtitle_tracks`, `audio_tracks`, `skip_segments`\* |
+| Könyvtár | `library_entries`, `watch_progress`, `watch_history` | `favorites`, `bookmarks`, `custom_lists(+items)`, `collections(+lists)`, `list_likes` |
+| Közösség | `comments`, `comment_likes`, `reports`, `moderation_actions` | `reviews`, `review_votes`, `follows`, `friendships`, `clubs(+members)`, `forums`, `topics`, `chats` |
+| Gamifikáció | `profile_stats`, `xp_events`, `watch_stats_daily` | `achievements`, `badges`, `user_badges`, `profile_achievements` |
+| Bővítmények | `extensions`, `extension_versions/installs/developers/permissions` | `extension_reviews` |
+| Rendszer | `roles`, `permissions`, `role_permissions`, `user_roles`, `notifications`, `webhooks`, `jobs`, `feature_flags`, `site_settings`, `watch_together_rooms`, analitika‑particiók | — |
+
+\* Az AniSkip jelenleg a **külső** AniSkip API‑ból megy, nem a `skip_segments` tábláiból.
+
+**Feature‑flagek:** 23 — **19 él** (15 `page.*` router‑gate + 4 funkció‑guard:
+`comments`, `hover_preview`, `image_search`, `watch_together`). 4 flag még a
+funkciójára vár: `reviews`/`custom_lists` (#2/#3), `trailers` (a funkció megvan,
+guard hátra), `registration` (a `site_settings.registration_open` szabályozza).
+
+**Miért tartjuk meg a séma‑szintű táblákat/jogokat?** Mert a #2–#5 modulok pont
+ezekre épülnek — most eldobni, majd újra létrehozni felesleges munka lenne.
+Ehelyett minden dokumentálva van (gazda‑modul + státusz), és a
+jogok/flagek státusza a UI‑ban is látszik.
 
 ---
 

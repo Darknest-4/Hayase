@@ -42,8 +42,8 @@ const YumeAPI = {
 
   // ---- request helpers ----
 
-  async _request (path, { method = 'GET', body, auth = false, retry = true } = {}) {
-    const headers = { Accept: 'application/json' }
+  async _request (path, { method = 'GET', body, auth = false, retry = true, headers: extra } = {}) {
+    const headers = { Accept: 'application/json', ...extra }
     if (body !== undefined) headers['Content-Type'] = 'application/json'
 
     if (auth) {
@@ -61,7 +61,7 @@ const YumeAPI = {
     // expired access token → refresh once and retry
     if (res.status === 401 && auth && retry && this._tokens()?.refreshToken) {
       await this._refresh()
-      return this._request(path, { method, body, auth, retry: false })
+      return this._request(path, { method, body, auth, retry: false, headers: extra })
     }
 
     if (res.status === 204) return null
