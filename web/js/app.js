@@ -58,6 +58,14 @@ const App = {
     document.getElementById('nav-more')?.classList.toggle('active', !primary.includes(route))
     this.refreshNotifBadge()
 
+    // feature-flag / access gate (DB-driven site config)
+    const gate = this._gateCheck(route)
+    if (!gate.ok) {
+      this._renderGate(page, gate, route)
+      if (!['watch', 'w2g', 'profiles'].includes(route)) page.append(C.footer())
+      return
+    }
+
     const handler = this.routes[route] ?? this.routes.home
     try {
       handler(page, params, arg)
@@ -67,6 +75,112 @@ const App = {
 
     // site footer on standard content pages (not on immersive / picker screens)
     if (!['watch', 'w2g', 'profiles'].includes(route)) page.append(C.footer())
+  },
+
+  // ---- feature-flag / access gate ----
+
+  config: null,   // effective site config from /v1/config
+  perms: [],      // the signed-in user's permission slugs
+
+  // routes always reachable so users can configure the server / sign in
+  _gateExempt: ['settings', 'profiles'],
+
+  _gateCheck (route) {
+    const cfg = this.config
+    if (!cfg) return { ok: true } // backend unreachable → everything on
+    const signedIn = !!window.YumeAPI.user()
+
+    if (cfg.site.requireLogin && !signedIn && !this._gateExempt.includes(route)) {
+      return { ok: false, kind: 'site-login' }
+    }
+
+    const flag = cfg.flags['page.' + route]
+    if (!flag) return { ok: true }
+    if (!flag.enabled) return { ok: false, kind: 'disabled', flag }
+    if (flag.access === 'auth' && !signedIn) return { ok: false, kind: 'auth', flag }
+    if (flag.access === 'permission') {
+      if (!signedIn) return { ok: false, kind: 'auth', flag }
+      if (!this.perms.includes(flag.permission)) return { ok: false, kind: 'permission', flag }
+    }
+    return { ok: true }
+  },
+
+  // is a cross-cutting feature available? (used by pages, e.g. reviews/comments)
+  featureOn (name) {
+    const cfg = this.config
+    if (!cfg) return true
+    const flag = cfg.flags['feature.' + name]
+    if (!flag || !flag.enabled) return flag ? false : true
+    const signedIn = !!window.YumeAPI.user()
+    if (flag.access === 'auth' && !signedIn) return false
+    if (flag.access === 'permission' && !this.perms.includes(flag.permission)) return false
+    return true
+  },
+
+  _renderGate (page, gate, route) {
+    const wrap = U.el('div', { class: 'gate' })
+    const siteName = this.config?.site?.name ?? 'Yume'
+
+    if (gate.kind === 'site-login') {
+      wrap.append(
+        U.el('div', { class: 'gate-icon', text: '🔒' }),
+        U.el('h1', { class: 'gate-title', text: `${siteName} is private` }),
+        U.el('p', { class: 'gate-sub', text: 'Sign in to your account to continue.' }),
+        C.authCard(() => { this.afterAuth() })
+      )
+    } else if (gate.kind === 'auth') {
+      wrap.append(
+        U.el('div', { class: 'gate-icon', text: '🔑' }),
+        U.el('h1', { class: 'gate-title', text: `Sign in for ${gate.flag.label}` }),
+        U.el('p', { class: 'gate-sub', text: 'This section needs a signed-in account.' }),
+        C.authCard(() => { this.afterAuth() })
+      )
+    } else if (gate.kind === 'permission') {
+      wrap.append(
+        U.el('div', { class: 'gate-icon', text: '⛔' }),
+        U.el('h1', { class: 'gate-title', text: 'No access' }),
+        U.el('p', { class: 'gate-sub', text: `${gate.flag.label} requires the “${gate.flag.permission}” permission.` }),
+        U.el('a', { class: 'btn btn-secondary', href: '#/home' }, [document.createTextNode('Back home')])
+      )
+    } else { // disabled
+      wrap.append(
+        U.el('div', { class: 'gate-icon', text: '🚧' }),
+        U.el('h1', { class: 'gate-title', text: `${gate.flag?.label ?? 'This section'} is turned off` }),
+        U.el('p', { class: 'gate-sub', text: 'An administrator has disabled this part of the site.' }),
+        U.el('a', { class: 'btn btn-secondary', href: '#/home' }, [document.createTextNode('Back home')])
+      )
+    }
+    page.append(wrap)
+  },
+
+  // re-load config + permissions after a login/logout, then re-render
+  async afterAuth () {
+    await this.loadConfig()
+    this._perms = null
+    this.perms = window.YumeAPI.user() ? await window.YumeAPI.myPermissions() : []
+    this.refreshAdminNav()
+    this.applyNavVisibility()
+    this.navigate()
+  },
+
+  async loadConfig () {
+    this.config = await window.YumeAPI.config()
+  },
+
+  // hide nav entries that are disabled or permission-gated-and-unavailable
+  applyNavVisibility () {
+    const cfg = this.config
+    if (!cfg) return
+    const signedIn = !!window.YumeAPI.user()
+    document.querySelectorAll('.sidebar-btn[data-route]').forEach(btn => {
+      const route = btn.dataset.route
+      if (route === 'admin') return // handled by refreshAdminNav
+      let hide = false
+      if (cfg.site.requireLogin && !signedIn && !this._gateExempt.includes(route)) hide = true
+      const flag = cfg.flags['page.' + route]
+      if (flag && (!flag.enabled || (flag.access === 'permission' && !this.perms.includes(flag.permission)))) hide = true
+      btn.classList.toggle('nav-flag-hidden', hide)
+    })
   },
 
   // ---- quick search modal ----
@@ -147,12 +261,13 @@ const App = {
     })
   },
 
-  async refreshAdminNav () {
+  refreshAdminNav () {
     /* global YumeAPI */
     const nav = document.getElementById('nav-admin')
     if (!nav) return
-    const perms = window.YumeAPI.user() ? await window.YumeAPI.myPermissions() : []
-    nav.classList.toggle('hidden', !perms.some(p => p === 'community.moderate' || p.startsWith('admin.')))
+    // admin nav follows the same gate as the /admin route (page.admin flag)
+    const canAdmin = this._gateCheck('admin').ok && !!window.YumeAPI.user()
+    nav.classList.toggle('hidden', !canAdmin)
   },
 
   refreshProfileAvatar () {
@@ -256,6 +371,9 @@ const App = {
 
     const grid = U.el('div', { class: 'more-grid' })
     for (const it of items) {
+      // hide destinations disabled / gated-unavailable by the site config
+      const g = this._gateCheck(it.route)
+      if (!g.ok && (g.kind === 'disabled' || g.kind === 'permission')) continue
       // plain profile route is "active" only for the bare Profile item, not its tabs
       const isActive = it.route === current && (it.route !== 'profile' || !it.href)
       grid.append(U.el('a', {
@@ -278,7 +396,7 @@ const App = {
     if (backdrop) { backdrop.classList.remove('open'); setTimeout(() => backdrop.remove(), 300) }
   },
 
-  init () {
+  async init () {
     Store.ensureProfiles()
     Store.applyTheme()
     this.refreshProfileAvatar()
@@ -289,10 +407,20 @@ const App = {
       const label = btn.querySelector('span')?.textContent
       if (label) btn.title = label
     })
-    this.refreshAdminNav()
     this.initSearchModal()
     this.initMobileMore()
     window.addEventListener('hashchange', () => { this.closeMoreSheet(); this.navigate() })
+
+    // load DB-driven site config + permissions, apply the site name, then route
+    await this.loadConfig()
+    this.perms = window.YumeAPI.user() ? await window.YumeAPI.myPermissions() : []
+    if (this.config?.site?.name) {
+      const logoText = document.querySelector('.sidebar-logo-text')
+      if (logoText) logoText.textContent = this.config.site.name.toLowerCase()
+      document.title = this.config.site.name
+    }
+    this.refreshAdminNav()
+    this.applyNavVisibility()
     this.navigate()
   }
 }

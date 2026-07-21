@@ -311,6 +311,15 @@ for reproducible shots. Click any section below to expand it. Full gallery in
 </details>
 
 <details>
+<summary><b>🎛️ Site Config</b> — DB-driven feature flags: toggle any page/feature, set access (public / login / permission), lock the whole site behind login</summary>
+
+<br>
+
+![🎛️ Site Config — desktop](docs/screenshots/28-site-config.png)
+
+</details>
+
+<details>
 <summary><b>🎨 Theme Engine</b> — in Settings › Appearance — accent presets + custom colour with a live preview</summary>
 
 <br>

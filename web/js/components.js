@@ -128,6 +128,7 @@ const C = {
 
   _attachPreview (card, media) {
     if (!window.matchMedia('(hover: hover)').matches) return
+    if (window.App && !window.App.featureOn('hover_preview')) return
 
     card.addEventListener('pointerenter', () => {
       clearTimeout(this._previewTimer)
@@ -410,6 +411,9 @@ const C = {
   // ---- per-anime comment section (detail page) ----
   commentsSection (media) {
     const wrap = U.el('div')
+    if (window.App && !window.App.featureOn('comments')) {
+      return U.el('div', { class: 'empty-state', style: 'max-width:none;', text: 'Comments are turned off.' })
+    }
     const list = U.el('div', {}, [U.el('div', { class: 'spinner' })])
 
     const load = async () => {

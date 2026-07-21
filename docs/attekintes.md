@@ -134,7 +134,26 @@ A régi `#/analytics`, `#/achievements`, `#/history` linkek automatikusan
 Overview (felhasználó/tartalom/nézési statok, trending, job-queue
 egészség, hibacsoportok) | Users (keresés, suspend/ban/restore —
 session-visszavonással) | Reports (moderációs sor hide/dismiss
-akciókkal). Minden akció auditnaplózva.
+akciókkal) | Webhooks | **Site Config**. Minden akció auditnaplózva.
+
+### Site Config — adatbázis-vezérelt konfiguráció / feature flag-ek
+A teljes termék egy **DB-vezérelt vezérlőpultról** állítható, élőben:
+- **Feature flag-ek** (`feature_flags` tábla) — minden oldal (`page.*`) és
+  fő funkció (`feature.*`) egy sor: **be/ki kapcsolható**, és **hozzáférési
+  szintet** kap: `public` / `auth` (bejelentkezés kell) / `permission`
+  (adott jogosultság kell).
+- **Globális beállítások** (`site_settings`) — **az egész oldal
+  bejelentkezés mögé rakható** (`require_login`), regisztráció nyitva/zárva,
+  oldalnév, tagline.
+- A **publikus `/v1/config`** végpont vetíti a kliensre az effektív
+  konfigot. A kliens ez alapján: **elrejti a nav-elemeket**, **gate-eli a
+  route-okat** (kikapcsolt → „turned off", auth kell → login-gate,
+  permission kell → „no access"), és zárolt oldalnál teljes login-kaput
+  mutat (a Settings elérhető marad, hogy a szervert be lehessen állítani).
+- A funkció-flagek a megjelenő elemeket is vezérlik: kommentek, hover-
+  preview, kép-keresés, Watch Together gomb, trailerek stb.
+- Minden változás **auditált** és **webhook-eseményt** (`config.changed`)
+  küld. Jogosultság: `settings.system` (admin szerep).
 
 ### Dashboard (`#/dashboard`)
 Személyes nyitóoldal **testreszabható widgetekkel** (sorrend + ki/be a

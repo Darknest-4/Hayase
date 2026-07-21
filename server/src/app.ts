@@ -17,6 +17,7 @@ import adminRoutes from './routes/admin.ts'
 import devRoutes from './routes/dev.ts'
 import profileRoutes from './routes/profiles.ts'
 import webhookRoutes from './routes/webhooks.ts'
+import { publicConfig, adminConfig } from './routes/config.ts'
 import reportRoutes from './routes/reports.ts'
 import extensionRoutes from './routes/extensions.ts'
 import libraryRoutes from './routes/library.ts'
@@ -63,6 +64,8 @@ export async function buildApp (): Promise<FastifyInstance> {
 
   app.get('/v1/health', async () => ({ status: 'ok' }))
 
+  await app.register(publicConfig, { prefix: '/v1/config' })
+  await app.register(adminConfig, { prefix: '/v1/admin/config' })
   await app.register(authRoutes, { prefix: '/v1/auth' })
   await app.register(animeRoutes, { prefix: '/v1/anime' })
   await app.register(libraryRoutes, { prefix: '/v1/me' })

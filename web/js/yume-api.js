@@ -173,6 +173,16 @@ const YumeAPI = {
     return this._request(`/v1/comments/${id}/like`, { method: 'POST', auth: true })
   },
 
+  // ---- site config / feature flags ----
+
+  async config () {
+    try {
+      return await this._request('/v1/config')
+    } catch (e) {
+      return null // backend unreachable — the client falls back to "all on"
+    }
+  },
+
   // ---- permissions (cached per session) ----
 
   _perms: null,
@@ -217,7 +227,11 @@ const YumeAPI = {
     updateWebhook: (id, body) => YumeAPI._request(`/v1/admin/webhooks/${id}`, { method: 'PATCH', auth: true, body }),
     deleteWebhook: id => YumeAPI._request(`/v1/admin/webhooks/${id}`, { method: 'DELETE', auth: true }),
     testWebhook: id => YumeAPI._request(`/v1/admin/webhooks/${id}/test`, { method: 'POST', auth: true, body: {} }),
-    webhookDeliveries: id => YumeAPI._request(`/v1/admin/webhooks/${id}/deliveries`, { auth: true })
+    webhookDeliveries: id => YumeAPI._request(`/v1/admin/webhooks/${id}/deliveries`, { auth: true }),
+    // site config / feature flags
+    config: () => YumeAPI._request('/v1/admin/config', { auth: true }),
+    setFlag: (key, body) => YumeAPI._request(`/v1/admin/config/flags/${encodeURIComponent(key)}`, { method: 'PATCH', auth: true, body }),
+    setSetting: (key, value) => YumeAPI._request(`/v1/admin/config/settings/${encodeURIComponent(key)}`, { method: 'PATCH', auth: true, body: { value } })
   },
 
   // ---- extension store ----

@@ -89,11 +89,13 @@ const PageWatch = {
         class: 'btn btn-secondary btn-sm' + (episode >= total ? ' hidden' : ''),
         href: `#/watch/${media.id}:${episode + 1}`
       }, [document.createTextNode('Next ›')]),
-      // Watch Together — opens the sync-room popup
-      U.el('button', {
-        class: 'btn btn-secondary btn-sm w2g-open',
-        onclick: () => this.openW2G()
-      }, [U.svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>', 13), document.createTextNode('Watch Together')]),
+      // Watch Together — opens the sync-room popup (feature-flagged)
+      (!window.App || window.App.featureOn('watch_together'))
+        ? U.el('button', {
+            class: 'btn btn-secondary btn-sm w2g-open',
+            onclick: () => this.openW2G()
+          }, [U.svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>', 13), document.createTextNode('Watch Together')])
+        : null,
       U.el('div', { style: 'flex-grow:1;' }),
       markBtn,
       src ? U.el('a', { class: 'btn btn-ghost btn-sm', href: `#/watch/${media.id}:${episode}` }, [document.createTextNode('Change source')]) : null

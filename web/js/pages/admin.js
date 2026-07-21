@@ -14,8 +14,9 @@ const PageAdmin = {
     const canModerate = perms.includes('community.moderate')
     const canAnalytics = perms.includes('admin.analytics.view')
     const canWebhooks = perms.includes('admin.webhooks.manage')
+    const canConfig = perms.includes('settings.system')
 
-    if (!canUsers && !canModerate && !canAnalytics && !canWebhooks) {
+    if (!canUsers && !canModerate && !canAnalytics && !canWebhooks && !canConfig) {
       pad.append(U.el('div', { class: 'callout', text: 'You need moderator or admin permissions to see this page.' }))
       return
     }
@@ -24,7 +25,8 @@ const PageAdmin = {
       canAnalytics && ['overview', 'Overview'],
       canUsers && ['users', 'Users'],
       canModerate && ['reports', 'Reports'],
-      canWebhooks && ['webhooks', 'Webhooks']
+      canWebhooks && ['webhooks', 'Webhooks'],
+      canConfig && ['config', 'Site Config']
     ].filter(Boolean)
 
     const state = { tab: TABS[0][0] }
@@ -44,11 +46,109 @@ const PageAdmin = {
       if (state.tab === 'overview') this.renderOverview(content)
       else if (state.tab === 'users') this.renderUsers(content)
       else if (state.tab === 'reports') this.renderReports(content)
+      else if (state.tab === 'config') this.renderConfig(content)
       else this.renderWebhooks(content)
     }
 
     renderTabs()
     renderContent()
+  },
+
+  // ---- Site Config: feature flags + global settings ----
+  async renderConfig (content) {
+    let data
+    try {
+      data = await YumeAPI.admin.config()
+    } catch (e) {
+      content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load config: ' + e.message }))
+      return
+    }
+    content.replaceChildren()
+
+    const settings = data.settings ?? {}
+    const applyLive = async () => { await window.App.loadConfig(); window.App.applyNavVisibility(); window.App.refreshAdminNav() }
+
+    // ---------- global settings ----------
+    content.append(U.el('h2', { class: 'detail-section-title', text: 'Global' }))
+
+    const boolSetting = (key, title, desc) => {
+      const on = settings[key] === true
+      return U.el('div', { class: 'setting-card', style: 'display:flex;align-items:center;gap:1rem;' }, [
+        U.el('div', { style: 'flex-grow:1;' }, [U.el('h3', { style: 'margin:0;', text: title }), U.el('p', { style: 'margin:.2rem 0 0;', text: desc })]),
+        U.el('label', { class: 'switch' }, [
+          U.el('input', { type: 'checkbox', ...(on ? { checked: '' } : {}), onchange: async e => {
+            try { await YumeAPI.admin.setSetting(key, e.target.checked); settings[key] = e.target.checked; U.toast('Saved'); await applyLive() } catch (err) { U.toast(err.message, 'error'); e.target.checked = on }
+          } }),
+          U.el('span', { class: 'slider' })
+        ])
+      ])
+    }
+    content.append(
+      boolSetting('require_login', 'Require login for the whole site', 'Lock every page behind a sign-in screen (Settings stays reachable).'),
+      boolSetting('registration_open', 'Open registration', 'Allow new accounts to sign up.')
+    )
+
+    const textSetting = (key, title, desc) => U.el('div', { class: 'setting-card' }, [
+      U.el('h3', { text: title }), U.el('p', { text: desc }),
+      U.el('input', { class: 'input', style: 'min-width:20rem;', value: settings[key] ?? '', onchange: async e => {
+        try { await YumeAPI.admin.setSetting(key, e.target.value); U.toast('Saved'); await applyLive() } catch (err) { U.toast(err.message, 'error') }
+      } })
+    ])
+    content.append(
+      textSetting('site_name', 'Site name', 'Shown in the sidebar wordmark and the browser tab.'),
+      textSetting('tagline', 'Tagline', 'Short description used around the app.')
+    )
+
+    // ---------- feature flags ----------
+    const flags = data.flags ?? []
+    const groups = { page: 'Pages', feature: 'Features' }
+    for (const [cat, heading] of Object.entries(groups)) {
+      const rows = flags.filter(f => f.category === cat)
+      if (!rows.length) continue
+      content.append(U.el('h2', { class: 'detail-section-title', text: heading }))
+      const table = U.el('div', { class: 'flag-list' })
+      for (const f of rows) table.append(this.flagRow(f, applyLive))
+      content.append(table)
+    }
+  },
+
+  flagRow (f, applyLive) {
+    const state = { access: f.access, permission: f.required_permission }
+
+    const permInput = U.el('input', {
+      class: 'input flag-perm' + (state.access === 'permission' ? '' : ' hidden'),
+      style: 'min-width:11rem;', placeholder: 'permission slug', value: state.permission ?? ''
+    })
+
+    const save = async patch => {
+      try { await YumeAPI.admin.setFlag(f.key, patch); U.toast(`${f.label} updated`); await applyLive() } catch (e) { U.toast(e.message, 'error') }
+    }
+
+    const accessSel = U.el('select', {
+      class: 'select flag-access', onchange: async e => {
+        state.access = e.target.value
+        permInput.classList.toggle('hidden', state.access !== 'permission')
+        await save({ access: state.access, requiredPermission: state.access === 'permission' ? (permInput.value.trim() || 'analytics.view') : null })
+        if (state.access === 'permission' && !permInput.value.trim()) permInput.value = 'analytics.view'
+      }
+    }, [['public', 'Public'], ['auth', 'Login required'], ['permission', 'Permission']].map(([v, l]) =>
+      U.el('option', { value: v, text: l, ...(state.access === v ? { selected: '' } : {}) })))
+
+    permInput.addEventListener('change', () => save({ requiredPermission: permInput.value.trim() || null }))
+
+    const toggle = U.el('label', { class: 'switch' }, [
+      U.el('input', { type: 'checkbox', ...(f.enabled ? { checked: '' } : {}), onchange: e => save({ enabled: e.target.checked }) }),
+      U.el('span', { class: 'slider' })
+    ])
+
+    return U.el('div', { class: 'flag-row' }, [
+      U.el('div', { class: 'flag-meta' }, [
+        U.el('div', { class: 'flag-label', text: f.label }),
+        f.description ? U.el('div', { class: 'flag-desc', text: f.description }) : null,
+        U.el('code', { class: 'flag-key', text: f.key })
+      ]),
+      U.el('div', { class: 'flag-controls' }, [accessSel, permInput, toggle])
+    ])
   },
 
   async renderOverview (content) {

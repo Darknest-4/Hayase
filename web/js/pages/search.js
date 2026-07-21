@@ -102,10 +102,11 @@ const PageSearch = {
     })
     cleanup.observe(document.getElementById('page'), { childList: true })
 
+    const imageOn = !window.App || window.App.featureOn('image_search')
     pad.append(U.el('div', { class: 'filters' }, [
       U.el('div', { class: 'filter-group', style: 'flex-grow:1;' }, [U.el('label', { text: 'Search' }), searchInput]),
-      U.el('div', { class: 'filter-group' }, [U.el('label', { text: '\u00a0' }), imageBtn]),
-      filePick,
+      imageOn ? U.el('div', { class: 'filter-group' }, [U.el('label', { text: '\u00a0' }), imageBtn]) : null,
+      imageOn ? filePick : null,
       mkSelect('Genre', 'genre', this.GENRES),
       mkSelect('Season', 'season', Object.keys(U.seasonMap), v => U.seasonMap[v]),
       mkSelect('Year', 'year', years),
