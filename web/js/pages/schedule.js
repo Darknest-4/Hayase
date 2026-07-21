@@ -4,8 +4,8 @@
 
 const PageSchedule = {
   async render (root) {
+    root.append(window.C.spotlight('Airing Schedule', { subtitle: 'What drops this week, day by day' }))
     const pad = U.el('div', { class: 'page-pad' })
-    pad.append(U.el('h1', { class: 'page-title', text: 'Airing Schedule' }))
     root.append(pad)
 
     const container = U.el('div', {}, [U.el('div', { class: 'spinner' })])

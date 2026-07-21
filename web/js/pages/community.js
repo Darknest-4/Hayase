@@ -4,9 +4,9 @@
 
 const PageCommunity = {
   async render (root) {
+    root.append(window.C.spotlight('Community', { subtitle: 'Live discussion across the whole platform' }))
     const pad = U.el('div', { class: 'page-pad', style: 'max-width:56rem;' })
     root.append(pad)
-    pad.append(U.el('h1', { class: 'page-title', text: 'Community' }))
 
     const content = U.el('div', {}, [U.el('div', { class: 'spinner' })])
     pad.append(content)

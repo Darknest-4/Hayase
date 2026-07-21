@@ -27,6 +27,7 @@ export const WEBHOOK_EVENTS = [
   'stats.trending',         // trending refresh (top titles)
   'catalogue.imported',     // importer finished
   'job.failed',             // background job exhausted retries
+  'config.changed',         // a feature flag or site setting was changed
   'webhook.test'            // manual test fire from the admin UI
 ] as const
 
@@ -140,6 +141,12 @@ function renderEmbed (event: WebhookEvent, d: Record<string, unknown>): Embed {
         title: '⚠️ Background job failed permanently',
         color: COLORS.danger,
         fields: [field('Queue', d.queue), field('Job', d.jobId), field('Error', d.error, false)]
+      }
+    case 'config.changed':
+      return {
+        title: '⚙️ Site configuration changed',
+        color: COLORS.rose,
+        fields: [field('Setting', d.key), field('New value', d.value), field('Changed by', d.by)]
       }
   }
 }
