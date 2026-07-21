@@ -149,6 +149,7 @@ const Store = {
     const prev = list[media.id] ?? { status: 'PLANNING', progress: 0, score: 0 }
     list[media.id] = { ...prev, ...patch, media: this._snapshot(media), updatedAt: Date.now() }
     this._write(this._profileKey('animelist'), list)
+    window.LibrarySync?.onEntry(media, list[media.id]) // mirror to the account when signed in
     return list[media.id]
   },
 
@@ -156,6 +157,7 @@ const Store = {
     const list = this.list()
     delete list[mediaId]
     this._write(this._profileKey('animelist'), list)
+    window.LibrarySync?.onRemove(mediaId)
   },
 
   setProgress (media, progress) {
@@ -205,6 +207,7 @@ const Store = {
     if (seconds > 5) map[key] = Math.floor(seconds)
     else delete map[key]
     this._write(this._profileKey('resume'), map)
+    if (seconds > 5) window.LibrarySync?.onResume({ id: mediaId }, episode, seconds)
   },
 
   clearResume (mediaId, episode) {

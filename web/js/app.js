@@ -167,6 +167,8 @@ const App = {
     this.refreshAdminNav()
     this.applyNavVisibility()
     this.navigate()
+    if (window.YumeAPI.user()) window.LibrarySync?.init() // pull the account library + start mirroring
+    else window.LibrarySync?.reset() // signed out → stop mirroring
   },
 
   async loadConfig () {
@@ -428,6 +430,12 @@ const App = {
     this.refreshAdminNav()
     this.applyNavVisibility()
     this.navigate()
+
+    // sign-in library sync (best-effort, off the critical path)
+    if (window.YumeAPI.user()) window.LibrarySync?.init()
+    window.addEventListener('library-synced', () => {
+      if (['home', 'list', 'dashboard'].includes(this.parseHash().route)) this.navigate()
+    })
   }
 }
 

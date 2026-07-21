@@ -72,13 +72,22 @@ bővítmény‑rendszerrel.
 - [x] **Epizód hozzáadás / szerkesztés / törlés** (szám, cím, dátum, hossz, filler/recap, synopsis)
 - [x] A publikus `/v1/anime` végpontok (browse, search, schedule, detail, episodes) mind **szűrnek** a láthatóságra
 
+### #1 — DB library‑sync (kész)
+- [x] **Bejelentkezve a lokális könyvtár a fiókhoz szinkronizál** és eszközök közt követi a felhasználót
+- [x] **Push (lokál → DB):** minden könyvtár‑írás (`Store.saveEntry`/`setProgress`/`removeEntry`) tükröződik a DB‑be (státusz + epizód‑haladás), debounce‑olva
+- [x] **Pull (DB → lokál):** bejelentkezéskor a fiók könyvtára visszatöltődik, „legfrissebb nyer" ütközésfeloldással
+- [x] **Resume‑pozíció** (per‑epizód másodperc) best‑effort szinkron a `watch_progress`‑be (epizód‑UUID feloldással, cache‑elve)
+- [x] **Id‑hidak:** AniList‑id ↔ Yume‑UUID (`yumeAnimeId`), lokál profil → fiók default `user_profiles` (első bejelentkezéskor létrehozva); státusz‑leképezés `CURRENT↔WATCHING`, `REPEATING↔REWATCHING`
+- [x] **Settings › Account** „Library sync" kártya státusszal és „Sync now" gombbal
+- [x] Kliens‑modul: `web/js/library-sync.js` (`LibrarySync`)
+
 ---
 
 ## 3. Mi van hátra / tervben 🔜
 
-A felhasználó által kért sorrend (a #6 kész, ezek jönnek „folytasd"‑ra):
+A felhasználó által kért sorrend (a #6 és #1 kész, ezek jönnek „folytasd"‑ra):
 
-1. **#1 — DB library‑sync**: a kliens könyvtár/haladás/folytatás szinkronizálása a DB‑be bejelentkezéskor (a táblák [`library_entries`, `watch_progress`] már megvannak, a kliens‑kötés hiányzik)
+1. ~~**#1 — DB library‑sync**~~ ✅ **kész** (lásd fent)
 2. **#2 — Reviews** (értékelések): a `reviews`, `review_votes` táblák megvannak, UI+API hátra
 3. **#3 — Custom lists / Collections**: `custom_lists`, `custom_list_items`, `collections`, `collection_lists` táblák megvannak
 4. **#4 — Follows/Friendships + Forums/Clubs**: `follows`, `friendships`, `forums`, `clubs`, `topics`, `posts`, `club_members` táblák megvannak
@@ -134,7 +143,7 @@ Migrációk: `0001`…`0013` (a `db/migrations/`‑ben, filename szerint követv
 |--------|------|----------|
 | `/v1/auth` | `auth.ts` | regisztráció, login, refresh, logout, permissions |
 | `/v1/anime` | `anime.ts` | browse, schedule, search, by‑anilist, resolve, detail, episodes, relations *(láthatóságra szűr)* |
-| `/v1/me` | `library.ts` | könyvtár, haladás |
+| `/v1/me` | `library.ts` | könyvtár, haladás, continue‑watching, resume‑pozíció *(a kliens `LibrarySync` ehhez szinkronizál, `X-Profile-Id` fejléccel)* |
 | `/v1/profiles` | `profiles.ts` | profilok |
 | `/v1/extensions` | `extensions.ts` | store |
 | `/v1/comments` | `comments.ts` | kommentek |
