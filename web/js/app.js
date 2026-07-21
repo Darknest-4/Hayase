@@ -38,7 +38,10 @@ const App = {
     themes: '#/settings?tab=appearance'
   },
 
-  navigate () {
+  _navGen: 0,
+
+  async navigate () {
+    const gen = ++this._navGen
     const { route, arg, params } = this.parseHash()
     if (this.REDIRECTS[route]) { window.location.replace(this.REDIRECTS[route]); return }
     const page = document.getElementById('page')
@@ -68,10 +71,13 @@ const App = {
 
     const handler = this.routes[route] ?? this.routes.home
     try {
-      handler(page, params, arg)
+      await handler(page, params, arg) // async pages (e.g. admin) finish before the footer lands
     } catch (e) {
       page.replaceChildren(U.el('div', { class: 'error-state', text: 'Something went wrong: ' + e.message }))
     }
+
+    // a newer navigation superseded us while an async handler was in flight
+    if (gen !== this._navGen) return
 
     // site footer on standard content pages (not on immersive / picker screens)
     if (!['watch', 'w2g', 'profiles'].includes(route)) page.append(C.footer())

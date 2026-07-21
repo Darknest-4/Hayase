@@ -4,57 +4,75 @@
 // server enforces them regardless.
 
 const PageAdmin = {
-  async render (root) {
-    const pad = U.el('div', { class: 'page-pad' })
-    root.append(pad)
-    pad.append(U.el('h1', { class: 'page-title', text: 'Admin' }))
+  SECTIONS: [
+    { key: 'overview', label: 'Overview',    sub: 'Platform health & analytics', perm: 'admin.analytics.view', render: 'renderOverview', icon: '<path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>' },
+    { key: 'users',    label: 'Users',       sub: 'Accounts, suspensions & bans', perm: 'admin.users.manage', render: 'renderUsers', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
+    { key: 'reports',  label: 'Reports',     sub: 'Moderation queue', perm: 'community.moderate', render: 'renderReports', icon: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>' },
+    { key: 'roles',    label: 'Roles',       sub: 'Permissions & RBAC', perm: 'roles.manage', render: 'renderRoles', icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>' },
+    { key: 'webhooks', label: 'Webhooks',    sub: 'Outbound integrations', perm: 'admin.webhooks.manage', render: 'renderWebhooks', icon: '<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>' },
+    { key: 'config',   label: 'Site Config', sub: 'Feature flags & settings', perm: 'settings.system', render: 'renderConfig', icon: '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>' }
+  ],
 
+  async render (root, params) {
     const perms = await YumeAPI.myPermissions()
-    const canUsers = perms.includes('admin.users.manage')
-    const canModerate = perms.includes('community.moderate')
-    const canAnalytics = perms.includes('admin.analytics.view')
-    const canWebhooks = perms.includes('admin.webhooks.manage')
-    const canConfig = perms.includes('settings.system')
-    const canRoles = perms.includes('roles.manage')
+    const available = this.SECTIONS.filter(s => perms.includes(s.perm))
 
-    if (!canUsers && !canModerate && !canAnalytics && !canWebhooks && !canConfig && !canRoles) {
+    if (!available.length) {
+      const pad = U.el('div', { class: 'page-pad' })
+      root.append(pad)
+      pad.append(U.el('h1', { class: 'page-title', text: 'Admin' }))
       pad.append(U.el('div', { class: 'callout', text: 'You need moderator or admin permissions to see this page.' }))
       return
     }
 
-    const TABS = [
-      canAnalytics && ['overview', 'Overview'],
-      canUsers && ['users', 'Users'],
-      canModerate && ['reports', 'Reports'],
-      canRoles && ['roles', 'Roles'],
-      canWebhooks && ['webhooks', 'Webhooks'],
-      canConfig && ['config', 'Site Config']
-    ].filter(Boolean)
+    const start = available.find(s => s.key === params?.get?.('s')) ?? available[0]
+    const state = { section: start }
 
-    const state = { tab: TABS[0][0] }
-    const tabs = U.el('div', { class: 'tabs' })
-    const content = U.el('div', { style: 'margin-top:1.25rem;' })
-    pad.append(tabs, content)
+    // ---- shell: admin nav rail + content ----
+    const shell = U.el('div', { class: 'admin-shell' })
+    root.append(shell)
 
-    const renderTabs = () => {
-      tabs.replaceChildren(...TABS.map(([value, label]) => U.el('button', {
-        class: 'tab' + (state.tab === value ? ' active' : ''),
-        onclick: () => { state.tab = value; renderTabs(); renderContent() }
-      }, [document.createTextNode(label)])))
+    const nav = U.el('aside', { class: 'admin-nav' })
+    nav.append(U.el('div', { class: 'admin-nav-head' }, [
+      U.svg('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>', 18),
+      U.el('span', { text: 'Admin' })
+    ]))
+    const navItems = {}
+    for (const s of available) {
+      const item = U.el('button', {
+        class: 'admin-nav-item' + (s.key === state.section.key ? ' active' : ''),
+        onclick: () => select(s)
+      }, [
+        U.svg(s.icon, 18),
+        U.el('div', { class: 'admin-nav-text' }, [
+          U.el('b', { text: s.label }),
+          U.el('span', { text: s.sub })
+        ])
+      ])
+      navItems[s.key] = item
+      nav.append(item)
     }
+    shell.append(nav)
 
-    const renderContent = () => {
-      content.replaceChildren(U.el('div', { class: 'spinner' }))
-      if (state.tab === 'overview') this.renderOverview(content)
-      else if (state.tab === 'users') this.renderUsers(content)
-      else if (state.tab === 'reports') this.renderReports(content)
-      else if (state.tab === 'roles') this.renderRoles(content)
-      else if (state.tab === 'config') this.renderConfig(content)
-      else this.renderWebhooks(content)
+    const main = U.el('div', { class: 'admin-content' })
+    const head = U.el('div', { class: 'admin-content-head' })
+    const body = U.el('div', { class: 'admin-content-body' })
+    main.append(head, body)
+    shell.append(main)
+
+    const select = s => {
+      state.section = s
+      Object.values(navItems).forEach(i => i.classList.remove('active'))
+      navItems[s.key]?.classList.add('active')
+      history.replaceState(null, '', `#/admin?s=${s.key}`) // deep-link without a re-render
+      head.replaceChildren(
+        U.el('h1', { class: 'admin-content-title', text: s.label }),
+        U.el('p', { class: 'admin-content-sub', text: s.sub })
+      )
+      body.replaceChildren(U.el('div', { class: 'spinner' }))
+      this[s.render](body)
     }
-
-    renderTabs()
-    renderContent()
+    select(state.section)
   },
 
   // ---- Roles & permissions (fine-grained RBAC) ----
