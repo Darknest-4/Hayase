@@ -311,11 +311,31 @@ for reproducible shots. Click any section below to expand it. Full gallery in
 </details>
 
 <details>
+<summary><b>📚 Catalogue</b> — anime & episode management: add / edit / delete, per-entry visibility (public / unlisted / hidden — hidden 404s everywhere), episode CRUD</summary>
+
+<br>
+
+![📚 Catalogue — list](docs/screenshots/30-catalogue.png)
+
+![📚 Catalogue — editor](docs/screenshots/31-catalogue-editor.png)
+
+</details>
+
+<details>
 <summary><b>🎛️ Site Config</b> — DB-driven feature flags: toggle any page/feature, set access (public / login / permission), lock the whole site behind login</summary>
 
 <br>
 
 ![🎛️ Site Config — desktop](docs/screenshots/28-site-config.png)
+
+</details>
+
+<details>
+<summary><b>🛡️ Roles & Permissions</b> — fine-grained RBAC: 387 permissions across 11 domains, 6 roles, per-role grant/revoke with search</summary>
+
+<br>
+
+![🛡️ Roles & Permissions — desktop](docs/screenshots/29-roles.png)
 
 </details>
 

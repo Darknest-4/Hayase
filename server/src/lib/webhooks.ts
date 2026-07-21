@@ -26,6 +26,7 @@ export const WEBHOOK_EVENTS = [
   'stats.daily',            // daily rollup digest
   'stats.trending',         // trending refresh (top titles)
   'catalogue.imported',     // importer finished
+  'catalogue.changed',      // an anime/episode was created, edited, hidden or deleted
   'job.failed',             // background job exhausted retries
   'config.changed',         // a feature flag or site setting was changed
   'webhook.test'            // manual test fire from the admin UI
@@ -147,6 +148,12 @@ function renderEmbed (event: WebhookEvent, d: Record<string, unknown>): Embed {
         title: '⚙️ Site configuration changed',
         color: COLORS.rose,
         fields: [field('Setting', d.key), field('New value', d.value), field('Changed by', d.by)]
+      }
+    case 'catalogue.changed':
+      return {
+        title: '📚 Catalogue changed',
+        color: COLORS.rose,
+        fields: [field('Action', d.action), field('Title', d.title), field('Editor', d.by)]
       }
   }
 }

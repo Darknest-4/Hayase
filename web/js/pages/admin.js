@@ -4,54 +4,212 @@
 // server enforces them regardless.
 
 const PageAdmin = {
-  async render (root) {
-    const pad = U.el('div', { class: 'page-pad' })
-    root.append(pad)
-    pad.append(U.el('h1', { class: 'page-title', text: 'Admin' }))
+  SECTIONS: [
+    { key: 'overview', label: 'Overview',    sub: 'Platform health & analytics', perm: 'admin.analytics.view', render: 'renderOverview', icon: '<path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>' },
+    { key: 'users',    label: 'Users',       sub: 'Accounts, suspensions & bans', perm: 'admin.users.manage', render: 'renderUsers', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
+    { key: 'reports',  label: 'Reports',     sub: 'Moderation queue', perm: 'community.moderate', render: 'renderReports', icon: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>' },
+    { key: 'catalogue', label: 'Catalogue', sub: 'Anime, episodes & visibility', perm: 'anime.view', render: 'renderCatalogue', icon: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>' },
+    { key: 'roles',    label: 'Roles',       sub: 'Permissions & RBAC', perm: 'roles.manage', render: 'renderRoles', icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>' },
+    { key: 'webhooks', label: 'Webhooks',    sub: 'Outbound integrations', perm: 'admin.webhooks.manage', render: 'renderWebhooks', icon: '<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>' },
+    { key: 'config',   label: 'Site Config', sub: 'Feature flags & settings', perm: 'settings.system', render: 'renderConfig', icon: '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>' }
+  ],
 
+  async render (root, params) {
     const perms = await YumeAPI.myPermissions()
-    const canUsers = perms.includes('admin.users.manage')
-    const canModerate = perms.includes('community.moderate')
-    const canAnalytics = perms.includes('admin.analytics.view')
-    const canWebhooks = perms.includes('admin.webhooks.manage')
-    const canConfig = perms.includes('settings.system')
+    const available = this.SECTIONS.filter(s => perms.includes(s.perm))
 
-    if (!canUsers && !canModerate && !canAnalytics && !canWebhooks && !canConfig) {
+    if (!available.length) {
+      const pad = U.el('div', { class: 'page-pad' })
+      root.append(pad)
+      pad.append(U.el('h1', { class: 'page-title', text: 'Admin' }))
       pad.append(U.el('div', { class: 'callout', text: 'You need moderator or admin permissions to see this page.' }))
       return
     }
 
-    const TABS = [
-      canAnalytics && ['overview', 'Overview'],
-      canUsers && ['users', 'Users'],
-      canModerate && ['reports', 'Reports'],
-      canWebhooks && ['webhooks', 'Webhooks'],
-      canConfig && ['config', 'Site Config']
-    ].filter(Boolean)
+    const start = available.find(s => s.key === params?.get?.('s')) ?? available[0]
+    const state = { section: start }
 
-    const state = { tab: TABS[0][0] }
-    const tabs = U.el('div', { class: 'tabs' })
-    const content = U.el('div', { style: 'margin-top:1.25rem;' })
-    pad.append(tabs, content)
+    // ---- shell: admin nav rail + content ----
+    const shell = U.el('div', { class: 'admin-shell' })
+    root.append(shell)
 
-    const renderTabs = () => {
-      tabs.replaceChildren(...TABS.map(([value, label]) => U.el('button', {
-        class: 'tab' + (state.tab === value ? ' active' : ''),
-        onclick: () => { state.tab = value; renderTabs(); renderContent() }
-      }, [document.createTextNode(label)])))
+    const nav = U.el('aside', { class: 'admin-nav' })
+    nav.append(U.el('div', { class: 'admin-nav-head' }, [
+      U.svg('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>', 18),
+      U.el('span', { text: 'Admin' })
+    ]))
+    const navItems = {}
+    for (const s of available) {
+      const item = U.el('button', {
+        class: 'admin-nav-item' + (s.key === state.section.key ? ' active' : ''),
+        onclick: () => select(s)
+      }, [
+        U.svg(s.icon, 18),
+        U.el('div', { class: 'admin-nav-text' }, [
+          U.el('b', { text: s.label }),
+          U.el('span', { text: s.sub })
+        ])
+      ])
+      navItems[s.key] = item
+      nav.append(item)
+    }
+    shell.append(nav)
+
+    const main = U.el('div', { class: 'admin-content' })
+    const head = U.el('div', { class: 'admin-content-head' })
+    const body = U.el('div', { class: 'admin-content-body' })
+    main.append(head, body)
+    shell.append(main)
+
+    const select = s => {
+      state.section = s
+      Object.values(navItems).forEach(i => i.classList.remove('active'))
+      navItems[s.key]?.classList.add('active')
+      history.replaceState(null, '', `#/admin?s=${s.key}`) // deep-link without a re-render
+      head.replaceChildren(
+        U.el('h1', { class: 'admin-content-title', text: s.label }),
+        U.el('p', { class: 'admin-content-sub', text: s.sub })
+      )
+      body.replaceChildren(U.el('div', { class: 'spinner' }))
+      this[s.render](body)
+    }
+    select(state.section)
+  },
+
+  // ---- Roles & permissions (fine-grained RBAC) ----
+  async renderRoles (content) {
+    let rolesRes, catRes
+    try {
+      [rolesRes, catRes] = await Promise.all([YumeAPI.admin.roles(), YumeAPI.admin.permissionCatalog()])
+    } catch (e) {
+      content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load roles: ' + e.message }))
+      return
+    }
+    content.replaceChildren()
+
+    const roles = rolesRes.data
+    const catalog = catRes.data
+    const total = catalog.length
+    const groups = {}
+    for (const p of catalog) (groups[p.group] ??= []).push(p)
+
+    const state = { role: roles[0], granted: new Set(roles[0].permissions), filter: '' }
+
+    const layout = U.el('div', { class: 'roles-layout' })
+    content.append(layout)
+
+    // ---- role rail ----
+    const rail = U.el('div', { class: 'roles-rail' })
+    const countLabel = {}
+    for (const r of roles) {
+      const cnt = U.el('span', { class: 'role-count' })
+      countLabel[r.slug] = cnt
+      rail.append(U.el('button', {
+        class: 'role-item' + (r.slug === state.role.slug ? ' active' : ''),
+        dataset: { slug: r.slug },
+        onclick: () => {
+          state.role = r
+          state.granted = new Set(r.permissions)
+          rail.querySelectorAll('.role-item').forEach(b => b.classList.toggle('active', b.dataset.slug === r.slug))
+          renderPanel()
+        }
+      }, [
+        U.el('div', { class: 'role-name', text: r.name }),
+        U.el('div', { class: 'role-sub' }, [
+          U.el('code', { text: r.slug }),
+          document.createTextNode(` · ${r.user_count} user${r.user_count === '1' ? '' : 's'}`)
+        ]),
+        cnt
+      ]))
+    }
+    layout.append(rail)
+
+    // ---- permission panel ----
+    const panel = U.el('div', { class: 'roles-panel' })
+    layout.append(panel)
+
+    const updateCounts = () => {
+      for (const r of roles) {
+        const n = r.slug === state.role.slug ? state.granted.size : r.permissions.length
+        countLabel[r.slug].textContent = `${r.slug === 'admin' ? total : n}/${total}`
+      }
     }
 
-    const renderContent = () => {
-      content.replaceChildren(U.el('div', { class: 'spinner' }))
-      if (state.tab === 'overview') this.renderOverview(content)
-      else if (state.tab === 'users') this.renderUsers(content)
-      else if (state.tab === 'reports') this.renderReports(content)
-      else if (state.tab === 'config') this.renderConfig(content)
-      else this.renderWebhooks(content)
+    const renderPanel = () => {
+      panel.replaceChildren()
+      const isAdmin = state.role.slug === 'admin'
+      const has = slug => isAdmin || state.granted.has(slug)
+
+      const head = U.el('div', { class: 'roles-panel-head' }, [
+        U.el('div', {}, [
+          U.el('h3', { style: 'margin:0;', text: state.role.name }),
+          U.el('p', { class: 'list-row-sub', style: 'margin:.15rem 0 0;', text: isAdmin ? 'The admin role always holds every permission.' : `${state.granted.size} of ${total} permissions granted` })
+        ]),
+        U.el('input', { class: 'input', placeholder: 'Filter permissions…', value: state.filter, oninput: e => { state.filter = e.target.value.toLowerCase(); renderList() } })
+      ])
+      panel.append(head)
+
+      const listWrap = U.el('div', { class: 'perm-groups' })
+      panel.append(listWrap)
+
+      const renderList = () => {
+        listWrap.replaceChildren()
+        for (const [group, perms] of Object.entries(groups)) {
+          const visible = perms.filter(p => !state.filter || p.slug.includes(state.filter) || p.description.toLowerCase().includes(state.filter))
+          if (!visible.length) continue
+          const grantedInGroup = visible.filter(p => has(p.slug)).length
+          const groupBox = U.el('div', { class: 'perm-group' }, [
+            U.el('div', { class: 'perm-group-head' }, [
+              U.el('span', { class: 'perm-group-title', text: group }),
+              U.el('span', { class: 'perm-group-count', text: `${grantedInGroup}/${visible.length}` }),
+              isAdmin ? null : U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => bulk(visible, grantedInGroup < visible.length) }, [document.createTextNode(grantedInGroup < visible.length ? 'Grant all' : 'Revoke all')])
+            ])
+          ])
+          for (const p of visible) {
+            const cb = U.el('input', {
+              type: 'checkbox', ...(has(p.slug) ? { checked: '' } : {}), ...(isAdmin ? { disabled: '' } : {}),
+              onchange: e => toggle(p.slug, e.target.checked, e.target)
+            })
+            groupBox.append(U.el('label', { class: 'perm-row' }, [
+              cb,
+              U.el('div', { class: 'perm-info' }, [
+                U.el('code', { class: 'perm-slug', text: p.slug }),
+                U.el('span', { class: 'perm-desc', text: p.description })
+              ])
+            ]))
+          }
+          listWrap.append(groupBox)
+        }
+      }
+
+      const toggle = async (slug, granted, el) => {
+        try {
+          await YumeAPI.admin.setRolePermission(state.role.id, slug, granted)
+          if (granted) state.granted.add(slug); else state.granted.delete(slug)
+          // keep the source role object in sync so counts persist across switches
+          state.role.permissions = [...state.granted]
+          updateCounts()
+          head.querySelector('.list-row-sub').textContent = `${state.granted.size} of ${total} permissions granted`
+          renderList()
+        } catch (err) { U.toast(err.message, 'error'); if (el) el.checked = !granted }
+      }
+
+      const bulk = async (perms, grant) => {
+        for (const p of perms) {
+          if (grant === has(p.slug)) continue
+          try { await YumeAPI.admin.setRolePermission(state.role.id, p.slug, grant); grant ? state.granted.add(p.slug) : state.granted.delete(p.slug) } catch (e) { /* skip */ }
+        }
+        state.role.permissions = [...state.granted]
+        updateCounts(); renderList()
+        head.querySelector('.list-row-sub').textContent = `${state.granted.size} of ${total} permissions granted`
+        U.toast(grant ? 'Granted group' : 'Revoked group')
+      }
+
+      renderList()
     }
 
-    renderTabs()
-    renderContent()
+    updateCounts()
+    renderPanel()
   },
 
   // ---- Site Config: feature flags + global settings ----
@@ -149,6 +307,245 @@ const PageAdmin = {
       ]),
       U.el('div', { class: 'flag-controls' }, [accessSel, permInput, toggle])
     ])
+  },
+
+  // ---- Catalogue: anime + episode management, visibility control ----
+  VIS_BADGE: { public: ['Public', 'vis-public'], unlisted: ['Unlisted', 'vis-unlisted'], hidden: ['Hidden', 'vis-hidden'] },
+  FORMATS: ['TV', 'TV_SHORT', 'MOVIE', 'SPECIAL', 'OVA', 'ONA', 'MUSIC'],
+  STATUSES: ['NOT_YET_RELEASED', 'RELEASING', 'FINISHED', 'CANCELLED', 'HIATUS'],
+  SEASONS: ['WINTER', 'SPRING', 'SUMMER', 'FALL'],
+
+  async renderCatalogue (content) {
+    const perms = await YumeAPI.myPermissions()
+    const can = s => perms.includes(s)
+    const state = { q: '', visibility: '', selected: null }
+
+    const layout = U.el('div', { class: 'cat-layout' })
+    const listCol = U.el('div', { class: 'cat-list-col' })
+    const editCol = U.el('div', { class: 'cat-edit-col' })
+    layout.append(listCol, editCol)
+    content.replaceChildren(layout)
+
+    // ---- toolbar ----
+    const listBox = U.el('div', { class: 'cat-list' })
+    const toolbar = U.el('div', { class: 'cat-toolbar' }, [
+      U.el('input', { class: 'input', placeholder: 'Search catalogue…', oninput: U.debounce(e => { state.q = e.target.value.trim(); loadList() }) }),
+      U.el('select', { class: 'select', onchange: e => { state.visibility = e.target.value; loadList() } },
+        [['', 'All visibility'], ['public', 'Public'], ['unlisted', 'Unlisted'], ['hidden', 'Hidden']].map(([v, l]) =>
+          U.el('option', { value: v, text: l }))),
+      can('anime.create') ? U.el('button', { class: 'btn btn-primary btn-sm', onclick: () => openEditor(null) }, [document.createTextNode('+ New anime')]) : null
+    ])
+    listCol.append(toolbar, listBox)
+
+    const loadList = async () => {
+      listBox.replaceChildren(U.el('div', { class: 'spinner' }))
+      try {
+        const { data, total } = await YumeAPI.admin.catalogue.list({ q: state.q, visibility: state.visibility, limit: 40 })
+        listBox.replaceChildren()
+        listBox.append(U.el('div', { class: 'cat-count', text: `${total.toLocaleString()} entries` }))
+        if (!data.length) { listBox.append(U.el('div', { class: 'empty-state', style: 'padding:1rem;', text: 'No matching anime.' })); return }
+        for (const a of data) listBox.append(this.catRow(a, state, openEditor))
+      } catch (e) {
+        listBox.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+      }
+    }
+
+    // ---- editor (null = create) ----
+    const openEditor = async (anime) => {
+      editCol.replaceChildren(U.el('div', { class: 'spinner' }))
+      let full = anime
+      if (anime?.id) { try { full = await YumeAPI.admin.catalogue.get(anime.id) } catch (e) { editCol.replaceChildren(U.el('div', { class: 'error-state', text: e.message })); return } }
+      state.selected = full?.id ?? null
+      listBox.querySelectorAll('.cat-row').forEach(r => r.classList.toggle('active', r.dataset.id === state.selected))
+      this.renderCatEditor(editCol, full, { can, onSaved: loadList, onDeleted: () => { editCol.replaceChildren(this.catPlaceholder()); loadList() } })
+    }
+
+    editCol.append(this.catPlaceholder())
+    loadList()
+  },
+
+  catPlaceholder () {
+    return U.el('div', { class: 'cat-placeholder' }, [
+      U.svg('<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>', 40),
+      U.el('p', { text: 'Select an anime to edit, or create a new one.' })
+    ])
+  },
+
+  catRow (a, state, openEditor) {
+    const [label, cls] = this.VIS_BADGE[a.visibility] ?? this.VIS_BADGE.public
+    const row = U.el('button', {
+      class: 'cat-row' + (a.id === state.selected ? ' active' : ''), dataset: { id: a.id },
+      onclick: () => openEditor(a)
+    }, [
+      U.el('div', { class: 'cat-row-main' }, [
+        U.el('div', { class: 'cat-row-title', text: a.canonical_title }),
+        U.el('div', { class: 'cat-row-sub', text: `${a.format} · ${a.season_year ?? '—'} · ${a.episode_rows} ep` })
+      ]),
+      U.el('span', { class: 'vis-badge ' + cls, text: label })
+    ])
+    return row
+  },
+
+  renderCatEditor (host, anime, { can, onSaved, onDeleted }) {
+    const isNew = !anime?.id
+    const editable = isNew ? can('anime.create') : can('anime.edit')
+    const draft = {
+      canonical_title: anime?.canonical_title ?? '',
+      format: anime?.format ?? 'TV',
+      status: anime?.status ?? 'FINISHED',
+      season: anime?.season ?? '',
+      season_year: anime?.season_year ?? '',
+      episode_count: anime?.episode_count ?? '',
+      episode_duration: anime?.episode_duration ?? '',
+      source_material: anime?.source_material ?? '',
+      synopsis: anime?.synopsis ?? '',
+      is_adult: anime?.is_adult ?? false,
+      visibility: anime?.visibility ?? 'public'
+    }
+
+    host.replaceChildren()
+    const form = U.el('div', { class: 'cat-editor' })
+    host.append(form)
+
+    form.append(U.el('div', { class: 'cat-editor-head' }, [
+      U.el('h2', { class: 'cat-editor-title', text: isNew ? 'New anime' : draft.canonical_title || 'Untitled' }),
+      anime?.id ? U.el('code', { class: 'cat-editor-id', text: anime.id }) : null
+    ]))
+
+    const field = (label, el) => U.el('label', { class: 'cat-field' }, [U.el('span', { class: 'cat-field-label', text: label }), el])
+    const input = (key, attrs = {}) => U.el('input', { class: 'input', value: draft[key] ?? '', ...(editable ? {} : { disabled: '' }), oninput: e => { draft[key] = e.target.value }, ...attrs })
+    const select = (key, opts, withEmpty) => U.el('select', { class: 'select', ...(editable ? {} : { disabled: '' }), onchange: e => { draft[key] = e.target.value } },
+      [...(withEmpty ? [U.el('option', { value: '', text: '—', ...(draft[key] ? {} : { selected: '' }) })] : []),
+        ...opts.map(o => U.el('option', { value: o, text: o.replace(/_/g, ' '), ...(draft[key] === o ? { selected: '' } : {}) }))])
+
+    // visibility — the headline control
+    const [visLabel] = this.VIS_BADGE[draft.visibility]
+    form.append(U.el('div', { class: 'cat-visibility' }, [
+      U.el('div', {}, [
+        U.el('div', { class: 'cat-field-label', text: 'Visibility' }),
+        U.el('p', { class: 'cat-vis-hint', text: 'Hidden hides it everywhere including the detail page. Unlisted keeps it reachable by direct link only.' })
+      ]),
+      select('visibility', ['public', 'unlisted', 'hidden'])
+    ]))
+
+    form.append(U.el('div', { class: 'cat-grid' }, [
+      field('Title', input('canonical_title', { placeholder: 'Canonical title' })),
+      field('Format', select('format', this.FORMATS)),
+      field('Status', select('status', this.STATUSES)),
+      field('Season', select('season', this.SEASONS, true)),
+      field('Season year', input('season_year', { type: 'number', min: 1900, max: 2100 })),
+      field('Episodes (planned)', input('episode_count', { type: 'number', min: 0 })),
+      field('Episode duration (min)', input('episode_duration', { type: 'number', min: 0 })),
+      field('Source material', input('source_material', { placeholder: 'MANGA, LIGHT_NOVEL…' }))
+    ]))
+    form.append(field('Synopsis', U.el('textarea', { class: 'input', rows: 4, ...(editable ? {} : { disabled: '' }), oninput: e => { draft.synopsis = e.target.value } }, [document.createTextNode(draft.synopsis)])))
+    form.append(U.el('label', { class: 'cat-check' }, [
+      U.el('input', { type: 'checkbox', ...(draft.is_adult ? { checked: '' } : {}), ...(editable ? {} : { disabled: '' }), onchange: e => { draft.is_adult = e.target.checked } }),
+      U.el('span', { text: 'Adult (NSFW) content' })
+    ]))
+
+    // ---- actions ----
+    if (editable) {
+      const num = v => v === '' || v == null ? null : Number(v)
+      const payload = () => ({
+        canonical_title: draft.canonical_title.trim(),
+        format: draft.format, status: draft.status,
+        season: draft.season || null, season_year: num(draft.season_year),
+        episode_count: num(draft.episode_count), episode_duration: num(draft.episode_duration),
+        source_material: draft.source_material.trim() || null,
+        synopsis: draft.synopsis.trim() || null, is_adult: draft.is_adult, visibility: draft.visibility
+      })
+      const actions = U.el('div', { class: 'cat-actions' })
+      actions.append(U.el('button', { class: 'btn btn-primary', onclick: async () => {
+        if (!draft.canonical_title.trim()) return U.toast('Title is required', 'error')
+        try {
+          if (isNew) { const c = await YumeAPI.admin.catalogue.create(payload()); U.toast('Anime created'); onSaved?.(); anime = c }
+          else { await YumeAPI.admin.catalogue.update(anime.id, payload()); U.toast('Saved'); onSaved?.() }
+        } catch (e) { U.toast(e.message, 'error') }
+      } }, [document.createTextNode(isNew ? 'Create anime' : 'Save changes')]))
+      if (!isNew && can('anime.delete')) {
+        actions.append(U.el('button', { class: 'btn btn-danger', onclick: async () => {
+          if (!confirm(`Delete "${anime.canonical_title}" and all its episodes? This cannot be undone.`)) return
+          try { await YumeAPI.admin.catalogue.remove(anime.id); U.toast('Deleted'); onDeleted?.() } catch (e) { U.toast(e.message, 'error') }
+        } }, [document.createTextNode('Delete')]))
+      }
+      form.append(actions)
+    } else {
+      form.append(U.el('div', { class: 'callout', text: 'You have read-only access to the catalogue.' }))
+    }
+
+    // ---- episodes (existing anime only) ----
+    if (!isNew) this.renderCatEpisodes(form, anime, can)
+  },
+
+  async renderCatEpisodes (form, anime, can) {
+    const wrap = U.el('div', { class: 'cat-episodes' })
+    form.append(U.el('div', { class: 'cat-ep-head' }, [
+      U.el('h3', { class: 'detail-section-title', style: 'margin:0;', text: 'Episodes' }),
+      can('episode.create') ? U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => this.episodeModal(anime, null, () => load()) }, [document.createTextNode('+ Add episode')]) : null
+    ]))
+    form.append(wrap)
+
+    const load = async () => {
+      wrap.replaceChildren(U.el('div', { class: 'spinner' }))
+      try {
+        const { data } = await YumeAPI.admin.catalogue.episodes(anime.id)
+        wrap.replaceChildren()
+        if (!data.length) { wrap.append(U.el('div', { class: 'empty-state', style: 'padding:.75rem;', text: 'No episodes yet.' })); return }
+        for (const ep of data) {
+          const flags = [ep.is_filler ? 'filler' : null, ep.is_recap ? 'recap' : null].filter(Boolean).join(' · ')
+          wrap.append(U.el('div', { class: 'cat-ep-row' }, [
+            U.el('div', { class: 'cat-ep-num', text: '#' + ep.number }),
+            U.el('div', { class: 'cat-ep-main' }, [
+              U.el('div', { class: 'cat-ep-title', text: ep.title || `Episode ${ep.number}` }),
+              U.el('div', { class: 'cat-ep-sub', text: [ep.duration ? ep.duration + ' min' : null, flags || null].filter(Boolean).join(' · ') || '—' })
+            ]),
+            can('episode.edit') ? U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => this.episodeModal(anime, ep, () => load()) }, [document.createTextNode('Edit')]) : null,
+            can('episode.delete') ? U.el('button', { class: 'btn btn-ghost btn-sm cat-ep-del', onclick: async () => {
+              if (!confirm(`Delete episode ${ep.number}?`)) return
+              try { await YumeAPI.admin.catalogue.removeEpisode(ep.id); U.toast('Episode deleted'); load() } catch (e) { U.toast(e.message, 'error') }
+            } }, [document.createTextNode('✕')]) : null
+          ]))
+        }
+      } catch (e) { wrap.replaceChildren(U.el('div', { class: 'error-state', text: e.message })) }
+    }
+    load()
+  },
+
+  episodeModal (anime, ep, onDone) {
+    const isNew = !ep
+    const d = {
+      number: ep?.number ?? '', title: ep?.title ?? '', synopsis: ep?.synopsis ?? '',
+      duration: ep?.duration ?? '', is_filler: ep?.is_filler ?? false, is_recap: ep?.is_recap ?? false,
+      air_date: ep?.air_date ? String(ep.air_date).slice(0, 10) : ''
+    }
+    const inp = (key, attrs = {}) => U.el('input', { class: 'input', value: d[key], oninput: e => { d[key] = e.target.value }, ...attrs })
+    const check = (key, label) => U.el('label', { class: 'cat-check' }, [
+      U.el('input', { type: 'checkbox', ...(d[key] ? { checked: '' } : {}), onchange: e => { d[key] = e.target.checked } }), U.el('span', { text: label })
+    ])
+    const labelled = (t, el) => U.el('label', { class: 'cat-field' }, [U.el('span', { class: 'cat-field-label', text: t }), el])
+
+    const backdrop = C.modalShell(isNew ? `Add episode — ${anime.canonical_title}` : `Edit episode ${ep.number}`, [
+      labelled('Episode number', inp('number', { type: 'number', step: '0.5', min: 0, placeholder: 'e.g. 1 or 6.5' })),
+      labelled('Title', inp('title', { placeholder: 'Optional episode title' })),
+      labelled('Air date', inp('air_date', { type: 'date' })),
+      labelled('Duration (min)', inp('duration', { type: 'number', min: 0 })),
+      labelled('Synopsis', U.el('textarea', { class: 'input', rows: 3, oninput: e => { d.synopsis = e.target.value } }, [document.createTextNode(d.synopsis)])),
+      U.el('div', { style: 'display:flex;gap:1.25rem;' }, [check('is_filler', 'Filler'), check('is_recap', 'Recap')])
+    ], async () => {
+      if (d.number === '' || isNaN(Number(d.number))) return U.toast('A valid episode number is required', 'error')
+      const num = v => v === '' || v == null ? null : Number(v)
+      const body = {
+        number: Number(d.number), title: d.title.trim() || null, synopsis: d.synopsis.trim() || null,
+        duration: num(d.duration), is_filler: d.is_filler, is_recap: d.is_recap,
+        air_date: d.air_date ? new Date(d.air_date).toISOString() : null
+      }
+      try {
+        if (isNew) await YumeAPI.admin.catalogue.addEpisode(anime.id, body)
+        else await YumeAPI.admin.catalogue.updateEpisode(ep.id, body)
+        U.toast(isNew ? 'Episode added' : 'Episode updated'); backdrop.remove(); onDone?.()
+      } catch (e) { U.toast(e.message, 'error') }
+    })
   },
 
   async renderOverview (content) {
