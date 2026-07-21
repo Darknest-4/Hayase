@@ -149,6 +149,14 @@ const PageAdmin = {
       ])
       panel.append(head)
 
+      const liveTotal = catalog.filter(p => p.status === 'active').length
+      panel.append(U.el('p', { class: 'perm-legend' }, [
+        U.el('span', { class: 'perm-badge perm-badge-live', text: 'LIVE' }),
+        document.createTextNode(` ${liveTotal} permissions are enforced by a route today · `),
+        U.el('span', { class: 'perm-badge perm-badge-planned', text: 'planned' }),
+        document.createTextNode(` ${total - liveTotal} are catalogued for upcoming modules (#2–#5).`)
+      ]))
+
       const listWrap = U.el('div', { class: 'perm-groups' })
       panel.append(listWrap)
 
@@ -158,9 +166,11 @@ const PageAdmin = {
           const visible = perms.filter(p => !state.filter || p.slug.includes(state.filter) || p.description.toLowerCase().includes(state.filter))
           if (!visible.length) continue
           const grantedInGroup = visible.filter(p => has(p.slug)).length
+          const liveInGroup = visible.filter(p => p.status === 'active').length
           const groupBox = U.el('div', { class: 'perm-group' }, [
             U.el('div', { class: 'perm-group-head' }, [
               U.el('span', { class: 'perm-group-title', text: group }),
+              liveInGroup ? U.el('span', { class: 'perm-live-count', title: `${liveInGroup} enforced by a route today`, text: `${liveInGroup} live` }) : null,
               U.el('span', { class: 'perm-group-count', text: `${grantedInGroup}/${visible.length}` }),
               isAdmin ? null : U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => bulk(visible, grantedInGroup < visible.length) }, [document.createTextNode(grantedInGroup < visible.length ? 'Grant all' : 'Revoke all')])
             ])
@@ -170,10 +180,15 @@ const PageAdmin = {
               type: 'checkbox', ...(has(p.slug) ? { checked: '' } : {}), ...(isAdmin ? { disabled: '' } : {}),
               onchange: e => toggle(p.slug, e.target.checked, e.target)
             })
-            groupBox.append(U.el('label', { class: 'perm-row' }, [
+            groupBox.append(U.el('label', { class: 'perm-row' + (p.status === 'active' ? ' perm-active' : '') }, [
               cb,
               U.el('div', { class: 'perm-info' }, [
-                U.el('code', { class: 'perm-slug', text: p.slug }),
+                U.el('div', { class: 'perm-slug-row' }, [
+                  U.el('code', { class: 'perm-slug', text: p.slug }),
+                  p.status === 'active'
+                    ? U.el('span', { class: 'perm-badge perm-badge-live', title: 'Enforced by a route today', text: 'LIVE' })
+                    : U.el('span', { class: 'perm-badge perm-badge-planned', title: 'Catalogued for an upcoming module', text: 'planned' })
+                ]),
                 U.el('span', { class: 'perm-desc', text: p.description })
               ])
             ]))

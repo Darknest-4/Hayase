@@ -2503,8 +2503,15 @@ svg.chart .chart-name { font-size: 12px; fill: var(--fg); dominant-baseline: mid
 .perm-row:hover { background: var(--bg-raised); }
 .perm-row input { accent-color: var(--accent); width: 1.05rem; height: 1.05rem; flex-shrink: 0; }
 .perm-info { min-width: 0; }
+.perm-slug-row { display: flex; align-items: center; gap: .4rem; }
 .perm-slug { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg); }
 .perm-desc { display: block; font-size: .68rem; color: var(--fg-faint); }
+.perm-badge { flex-shrink: 0; font-size: .55rem; font-weight: var(--weight-bold); text-transform: uppercase; letter-spacing: .05em; padding: .1rem .32rem; border-radius: var(--radius-sm); line-height: 1.4; }
+.perm-badge-live { color: var(--green-400, #4ade80); background: color-mix(in oklab, var(--green-500, #22c55e) 16%, transparent); }
+.perm-badge-planned { color: var(--fg-faint); background: color-mix(in oklab, var(--fg-faint) 12%, transparent); text-transform: none; letter-spacing: 0; }
+.perm-row.perm-active .perm-slug { color: var(--green-400, #4ade80); }
+.perm-live-count { font-size: .6rem; font-weight: var(--weight-bold); color: var(--green-400, #4ade80); background: color-mix(in oklab, var(--green-500, #22c55e) 14%, transparent); padding: .12rem .4rem; border-radius: var(--radius-sm); }
+.perm-legend { font-size: var(--text-xs); color: var(--fg-muted); display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; margin: 0 0 var(--space-3); }
 
 @media (max-width: 820px) {
   .roles-layout { grid-template-columns: 1fr; }
