@@ -8,6 +8,7 @@ const PageAdmin = {
     { key: 'overview', label: 'Overview',    sub: 'Platform health & analytics', perm: 'admin.analytics.view', render: 'renderOverview', icon: '<path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>' },
     { key: 'users',    label: 'Users',       sub: 'Accounts, suspensions & bans', perm: 'admin.users.manage', render: 'renderUsers', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
     { key: 'reports',  label: 'Reports',     sub: 'Moderation queue', perm: 'community.moderate', render: 'renderReports', icon: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>' },
+    { key: 'catalogue', label: 'Catalogue', sub: 'Anime, episodes & visibility', perm: 'anime.view', render: 'renderCatalogue', icon: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>' },
     { key: 'roles',    label: 'Roles',       sub: 'Permissions & RBAC', perm: 'roles.manage', render: 'renderRoles', icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>' },
     { key: 'webhooks', label: 'Webhooks',    sub: 'Outbound integrations', perm: 'admin.webhooks.manage', render: 'renderWebhooks', icon: '<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>' },
     { key: 'config',   label: 'Site Config', sub: 'Feature flags & settings', perm: 'settings.system', render: 'renderConfig', icon: '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>' }
@@ -306,6 +307,245 @@ const PageAdmin = {
       ]),
       U.el('div', { class: 'flag-controls' }, [accessSel, permInput, toggle])
     ])
+  },
+
+  // ---- Catalogue: anime + episode management, visibility control ----
+  VIS_BADGE: { public: ['Public', 'vis-public'], unlisted: ['Unlisted', 'vis-unlisted'], hidden: ['Hidden', 'vis-hidden'] },
+  FORMATS: ['TV', 'TV_SHORT', 'MOVIE', 'SPECIAL', 'OVA', 'ONA', 'MUSIC'],
+  STATUSES: ['NOT_YET_RELEASED', 'RELEASING', 'FINISHED', 'CANCELLED', 'HIATUS'],
+  SEASONS: ['WINTER', 'SPRING', 'SUMMER', 'FALL'],
+
+  async renderCatalogue (content) {
+    const perms = await YumeAPI.myPermissions()
+    const can = s => perms.includes(s)
+    const state = { q: '', visibility: '', selected: null }
+
+    const layout = U.el('div', { class: 'cat-layout' })
+    const listCol = U.el('div', { class: 'cat-list-col' })
+    const editCol = U.el('div', { class: 'cat-edit-col' })
+    layout.append(listCol, editCol)
+    content.replaceChildren(layout)
+
+    // ---- toolbar ----
+    const listBox = U.el('div', { class: 'cat-list' })
+    const toolbar = U.el('div', { class: 'cat-toolbar' }, [
+      U.el('input', { class: 'input', placeholder: 'Search catalogue…', oninput: U.debounce(e => { state.q = e.target.value.trim(); loadList() }) }),
+      U.el('select', { class: 'select', onchange: e => { state.visibility = e.target.value; loadList() } },
+        [['', 'All visibility'], ['public', 'Public'], ['unlisted', 'Unlisted'], ['hidden', 'Hidden']].map(([v, l]) =>
+          U.el('option', { value: v, text: l }))),
+      can('anime.create') ? U.el('button', { class: 'btn btn-primary btn-sm', onclick: () => openEditor(null) }, [document.createTextNode('+ New anime')]) : null
+    ])
+    listCol.append(toolbar, listBox)
+
+    const loadList = async () => {
+      listBox.replaceChildren(U.el('div', { class: 'spinner' }))
+      try {
+        const { data, total } = await YumeAPI.admin.catalogue.list({ q: state.q, visibility: state.visibility, limit: 40 })
+        listBox.replaceChildren()
+        listBox.append(U.el('div', { class: 'cat-count', text: `${total.toLocaleString()} entries` }))
+        if (!data.length) { listBox.append(U.el('div', { class: 'empty-state', style: 'padding:1rem;', text: 'No matching anime.' })); return }
+        for (const a of data) listBox.append(this.catRow(a, state, openEditor))
+      } catch (e) {
+        listBox.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+      }
+    }
+
+    // ---- editor (null = create) ----
+    const openEditor = async (anime) => {
+      editCol.replaceChildren(U.el('div', { class: 'spinner' }))
+      let full = anime
+      if (anime?.id) { try { full = await YumeAPI.admin.catalogue.get(anime.id) } catch (e) { editCol.replaceChildren(U.el('div', { class: 'error-state', text: e.message })); return } }
+      state.selected = full?.id ?? null
+      listBox.querySelectorAll('.cat-row').forEach(r => r.classList.toggle('active', r.dataset.id === state.selected))
+      this.renderCatEditor(editCol, full, { can, onSaved: loadList, onDeleted: () => { editCol.replaceChildren(this.catPlaceholder()); loadList() } })
+    }
+
+    editCol.append(this.catPlaceholder())
+    loadList()
+  },
+
+  catPlaceholder () {
+    return U.el('div', { class: 'cat-placeholder' }, [
+      U.svg('<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>', 40),
+      U.el('p', { text: 'Select an anime to edit, or create a new one.' })
+    ])
+  },
+
+  catRow (a, state, openEditor) {
+    const [label, cls] = this.VIS_BADGE[a.visibility] ?? this.VIS_BADGE.public
+    const row = U.el('button', {
+      class: 'cat-row' + (a.id === state.selected ? ' active' : ''), dataset: { id: a.id },
+      onclick: () => openEditor(a)
+    }, [
+      U.el('div', { class: 'cat-row-main' }, [
+        U.el('div', { class: 'cat-row-title', text: a.canonical_title }),
+        U.el('div', { class: 'cat-row-sub', text: `${a.format} · ${a.season_year ?? '—'} · ${a.episode_rows} ep` })
+      ]),
+      U.el('span', { class: 'vis-badge ' + cls, text: label })
+    ])
+    return row
+  },
+
+  renderCatEditor (host, anime, { can, onSaved, onDeleted }) {
+    const isNew = !anime?.id
+    const editable = isNew ? can('anime.create') : can('anime.edit')
+    const draft = {
+      canonical_title: anime?.canonical_title ?? '',
+      format: anime?.format ?? 'TV',
+      status: anime?.status ?? 'FINISHED',
+      season: anime?.season ?? '',
+      season_year: anime?.season_year ?? '',
+      episode_count: anime?.episode_count ?? '',
+      episode_duration: anime?.episode_duration ?? '',
+      source_material: anime?.source_material ?? '',
+      synopsis: anime?.synopsis ?? '',
+      is_adult: anime?.is_adult ?? false,
+      visibility: anime?.visibility ?? 'public'
+    }
+
+    host.replaceChildren()
+    const form = U.el('div', { class: 'cat-editor' })
+    host.append(form)
+
+    form.append(U.el('div', { class: 'cat-editor-head' }, [
+      U.el('h2', { class: 'cat-editor-title', text: isNew ? 'New anime' : draft.canonical_title || 'Untitled' }),
+      anime?.id ? U.el('code', { class: 'cat-editor-id', text: anime.id }) : null
+    ]))
+
+    const field = (label, el) => U.el('label', { class: 'cat-field' }, [U.el('span', { class: 'cat-field-label', text: label }), el])
+    const input = (key, attrs = {}) => U.el('input', { class: 'input', value: draft[key] ?? '', ...(editable ? {} : { disabled: '' }), oninput: e => { draft[key] = e.target.value }, ...attrs })
+    const select = (key, opts, withEmpty) => U.el('select', { class: 'select', ...(editable ? {} : { disabled: '' }), onchange: e => { draft[key] = e.target.value } },
+      [...(withEmpty ? [U.el('option', { value: '', text: '—', ...(draft[key] ? {} : { selected: '' }) })] : []),
+        ...opts.map(o => U.el('option', { value: o, text: o.replace(/_/g, ' '), ...(draft[key] === o ? { selected: '' } : {}) }))])
+
+    // visibility — the headline control
+    const [visLabel] = this.VIS_BADGE[draft.visibility]
+    form.append(U.el('div', { class: 'cat-visibility' }, [
+      U.el('div', {}, [
+        U.el('div', { class: 'cat-field-label', text: 'Visibility' }),
+        U.el('p', { class: 'cat-vis-hint', text: 'Hidden hides it everywhere including the detail page. Unlisted keeps it reachable by direct link only.' })
+      ]),
+      select('visibility', ['public', 'unlisted', 'hidden'])
+    ]))
+
+    form.append(U.el('div', { class: 'cat-grid' }, [
+      field('Title', input('canonical_title', { placeholder: 'Canonical title' })),
+      field('Format', select('format', this.FORMATS)),
+      field('Status', select('status', this.STATUSES)),
+      field('Season', select('season', this.SEASONS, true)),
+      field('Season year', input('season_year', { type: 'number', min: 1900, max: 2100 })),
+      field('Episodes (planned)', input('episode_count', { type: 'number', min: 0 })),
+      field('Episode duration (min)', input('episode_duration', { type: 'number', min: 0 })),
+      field('Source material', input('source_material', { placeholder: 'MANGA, LIGHT_NOVEL…' }))
+    ]))
+    form.append(field('Synopsis', U.el('textarea', { class: 'input', rows: 4, ...(editable ? {} : { disabled: '' }), oninput: e => { draft.synopsis = e.target.value } }, [document.createTextNode(draft.synopsis)])))
+    form.append(U.el('label', { class: 'cat-check' }, [
+      U.el('input', { type: 'checkbox', ...(draft.is_adult ? { checked: '' } : {}), ...(editable ? {} : { disabled: '' }), onchange: e => { draft.is_adult = e.target.checked } }),
+      U.el('span', { text: 'Adult (NSFW) content' })
+    ]))
+
+    // ---- actions ----
+    if (editable) {
+      const num = v => v === '' || v == null ? null : Number(v)
+      const payload = () => ({
+        canonical_title: draft.canonical_title.trim(),
+        format: draft.format, status: draft.status,
+        season: draft.season || null, season_year: num(draft.season_year),
+        episode_count: num(draft.episode_count), episode_duration: num(draft.episode_duration),
+        source_material: draft.source_material.trim() || null,
+        synopsis: draft.synopsis.trim() || null, is_adult: draft.is_adult, visibility: draft.visibility
+      })
+      const actions = U.el('div', { class: 'cat-actions' })
+      actions.append(U.el('button', { class: 'btn btn-primary', onclick: async () => {
+        if (!draft.canonical_title.trim()) return U.toast('Title is required', 'error')
+        try {
+          if (isNew) { const c = await YumeAPI.admin.catalogue.create(payload()); U.toast('Anime created'); onSaved?.(); anime = c }
+          else { await YumeAPI.admin.catalogue.update(anime.id, payload()); U.toast('Saved'); onSaved?.() }
+        } catch (e) { U.toast(e.message, 'error') }
+      } }, [document.createTextNode(isNew ? 'Create anime' : 'Save changes')]))
+      if (!isNew && can('anime.delete')) {
+        actions.append(U.el('button', { class: 'btn btn-danger', onclick: async () => {
+          if (!confirm(`Delete "${anime.canonical_title}" and all its episodes? This cannot be undone.`)) return
+          try { await YumeAPI.admin.catalogue.remove(anime.id); U.toast('Deleted'); onDeleted?.() } catch (e) { U.toast(e.message, 'error') }
+        } }, [document.createTextNode('Delete')]))
+      }
+      form.append(actions)
+    } else {
+      form.append(U.el('div', { class: 'callout', text: 'You have read-only access to the catalogue.' }))
+    }
+
+    // ---- episodes (existing anime only) ----
+    if (!isNew) this.renderCatEpisodes(form, anime, can)
+  },
+
+  async renderCatEpisodes (form, anime, can) {
+    const wrap = U.el('div', { class: 'cat-episodes' })
+    form.append(U.el('div', { class: 'cat-ep-head' }, [
+      U.el('h3', { class: 'detail-section-title', style: 'margin:0;', text: 'Episodes' }),
+      can('episode.create') ? U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => this.episodeModal(anime, null, () => load()) }, [document.createTextNode('+ Add episode')]) : null
+    ]))
+    form.append(wrap)
+
+    const load = async () => {
+      wrap.replaceChildren(U.el('div', { class: 'spinner' }))
+      try {
+        const { data } = await YumeAPI.admin.catalogue.episodes(anime.id)
+        wrap.replaceChildren()
+        if (!data.length) { wrap.append(U.el('div', { class: 'empty-state', style: 'padding:.75rem;', text: 'No episodes yet.' })); return }
+        for (const ep of data) {
+          const flags = [ep.is_filler ? 'filler' : null, ep.is_recap ? 'recap' : null].filter(Boolean).join(' · ')
+          wrap.append(U.el('div', { class: 'cat-ep-row' }, [
+            U.el('div', { class: 'cat-ep-num', text: '#' + ep.number }),
+            U.el('div', { class: 'cat-ep-main' }, [
+              U.el('div', { class: 'cat-ep-title', text: ep.title || `Episode ${ep.number}` }),
+              U.el('div', { class: 'cat-ep-sub', text: [ep.duration ? ep.duration + ' min' : null, flags || null].filter(Boolean).join(' · ') || '—' })
+            ]),
+            can('episode.edit') ? U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => this.episodeModal(anime, ep, () => load()) }, [document.createTextNode('Edit')]) : null,
+            can('episode.delete') ? U.el('button', { class: 'btn btn-ghost btn-sm cat-ep-del', onclick: async () => {
+              if (!confirm(`Delete episode ${ep.number}?`)) return
+              try { await YumeAPI.admin.catalogue.removeEpisode(ep.id); U.toast('Episode deleted'); load() } catch (e) { U.toast(e.message, 'error') }
+            } }, [document.createTextNode('✕')]) : null
+          ]))
+        }
+      } catch (e) { wrap.replaceChildren(U.el('div', { class: 'error-state', text: e.message })) }
+    }
+    load()
+  },
+
+  episodeModal (anime, ep, onDone) {
+    const isNew = !ep
+    const d = {
+      number: ep?.number ?? '', title: ep?.title ?? '', synopsis: ep?.synopsis ?? '',
+      duration: ep?.duration ?? '', is_filler: ep?.is_filler ?? false, is_recap: ep?.is_recap ?? false,
+      air_date: ep?.air_date ? String(ep.air_date).slice(0, 10) : ''
+    }
+    const inp = (key, attrs = {}) => U.el('input', { class: 'input', value: d[key], oninput: e => { d[key] = e.target.value }, ...attrs })
+    const check = (key, label) => U.el('label', { class: 'cat-check' }, [
+      U.el('input', { type: 'checkbox', ...(d[key] ? { checked: '' } : {}), onchange: e => { d[key] = e.target.checked } }), U.el('span', { text: label })
+    ])
+    const labelled = (t, el) => U.el('label', { class: 'cat-field' }, [U.el('span', { class: 'cat-field-label', text: t }), el])
+
+    const backdrop = C.modalShell(isNew ? `Add episode — ${anime.canonical_title}` : `Edit episode ${ep.number}`, [
+      labelled('Episode number', inp('number', { type: 'number', step: '0.5', min: 0, placeholder: 'e.g. 1 or 6.5' })),
+      labelled('Title', inp('title', { placeholder: 'Optional episode title' })),
+      labelled('Air date', inp('air_date', { type: 'date' })),
+      labelled('Duration (min)', inp('duration', { type: 'number', min: 0 })),
+      labelled('Synopsis', U.el('textarea', { class: 'input', rows: 3, oninput: e => { d.synopsis = e.target.value } }, [document.createTextNode(d.synopsis)])),
+      U.el('div', { style: 'display:flex;gap:1.25rem;' }, [check('is_filler', 'Filler'), check('is_recap', 'Recap')])
+    ], async () => {
+      if (d.number === '' || isNaN(Number(d.number))) return U.toast('A valid episode number is required', 'error')
+      const num = v => v === '' || v == null ? null : Number(v)
+      const body = {
+        number: Number(d.number), title: d.title.trim() || null, synopsis: d.synopsis.trim() || null,
+        duration: num(d.duration), is_filler: d.is_filler, is_recap: d.is_recap,
+        air_date: d.air_date ? new Date(d.air_date).toISOString() : null
+      }
+      try {
+        if (isNew) await YumeAPI.admin.catalogue.addEpisode(anime.id, body)
+        else await YumeAPI.admin.catalogue.updateEpisode(ep.id, body)
+        U.toast(isNew ? 'Episode added' : 'Episode updated'); backdrop.remove(); onDone?.()
+      } catch (e) { U.toast(e.message, 'error') }
+    })
   },
 
   async renderOverview (content) {

@@ -235,7 +235,23 @@ const YumeAPI = {
     // roles & permissions
     roles: () => YumeAPI._request('/v1/admin/roles', { auth: true }),
     permissionCatalog: () => YumeAPI._request('/v1/admin/roles/permissions', { auth: true }),
-    setRolePermission: (roleId, slug, granted) => YumeAPI._request(`/v1/admin/roles/${roleId}/permissions`, { method: 'POST', auth: true, body: { slug, granted } })
+    setRolePermission: (roleId, slug, granted) => YumeAPI._request(`/v1/admin/roles/${roleId}/permissions`, { method: 'POST', auth: true, body: { slug, granted } }),
+    // catalogue management (anime + episodes, sees hidden entries)
+    catalogue: {
+      list: (params = {}) => {
+        const qs = new URLSearchParams()
+        for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '') qs.set(k, v)
+        return YumeAPI._request('/v1/admin/catalogue?' + qs.toString(), { auth: true })
+      },
+      get: id => YumeAPI._request(`/v1/admin/catalogue/${id}`, { auth: true }),
+      create: body => YumeAPI._request('/v1/admin/catalogue', { method: 'POST', auth: true, body }),
+      update: (id, body) => YumeAPI._request(`/v1/admin/catalogue/${id}`, { method: 'PATCH', auth: true, body }),
+      remove: id => YumeAPI._request(`/v1/admin/catalogue/${id}`, { method: 'DELETE', auth: true }),
+      episodes: id => YumeAPI._request(`/v1/admin/catalogue/${id}/episodes`, { auth: true }),
+      addEpisode: (id, body) => YumeAPI._request(`/v1/admin/catalogue/${id}/episodes`, { method: 'POST', auth: true, body }),
+      updateEpisode: (eid, body) => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}`, { method: 'PATCH', auth: true, body }),
+      removeEpisode: eid => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}`, { method: 'DELETE', auth: true })
+    }
   },
 
   // ---- extension store ----

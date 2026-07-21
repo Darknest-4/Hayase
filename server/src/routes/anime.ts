@@ -56,6 +56,7 @@ const routes: FastifyPluginAsync = async fastify => {
       where.push(clause.replace('?', `$${params.length}`))
     }
 
+    where.push("a.visibility = 'public'") // hidden/unlisted stay out of browse
     if (!q.nsfw) where.push('NOT a.is_adult')
     if (q.season) add('a.season = ?', q.season)
     if (q.year) add('a.season_year = ?', q.year)
@@ -103,7 +104,7 @@ const routes: FastifyPluginAsync = async fastify => {
        FROM episodes e
        JOIN anime a ON a.id = e.anime_id
        LEFT JOIN anime_images img ON img.anime_id = a.id AND img.kind = 'cover' AND img.is_primary
-       WHERE e.air_date >= $1 AND e.air_date < $2
+       WHERE e.air_date >= $1 AND e.air_date < $2 AND a.visibility = 'public'
        ORDER BY e.air_date`,
       [from, to]
     )
@@ -135,7 +136,8 @@ const routes: FastifyPluginAsync = async fastify => {
               ) AS sim
        FROM anime a
        LEFT JOIN anime_images img ON img.anime_id = a.id AND img.kind = 'cover' AND img.is_primary
-       WHERE (${nsfw ? 'true' : 'NOT a.is_adult'})
+       WHERE a.visibility = 'public'
+         AND (${nsfw ? 'true' : 'NOT a.is_adult'})
          AND (a.search @@ websearch_to_tsquery('simple', $1)
               OR a.canonical_title % $1
               OR EXISTS (SELECT 1 FROM anime_synonyms s WHERE s.anime_id = a.id AND s.synonym % $1))
@@ -157,7 +159,8 @@ const routes: FastifyPluginAsync = async fastify => {
   }, async (request, reply) => {
     const { anilistId } = request.params as { anilistId: number }
     const row = await queryOne<{ id: string, canonical_title: string }>(
-      `SELECT a.id, a.canonical_title FROM anime_mappings m JOIN anime a ON a.id = m.anime_id WHERE m.anilist_id = $1`,
+      `SELECT a.id, a.canonical_title FROM anime_mappings m JOIN anime a ON a.id = m.anime_id
+       WHERE m.anilist_id = $1 AND a.visibility <> 'hidden'`,
       [anilistId]
     )
     if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
@@ -221,7 +224,7 @@ const routes: FastifyPluginAsync = async fastify => {
         (SELECT coalesce(jsonb_agg(jsonb_build_object('kind', i.kind, 'key', i.object_key, 'blurhash', i.blurhash, 'color', i.dominant_color)), '[]')
            FROM anime_images i WHERE i.anime_id = a.id AND i.is_primary) AS images,
         (SELECT to_jsonb(m) - 'anime_id' FROM anime_mappings m WHERE m.anime_id = a.id) AS mappings
-       FROM anime a WHERE a.id = $1`,
+       FROM anime a WHERE a.id = $1 AND a.visibility <> 'hidden'`,
       [id]
     )
 
@@ -236,7 +239,7 @@ const routes: FastifyPluginAsync = async fastify => {
     schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const exists = await queryOne('SELECT 1 FROM anime WHERE id = $1', [id])
+    const exists = await queryOne("SELECT 1 FROM anime WHERE id = $1 AND visibility <> 'hidden'", [id])
     if (!exists) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
 
     const data = await query(
