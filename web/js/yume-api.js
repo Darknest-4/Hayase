@@ -6,7 +6,14 @@
 
 const YumeAPI = {
   base () {
-    return localStorage.getItem('yume-api') ?? 'http://localhost:4000'
+    const saved = localStorage.getItem('yume-api')
+    if (saved) return saved
+    // served over http(s) → the API is same-origin (single-container deploy);
+    // opened from file:// → assume a local dev API on :4000
+    if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+      return window.location.origin
+    }
+    return 'http://localhost:4000'
   },
 
   setBase (url) {

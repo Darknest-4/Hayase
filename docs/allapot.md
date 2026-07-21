@@ -301,6 +301,30 @@ DATABASE_URL=… PORT=4000 JWT_SECRET=dev-only-jwt-secret \
 # web kliens: bármely statikus szerver a web/ könyvtárra
 ```
 
+### Docker — az egész app egy konténerben
+A repó gyökerében egy **sima, egylépcsős `Dockerfile`** van, ami **egyetlen
+konténerben az API‑t ÉS a statikus web klienst is kiszolgálja egy porton**
+(Node 22, natív TS `--experimental-strip-types`, nincs build‑lépés). A
+kliens `base()` automatikusan same‑origin API‑t használ, ha http(s)‑en
+szolgálják ki — így semmit sem kell konfigurálni.
+```bash
+docker build -t yume .
+docker run --rm -p 4000:4000 \
+  -e DATABASE_URL=… -e JWT_SECRET=… yume          # migrál, majd indít
+# → http://localhost:4000  (web kliens + API ugyanazon a porton)
+```
+A konténer belépője migrálja a DB‑t, majd elindítja az appot. Az API a
+`WEB_ROOT` (alap: `/app/web`) statikus fájljait szolgálja ki, SPA‑fallbackkel.
+
+**Minden Dockeren keresztül — Compose:**
+```bash
+docker compose up                    # app (web+API) + Postgres, egy paranccsal
+docker compose --profile infra up -d # + redis/opensearch/minio/rabbitmq (opcionális)
+```
+A `docker-compose.yml` `app` service‑e a `Dockerfile`‑ból épül, a `postgres`
+service‑re vár (healthcheck), és a `postgres://yume:yume@postgres:5432/yume`
+DB‑re csatlakozik. (A 25k anime seed külön: `npm run seed`.)
+
 ### Hasznos scriptek (`server/package.json`)
 `dev` (watch), `build` (tsc), `start`, `migrate`, `check` (tsc --noEmit), `seed`.
 

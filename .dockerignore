@@ -1,0 +1,5 @@
+# keep the build context small and never ship host artifacts
+**/node_modules
+.git
+*.log
+docs/screenshots

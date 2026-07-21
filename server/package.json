@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Yume API gateway \u2014 Fastify REST/GraphQL service",
+  "description": "Yume API gateway — Fastify REST/GraphQL service",
   "scripts": {
     "dev": "node --watch --experimental-strip-types src/index.ts",
     "build": "tsc",
@@ -17,6 +17,7 @@
   "dependencies": {
     "@fastify/cors": "^10.0.1",
     "@fastify/jwt": "^9.0.1",
+    "@fastify/static": "^10.1.0",
     "@fastify/websocket": "^11.0.1",
     "fastify": "^5.1.0",
     "fastify-plugin": "^5.0.1",
