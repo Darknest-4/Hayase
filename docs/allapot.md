@@ -323,7 +323,18 @@ docker compose --profile infra up -d # + redis/opensearch/minio/rabbitmq (opcion
 ```
 A `docker-compose.yml` `app` service‑e a `Dockerfile`‑ból épül, a `postgres`
 service‑re vár (healthcheck), és a `postgres://yume:yume@postgres:5432/yume`
-DB‑re csatlakozik. (A 25k anime seed külön: `npm run seed`.)
+DB‑re csatlakozik.
+
+**Katalógus seed (egyszeri, nem az indulás része):** az indulás mindig csak
+migrál (másodpercek). A 25k anime + epizód betöltése külön, **egyszeri**
+one‑shot a perzisztens `pgdata` volume‑ba — utána minden `up` azonnali:
+```bash
+docker compose --profile seed run --rm seed   # letölti a hivatalos dumpot és betölt
+```
+A `seed` script argumentum nélkül a hivatalos anime‑offline‑database dumpot
+tölti le (`SEED_URL`‑lel felülírható, vagy adj meg helyi fájl‑útvonalat).
+Lokálisan: `npm run seed [<fájl-vagy-url>]`. A seed maga néhány perc, de
+egyszeri és a normál indulást sosem lassítja.
 
 ### Hasznos scriptek (`server/package.json`)
 `dev` (watch), `build` (tsc), `start`, `migrate`, `check` (tsc --noEmit), `seed`.

@@ -17,6 +17,20 @@ services:
       CORS_ORIGINS: '*'
     ports: ['4000:4000']
 
+  # one-shot catalogue seed (25k anime + episodes) into the persistent volume.
+  # Run once: docker compose --profile seed run --rm seed
+  # Downloads the official dump by default; never runs on normal `up`.
+  seed:
+    build: .
+    profiles: ['seed']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://yume:yume@postgres:5432/yume
+      # SEED_URL: <override the dump source, or mount a file and pass its path>
+    command: ['sh', '-c', 'node --experimental-strip-types src/lib/migrate.ts && node --experimental-strip-types scripts/seed.ts']
+
   postgres:
     image: postgres:16-alpine
     environment:
