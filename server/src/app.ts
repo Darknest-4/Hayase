@@ -1,7 +1,12 @@
 // App factory: builds the configured Fastify instance (separated from
 // index.ts so tests can build an app without binding a port).
 
+import { existsSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import cors from '@fastify/cors'
+import fastifyStatic from '@fastify/static'
 import mercurius from 'mercurius'
 import Fastify from 'fastify'
 
@@ -81,6 +86,21 @@ export async function buildApp (): Promise<FastifyInstance> {
   await app.register(webhookRoutes, { prefix: '/v1/admin/webhooks' })
   await app.register(roleRoutes, { prefix: '/v1/admin/roles' })
   await app.register(catalogueRoutes, { prefix: '/v1/admin/catalogue' })
+
+  // Serve the static web client from the same origin so the whole app runs as
+  // one container/port (WEB_ROOT overrides; defaults to the repo's web/).
+  const webRoot = process.env.WEB_ROOT ?? join(dirname(fileURLToPath(import.meta.url)), '../../web')
+  if (existsSync(webRoot)) {
+    await app.register(fastifyStatic, { root: webRoot, index: 'index.html' })
+    // SPA fallback: any non-API GET that isn't a real file returns index.html
+    app.setNotFoundHandler((request, reply) => {
+      if (request.method === 'GET' && !/^\/(v1|graphql|graphiql|ws)\b/.test(request.url)) {
+        return reply.sendFile('index.html')
+      }
+      return reply.code(404).type('application/problem+json').send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    })
+    app.log.info(`serving web client from ${webRoot}`)
+  }
 
   // RFC 9457 problem+json for unhandled errors
   app.setErrorHandler((error: FastifyError, request, reply) => {

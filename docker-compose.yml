@@ -1,6 +1,22 @@
-# Yume — local development infrastructure
-# Usage: docker compose up -d
+# Yume — full stack via Docker.
+# Usage: docker compose up            (starts the app + Postgres)
+#        docker compose --profile infra up -d   (also redis/opensearch/minio/rabbitmq)
+# The app container serves BOTH the API and the web client on http://localhost:4000
 services:
+  # the whole app (API + static web client) in one container
+  app:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://yume:yume@postgres:5432/yume
+      JWT_SECRET: dev-only-jwt-secret-change-me
+      PORT: '4000'
+      HOST: 0.0.0.0
+      CORS_ORIGINS: '*'
+    ports: ['4000:4000']
+
   postgres:
     image: postgres:16-alpine
     environment:
@@ -13,14 +29,18 @@ services:
       test: ['CMD-SHELL', 'pg_isready -U yume']
       interval: 5s
 
+  # optional infra for future scale-out — off by default, start with:
+  #   docker compose --profile infra up -d
   redis:
     image: redis:7-alpine
+    profiles: ['infra']
     command: redis-server --appendonly yes
     ports: ['6379:6379']
     volumes: ['redisdata:/data']
 
   opensearch:
     image: opensearchproject/opensearch:2
+    profiles: ['infra']
     environment:
       discovery.type: single-node
       plugins.security.disabled: 'true'
@@ -31,6 +51,7 @@ services:
 
   minio:
     image: minio/minio
+    profiles: ['infra']
     command: server /data --console-address ':9001'
     environment:
       MINIO_ROOT_USER: yume
@@ -40,6 +61,7 @@ services:
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
+    profiles: ['infra']
     ports: ['5672:5672', '15672:15672']
     volumes: ['rabbitdata:/var/lib/rabbitmq']
 
