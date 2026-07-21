@@ -15,8 +15,9 @@ const PageAdmin = {
     const canAnalytics = perms.includes('admin.analytics.view')
     const canWebhooks = perms.includes('admin.webhooks.manage')
     const canConfig = perms.includes('settings.system')
+    const canRoles = perms.includes('roles.manage')
 
-    if (!canUsers && !canModerate && !canAnalytics && !canWebhooks && !canConfig) {
+    if (!canUsers && !canModerate && !canAnalytics && !canWebhooks && !canConfig && !canRoles) {
       pad.append(U.el('div', { class: 'callout', text: 'You need moderator or admin permissions to see this page.' }))
       return
     }
@@ -25,6 +26,7 @@ const PageAdmin = {
       canAnalytics && ['overview', 'Overview'],
       canUsers && ['users', 'Users'],
       canModerate && ['reports', 'Reports'],
+      canRoles && ['roles', 'Roles'],
       canWebhooks && ['webhooks', 'Webhooks'],
       canConfig && ['config', 'Site Config']
     ].filter(Boolean)
@@ -46,12 +48,149 @@ const PageAdmin = {
       if (state.tab === 'overview') this.renderOverview(content)
       else if (state.tab === 'users') this.renderUsers(content)
       else if (state.tab === 'reports') this.renderReports(content)
+      else if (state.tab === 'roles') this.renderRoles(content)
       else if (state.tab === 'config') this.renderConfig(content)
       else this.renderWebhooks(content)
     }
 
     renderTabs()
     renderContent()
+  },
+
+  // ---- Roles & permissions (fine-grained RBAC) ----
+  async renderRoles (content) {
+    let rolesRes, catRes
+    try {
+      [rolesRes, catRes] = await Promise.all([YumeAPI.admin.roles(), YumeAPI.admin.permissionCatalog()])
+    } catch (e) {
+      content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load roles: ' + e.message }))
+      return
+    }
+    content.replaceChildren()
+
+    const roles = rolesRes.data
+    const catalog = catRes.data
+    const total = catalog.length
+    const groups = {}
+    for (const p of catalog) (groups[p.group] ??= []).push(p)
+
+    const state = { role: roles[0], granted: new Set(roles[0].permissions), filter: '' }
+
+    const layout = U.el('div', { class: 'roles-layout' })
+    content.append(layout)
+
+    // ---- role rail ----
+    const rail = U.el('div', { class: 'roles-rail' })
+    const countLabel = {}
+    for (const r of roles) {
+      const cnt = U.el('span', { class: 'role-count' })
+      countLabel[r.slug] = cnt
+      rail.append(U.el('button', {
+        class: 'role-item' + (r.slug === state.role.slug ? ' active' : ''),
+        dataset: { slug: r.slug },
+        onclick: () => {
+          state.role = r
+          state.granted = new Set(r.permissions)
+          rail.querySelectorAll('.role-item').forEach(b => b.classList.toggle('active', b.dataset.slug === r.slug))
+          renderPanel()
+        }
+      }, [
+        U.el('div', { class: 'role-name', text: r.name }),
+        U.el('div', { class: 'role-sub' }, [
+          U.el('code', { text: r.slug }),
+          document.createTextNode(` · ${r.user_count} user${r.user_count === '1' ? '' : 's'}`)
+        ]),
+        cnt
+      ]))
+    }
+    layout.append(rail)
+
+    // ---- permission panel ----
+    const panel = U.el('div', { class: 'roles-panel' })
+    layout.append(panel)
+
+    const updateCounts = () => {
+      for (const r of roles) {
+        const n = r.slug === state.role.slug ? state.granted.size : r.permissions.length
+        countLabel[r.slug].textContent = `${r.slug === 'admin' ? total : n}/${total}`
+      }
+    }
+
+    const renderPanel = () => {
+      panel.replaceChildren()
+      const isAdmin = state.role.slug === 'admin'
+      const has = slug => isAdmin || state.granted.has(slug)
+
+      const head = U.el('div', { class: 'roles-panel-head' }, [
+        U.el('div', {}, [
+          U.el('h3', { style: 'margin:0;', text: state.role.name }),
+          U.el('p', { class: 'list-row-sub', style: 'margin:.15rem 0 0;', text: isAdmin ? 'The admin role always holds every permission.' : `${state.granted.size} of ${total} permissions granted` })
+        ]),
+        U.el('input', { class: 'input', placeholder: 'Filter permissions…', value: state.filter, oninput: e => { state.filter = e.target.value.toLowerCase(); renderList() } })
+      ])
+      panel.append(head)
+
+      const listWrap = U.el('div', { class: 'perm-groups' })
+      panel.append(listWrap)
+
+      const renderList = () => {
+        listWrap.replaceChildren()
+        for (const [group, perms] of Object.entries(groups)) {
+          const visible = perms.filter(p => !state.filter || p.slug.includes(state.filter) || p.description.toLowerCase().includes(state.filter))
+          if (!visible.length) continue
+          const grantedInGroup = visible.filter(p => has(p.slug)).length
+          const groupBox = U.el('div', { class: 'perm-group' }, [
+            U.el('div', { class: 'perm-group-head' }, [
+              U.el('span', { class: 'perm-group-title', text: group }),
+              U.el('span', { class: 'perm-group-count', text: `${grantedInGroup}/${visible.length}` }),
+              isAdmin ? null : U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => bulk(visible, grantedInGroup < visible.length) }, [document.createTextNode(grantedInGroup < visible.length ? 'Grant all' : 'Revoke all')])
+            ])
+          ])
+          for (const p of visible) {
+            const cb = U.el('input', {
+              type: 'checkbox', ...(has(p.slug) ? { checked: '' } : {}), ...(isAdmin ? { disabled: '' } : {}),
+              onchange: e => toggle(p.slug, e.target.checked, e.target)
+            })
+            groupBox.append(U.el('label', { class: 'perm-row' }, [
+              cb,
+              U.el('div', { class: 'perm-info' }, [
+                U.el('code', { class: 'perm-slug', text: p.slug }),
+                U.el('span', { class: 'perm-desc', text: p.description })
+              ])
+            ]))
+          }
+          listWrap.append(groupBox)
+        }
+      }
+
+      const toggle = async (slug, granted, el) => {
+        try {
+          await YumeAPI.admin.setRolePermission(state.role.id, slug, granted)
+          if (granted) state.granted.add(slug); else state.granted.delete(slug)
+          // keep the source role object in sync so counts persist across switches
+          state.role.permissions = [...state.granted]
+          updateCounts()
+          head.querySelector('.list-row-sub').textContent = `${state.granted.size} of ${total} permissions granted`
+          renderList()
+        } catch (err) { U.toast(err.message, 'error'); if (el) el.checked = !granted }
+      }
+
+      const bulk = async (perms, grant) => {
+        for (const p of perms) {
+          if (grant === has(p.slug)) continue
+          try { await YumeAPI.admin.setRolePermission(state.role.id, p.slug, grant); grant ? state.granted.add(p.slug) : state.granted.delete(p.slug) } catch (e) { /* skip */ }
+        }
+        state.role.permissions = [...state.granted]
+        updateCounts(); renderList()
+        head.querySelector('.list-row-sub').textContent = `${state.granted.size} of ${total} permissions granted`
+        U.toast(grant ? 'Granted group' : 'Revoked group')
+      }
+
+      renderList()
+    }
+
+    updateCounts()
+    renderPanel()
   },
 
   // ---- Site Config: feature flags + global settings ----

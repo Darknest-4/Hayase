@@ -231,7 +231,11 @@ const YumeAPI = {
     // site config / feature flags
     config: () => YumeAPI._request('/v1/admin/config', { auth: true }),
     setFlag: (key, body) => YumeAPI._request(`/v1/admin/config/flags/${encodeURIComponent(key)}`, { method: 'PATCH', auth: true, body }),
-    setSetting: (key, value) => YumeAPI._request(`/v1/admin/config/settings/${encodeURIComponent(key)}`, { method: 'PATCH', auth: true, body: { value } })
+    setSetting: (key, value) => YumeAPI._request(`/v1/admin/config/settings/${encodeURIComponent(key)}`, { method: 'PATCH', auth: true, body: { value } }),
+    // roles & permissions
+    roles: () => YumeAPI._request('/v1/admin/roles', { auth: true }),
+    permissionCatalog: () => YumeAPI._request('/v1/admin/roles/permissions', { auth: true }),
+    setRolePermission: (roleId, slug, granted) => YumeAPI._request(`/v1/admin/roles/${roleId}/permissions`, { method: 'POST', auth: true, body: { slug, granted } })
   },
 
   // ---- extension store ----

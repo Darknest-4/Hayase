@@ -320,6 +320,15 @@ for reproducible shots. Click any section below to expand it. Full gallery in
 </details>
 
 <details>
+<summary><b>🛡️ Roles & Permissions</b> — fine-grained RBAC: 387 permissions across 11 domains, 6 roles, per-role grant/revoke with search</summary>
+
+<br>
+
+![🛡️ Roles & Permissions — desktop](docs/screenshots/29-roles.png)
+
+</details>
+
+<details>
 <summary><b>🎨 Theme Engine</b> — in Settings › Appearance — accent presets + custom colour with a live preview</summary>
 
 <br>

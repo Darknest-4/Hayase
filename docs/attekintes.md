@@ -134,7 +134,20 @@ A régi `#/analytics`, `#/achievements`, `#/history` linkek automatikusan
 Overview (felhasználó/tartalom/nézési statok, trending, job-queue
 egészség, hibacsoportok) | Users (keresés, suspend/ban/restore —
 session-visszavonással) | Reports (moderációs sor hide/dismiss
-akciókkal) | Webhooks | **Site Config**. Minden akció auditnaplózva.
+akciókkal) | **Roles** | Webhooks | **Site Config**. Minden akció auditnaplózva.
+
+### Roles & Permissions — finomszemcsés RBAC (387 jogosultság)
+Teljes jogosultság-rendszer, adminból kezelve:
+- **387 jogosultság** 11 domainben (katalógus, streaming, users, community,
+  library, moderation, developer, gamification, analytics, system, ai) —
+  `resource.action` sémán (pl. `anime.edit`, `user.ban`, `webhook.test`).
+- **6 szerep**: admin (mindent kap), moderator, developer, **editor**
+  (katalógus+streaming), **analyst** (analytics), user.
+- Az admin **Roles** fülön: bal oldalt a szerepek (felhasználószám +
+  jogosultság-számláló), jobbra a katalógus **csoportosítva**, checkbox-os
+  **grant/revoke** szerepenként, „Grant/Revoke all" csoportonként, kereső a
+  387 elem között. Az admin szerep védett (mindig minden). Backend:
+  `/v1/admin/roles` (`roles.manage`), minden változás auditált + webhook.
 
 ### Site Config — adatbázis-vezérelt konfiguráció / feature flag-ek
 A teljes termék egy **DB-vezérelt vezérlőpultról** állítható, élőben:
