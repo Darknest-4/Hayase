@@ -301,6 +301,18 @@ DATABASE_URL=… PORT=4000 JWT_SECRET=dev-only-jwt-secret \
 # web kliens: bármely statikus szerver a web/ könyvtárra
 ```
 
+### Docker (API)
+A repó gyökerében egy **sima, egylépcsős `Dockerfile`** van az API‑hoz
+(Node 22, natív TS `--experimental-strip-types`, nincs build‑lépés). A
+web kliens statikus, külön szolgálandó ki. Az `infra` (postgres/redis/…)
+a `docker-compose.yml`‑ben.
+```bash
+docker build -t yume-api .                       # repó gyökeréből
+docker run --rm -p 4000:4000 \
+  -e DATABASE_URL=… -e JWT_SECRET=… yume-api      # migrál, majd indít
+```
+A konténer belépője migrálja a DB‑t, majd elindítja az API‑t.
+
 ### Hasznos scriptek (`server/package.json`)
 `dev` (watch), `build` (tsc), `start`, `migrate`, `check` (tsc --noEmit), `seed`.
 
