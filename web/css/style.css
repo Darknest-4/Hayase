@@ -78,97 +78,56 @@ body::before {
 }
 .global-banner.visible { opacity: .55; }
 
-/* ===== sidebar — icon rail that expands with labels on hover ===== */
+/* ===== sidebar — slim icon rail (Hayase-style); labels are tooltips ===== */
 
 .sidebar {
   width: var(--sidebar-w);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  padding: var(--space-3) .45rem;
-  gap: .2rem;
+  align-items: center;
+  padding: var(--space-3) 0;
+  gap: var(--space-2);
   z-index: 30;
-  background: color-mix(in oklab, var(--bg) 62%, transparent);
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
-  border-right: 1px solid transparent;
-  overflow: hidden;
-  transition: width var(--dur-slow) var(--ease-out), background var(--dur-base), border-color var(--dur-base);
-}
-@media (hover: hover) and (min-width: 721px) {
-  .sidebar:hover {
-    width: 13rem;
-    background: color-mix(in oklab, var(--bg) 88%, transparent);
-    border-right-color: var(--border);
-    box-shadow: var(--shadow-3);
-  }
+  background: color-mix(in oklab, var(--bg) 55%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
 }
 
 .sidebar-logo {
   display: flex;
   align-items: center;
-  gap: .55rem;
+  justify-content: center;
+  width: 2.6rem;
   height: 2.6rem;
-  padding: 0 .5rem;
   margin-bottom: var(--space-2);
   color: var(--fg);
 }
 .sidebar-logo svg { width: 1.8rem; height: 1.8rem; flex-shrink: 0; }
-.sidebar-logo-text {
-  display: block;
-  font-weight: var(--weight-black);
-  font-size: var(--text-lg);
-  letter-spacing: -.02em;
-  opacity: 0;
-  transform: translateX(-6px);
-  transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
-}
-.sidebar:hover .sidebar-logo-text { opacity: 1; transform: none; }
+.sidebar-logo-text { display: none; }
 
 .sidebar-btn {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: .7rem;
-  height: 2.55rem;
-  padding: 0 .72rem;
+  justify-content: center;
+  width: 2.6rem;
+  height: 2.6rem;
   border: none;
   background: none;
   border-radius: var(--radius-md);
   color: var(--fg-faint);
   cursor: pointer;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-bold);
   transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
   position: relative;
-  white-space: nowrap;
 }
 .sidebar-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.sidebar-btn span {
-  display: block;
-  opacity: 0;
-  max-width: 0;
-  overflow: hidden;
-  transform: translateX(-6px);
-  transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
-}
-.sidebar:hover .sidebar-btn span { opacity: 1; max-width: 9rem; transform: none; }
+.sidebar-btn span { display: none; }
 .sidebar-btn svg { width: 1.15rem; height: 1.15rem; flex-shrink: 0; }
 .nav-more { display: none; } /* mobile-only; shown in the bottom bar via media query */
 .sidebar-btn:hover { background: var(--bg-raised); color: var(--fg); }
 .sidebar-btn.active {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.sidebar-btn.active::before {
-  content: '';
-  position: absolute;
-  left: -.45rem; top: 50%;
-  transform: translateY(-50%);
-  width: 3px; height: 1.35rem;
-  border-radius: var(--radius-full);
-  background: var(--accent);
+  background: var(--border-strong);
+  color: var(--fg);
 }
 .sidebar-spacer { flex-grow: 1; }
 
@@ -1728,10 +1687,6 @@ svg.chart .chart-name { font-size: 12px; fill: var(--fg); dominant-baseline: mid
     z-index: 80;
   }
   .sidebar-logo, .sidebar-spacer, #profile-switcher { display: none; }
-  .sidebar { overflow: visible; }
-  /* reset the desktop expand-on-hover label behaviour */
-  .sidebar-btn span { opacity: 1; max-width: none; transform: none; overflow: visible; }
-  .sidebar-btn.active::before { display: none; }
   /* only the primary tabs + More appear on the bar */
   .sidebar-btn { display: none; }
   .sidebar-btn.nav-primary,

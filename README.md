@@ -64,15 +64,6 @@ for reproducible shots. Click any section below to expand it. Full gallery in
 </details>
 
 <details>
-<summary><b>📌 Navigation rail</b> — icon rail that expands with labels on hover, accent active pill (desktop)</summary>
-
-<br>
-
-![📌 Navigation rail — desktop](docs/screenshots/27-sidebar.png)
-
-</details>
-
-<details>
 <summary><b>📊 Dashboard</b> — customizable widget landing page (reorder + toggle)</summary>
 
 <br>
