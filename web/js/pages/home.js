@@ -13,22 +13,22 @@ const PageHome = {
 
     // sections, same order/variables as the original home page
     const defs = [
-      { title: 'Popular This Season', vars: { sort: ['POPULARITY_DESC'], season, seasonYear: year } },
-      { title: 'Trending Now', vars: { sort: ['TRENDING_DESC'] } },
-      { title: 'Airing Right Now', vars: { sort: ['POPULARITY_DESC'], status: ['RELEASING'] } },
-      { title: 'All Time Popular', vars: { sort: ['POPULARITY_DESC'] } },
-      { title: 'Top Rated', vars: { sort: ['SCORE_DESC'] } },
-      { title: 'Movies', vars: { sort: ['POPULARITY_DESC'], format: ['MOVIE'] } },
-      { title: 'Romance', vars: { sort: ['TRENDING_DESC'], genre: ['Romance'] } },
-      { title: 'Action', vars: { sort: ['TRENDING_DESC'], genre: ['Action'] } },
-      { title: 'Adventure', vars: { sort: ['TRENDING_DESC'], genre: ['Adventure'] } },
-      { title: 'Fantasy', vars: { sort: ['TRENDING_DESC'], genre: ['Fantasy'] } }
+      { title: T('home.rails.popularSeason'), vars: { sort: ['POPULARITY_DESC'], season, seasonYear: year } },
+      { title: T('home.rails.trending'), vars: { sort: ['TRENDING_DESC'] } },
+      { title: T('home.rails.airing'), vars: { sort: ['POPULARITY_DESC'], status: ['RELEASING'] } },
+      { title: T('home.rails.allTimePopular'), vars: { sort: ['POPULARITY_DESC'] } },
+      { title: T('home.rails.topRated'), vars: { sort: ['SCORE_DESC'] } },
+      { title: T('home.rails.movies'), vars: { sort: ['POPULARITY_DESC'], format: ['MOVIE'] } },
+      { title: T('home.rails.romance'), vars: { sort: ['TRENDING_DESC'], genre: ['Romance'] } },
+      { title: T('home.rails.action'), vars: { sort: ['TRENDING_DESC'], genre: ['Action'] } },
+      { title: T('home.rails.adventure'), vars: { sort: ['TRENDING_DESC'], genre: ['Adventure'] } },
+      { title: T('home.rails.fantasy'), vars: { sort: ['TRENDING_DESC'], genre: ['Fantasy'] } }
     ]
 
     // local-list driven sections (Continue Watching / Your List)
     const continueIds = Store.continueIds()
     if (continueIds.length) {
-      sections.append(C.section('Continue Watching',
+      sections.append(C.section(T('home.continueWatching'),
         API.search({ ids: continueIds.slice(0, 50), perPage: 50 }).then(page => {
           const media = page.media ?? []
           media.sort((a, b) => continueIds.indexOf(a.id) - continueIds.indexOf(b.id))
@@ -45,7 +45,7 @@ const PageHome = {
     // Sequels You Missed — sequels of completed shows that aren't on the list
     const completedIds = Object.values(Store.list()).filter(e => e.status === 'COMPLETED').map(e => e.media.id)
     if (completedIds.length) {
-      sections.append(C.section('Sequels You Missed',
+      sections.append(C.section(T('home.sequelsYouMissed'),
         API.search({ ids: completedIds.slice(0, 25), perPage: 25 }).then(async page => {
           const inList = new Set(Object.keys(Store.list()).map(Number))
           const sequelIds = [...new Set((page.media ?? []).flatMap(m =>
@@ -60,7 +60,7 @@ const PageHome = {
 
     const planningIds = Store.planningIds()
     if (planningIds.length) {
-      sections.append(C.section('Your List',
+      sections.append(C.section(T('home.yourList'),
         API.search({ ids: planningIds.slice(0, 50), perPage: 50, status: ['FINISHED', 'RELEASING'] }).then(page => page.media ?? []),
         { moreHref: '#/list' }))
     }

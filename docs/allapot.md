@@ -260,6 +260,25 @@ jogok/flagek státusza a UI‑ban is látszik.
 
 ---
 
+## 7c. Központi szöveg‑katalógus (fix feliratok egy helyen)
+
+Minden **fix UI‑szöveg** (nav‑feliratok, home‑rail címek pl. „Trending Now",
+schedule‑fejlécek, footer, gombok) egyetlen fájlban van: **`web/copy.js`**
+(`window.Copy`, kulcs → szöveg fa). Nem kell a kódban keresgélni — itt átírsz
+egy értéket, és mindenhol frissül.
+
+- Olvasás a UI‑ban: `T('home.rails.trending')` (dot‑path lekérdezés a
+  `window.Copy`‑ból; hiányzó kulcsnál a megadott fallbackre vagy a kulcsra esik
+  vissza — a helper a `util.js`‑ben).
+- A statikus sidebar‑feliratok is innen jönnek (az `app.init` a `data-route`
+  alapján behelyettesíti a `Copy.nav`‑ból).
+- Bővítés: új szöveghez adj kulcsot `copy.js`‑be és a hívási helyen `T('…')`.
+- Igazolva: a katalógus szerkesztése futásidőben a nav‑feliratot és a
+  rail‑fejlécet is mindenhol megváltoztatta (0 JS‑hiba).
+
+> Ez a **build‑idejű / szerkeszthető** szövegréteg. A DB‑ből élőben állítható
+> értékek (site‑név, tagline) a `site_settings`‑ben vannak (lásd lentebb).
+
 ## 8. Site‑konfiguráció / feature‑flag rendszer
 
 - **`feature_flags`** — soronként egy oldal (`page.home`…`page.watch`) vagy
