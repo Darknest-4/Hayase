@@ -31,6 +31,21 @@ services:
       # SEED_URL: <override the dump source, or mount a file and pass its path>
     command: ['sh', '-c', 'node --experimental-strip-types src/lib/migrate.ts && node --experimental-strip-types scripts/seed.ts']
 
+  # one-shot AniList enrichment: fills synopsis, cover/banner, score, genres,
+  # tags, studios and trailer onto the seeded rows (matched by anilist_id).
+  # Run after seed: docker compose --profile enrich run --rm enrich
+  # Rate-limited by AniList — expect this to take a while for the full catalogue.
+  enrich:
+    build: .
+    profiles: ['enrich']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://yume:yume@postgres:5432/yume
+      # AL_DELAY_MS: '2000'   # pacing between AniList batches of 50
+    command: ['npm', 'run', 'import:anilist']
+
   postgres:
     image: postgres:16-alpine
     environment:

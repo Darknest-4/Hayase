@@ -12,7 +12,8 @@
     "check": "tsc --noEmit",
     "worker": "node --experimental-strip-types src/workers/index.ts",
     "worker:once": "node --experimental-strip-types src/workers/index.ts --once",
-    "seed": "node --experimental-strip-types scripts/seed.ts"
+    "seed": "node --experimental-strip-types scripts/seed.ts",
+    "import:anilist": "node --experimental-strip-types scripts/import-anilist.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",

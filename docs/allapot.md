@@ -336,6 +336,20 @@ tölti le (`SEED_URL`‑lel felülírható, vagy adj meg helyi fájl‑útvonala
 Lokálisan: `npm run seed [<fájl-vagy-url>]`. A seed maga néhány perc, de
 egyszeri és a normál indulást sosem lassítja.
 
+**AniList‑gazdagítás (a legtöbb infó innen jön):** a seed a 25k sort +
+`anilist_id` leképezést hozza létre; a **gazdag adat** (leírás, borító+banner,
+pontszám, műfajok, tag‑ek ranggal, stúdiók, trailer) az AniList‑ről jön:
+```bash
+docker compose --profile enrich run --rm enrich   # seed UTÁN
+# lokálisan: npm run import:anilist [--all] [--limit N]
+```
+Az importőr 50‑esével kéri le az AniList GraphQL‑t (`id_in`), rate‑limit‑tudatosan
+(429/`retry-after` kezelve, `AL_DELAY_MS` pacing), és az `anilist_id` alapján a
+meglévő sorokra írja a mezőket (idempotens). Alapból csak a leírás nélküli
+sorokat frissíti; `--all` mindet újra. Modul: `server/src/workers/anilist.ts`
+(`enrichFromAniList`, `upsertMedia`), script: `scripts/import-anilist.ts`.
+A ~16k leképezett anime a rate‑limit miatt ~15–30 perc, egyszeri.
+
 ### Hasznos scriptek (`server/package.json`)
 `dev` (watch), `build` (tsc), `start`, `migrate`, `check` (tsc --noEmit), `seed`.
 
