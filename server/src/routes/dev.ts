@@ -6,13 +6,13 @@
 import { createHash } from 'node:crypto'
 
 import { query, queryOne, transaction } from '../db.ts'
+import { escalatedPermissions, validateManifest } from '../lib/extension-manifest.ts'
 import { enqueue } from '../lib/queue.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
 
 const TYPES = ['torrent', 'nzb', 'http', 'subtitle', 'metadata', 'theme'] as const
-const PERMISSIONS = ['net:fetch', 'query:ids', 'query:titles', 'query:media', 'storage:local', 'player:subtitles'] as const
 const SEMVER = /^\d+\.\d+\.\d+$/
 
 const routes: FastifyPluginAsync = async fastify => {
@@ -133,18 +133,10 @@ const routes: FastifyPluginAsync = async fastify => {
           packageSize: { type: 'integer', minimum: 1, maximum: 5_000_000 },
           changelog: { type: 'string', maxLength: 5000 },
           minAppVersion: { type: 'string' },
-          manifest: { type: 'object' },
-          permissions: {
-            type: 'array',
-            items: {
-              type: 'object',
-              required: ['permission'],
-              properties: {
-                permission: { enum: [...PERMISSIONS] },
-                hosts: { type: 'array', items: { type: 'string' } }
-              }
-            }
-          }
+          manifest: { type: 'object' }
+          // NOTE: permissions are read from the manifest, never from a separate
+          // field — otherwise a caller could declare one set to the store and
+          // ship another to the sandbox.
         }
       }
     }
@@ -152,8 +144,7 @@ const routes: FastifyPluginAsync = async fastify => {
     const { slug } = request.params as { slug: string }
     const body = request.body as {
       version: string, packageKey: string, packageHash: string, packageSize: number,
-      changelog?: string, minAppVersion?: string, manifest: Record<string, unknown>,
-      permissions?: Array<{ permission: string, hosts?: string[] }>
+      changelog?: string, minAppVersion?: string, manifest: Record<string, unknown>
     }
 
     if (!SEMVER.test(body.version)) {
@@ -162,6 +153,28 @@ const routes: FastifyPluginAsync = async fastify => {
 
     const ext = await ownedExtension(request.user.sub, slug)
     if (!ext) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    // The manifest is the contract the sandbox enforces, so it is validated
+    // here and every declaration is taken from it.
+    const check = validateManifest(body.manifest)
+    const manifest = body.manifest as { id?: string, version?: string, type?: string, minAppVersion?: string }
+    const mismatches: string[] = []
+    if (manifest.id !== undefined && manifest.id !== slug) {
+      mismatches.push(`manifest.id "${manifest.id}" must match the extension slug "${slug}"`)
+    }
+    if (manifest.version !== undefined && manifest.version !== body.version) {
+      mismatches.push(`manifest.version "${manifest.version}" must match the published version "${body.version}"`)
+    }
+    if (manifest.type !== undefined && manifest.type !== ext.type) {
+      mismatches.push(`manifest.type "${manifest.type}" must match the extension type "${ext.type}"`)
+    }
+    const problems = [...check.errors, ...mismatches]
+    if (problems.length) {
+      return reply.code(400).send({
+        type: 'about:blank', title: 'Invalid manifest', status: 400,
+        detail: problems.join('; ')
+      })
+    }
 
     const dupe = await queryOne('SELECT 1 FROM extension_versions WHERE extension_id = $1 AND version = $2', [ext.id, body.version])
     if (dupe) return reply.code(409).send({ type: 'about:blank', title: 'Conflict', status: 409, detail: 'Version already exists (versions are immutable)' })
@@ -172,24 +185,38 @@ const routes: FastifyPluginAsync = async fastify => {
            (extension_id, version, package_key, package_hash, package_size, manifest, changelog, min_app_version, review_status)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
          RETURNING id, version, review_status, created_at`,
-        [ext.id, body.version, body.packageKey, body.packageHash, body.packageSize, body.manifest, body.changelog ?? null, body.minAppVersion ?? null]
+        [ext.id, body.version, body.packageKey, body.packageHash, body.packageSize, body.manifest, body.changelog ?? null, manifest.minAppVersion ?? body.minAppVersion ?? null]
       )
       const versionId = rows[0]!.id
-      for (const perm of body.permissions ?? []) {
+      for (const perm of check.permissions) {
         await client.query(
           'INSERT INTO extension_permissions (version_id, permission, hosts) VALUES ($1, $2, $3)',
-          [versionId, perm.permission, perm.hosts ?? []]
+          [versionId, perm.permission, perm.hosts]
         )
       }
       await client.query('UPDATE extensions SET status = $2 WHERE id = $1 AND status = $3', [ext.id, 'in_review', 'draft'])
       return rows[0]!
     })
 
+    // A new version must never quietly gain capabilities: compare against the
+    // last published version so review (and the update prompt) can show it.
+    const previous = await query<{ permission: string, hosts: string[] }>(
+      `SELECT p.permission, p.hosts FROM extension_permissions p
+       JOIN extension_versions v ON v.id = p.version_id
+       WHERE v.extension_id = $1 AND v.published_at IS NOT NULL
+       ORDER BY v.published_at DESC`,
+      [ext.id]
+    )
+    const escalations = previous.length ? escalatedPermissions(previous, check.permissions) : []
+
     // queue the static-analysis review step
     await enqueue('ext-review', { versionId: version.id, dedupe: `review:${version.id}` })
-    await emitEvent('extension.submitted', { slug, version: body.version, developer: request.user.username })
+    await emitEvent('extension.submitted', {
+      slug, version: body.version, developer: request.user.username,
+      ...(escalations.length ? { escalations: escalations.join(', ') } : {})
+    })
 
-    return reply.code(201).send(version)
+    return reply.code(201).send({ ...version, permissions: check.permissions, escalations })
   })
 
   // ---------- analytics ----------

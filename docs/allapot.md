@@ -80,6 +80,8 @@ bővítmény‑rendszerrel.
 - [x] **Dokumentált, futásidőben állítható küszöbök** (`site_settings`), zöld/sárga/piros osztályozás
 - [x] **Admin dashboard** (Infrastructure szekció): valós értékek, service‑rács, dependency‑map, 24 órás sparkline‑ok
 - [x] **P0 hotfix**: a `worker` bekerült a compose‑ba (nélküle a particionált táblák insertjei elhaltak volna)
+- [x] **Alerting**: debounce (3 ciklus) → tüzelés, cooldown (30 perc), recovery (2 ciklus); egyetlen kiugrás **soha** nem riaszt; állapot a DB‑ben, webhook‑kimenettel
+- [x] **Diagnosztika**: adminról indítható, korlátozott benchmarkok (CPU 700 ms, RAM 128 MB, disk 32 MB + kötelező takarítás), egyszerre csak egy futhat, riport `PASS/WARN/FAIL/SKIP` bontásban
 
 ### Security hardening (kész) — [`security.md`](./security.md)
 - [x] **Rate limiting**: globális 300/perc, login/register 10/15 perc, refresh 60/15 perc, írás 30/5 perc — health **soha** nem limitált
@@ -89,6 +91,17 @@ bővítmény‑rendszerrel.
 - [x] **CORS**: production‑ben a wildcard same‑origin‑ra esik vissza
 - [x] **Login timing‑enumeráció lezárva** (decoy‑hash, 1,5% eltérés)
 - [x] **CI helyreállítva**: typecheck + tesztek + migrációk + worker + build, `main` ágon
+
+### Extension 2.0 — sandbox & manifest (kész) — [`extensions.md`](./extensions.md)
+- [x] **Manifest v3 validáció** kikényszerítve publikáláskor; a **manifest az egyetlen igazságforrás** (a hívó külön permission‑listája megszűnt)
+- [x] **Jogosultság‑eszkaláció detektálás** minden új verziónál (új permission vagy bővített host‑lista)
+- [x] **Web Worker sandbox**: minden ambient képesség eltávolítva; a host **újraellenőriz** minden kérést
+- [x] **`net:fetch` host‑allowlist**, `credentials: omit`, identitás‑headerek szűrve, 2 MB / 8 s korlát
+- [x] **`storage:local` izolálva** (`ext:{slug}:{kulcs}`, 64 KB)
+- [x] **Integritás**: sha256 ellenőrzés futtatás előtt · **kill switch** · **minAppVersion** kompatibilitás
+- [x] **10 s hívás‑timeout**, beragadt worker leállítva; eredmények szanitálva, accuracy‑plafon a beolvasott mezők alapján
+- [x] **Extension health** (🟢🟡🔴⚪) hiba‑telemetriából, dokumentált küszöbökkel
+- [x] Igazolva: **17 sandbox‑biztonsági eset** böngészőben, mind átment
 
 ### #1 — DB library‑sync (kész)
 - [x] **Bejelentkezve a lokális könyvtár a fiókhoz szinkronizál** és eszközök közt követi a felhasználót
@@ -106,7 +119,7 @@ bővítmény‑rendszerrel.
 A felhasználó által kért sorrend (a #6 és #1 kész, ezek jönnek „folytasd"‑ra):
 
 1. ~~**#1 — DB library‑sync**~~ ✅ **kész** (lásd fent)
-   *Következőnek javasolt: alerting (debounce/cooldown/recovery) + diagnosztika/benchmark mód.*
+   *Az alerting és a diagnosztika is elkészült — lásd a monitoring szakaszt.*
 2. **#2 — Reviews** (értékelések): a `reviews`, `review_votes` táblák megvannak, UI+API hátra
 3. **#3 — Custom lists / Collections**: `custom_lists`, `custom_list_items`, `collections`, `collection_lists` táblák megvannak
 4. **#4 — Follows/Friendships + Forums/Clubs**: `follows`, `friendships`, `forums`, `clubs`, `topics`, `posts`, `club_members` táblák megvannak

@@ -12,7 +12,10 @@
 // these read the last stored snapshot, so polling them is cheap.
 
 import { query, queryOne } from '../db.ts'
+import { activeAlerts, alertHistory } from '../lib/alerts.ts'
+import { isRunning } from '../lib/diagnostics.ts'
 import { overall, probeAll } from '../lib/probes.ts'
+import { enqueue } from '../lib/queue.ts'
 import { compare, thresholds, worst } from '../lib/thresholds.ts'
 
 import type { Level, MetricKey, Threshold } from '../lib/thresholds.ts'
@@ -174,6 +177,73 @@ export const adminMonitoring: FastifyPluginAsync = async fastify => {
 
   /** The documented threshold table, so operators can see and justify them. */
   fastify.get('/thresholds', async () => ({ thresholds: await thresholds() }))
+
+  /** Sustained problems: what is firing now, plus recent history. */
+  fastify.get('/alerts', async () => {
+    const [active, history] = await Promise.all([activeAlerts(), alertHistory(50)])
+    return { active, history }
+  })
+
+  // ---------- diagnostics ----------
+
+  /**
+   * Queue a diagnostic run. Execution happens in the worker so the benchmarks
+   * never run on the request path; this returns immediately with an id to poll.
+   */
+  fastify.post('/diagnostics', {
+    preHandler: fastify.requirePermission('system.diagnostics.run')
+  }, async (request, reply) => {
+    // a run that never finished (worker killed mid-benchmark) must not block
+    // new runs forever
+    await query(
+      `UPDATE diagnostic_runs SET status = 'failed', finished_at = now(),
+              error = 'run did not finish — the worker may have restarted'
+       WHERE status = 'running' AND started_at < now() - interval '10 minutes'`
+    )
+
+    const inFlight = await queryOne<{ id: string }>(
+      `SELECT id FROM diagnostic_runs WHERE status = 'running' LIMIT 1`
+    )
+    if (inFlight) {
+      return reply.code(409).send({
+        type: 'about:blank', title: 'Conflict', status: 409,
+        detail: 'A diagnostic run is already in progress'
+      })
+    }
+
+    const run = await queryOne<{ id: string }>(
+      `INSERT INTO diagnostic_runs (requested_by) VALUES ($1) RETURNING id`,
+      [request.user.sub]
+    )
+    await enqueue('monitor', { diagnosticId: run!.id })
+    return reply.code(202).send({ id: run!.id, status: 'running' })
+  })
+
+  /** Recent runs, newest first. */
+  fastify.get('/diagnostics', async () => {
+    const data = await query(
+      `SELECT d.id, d.status, d.started_at, d.finished_at, d.passed, d.warned, d.failed, u.username AS requested_by
+       FROM diagnostic_runs d LEFT JOIN users u ON u.id = d.requested_by
+       ORDER BY d.started_at DESC LIMIT 20`
+    )
+    return { data, busy: isRunning() }
+  })
+
+  /** One run's full report. */
+  fastify.get('/diagnostics/:id', {
+    schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } }
+  }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const run = await queryOne(
+      `SELECT d.id, d.status, d.started_at, d.finished_at, d.passed, d.warned, d.failed, d.results, d.error,
+              u.username AS requested_by
+       FROM diagnostic_runs d LEFT JOIN users u ON u.id = d.requested_by
+       WHERE d.id = $1`,
+      [id]
+    )
+    if (!run) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    return run
+  })
 
   /** Job queue health — depth, dead letters and recent failures. */
   fastify.get('/queues', async () => {

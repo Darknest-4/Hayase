@@ -11,11 +11,16 @@
 // it never fails the job or blocks the others.
 
 import { query, queryOne } from '../db.ts'
+import { evaluate, pruneResolvedAlerts } from '../lib/alerts.ts'
+import { formatReport, runDiagnostics } from '../lib/diagnostics.ts'
 import { collectHost } from '../lib/metrics.ts'
 import { probeAll } from '../lib/probes.ts'
+import { compare, thresholds } from '../lib/thresholds.ts'
 
+import type { Reading } from '../lib/alerts.ts'
 import type { Job } from '../lib/queue.ts'
 import type { ProbeResult } from '../lib/probes.ts'
+import type { MetricKey } from '../lib/thresholds.ts'
 
 /**
  * Raw-sample retention. Monthly partitions are dropped after a month by the
@@ -132,6 +137,43 @@ async function pruneOldSamples (): Promise<void> {
   await query(`DELETE FROM system_metrics_hourly WHERE hour < now() - make_interval(days => $1)`, [HOURLY_RETENTION_DAYS])
 }
 
+/**
+ * Turn this cycle's readings into alert inputs. A metric only becomes a reading
+ * when it has a documented threshold; services map their colour directly.
+ */
+export async function toReadings (samples: Sample[], probes: ProbeResult[]): Promise<Reading[]> {
+  const active = await thresholds()
+  const readings: Reading[] = []
+
+  for (const sample of samples) {
+    const threshold = active[sample.metric as MetricKey]
+    if (!threshold) continue
+    const level = compare(sample.value, threshold)
+    readings.push({
+      subject: sample.metric,
+      kind: 'metric',
+      severity: level === 'red' ? 'critical' : level === 'yellow' ? 'warning' : null,
+      value: sample.value,
+      threshold: level === 'red' ? threshold.crit : threshold.warn
+    })
+  }
+
+  for (const probe of probes) {
+    // An unconfigured service counts as healthy rather than being skipped: it
+    // is not a problem, and reporting it lets any alert left over from when it
+    // WAS configured resolve instead of hanging open forever.
+    readings.push({
+      subject: `service:${probe.service}`,
+      kind: 'service',
+      severity: probe.status === 'red' ? 'critical' : probe.status === 'yellow' ? 'warning' : null,
+      value: probe.latencyMs ?? null,
+      detail: probe.detail ?? null
+    })
+  }
+
+  return readings
+}
+
 /** One collection cycle. Returns the samples written (useful in tests). */
 export async function collectOnce (): Promise<Sample[]> {
   const [host, probes, queue] = await Promise.all([collectHost(), probeAll(), queueDepth()])
@@ -140,12 +182,44 @@ export async function collectOnce (): Promise<Sample[]> {
   await storeSamples(samples)
   await storeServiceStatus(probes)
   await rollupCurrentHour()
+
+  // alerting runs on the same readings that were just stored, so what fires
+  // always matches what the dashboard shows
+  await evaluate(await toReadings(samples, probes))
   return samples
 }
 
-export async function handleMonitorJob (_job: Job): Promise<void> {
+/** Execute a requested diagnostic run and store its report. */
+export async function runDiagnosticJob (runId: string): Promise<void> {
+  try {
+    const report = await runDiagnostics()
+    await query(
+      `UPDATE diagnostic_runs
+       SET status = 'completed', finished_at = now(), passed = $2, warned = $3, failed = $4, results = $5::jsonb
+       WHERE id = $1`,
+      [runId, report.passed, report.warned, report.failed, JSON.stringify(report.results)]
+    )
+    console.log(formatReport(report))
+  } catch (error) {
+    await query(
+      `UPDATE diagnostic_runs SET status = 'failed', finished_at = now(), error = $2 WHERE id = $1`,
+      [runId, (error as Error).message.slice(0, 500)]
+    )
+    throw error
+  }
+}
+
+export async function handleMonitorJob (job: Job): Promise<void> {
+  // the same queue carries the periodic collection and one-off diagnostics
+  const diagnosticId = job.payload.diagnosticId
+  if (typeof diagnosticId === 'string') {
+    await runDiagnosticJob(diagnosticId)
+    return
+  }
+
   await collectOnce()
   // pruning is cheap and idempotent; doing it here keeps retention working
   // even if the hourly maintenance job is behind
   await pruneOldSamples()
+  await pruneResolvedAlerts()
 }

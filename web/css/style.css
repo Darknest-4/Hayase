@@ -2791,3 +2791,36 @@ svg.chart .chart-name { font-size: 12px; fill: var(--fg); dominant-baseline: mid
   .mon-grid { grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); }
   .mon-card-value { font-size: 1.25rem; }
 }
+
+/* ===== admin: alerts & diagnostics ===== */
+
+.mon-alert-none { display: flex; align-items: center; gap: .5rem; font-size: var(--text-sm); color: var(--fg-faint); padding: .6rem .75rem; border: 1px dashed var(--border); border-radius: var(--radius-md); }
+.mon-alert { display: flex; align-items: center; gap: .7rem; padding: .6rem .75rem; border: 1px solid var(--border); border-left-width: 3px; border-radius: var(--radius-md); background: var(--bg-raised); }
+.mon-alert + .mon-alert { margin-top: .4rem; }
+.mon-alert.mon-yellow { border-left-color: var(--amber-500, #f59e0b); }
+.mon-alert.mon-red { border-left-color: var(--danger); }
+.mon-alert-main { flex-grow: 1; min-width: 0; }
+.mon-alert-subject { font-family: var(--font-mono); font-size: var(--text-sm); font-weight: var(--weight-semibold); }
+.mon-alert-sub { font-size: var(--text-xs); color: var(--fg-faint); }
+.mon-alert-since { font-size: var(--text-xs); color: var(--fg-faint); white-space: nowrap; }
+.mon-alert-history { margin-top: .7rem; padding-top: .6rem; border-top: 1px solid var(--border); }
+.mon-alert-past { display: flex; justify-content: space-between; gap: 1rem; font-size: var(--text-xs); color: var(--fg-faint); padding: .15rem 0; }
+
+.mon-diag-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: .7rem; }
+.mon-diag-note { margin: 0; font-size: var(--text-xs); color: var(--fg-faint); max-width: 38rem; }
+.mon-diag-output { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-raised); padding: .75rem 1rem; }
+.mon-diag-total { font-weight: var(--weight-extrabold); font-size: var(--text-base); margin-bottom: .5rem; }
+.mon-diag-group { font-size: .6rem; text-transform: uppercase; letter-spacing: .07em; color: var(--fg-faint); margin: .7rem 0 .25rem; font-weight: var(--weight-bold); }
+.mon-diag-row { display: flex; align-items: center; gap: .6rem; padding: .2rem 0; font-size: var(--text-sm); }
+.mon-diag-name { flex: 0 0 11rem; }
+.mon-diag-status { font-family: var(--font-mono); font-size: .65rem; font-weight: var(--weight-bold); padding: .1rem .35rem; border-radius: var(--radius-sm); }
+.mon-diag-pass .mon-diag-status { color: var(--green-400, #4ade80); background: color-mix(in oklab, var(--green-500, #22c55e) 15%, transparent); }
+.mon-diag-warn .mon-diag-status { color: var(--amber-400, #fbbf24); background: color-mix(in oklab, var(--amber-500, #f59e0b) 15%, transparent); }
+.mon-diag-fail .mon-diag-status { color: var(--danger); background: color-mix(in oklab, var(--danger) 15%, transparent); }
+.mon-diag-skip .mon-diag-status { color: var(--fg-faint); background: color-mix(in oklab, var(--fg-faint) 12%, transparent); }
+.mon-diag-value { color: var(--fg-faint); font-size: var(--text-xs); }
+
+@media (max-width: 640px) {
+  .mon-diag-name { flex-basis: 7rem; }
+  .mon-diag-row { flex-wrap: wrap; }
+}

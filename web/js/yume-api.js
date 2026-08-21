@@ -257,7 +257,11 @@ const YumeAPI = {
       current: () => YumeAPI._request('/v1/admin/monitoring/current', { auth: true }),
       history: (metric, hours = 24) => YumeAPI._request(`/v1/admin/monitoring/history?metric=${encodeURIComponent(metric)}&hours=${hours}`, { auth: true }),
       thresholds: () => YumeAPI._request('/v1/admin/monitoring/thresholds', { auth: true }),
-      queues: () => YumeAPI._request('/v1/admin/monitoring/queues', { auth: true })
+      queues: () => YumeAPI._request('/v1/admin/monitoring/queues', { auth: true }),
+      alerts: () => YumeAPI._request('/v1/admin/monitoring/alerts', { auth: true }),
+      diagnostics: () => YumeAPI._request('/v1/admin/monitoring/diagnostics', { auth: true }),
+      diagnostic: id => YumeAPI._request('/v1/admin/monitoring/diagnostics/' + id, { auth: true }),
+      runDiagnostic: () => YumeAPI._request('/v1/admin/monitoring/diagnostics', { method: 'POST', auth: true, body: {} })
     },
     // catalogue management (anime + episodes, sees hidden entries)
     catalogue: {
@@ -287,6 +291,18 @@ const YumeAPI = {
 
   extension (slug) {
     return this._request('/v1/extensions/' + encodeURIComponent(slug))
+  },
+
+  /**
+   * Anonymous sandbox failure telemetry. Best-effort: a reporting failure must
+   * never surface to the user or break the extension flow that triggered it.
+   */
+  reportExtensionEvent (slug, event, detail = {}) {
+    return this._request(`/v1/extensions/${encodeURIComponent(slug)}/events`, {
+      method: 'POST',
+      auth: true,
+      body: { event, message: detail.message, versionId: detail.versionId, appVersion: detail.appVersion }
+    }).catch(() => {})
   }
 }
 

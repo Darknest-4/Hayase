@@ -199,15 +199,29 @@ const PageDeveloper = {
       ])
     ], async () => {
       if (!/^\d+\.\d+\.\d+$/.test(version.value.trim())) return U.toast('Version must be semver (x.y.z)', 'error')
-      const permissions = permBoxes.filter(b => b.cb.checked).map(b => ({ permission: b.p }))
+
+      // The manifest is the contract the sandbox enforces, so it carries the
+      // permissions — the server reads them from here and ignores anything
+      // sent alongside. See docs/extensions.md for the full format.
+      const permissions = {}
+      for (const box of permBoxes) if (box.cb.checked && box.p !== 'net:fetch') permissions[box.p] = {}
       const hostList = hosts.value.split(',').map(h => h.trim()).filter(Boolean)
-      if (hostList.length) permissions.push({ permission: 'net:fetch', hosts: hostList })
+      if (hostList.length) permissions['net:fetch'] = { hosts: hostList }
+
+      const manifest = {
+        manifestVersion: 3,
+        id: ext.slug,
+        name: ext.name,
+        version: version.value.trim(),
+        type: ext.type,
+        summary: ext.summary,
+        permissions
+      }
 
       // In this build the package bytes are uploaded to object storage
       // client-side; here we send a manifest snapshot + a content hash.
       // We derive a stable demo hash from the manifest so the review
       // pipeline has something to record.
-      const manifest = { manifestVersion: 3, name: ext.name, version: version.value.trim(), type: ext.type }
       const hash = await sha256Hex(JSON.stringify(manifest) + version.value)
 
       try {
@@ -219,8 +233,7 @@ const PageDeveloper = {
             packageHash: hash,
             packageSize: 20480,
             changelog: changelog.value.trim() || undefined,
-            manifest,
-            permissions
+            manifest
           }
         })
         U.toast('Version submitted for review')

@@ -140,7 +140,30 @@ drive the API with a user's bearer token, so:
 
 ---
 
-## 7. What monitoring never exposes
+## 7. Extension sandbox
+
+Extensions are third-party code, so they run with no capabilities at all and
+receive only what their manifest declared:
+
+* Each extension runs in its **own Web Worker** with the network, storage,
+  nested-worker and DOM globals removed before its code is evaluated.
+* Every request crosses to the host over `postMessage`, where the declared
+  permissions are re-checked — the host never trusts the worker's own lockdown.
+* `net:fetch` is restricted to the hostnames in the manifest, sent with
+  `credentials: 'omit'` and no identity headers, capped at 2 MB and 8 seconds.
+* `storage:local` is namespaced per extension and size-capped.
+* The package's **sha256 must match** the published hash before it executes.
+* A suspended extension or one requiring a newer client **never loads**
+  (remote kill switch).
+* Calls time out after 10 seconds and the wedged worker is terminated.
+
+`script-src` allows `blob:` so the worker can import the hash-verified package
+as a module; see `docs/extensions.md` for why that is the safer trade-off.
+Verified by a browser test covering 17 boundary cases (undeclared host, missing
+permission, ambient globals, hash mismatch, kill switch, version gate, infinite
+loop, result tampering).
+
+## 8. What monitoring never exposes
 
 * Public `/v1/health/ready` returns service names and colours only — no latency,
   error detail, hostnames, versions, paths or configuration.
@@ -153,7 +176,7 @@ drive the API with a user's bearer token, so:
   `/host` for the worker, so disk usage measures the VPS rather than the
   container overlay.
 
-## 8. Verified by tests
+## 9. Verified by tests
 
 `npm test` covers: security headers and the CSP shape, health never being
 throttled, throttling returning problem+json, oversized bodies rejected with
@@ -161,7 +184,7 @@ throttled, throttling returning problem+json, oversized bodies rejected with
 production secret validation (placeholder / too short / valid) and wildcard CORS
 collapsing to same-origin.
 
-## 9. Still open
+## 10. Still open
 
 Known and deliberately not yet done — roughly in priority order:
 
