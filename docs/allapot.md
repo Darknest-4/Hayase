@@ -156,6 +156,13 @@ A felhasználó által kért sorrend (a #6 és #1 kész, ezek jönnek „folytas
 3. **#3 — Custom lists / Collections**: `custom_lists`, `custom_list_items`, `collections`, `collection_lists` táblák megvannak
 4. **#4 — Follows/Friendships + Forums/Clubs**: `follows`, `friendships`, `forums`, `clubs`, `topics`, `posts`, `club_members` táblák megvannak
 5. **#5 — AI Center / Marketplace / Plugin API**: `ai` jogosultság‑csoport (16) megvan, funkció hátra
+6. **Discord bot** — **terv kész, kód még nincs**: [`discord-bot.md`](./discord-bot.md).
+   Lényeg: a bejelentések fele **már megvan** a webhook‑rendszerben (Discord‑embed
+   rendereléssel), a parancs‑rész pedig **HTTP interactions**‑szel, **0 új
+   függőséggel** megépíthető — a Node 22 natívan ellenőrzi a Discord Ed25519
+   aláírását (leellenőrizve). Nem kell `discord.js` és nem kell gateway‑folyamat
+   a VPS‑en. A `/link` az `oauth_identities`‑re ül (a `'discord'` provider már
+   engedélyezett a sémában), tehát **nem lesz második auth‑rendszer**.
 
 > Megjegyzés: sok jövőbeli funkció **sémája már létezik** (a táblák seedeltek/migrálva),
 > csak az API‑végpont és a kliens‑UI hiányzik — ezért gyors lesz ráépíteni.
