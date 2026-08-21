@@ -103,6 +103,16 @@ bővítmény‑rendszerrel.
 - [x] **Extension health** (🟢🟡🔴⚪) hiba‑telemetriából, dokumentált küszöbökkel
 - [x] Igazolva: **17 sandbox‑biztonsági eset** böngészőben, mind átment
 
+### Streaming 2.0 — forrás‑absztrakció (kész) — [`streaming.md`](./streaming.md)
+- [x] **Egységes `StreamResult`**: url, típus, minőség, hang, feliratok, headerek, lejárat, forrás, direct/proxy, metaadat — a lejátszó nem tudja, melyik bővítmény adta
+- [x] **Automatikus fallback**: hibás forrásnál a motor **magától továbblép** a következőre; a felhasználó csak akkor lát hibát, ha már mind elfogyott
+- [x] **Playability előre eldöntve**: magnet → „desktop kliens kell", HLS/DASH → csak natív támogatással vagy regisztrált handlerrel, ismeretlen séma kizárva
+- [x] **Rangsor**: játszható → forrás‑health → accuracy → minőség → seederek (a romló források maguktól hátracsúsznak)
+- [x] **Bedugható formátum‑handler** (`registerHandler`) — **0 média‑függőség**, hls.js később becsatolható
+- [x] **Feliratok** a StreamResultból `<track>`‑ként; **lejárt link** meg sem próbálva; hiba → extension‑telemetria
+- [x] A forrás‑választó **több URL‑t** fogad (soronként egyet), így a fallback kézi forrásokkal is működik
+- [x] Igazolva: 13 motor‑teszt + 8 valós watch‑oldal teszt (köztük „két halott forráson át a harmadik játszik")
+
 ### #1 — DB library‑sync (kész)
 - [x] **Bejelentkezve a lokális könyvtár a fiókhoz szinkronizál** és eszközök közt követi a felhasználót
 - [x] **Push (lokál → DB):** minden könyvtár‑írás (`Store.saveEntry`/`setProgress`/`removeEntry`) tükröződik a DB‑be (státusz + epizód‑haladás), debounce‑olva

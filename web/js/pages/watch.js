@@ -210,19 +210,62 @@ const PageWatch = {
     API.episodes(media).then(meta => { if (meta?.length) renderRows(meta) }).catch(() => {})
   },
 
+  /**
+   * Build the candidate list for this episode and hand it to the engine.
+   *
+   * Candidates come from the URL(s) the user picked plus every extension the
+   * sandbox currently has loaded. The engine ranks them and tries each in turn;
+   * a failure only reaches the user once nothing is left.
+   */
+  async startPlayback (video, media, episode, src, giveUp) {
+    const engine = window.StreamEngine
+    const manual = String(src ?? '')
+      .split('\n').map(u => u.trim()).filter(Boolean)
+      .map(url => ({ url, title: 'Manual source', source: { slug: 'manual', name: 'Manual URL', accuracy: 'low', health: 'unknown' } }))
+
+    if (!engine) { // engine unavailable → behave like the old direct player
+      if (manual[0]) { video.src = manual[0].url; video.load() }
+      return
+    }
+
+    // only extensions that are actually loaded in the sandbox can be asked
+    const loaded = (window.ExtensionHost?.loaded?.() ?? []).map(slug => ({ slug }))
+    const { results, errors } = await engine.candidates(media, episode, { sources: manual, extensions: loaded })
+    for (const error of errors) console.warn('[stream] extension failed:', error)
+
+    if (!results.length) { giveUp('No sources were offered for this episode.'); return }
+
+    try {
+      const { candidate } = await engine.play(video, results, {
+        onFallback: (failed, reason) => {
+          console.warn('[stream] falling back from', failed.source.slug, '—', reason)
+          U.toast(`Source failed (${failed.source.name}) — trying the next one`, 'error')
+        }
+      })
+      this._activeCandidate = candidate
+      if (candidate.source.slug !== 'manual') U.toast(`Playing from ${candidate.source.name}`)
+    } catch (error) {
+      // every candidate was tried; show the reason from the last attempt
+      const unplayable = (error.attempts ?? []).filter(a => !a.candidate.playable)
+      giveUp(unplayable.length === (error.attempts ?? []).length && unplayable.length
+        ? unplayable[0].error
+        : String(error.message))
+    }
+  },
+
   // ---- source picker inside the player frame ----
 
   mountSourcePicker (box, media, episode) {
-    const input = U.el('input', {
+    const input = U.el('textarea', {
       class: 'input',
-      type: 'url',
-      style: 'width:100%;',
-      placeholder: 'https://… direct video stream (mp4 / webm)'
+      rows: 2,
+      style: 'width:100%;resize:vertical;font-family:inherit;',
+      placeholder: 'https://… direct video stream (mp4 / webm) — one per line to enable automatic fallback'
     })
     const play = () => {
-      const url = input.value.trim()
-      if (!url) return U.toast('Paste a stream URL first', 'error')
-      window.location.hash = `#/watch/${media.id}:${episode}?src=${encodeURIComponent(url)}`
+      const urls = input.value.split('\n').map(u => u.trim()).filter(Boolean)
+      if (!urls.length) return U.toast('Paste a stream URL first', 'error')
+      window.location.hash = `#/watch/${media.id}:${episode}?src=${encodeURIComponent(urls.join('\n'))}`
     }
     input.addEventListener('keydown', e => { if (e.key === 'Enter') play() })
 
@@ -231,7 +274,7 @@ const PageWatch = {
     box.append(U.el('div', { class: 'player-pick' }, [
       U.el('div', { class: 'player-pick-inner' }, [
         U.el('h3', { style: 'margin:0 0 .35rem;font-weight:800;', text: 'Pick a source' }),
-        U.el('p', { style: 'margin:0 0 .9rem;color:var(--fg-faint);font-size:.85rem;', text: 'Paste a direct stream URL — extensions and the desktop client fill this automatically from torrent sources.' }),
+        U.el('p', { style: 'margin:0 0 .9rem;color:var(--fg-faint);font-size:.85rem;', text: 'Paste a direct stream URL. Add more on separate lines and the player falls back automatically if one fails. Installed extensions supply sources here too.' }),
         U.el('div', { style: 'display:flex;gap:.6rem;' }, [input, U.el('button', { class: 'btn btn-primary', onclick: play }, [document.createTextNode('Play')])]),
         streams.length
           ? U.el('div', { style: 'margin-top:1rem;' }, [
@@ -247,7 +290,7 @@ const PageWatch = {
   // ---- the embedded player ----
 
   mountPlayer (box, media, episode, total, src, w2gCode = null) {
-    const video = U.el('video', { class: 'player-video', src, autoplay: '', playsinline: '' })
+    const video = U.el('video', { class: 'player-video', autoplay: '', playsinline: '' })
     this._video = video
 
     const PLAY_ICON = '<polygon points="6 3 20 12 6 21 6 3" fill="currentColor" stroke="none"/>'
@@ -345,14 +388,21 @@ const PageWatch = {
     video.addEventListener('play', setPlayIcon)
     video.addEventListener('pause', setPlayIcon)
 
-    video.addEventListener('error', () => {
+    // Playback failures are handled by the engine, which advances to the next
+    // candidate. Only when every candidate is exhausted does the user see this.
+    const giveUp = detail => {
       shell.replaceChildren(U.el('div', { class: 'player-pick' }, [
         U.el('div', { class: 'player-pick-inner', style: 'text-align:center;' }, [
-          U.el('p', { style: 'color:var(--danger);font-weight:700;', text: 'Could not play this stream — offline, region-locked or unsupported codec.' }),
+          U.el('p', { style: 'color:var(--danger);font-weight:700;', text: 'Could not play this episode from any available source.' }),
+          detail ? U.el('p', { style: 'color:var(--fg-faint);font-size:.85rem;margin:.3rem 0 .9rem;', text: detail }) : null,
           U.el('a', { class: 'btn btn-secondary btn-sm', href: `#/watch/${media.id}:${episode}` }, [document.createTextNode('Pick another source')])
         ])
       ]))
-    })
+    }
+
+    // Start playback through the engine: it ranks the candidates, tries them in
+    // order and falls back automatically, so a dead link never dead-ends here.
+    void this.startPlayback(video, media, episode, src, giveUp)
 
     // --- resume position (per profile) ---
     const saved = Store.getResume(media.id, episode)

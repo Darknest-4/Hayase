@@ -1,4 +1,5 @@
-// /v1/extensions — store browse/detail/install; /v1/me/extensions sync.
+// /v1/extensions — store browse/detail/install, plus the install sync the
+// client needs to load extensions into its sandbox.
 
 import { query, queryOne, transaction } from '../db.ts'
 import { emitEvent } from '../lib/webhooks.ts'
@@ -94,6 +95,36 @@ const routes: FastifyPluginAsync = async fastify => {
           health: classifyHealth(total, Number(row.install_count ?? 0)),
           failures_7d: total
         }
+      })
+    }
+  })
+
+  /**
+   * Everything the client needs to load this account's extensions into the
+   * sandbox: the pinned version, its integrity hash and the permissions the
+   * host will enforce. Suspended extensions are still listed, with their
+   * status, so the client can drop them (the remote kill switch).
+   */
+  fastify.get('/installed', { preHandler: fastify.authenticate }, async request => {
+    const data = await query(
+      `SELECT e.id AS extension_id, e.slug, e.name, e.type, e.accuracy, e.status, e.install_count,
+              i.enabled, i.auto_update, i.options,
+              v.id AS version_id, v.version, v.package_key, v.package_hash, v.min_app_version,
+              (SELECT coalesce(jsonb_agg(jsonb_build_object('permission', p.permission, 'hosts', p.hosts)), '[]')
+                 FROM extension_permissions p WHERE p.version_id = v.id) AS permissions
+       FROM extension_installs i
+       JOIN extensions e ON e.id = i.extension_id
+       JOIN extension_versions v ON v.id = i.version_id
+       WHERE i.user_id = $1
+       ORDER BY e.name`,
+      [request.user.sub]
+    )
+
+    const failures = await recentFailures()
+    return {
+      data: data.map(row => {
+        const f = failures.get(row.extension_id as string) ?? { errors: 0, loadFailures: 0 }
+        return { ...row, health: classifyHealth(f.errors + f.loadFailures, Number(row.install_count ?? 0)) }
       })
     }
   })
