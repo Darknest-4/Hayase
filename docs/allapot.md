@@ -80,6 +80,8 @@ bővítmény‑rendszerrel.
 - [x] **Dokumentált, futásidőben állítható küszöbök** (`site_settings`), zöld/sárga/piros osztályozás
 - [x] **Admin dashboard** (Infrastructure szekció): valós értékek, service‑rács, dependency‑map, 24 órás sparkline‑ok
 - [x] **P0 hotfix**: a `worker` bekerült a compose‑ba (nélküle a particionált táblák insertjei elhaltak volna)
+- [x] **Alerting**: debounce (3 ciklus) → tüzelés, cooldown (30 perc), recovery (2 ciklus); egyetlen kiugrás **soha** nem riaszt; állapot a DB‑ben, webhook‑kimenettel
+- [x] **Diagnosztika**: adminról indítható, korlátozott benchmarkok (CPU 700 ms, RAM 128 MB, disk 32 MB + kötelező takarítás), egyszerre csak egy futhat, riport `PASS/WARN/FAIL/SKIP` bontásban
 
 ### Security hardening (kész) — [`security.md`](./security.md)
 - [x] **Rate limiting**: globális 300/perc, login/register 10/15 perc, refresh 60/15 perc, írás 30/5 perc — health **soha** nem limitált
@@ -106,7 +108,7 @@ bővítmény‑rendszerrel.
 A felhasználó által kért sorrend (a #6 és #1 kész, ezek jönnek „folytasd"‑ra):
 
 1. ~~**#1 — DB library‑sync**~~ ✅ **kész** (lásd fent)
-   *Következőnek javasolt: alerting (debounce/cooldown/recovery) + diagnosztika/benchmark mód.*
+   *Az alerting és a diagnosztika is elkészült — lásd a monitoring szakaszt.*
 2. **#2 — Reviews** (értékelések): a `reviews`, `review_votes` táblák megvannak, UI+API hátra
 3. **#3 — Custom lists / Collections**: `custom_lists`, `custom_list_items`, `collections`, `collection_lists` táblák megvannak
 4. **#4 — Follows/Friendships + Forums/Clubs**: `follows`, `friendships`, `forums`, `clubs`, `topics`, `posts`, `club_members` táblák megvannak

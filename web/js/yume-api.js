@@ -257,7 +257,11 @@ const YumeAPI = {
       current: () => YumeAPI._request('/v1/admin/monitoring/current', { auth: true }),
       history: (metric, hours = 24) => YumeAPI._request(`/v1/admin/monitoring/history?metric=${encodeURIComponent(metric)}&hours=${hours}`, { auth: true }),
       thresholds: () => YumeAPI._request('/v1/admin/monitoring/thresholds', { auth: true }),
-      queues: () => YumeAPI._request('/v1/admin/monitoring/queues', { auth: true })
+      queues: () => YumeAPI._request('/v1/admin/monitoring/queues', { auth: true }),
+      alerts: () => YumeAPI._request('/v1/admin/monitoring/alerts', { auth: true }),
+      diagnostics: () => YumeAPI._request('/v1/admin/monitoring/diagnostics', { auth: true }),
+      diagnostic: id => YumeAPI._request('/v1/admin/monitoring/diagnostics/' + id, { auth: true }),
+      runDiagnostic: () => YumeAPI._request('/v1/admin/monitoring/diagnostics', { method: 'POST', auth: true, body: {} })
     },
     // catalogue management (anime + episodes, sees hidden entries)
     catalogue: {

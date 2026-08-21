@@ -700,6 +700,49 @@ const PageAdmin = {
     }
     content.append(deps)
 
+    // ---- sustained alerts ----
+    const alertsBox = U.el('div')
+    content.append(alertsBox)
+    YumeAPI.admin.monitoring.alerts().then(({ active, history }) => {
+      alertsBox.replaceChildren()
+      alertsBox.append(U.el('h2', { class: 'detail-section-title', text: 'Alerts' }))
+      if (!active.length) {
+        alertsBox.append(U.el('div', { class: 'mon-alert-none' }, [
+          U.el('span', { text: '🟢' }),
+          U.el('span', { text: history.length ? 'Nothing firing right now.' : 'Nothing firing. No alerts recorded yet.' })
+        ]))
+      }
+      for (const a of active) {
+        alertsBox.append(U.el('div', { class: 'mon-alert mon-' + (a.severity === 'critical' ? 'red' : 'yellow') }, [
+          U.el('span', { class: 'mon-alert-dot', text: a.severity === 'critical' ? '🔴' : '🟡' }),
+          U.el('div', { class: 'mon-alert-main' }, [
+            U.el('div', { class: 'mon-alert-subject', text: a.subject }),
+            U.el('div', { class: 'mon-alert-sub', text: [
+              a.value !== null && a.value !== undefined ? `value ${Number(a.value).toFixed(1)}` : null,
+              a.threshold !== null && a.threshold !== undefined ? `threshold ${Number(a.threshold)}` : null,
+              a.detail
+            ].filter(Boolean).join(' · ') || a.severity })
+          ]),
+          U.el('span', { class: 'mon-alert-since', text: 'since ' + U.relTime(new Date(a.started_at)) })
+        ]))
+      }
+      const resolved = history.filter(h => h.status === 'resolved').slice(0, 5)
+      if (resolved.length) {
+        alertsBox.append(U.el('div', { class: 'mon-alert-history' }, [
+          U.el('div', { class: 'mon-trend-label', text: 'Recently resolved' }),
+          ...resolved.map(h => U.el('div', { class: 'mon-alert-past' }, [
+            U.el('span', { text: h.subject }),
+            U.el('span', { class: 'mon-alert-since', text: h.resolved_at ? U.relTime(new Date(h.resolved_at)) : '' })
+          ]))
+        ]))
+      }
+    }).catch(() => alertsBox.replaceChildren())
+
+    // ---- diagnostics ----
+    const diagBox = U.el('div')
+    content.append(diagBox)
+    this.renderDiagnostics(diagBox)
+
     // ---- history sparklines ----
     content.append(U.el('h2', { class: 'detail-section-title', text: 'Last 24 hours' }))
     const trends = U.el('div', { class: 'mon-trends' })
@@ -721,6 +764,76 @@ const PageAdmin = {
       }).catch(() => {
         box.replaceChildren(U.el('div', { class: 'mon-trend-label', text: label }), U.el('div', { class: 'mon-trend-empty', text: 'unavailable' }))
       })
+    }
+  },
+
+  // ---- diagnostics: admin-triggered, bounded benchmarks ----
+  DIAG_LABEL: { pass: 'PASS', warn: 'WARN', fail: 'FAIL', skip: 'SKIP' },
+
+  async renderDiagnostics (box) {
+    box.replaceChildren(U.el('h2', { class: 'detail-section-title', text: 'Diagnostics' }))
+
+    const output = U.el('div', { class: 'mon-diag-output' })
+    const runBtn = U.el('button', { class: 'btn btn-secondary btn-sm', onclick: () => run() }, [document.createTextNode('Run diagnostic')])
+    box.append(U.el('div', { class: 'mon-diag-head' }, [
+      U.el('p', { class: 'mon-diag-note', text: 'Controlled benchmarks with fixed time, memory and disk budgets. Runs in the worker, never on the request path.' }),
+      runBtn
+    ]), output)
+
+    const paint = report => {
+      output.replaceChildren()
+      if (!report) { output.append(U.el('div', { class: 'mon-trend-empty', text: 'No diagnostic has been run yet.' })); return }
+      if (report.status === 'running') { output.append(U.el('div', { class: 'spinner' })); return }
+      if (report.status === 'failed') {
+        output.append(U.el('div', { class: 'error-state', text: report.error || 'The diagnostic run failed.' }))
+        return
+      }
+      const scored = (report.results || []).length - (report.results || []).filter(r => r.status === 'skip').length
+      output.append(U.el('div', { class: 'mon-diag-total', text: `${report.passed}/${scored} PASS` +
+        (report.warned ? ` · ${report.warned} WARN` : '') + (report.failed ? ` · ${report.failed} FAIL` : '') +
+        ` · ${U.relTime(new Date(report.finished_at ?? report.started_at))}` }))
+      let group = ''
+      for (const r of report.results ?? []) {
+        if (r.group !== group) { group = r.group; output.append(U.el('div', { class: 'mon-diag-group', text: group })) }
+        output.append(U.el('div', { class: 'mon-diag-row mon-diag-' + r.status }, [
+          U.el('span', { class: 'mon-diag-name', text: r.name }),
+          U.el('span', { class: 'mon-diag-status', text: this.DIAG_LABEL[r.status] ?? r.status }),
+          U.el('span', { class: 'mon-diag-value', text: r.value, title: r.detail ?? '' })
+        ]))
+      }
+    }
+
+    const poll = async (id, attempt = 0) => {
+      const report = await YumeAPI.admin.monitoring.diagnostic(id)
+      if (report.status !== 'running') { paint(report); runBtn.disabled = false; runBtn.textContent = 'Run diagnostic'; return }
+      if (attempt > 40) { // ~2 minutes
+        output.replaceChildren(U.el('div', { class: 'callout', text: 'Still queued — is the worker running? Diagnostics execute in the worker process.' }))
+        runBtn.disabled = false; runBtn.textContent = 'Run diagnostic'
+        return
+      }
+      setTimeout(() => poll(id, attempt + 1), 3000)
+    }
+
+    const run = async () => {
+      runBtn.disabled = true
+      runBtn.textContent = 'Running…'
+      output.replaceChildren(U.el('div', { class: 'spinner' }))
+      try {
+        const { id } = await YumeAPI.admin.monitoring.runDiagnostic()
+        poll(id)
+      } catch (e) {
+        output.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+        runBtn.disabled = false; runBtn.textContent = 'Run diagnostic'
+      }
+    }
+
+    // show the most recent completed report on load
+    try {
+      const { data } = await YumeAPI.admin.monitoring.diagnostics()
+      const latest = data?.[0]
+      paint(latest ? await YumeAPI.admin.monitoring.diagnostic(latest.id) : null)
+    } catch (e) {
+      paint(null)
     }
   },
 

@@ -152,7 +152,103 @@ partitions hourly. High-frequency data is never kept forever.
 
 ---
 
-## 6. Deployment
+## 6. Alerting
+
+Monitoring only helps if sustained problems reach a human — and only if a
+single spike never does. The evaluator runs on the same readings that were just
+stored, so what alerts always matches what the dashboard shows.
+
+### The state machine
+
+```
+healthy ──unhealthy──> pending ──held for N cycles──> firing
+   ^                      │                             │
+   └──── resolved <───────┴────── healthy for M cycles ──┘
+```
+
+| Setting | Default | Env | Meaning |
+|---|---|---|---|
+| Debounce | 3 cycles (~3 min) | `ALERT_DEBOUNCE_CYCLES` | consecutive unhealthy cycles before firing |
+| Recovery | 2 cycles | `ALERT_RECOVERY_CYCLES` | consecutive healthy cycles before resolving |
+| Cooldown | 30 min | `ALERT_COOLDOWN_MS` | minimum gap between notifications for one alert |
+
+* A spike that clears before the debounce threshold **resolves silently** — no
+  alert, no recovery message.
+* A firing alert re-notifies only when the cooldown elapses **or** when it
+  escalates from warning to critical. Easing from critical back to warning does
+  not re-notify.
+* Recovery is announced only for alerts that actually fired.
+* State lives in `monitor_alerts`, not worker memory, so a worker restart does
+  not lose debounce progress — and an operator can see exactly why something
+  did or did not fire.
+
+### Where alerts go
+
+Alerts are emitted as the existing webhook events `monitor.alert` and
+`monitor.recovered` (Discord embeds included), so any endpoint configured under
+Admin → Webhooks receives them. Active alerts and recent history are also shown
+on the Infrastructure dashboard and available at
+`GET /v1/admin/monitoring/alerts`.
+
+Resolved alerts are kept for 90 days as history.
+
+---
+
+## 7. Diagnostics
+
+A separate, **manually triggered** benchmark suite. It never runs automatically
+and never runs on the request path — the API queues it and the worker executes
+it.
+
+```
+POST /v1/admin/monitoring/diagnostics    → 202 { id }     (system.diagnostics.run)
+GET  /v1/admin/monitoring/diagnostics/:id → the report
+GET  /v1/admin/monitoring/diagnostics     → recent runs
+```
+
+### Safety limits
+
+This runs on the machine that is serving traffic, so every test is bounded:
+
+| Test | Budget | Notes |
+|---|---|---|
+| CPU | 700 ms (`DIAG_CPU_MS`) | single-threaded integer loop; never forks or scales with core count |
+| RAM | 128 MB (`DIAG_RAM_BYTES`) | pages pre-faulted so the result is bandwidth, not allocation; released immediately |
+| Disk | 32 MB (`DIAG_DISK_BYTES`) | temp file, `fsync`, read back, **always deleted**; skipped entirely unless 2 GB of headroom remains |
+| API / DB | 10–20 samples | short timeouts, p50/p95 reported |
+
+Additionally: one run at a time (a second request gets **409**), a per-test
+timeout that degrades to `fail` rather than hanging, and a sweep that marks a
+run failed if the worker died mid-benchmark. Nothing spawns processes.
+
+### The report
+
+```
+YUME VPS DIAGNOSTIC
+────────────────────────────────────────
+CPU                 PASS  75M ops/s
+RAM                 PASS  10.3 GB/s write · 4.4 GB/s read
+Disk                PASS  486 MB/s write · 3139 MB/s read
+
+Postgres            PASS  2ms
+Redis               SKIP  not configured
+Api                 PASS  9ms
+Worker              PASS  green
+
+API latency         PASS  p95 3ms
+DB queries          PASS  p50 0.2ms · p95 0.6ms
+Catalogue query     PASS  0.5ms
+Worker & queues     PASS  1 pending · 0 dead
+
+TOTAL               10/10 PASS · 4 SKIPPED
+```
+
+Unconfigured optional services are **skipped, not failed** — counting them
+against the score would punish a correct setup.
+
+---
+
+## 8. Deployment
 
 > **The `worker` service is required.** Besides metrics it creates next month's
 > table partitions and enforces retention. Without it, inserts into the
@@ -195,7 +291,7 @@ This is the same approach Prometheus `node-exporter` uses.
 
 ---
 
-## 7. Security
+## 9. Security
 
 * Detailed monitoring is behind `system.metrics.view`, enforced by the existing
   RBAC layer. No second authentication system was introduced.
@@ -207,7 +303,7 @@ This is the same approach Prometheus `node-exporter` uses.
   grants root-equivalent access to the host, so container-level detail is
   deliberately left out; service health is inferred from the probes instead.
 
-## 8. Known limitations
+## 10. Known limitations
 
 * `net.drop_pct` is the NIC's own drop/error ratio — it indicates a saturated
   link or queue, **not** end-to-end packet loss between client and server.
@@ -216,6 +312,10 @@ This is the same approach Prometheus `node-exporter` uses.
 * `disk.await_ms` is the average service time per I/O across physical devices;
   it is `null` when no I/O happened during the window.
 * Per-container CPU/RAM breakdown is not collected (see the Docker socket note).
-* Alerting (debounce, cooldown, recovery) and the diagnostic/benchmark mode are
-  designed but not yet implemented; `monitor.alert` and `monitor.recovered`
-  webhook events are already registered for them.
+* Alerts are delivered through webhooks only — there is no in-app admin
+  notification or email channel yet.
+* The disk benchmark measures the filesystem `DISK_PATH` points at; the read
+  figure is served from the page cache, so only the write number (which
+  includes `fsync`) reflects the device.
+* Diagnostics need the worker running. If it is down the run stays queued and
+  is marked failed after 10 minutes.
