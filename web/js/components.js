@@ -101,15 +101,15 @@ const C = {
             U.svg('<path d="M18 3.5A10 10 0 1 0 21 16 8 8 0 0 1 18 3.5Z" fill="currentColor" stroke="none"/>', 22),
             U.el('span', { text: 'yume' })
           ]),
-          U.el('p', { class: 'footer-tagline', text: 'Track, discover and watch anime — your list, your profiles, your way.' })
+          U.el('p', { class: 'footer-tagline', text: T('footer.tagline') })
         ]),
-        col('Discover', [['Home', '#/home'], ['Search', '#/search'], ['Schedule', '#/schedule'], ['Dashboard', '#/dashboard']]),
-        col('Library', [['My Library', '#/list'], ['Profile', '#/profile'], ['Watch History', '#/profile?tab=history'], ['Analytics', '#/profile?tab=analytics']]),
-        col('Community', [['Community', '#/community'], ['Watch Together', '#/w2g'], ['Extensions', '#/extensions']]),
-        col('Yume', [['Settings', '#/settings'], ['Notifications', '#/notifications'], ['Developer', '#/developer']])
+        col(T('footer.discover'), [[T('nav.home'), '#/home'], [T('nav.search'), '#/search'], [T('nav.schedule'), '#/schedule'], [T('nav.dashboard'), '#/dashboard']]),
+        col(T('footer.library'), [[T('footer.myLibrary'), '#/list'], [T('footer.profile'), '#/profile'], [T('footer.watchHistory'), '#/profile?tab=history'], [T('footer.analytics'), '#/profile?tab=analytics']]),
+        col(T('footer.community'), [[T('nav.community'), '#/community'], [T('nav.w2g'), '#/w2g'], [T('nav.extensions'), '#/extensions']]),
+        col(T('footer.yume'), [[T('nav.settings'), '#/settings'], [T('nav.notifications'), '#/notifications'], [T('footer.developer'), '#/developer']])
       ]),
       U.el('div', { class: 'footer-bottom' }, [
-        U.el('span', { text: `© ${year} Yume · built on the Yume design system` }),
+        U.el('span', { text: `© ${year} ${window.Copy?.footer?.brand ?? (window.App?.config?.site?.name ?? 'Yume')} · ${T('footer.colophon')}` }),
         U.el('span', { class: 'footer-credits', html: 'Anime data from <a href="https://anilist.co" target="_blank" rel="noopener">AniList</a>, <a href="https://jikan.moe" target="_blank" rel="noopener">Jikan</a> &amp; <a href="https://api.ani.zip" target="_blank" rel="noopener">ani.zip</a>' })
       ])
     ])

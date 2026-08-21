@@ -14,6 +14,7 @@ import { config } from './config.ts'
 import { schema, resolvers, loaders } from './graphql/schema.ts'
 import wsPlugin from './lib/ws.ts'
 import authPlugin from './plugins/auth.ts'
+import securityPlugin from './plugins/security.ts'
 import animeRoutes from './routes/anime.ts'
 import authRoutes from './routes/auth.ts'
 import commentRoutes from './routes/comments.ts'
@@ -25,6 +26,7 @@ import webhookRoutes from './routes/webhooks.ts'
 import { publicConfig, adminConfig } from './routes/config.ts'
 import roleRoutes from './routes/roles.ts'
 import catalogueRoutes from './routes/catalogue.ts'
+import { publicReadiness, adminMonitoring } from './routes/monitoring.ts'
 import reportRoutes from './routes/reports.ts'
 import extensionRoutes from './routes/extensions.ts'
 import libraryRoutes from './routes/library.ts'
@@ -34,9 +36,15 @@ import type { FastifyError, FastifyInstance } from 'fastify'
 export async function buildApp (): Promise<FastifyInstance> {
   const app = Fastify({
     logger: { level: config.isProd ? 'info' : 'debug' },
-    trustProxy: true
+    trustProxy: true,
+    // Cap request bodies. Nothing Yume accepts is large — the biggest payloads
+    // are comment/review text and extension manifests — so this bounds memory
+    // use from hostile requests. Fastify's default is the same 1 MB; setting it
+    // explicitly makes the intent (and the place to change it) obvious.
+    bodyLimit: Number(process.env.BODY_LIMIT_BYTES ?? 1_048_576)
   })
 
+  await app.register(securityPlugin)
   await app.register(cors, { origin: config.corsOrigins })
   await app.register(authPlugin)
   await app.register(wsPlugin)
@@ -69,6 +77,8 @@ export async function buildApp (): Promise<FastifyInstance> {
     }
   })
 
+  // Liveness: zero dependencies, always cheap — this is what Docker and load
+  // balancers poll. Dependency-aware readiness lives at /v1/health/ready.
   app.get('/v1/health', async () => ({ status: 'ok' }))
 
   await app.register(publicConfig, { prefix: '/v1/config' })
@@ -86,6 +96,8 @@ export async function buildApp (): Promise<FastifyInstance> {
   await app.register(webhookRoutes, { prefix: '/v1/admin/webhooks' })
   await app.register(roleRoutes, { prefix: '/v1/admin/roles' })
   await app.register(catalogueRoutes, { prefix: '/v1/admin/catalogue' })
+  await app.register(publicReadiness, { prefix: '/v1/health' })
+  await app.register(adminMonitoring, { prefix: '/v1/admin/monitoring' })
 
   // Serve the static web client from the same origin so the whole app runs as
   // one container/port (WEB_ROOT overrides; defaults to the repo's web/).

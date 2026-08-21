@@ -5,6 +5,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 
 import { config } from '../config.ts'
+import { AUTH_LIMIT, REFRESH_LIMIT } from '../plugins/security.ts'
 import { query, queryOne, transaction } from '../db.ts'
 import { hashPassword, verifyPassword } from '../lib/password.ts'
 import { emitEvent } from '../lib/webhooks.ts'
@@ -12,6 +13,13 @@ import { emitEvent } from '../lib/webhooks.ts'
 import type { FastifyPluginAsync } from 'fastify'
 
 const sha256 = (value: string): string => createHash('sha256').update(value).digest('hex')
+
+/**
+ * A real scrypt hash of a random secret, used to equalise login timing for
+ * unknown accounts. Computed once at startup; it can never match a submitted
+ * password because the input is never revealed.
+ */
+const DECOY_HASH = await hashPassword(randomBytes(32).toString('base64url'))
 
 interface UserRow {
   id: string
@@ -44,6 +52,7 @@ const routes: FastifyPluginAsync = async fastify => {
   }
 
   fastify.post('/register', {
+    config: AUTH_LIMIT,
     schema: {
       body: {
         type: 'object',
@@ -92,7 +101,7 @@ const routes: FastifyPluginAsync = async fastify => {
     return reply.code(201).send(tokens)
   })
 
-  fastify.post('/login', { schema: { body: credentialsSchema } }, async (request, reply) => {
+  fastify.post('/login', { config: AUTH_LIMIT, schema: { body: credentialsSchema } }, async (request, reply) => {
     const { identifier, password } = request.body as { identifier: string, password: string }
 
     const user = await queryOne<UserRow>(
@@ -100,7 +109,17 @@ const routes: FastifyPluginAsync = async fastify => {
       [identifier]
     )
 
-    const valid = user?.password_hash != null && await verifyPassword(password, user.password_hash)
+    // Verify against a decoy hash when the account does not exist, so a missing
+    // user costs the same ~scrypt time as a wrong password. Without this the
+    // response time alone reveals which usernames/emails are registered.
+    let valid: boolean
+    if (user?.password_hash != null) {
+      valid = await verifyPassword(password, user.password_hash)
+    } else {
+      await verifyPassword(password, DECOY_HASH) // never matches; burns equal time
+      valid = false
+    }
+
     if (!user || !valid) {
       await query('INSERT INTO security_logs (user_id, event, ip) VALUES ($1, $2, $3)', [user?.id ?? null, 'login_failed', request.ip])
       return reply.code(401).send({ type: 'about:blank', title: 'Unauthorized', status: 401, detail: 'Invalid credentials' })
@@ -116,6 +135,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.post('/refresh', {
+    config: REFRESH_LIMIT,
     schema: { body: { type: 'object', required: ['refreshToken'], properties: { refreshToken: { type: 'string' } } } }
   }, async (request, reply) => {
     const { refreshToken } = request.body as { refreshToken: string }

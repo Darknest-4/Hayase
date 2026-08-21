@@ -4,7 +4,7 @@
 
 const PageSchedule = {
   async render (root) {
-    root.append(window.C.spotlight('Airing Schedule', { subtitle: 'What drops this week, day by day' }))
+    root.append(window.C.spotlight(T('schedule.title'), { subtitle: 'What drops this week, day by day' }))
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
 
@@ -19,14 +19,14 @@ const PageSchedule = {
     try {
       schedules = await API.schedule(start, end)
     } catch (e) {
-      container.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load schedule: ' + e.message }))
+      container.replaceChildren(U.el('div', { class: 'error-state', text: T('schedule.loadError') + e.message }))
       return
     }
 
     container.replaceChildren()
 
     if (!schedules.length) {
-      container.append(U.el('div', { class: 'empty-state', text: 'Nothing airing this week.' }))
+      container.append(U.el('div', { class: 'empty-state', text: T('schedule.empty') }))
       return
     }
 
@@ -45,8 +45,8 @@ const PageSchedule = {
     for (const [key, items] of byDay) {
       const date = new Date(key)
       let label = date.toLocaleDateString(undefined, { weekday: 'long' })
-      if (key === todayKey) label = 'Today'
-      else if (key === tomorrowKey) label = 'Tomorrow'
+      if (key === todayKey) label = T('schedule.today')
+      else if (key === tomorrowKey) label = T('schedule.tomorrow')
 
       const group = U.el('div', { class: 'day-group' }, [
         U.el('h2', { class: 'day-title', style: 'padding-left:0;', html: '' }, [
@@ -66,7 +66,7 @@ const PageSchedule = {
         const sub = card.querySelector('.card-sub')
         sub.replaceChildren(
           U.el('span', { class: 'sched-time', text: time + ' • ' }),
-          U.el('span', { class: 'sched-ep', text: 'Ep ' + item.episode })
+          U.el('span', { class: 'sched-ep', text: T('schedule.episodeShort') + item.episode })
         )
       }
       group.append(row)

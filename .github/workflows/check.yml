@@ -2,38 +2,93 @@ name: Check
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
 
 jobs:
-  check:
+  server:
+    name: Server — typecheck, tests, migrations
     runs-on: ubuntu-latest
-    
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: yume
+          POSTGRES_PASSWORD: yume
+          POSTGRES_DB: yume
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U yume"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    defaults:
+      run:
+        working-directory: server
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        name: Install pnpm
-
-      - name: Install Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 22.19
-          cache: 'pnpm'
-            
+          # 22.6+ is required for --experimental-strip-types
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-        
-      - name: Sync
-        run: pnpm run sync
-        
-      - name: Lint
-        run: pnpm run lint
+        run: npm ci
 
-      - name: Check GQL
-        run: pnpm run gql:check
+      - name: Typecheck
+        run: npm run check
 
-      - name: Check Svelte and TypeScript
-        run: pnpm run check
+      - name: Unit tests
+        run: npm test
+        env:
+          JWT_SECRET: ci-secret-not-used-for-anything-real-0123456789
+
+      - name: Apply migrations to a clean database
+        run: npm run migrate
+        env:
+          DATABASE_URL: postgres://yume:yume@localhost:5432/yume
+
+      - name: Migrations are idempotent (re-running is a no-op)
+        run: |
+          output=$(npm run migrate --silent)
+          echo "$output"
+          if echo "$output" | grep -q "^applied "; then
+            echo "::error::re-running migrations applied something again — they are not idempotent"
+            exit 1
+          fi
+        env:
+          DATABASE_URL: postgres://yume:yume@localhost:5432/yume
+
+      - name: Worker drains end to end
+        run: npm run worker:once
+        env:
+          DATABASE_URL: postgres://yume:yume@localhost:5432/yume
+          JWT_SECRET: ci-secret-not-used-for-anything-real-0123456789
+
+      - name: Build
+        run: npm run build
+
+  web:
+    name: Web client — syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # the client ships as plain scripts with no build step, so a parse check
+      # is what protects it
+      - name: Syntax-check every client script
+        run: |
+          shopt -s globstar
+          for file in web/**/*.js; do
+            node --check "$file" || exit 1
+          done
+          echo "checked $(ls web/**/*.js | wc -l) files"

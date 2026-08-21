@@ -72,6 +72,24 @@ bővítmény‑rendszerrel.
 - [x] **Epizód hozzáadás / szerkesztés / törlés** (szám, cím, dátum, hossz, filler/recap, synopsis)
 - [x] A publikus `/v1/anime` végpontok (browse, search, schedule, detail, episodes) mind **szűrnek** a láthatóságra
 
+### VPS Health & Monitoring (kész) — [`monitoring.md`](./monitoring.md)
+- [x] **Liveness / readiness szétválasztva**: `/v1/health` triviális marad (LB/Docker), új `/v1/health/ready` cache‑elt aggregát (HEALTHY/DEGRADED/UNHEALTHY)
+- [x] **Capability‑aware service‑próbák**: Postgres kemény függőség; Redis/RabbitMQ/OpenSearch/MinIO **csak ha konfigurálva van** → nincs hamis riasztás
+- [x] **Metrika‑gyűjtés a workerben** (60 mp), 22+ mérőszám `/proc`‑ból és `node:os`‑ból, **0 új függőség**
+- [x] **Tárolás + retention**: `system_metrics` (havi partíciók, 7 nap), `system_metrics_hourly` (1 év), `service_status`
+- [x] **Dokumentált, futásidőben állítható küszöbök** (`site_settings`), zöld/sárga/piros osztályozás
+- [x] **Admin dashboard** (Infrastructure szekció): valós értékek, service‑rács, dependency‑map, 24 órás sparkline‑ok
+- [x] **P0 hotfix**: a `worker` bekerült a compose‑ba (nélküle a particionált táblák insertjei elhaltak volna)
+
+### Security hardening (kész) — [`security.md`](./security.md)
+- [x] **Rate limiting**: globális 300/perc, login/register 10/15 perc, refresh 60/15 perc, írás 30/5 perc — health **soha** nem limitált
+- [x] **Body limit** (1 MB) → 413, séma‑validáció minden route‑on
+- [x] **Security headerek + CSP** (`script-src 'self'`, `frame-ancestors 'none'`) — igazoltan nem töri a klienst
+- [x] **JWT‑titok fail‑fast** production‑ben (placeholder/rövid titok → nem indul el), compose is megköveteli
+- [x] **CORS**: production‑ben a wildcard same‑origin‑ra esik vissza
+- [x] **Login timing‑enumeráció lezárva** (decoy‑hash, 1,5% eltérés)
+- [x] **CI helyreállítva**: typecheck + tesztek + migrációk + worker + build, `main` ágon
+
 ### #1 — DB library‑sync (kész)
 - [x] **Bejelentkezve a lokális könyvtár a fiókhoz szinkronizál** és eszközök közt követi a felhasználót
 - [x] **Push (lokál → DB):** minden könyvtár‑írás (`Store.saveEntry`/`setProgress`/`removeEntry`) tükröződik a DB‑be (státusz + epizód‑haladás), debounce‑olva
@@ -88,6 +106,7 @@ bővítmény‑rendszerrel.
 A felhasználó által kért sorrend (a #6 és #1 kész, ezek jönnek „folytasd"‑ra):
 
 1. ~~**#1 — DB library‑sync**~~ ✅ **kész** (lásd fent)
+   *Következőnek javasolt: alerting (debounce/cooldown/recovery) + diagnosztika/benchmark mód.*
 2. **#2 — Reviews** (értékelések): a `reviews`, `review_votes` táblák megvannak, UI+API hátra
 3. **#3 — Custom lists / Collections**: `custom_lists`, `custom_list_items`, `collections`, `collection_lists` táblák megvannak
 4. **#4 — Follows/Friendships + Forums/Clubs**: `follows`, `friendships`, `forums`, `clubs`, `topics`, `posts`, `club_members` táblák megvannak
@@ -260,6 +279,25 @@ jogok/flagek státusza a UI‑ban is látszik.
 
 ---
 
+## 7c. Központi szöveg‑katalógus (fix feliratok egy helyen)
+
+Minden **fix UI‑szöveg** (nav‑feliratok, home‑rail címek pl. „Trending Now",
+schedule‑fejlécek, footer, gombok) egyetlen fájlban van: **`web/copy.js`**
+(`window.Copy`, kulcs → szöveg fa). Nem kell a kódban keresgélni — itt átírsz
+egy értéket, és mindenhol frissül.
+
+- Olvasás a UI‑ban: `T('home.rails.trending')` (dot‑path lekérdezés a
+  `window.Copy`‑ból; hiányzó kulcsnál a megadott fallbackre vagy a kulcsra esik
+  vissza — a helper a `util.js`‑ben).
+- A statikus sidebar‑feliratok is innen jönnek (az `app.init` a `data-route`
+  alapján behelyettesíti a `Copy.nav`‑ból).
+- Bővítés: új szöveghez adj kulcsot `copy.js`‑be és a hívási helyen `T('…')`.
+- Igazolva: a katalógus szerkesztése futásidőben a nav‑feliratot és a
+  rail‑fejlécet is mindenhol megváltoztatta (0 JS‑hiba).
+
+> Ez a **build‑idejű / szerkeszthető** szövegréteg. A DB‑ből élőben állítható
+> értékek (site‑név, tagline) a `site_settings`‑ben vannak (lásd lentebb).
+
 ## 8. Site‑konfiguráció / feature‑flag rendszer
 
 - **`feature_flags`** — soronként egy oldal (`page.home`…`page.watch`) vagy
@@ -323,7 +361,32 @@ docker compose --profile infra up -d # + redis/opensearch/minio/rabbitmq (opcion
 ```
 A `docker-compose.yml` `app` service‑e a `Dockerfile`‑ból épül, a `postgres`
 service‑re vár (healthcheck), és a `postgres://yume:yume@postgres:5432/yume`
-DB‑re csatlakozik. (A 25k anime seed külön: `npm run seed`.)
+DB‑re csatlakozik.
+
+**Katalógus seed (egyszeri, nem az indulás része):** az indulás mindig csak
+migrál (másodpercek). A 25k anime + epizód betöltése külön, **egyszeri**
+one‑shot a perzisztens `pgdata` volume‑ba — utána minden `up` azonnali:
+```bash
+docker compose --profile seed run --rm seed   # letölti a hivatalos dumpot és betölt
+```
+A `seed` script argumentum nélkül a hivatalos anime‑offline‑database dumpot
+tölti le (`SEED_URL`‑lel felülírható, vagy adj meg helyi fájl‑útvonalat).
+Lokálisan: `npm run seed [<fájl-vagy-url>]`. A seed maga néhány perc, de
+egyszeri és a normál indulást sosem lassítja.
+
+**AniList‑gazdagítás (a legtöbb infó innen jön):** a seed a 25k sort +
+`anilist_id` leképezést hozza létre; a **gazdag adat** (leírás, borító+banner,
+pontszám, műfajok, tag‑ek ranggal, stúdiók, trailer) az AniList‑ről jön:
+```bash
+docker compose --profile enrich run --rm enrich   # seed UTÁN
+# lokálisan: npm run import:anilist [--all] [--limit N]
+```
+Az importőr 50‑esével kéri le az AniList GraphQL‑t (`id_in`), rate‑limit‑tudatosan
+(429/`retry-after` kezelve, `AL_DELAY_MS` pacing), és az `anilist_id` alapján a
+meglévő sorokra írja a mezőket (idempotens). Alapból csak a leírás nélküli
+sorokat frissíti; `--all` mindet újra. Modul: `server/src/workers/anilist.ts`
+(`enrichFromAniList`, `upsertMedia`), script: `scripts/import-anilist.ts`.
+A ~16k leképezett anime a rate‑limit miatt ~15–30 perc, egyszeri.
 
 ### Hasznos scriptek (`server/package.json`)
 `dev` (watch), `build` (tsc), `start`, `migrate`, `check` (tsc --noEmit), `seed`.

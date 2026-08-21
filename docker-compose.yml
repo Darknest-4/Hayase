@@ -6,22 +6,87 @@ services:
   # the whole app (API + static web client) in one container
   app:
     build: .
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://yume:yume@postgres:5432/yume
-      JWT_SECRET: dev-only-jwt-secret-change-me
+      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:-yume}@postgres:5432/yume
+      # Required. The app refuses to boot in production with a placeholder or a
+      # secret under 32 chars. Put it in a .env file next to this compose file:
+      #   JWT_SECRET=$(openssl rand -base64 48)
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env — generate with: openssl rand -base64 48}
       PORT: '4000'
       HOST: 0.0.0.0
-      CORS_ORIGINS: '*'
+      # CORS is same-origin by default in production, which is what this
+      # single-container deployment needs. Only set this if you host the web
+      # client on a different origin, e.g. CORS_ORIGINS=https://app.example.com
+      # CORS_ORIGINS: ''
+      # Enable once the VPS terminates HTTPS (usually behind a reverse proxy):
+      # ENABLE_HSTS: 'true'
     ports: ['4000:4000']
+
+  # Background worker — REQUIRED in production. It creates next month's
+  # partitions and enforces retention (without it, inserts into the
+  # time-partitioned tables start failing once existing partitions run out),
+  # delivers webhooks, computes stats rollups and collects VPS metrics.
+  worker:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:-yume}@postgres:5432/yume
+      # the worker loads the same config module, which validates this at import
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env — generate with: openssl rand -base64 48}
+      # where the worker reaches the API to measure its response time
+      SELF_URL: http://app:4000
+      # Host filesystem for disk metrics. /proc is already the host's inside a
+      # container, but statfs('/') would measure the container overlay — so the
+      # host root is bind-mounted read-only, the same approach node-exporter uses.
+      DISK_PATH: /host
+      # MONITOR_INTERVAL_MS: '60000'      # collection cadence
+      # METRICS_RETENTION_DAYS: '7'       # raw sample retention
+    volumes:
+      - /:/host:ro
+    command: ['npm', 'run', 'worker']
+
+  # one-shot catalogue seed (25k anime + episodes) into the persistent volume.
+  # Run once: docker compose --profile seed run --rm seed
+  # Downloads the official dump by default; never runs on normal `up`.
+  seed:
+    build: .
+    profiles: ['seed']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:-yume}@postgres:5432/yume
+      # SEED_URL: <override the dump source, or mount a file and pass its path>
+    command: ['sh', '-c', 'node --experimental-strip-types src/lib/migrate.ts && node --experimental-strip-types scripts/seed.ts']
+
+  # one-shot AniList enrichment: fills synopsis, cover/banner, score, genres,
+  # tags, studios and trailer onto the seeded rows (matched by anilist_id).
+  # Run after seed: docker compose --profile enrich run --rm enrich
+  # Rate-limited by AniList — expect this to take a while for the full catalogue.
+  enrich:
+    build: .
+    profiles: ['enrich']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:-yume}@postgres:5432/yume
+      # AL_DELAY_MS: '2000'   # pacing between AniList batches of 50
+    command: ['npm', 'run', 'import:anilist']
 
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: yume
-      POSTGRES_PASSWORD: yume
+      # Change this for a real deployment: POSTGRES_PASSWORD=... in .env
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-yume}
       POSTGRES_DB: yume
     ports: ['5432:5432']
     volumes: ['pgdata:/var/lib/postgresql/data']

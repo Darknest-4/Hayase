@@ -12,11 +12,14 @@
     "check": "tsc --noEmit",
     "worker": "node --experimental-strip-types src/workers/index.ts",
     "worker:once": "node --experimental-strip-types src/workers/index.ts --once",
-    "seed": "node --experimental-strip-types scripts/seed.ts"
+    "seed": "node --experimental-strip-types scripts/seed.ts",
+    "import:anilist": "node --experimental-strip-types scripts/import-anilist.ts",
+    "test": "node --experimental-strip-types --test test/*.test.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",
     "@fastify/jwt": "^9.0.1",
+    "@fastify/rate-limit": "^11.2.0",
     "@fastify/static": "^10.1.0",
     "@fastify/websocket": "^11.0.1",
     "fastify": "^5.1.0",

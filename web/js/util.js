@@ -1,6 +1,14 @@
 /* global window, document */
 // Small DOM + formatting helpers shared by every page.
 
+// Central copy lookup: T('home.rails.trending') → the string from web/copy.js.
+// Falls back to the key itself (or an optional fallback) if it's missing, so a
+// typo is visible rather than blank. All fixed UI text should come through here.
+window.T = function (key, fallback) {
+  const val = String(key).split('.').reduce((o, k) => (o == null ? undefined : o[k]), window.Copy)
+  return val ?? fallback ?? key
+}
+
 const U = {
   // createElement helper: U.el('div', { class: 'foo', onclick: fn }, [children...])
   el (tag, attrs = {}, children = []) {

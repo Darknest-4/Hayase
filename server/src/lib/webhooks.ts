@@ -29,6 +29,8 @@ export const WEBHOOK_EVENTS = [
   'catalogue.changed',      // an anime/episode was created, edited, hidden or deleted
   'job.failed',             // background job exhausted retries
   'config.changed',         // a feature flag or site setting was changed
+  'monitor.alert',          // a monitored metric or service crossed into warning/critical
+  'monitor.recovered',      // a previously alerting metric or service returned to healthy
   'webhook.test'            // manual test fire from the admin UI
 ] as const
 
@@ -148,6 +150,18 @@ function renderEmbed (event: WebhookEvent, d: Record<string, unknown>): Embed {
         title: '⚙️ Site configuration changed',
         color: COLORS.rose,
         fields: [field('Setting', d.key), field('New value', d.value), field('Changed by', d.by)]
+      }
+    case 'monitor.alert':
+      return {
+        title: `🚨 ${String(d.severity ?? 'warning').toUpperCase()}: ${String(d.subject ?? 'system')}`,
+        color: d.severity === 'critical' ? COLORS.danger : COLORS.warn,
+        fields: [field('Metric', d.subject), field('Value', d.value), field('Threshold', d.threshold), field('For', d.duration, false)]
+      }
+    case 'monitor.recovered':
+      return {
+        title: `✅ Recovered: ${String(d.subject ?? 'system')}`,
+        color: COLORS.success,
+        fields: [field('Metric', d.subject), field('Value', d.value), field('Down for', d.duration)]
       }
     case 'catalogue.changed':
       return {

@@ -105,7 +105,7 @@ export const adminConfig: FastifyPluginAsync = async fastify => {
 
   fastify.patch('/settings/:key', {
     schema: {
-      params: { type: 'object', properties: { key: { enum: ['site_name', 'tagline', 'require_login', 'registration_open'] } } },
+      params: { type: 'object', properties: { key: { enum: ['site_name', 'tagline', 'require_login', 'registration_open', 'monitor_thresholds'] } } },
       body: { type: 'object', required: ['value'], properties: { value: {} } }
     }
   }, async (request, reply) => {

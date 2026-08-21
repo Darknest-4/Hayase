@@ -410,9 +410,13 @@ const App = {
     this.refreshProfileAvatar()
     this.refreshNotifBadge()
     this.initProfileSwitcher()
-    // icon-rail sidebar: hidden labels become native tooltips
+    // nav labels come from the central copy catalog (web/copy.js); hidden
+    // labels on the icon rail also become native tooltips
     document.querySelectorAll('.sidebar-btn').forEach(btn => {
-      const label = btn.querySelector('span')?.textContent
+      const span = btn.querySelector('span')
+      const key = btn.id === 'nav-more' ? 'more' : btn.dataset.route
+      if (span && key && window.Copy?.nav?.[key]) span.textContent = window.Copy.nav[key]
+      const label = span?.textContent
       if (label) btn.title = label
     })
     this.initSearchModal()

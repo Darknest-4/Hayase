@@ -180,6 +180,15 @@ const YumeAPI = {
     return this._request(`/v1/comments/${id}/like`, { method: 'POST', auth: true })
   },
 
+  /** Public readiness aggregate — safe for any signed-in view. */
+  async readiness () {
+    try {
+      return await this._request('/v1/health/ready')
+    } catch (e) {
+      return null
+    }
+  },
+
   // ---- site config / feature flags ----
 
   async config () {
@@ -243,6 +252,13 @@ const YumeAPI = {
     roles: () => YumeAPI._request('/v1/admin/roles', { auth: true }),
     permissionCatalog: () => YumeAPI._request('/v1/admin/roles/permissions', { auth: true }),
     setRolePermission: (roleId, slug, granted) => YumeAPI._request(`/v1/admin/roles/${roleId}/permissions`, { method: 'POST', auth: true, body: { slug, granted } }),
+    // VPS health & monitoring (system.metrics.view)
+    monitoring: {
+      current: () => YumeAPI._request('/v1/admin/monitoring/current', { auth: true }),
+      history: (metric, hours = 24) => YumeAPI._request(`/v1/admin/monitoring/history?metric=${encodeURIComponent(metric)}&hours=${hours}`, { auth: true }),
+      thresholds: () => YumeAPI._request('/v1/admin/monitoring/thresholds', { auth: true }),
+      queues: () => YumeAPI._request('/v1/admin/monitoring/queues', { auth: true })
+    },
     // catalogue management (anime + episodes, sees hidden entries)
     catalogue: {
       list: (params = {}) => {
