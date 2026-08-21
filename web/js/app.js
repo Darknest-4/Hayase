@@ -1,4 +1,4 @@
-/* global window, document, U, C, API, Store, PageHome, PageSearch, PageAnime, PageSchedule, PageList, PageSettings */
+/* global window, document, U, C, T, API, YumeAPI, Store, PageHome, PageSearch, PageAnime, PageSchedule, PageList, PageSettings */
 // App bootstrap: hash router (same #/route scheme as the original SvelteKit
 // build), sidebar active state and the quick-search modal (Ctrl+K / S).
 
@@ -199,7 +199,7 @@ const App = {
     backdrop.classList.remove('hidden')
     input.value = ''
     document.getElementById('search-modal-results').replaceChildren(
-      U.el('div', { class: 'search-modal-empty', text: 'Type to search…' })
+      U.el('div', { class: 'search-modal-empty', text: T('search.prompt') })
     )
     input.focus()
   },
@@ -222,17 +222,33 @@ const App = {
       const query = input.value.trim()
       const current = ++token
       if (query.length < 2) {
-        results.replaceChildren(U.el('div', { class: 'search-modal-empty', text: 'Type to search…' }))
+        results.replaceChildren(U.el('div', { class: 'search-modal-empty', text: T('search.prompt') }))
         return
       }
       results.replaceChildren(U.el('div', { class: 'spinner' }))
       try {
-        const page = await API.search({ search: query, sort: ['SEARCH_MATCH'], perPage: 10 })
+        // The Yume catalogue answers from Postgres with tiered ranking, which
+        // matches romaji/english/native titles and synonyms. When no backend
+        // is configured (or a row has no AniList id to navigate to) the client
+        // falls back to AniList so quick search keeps working standalone.
+        // Rows without an anilist_id are dropped rather than discarding the
+        // whole catalogue answer: the detail route navigates by AniList id,
+        // so an unmapped row has nowhere to link to yet.
+        const suggestions = (await YumeAPI.suggest(query, 10) ?? []).filter(s => s.anilist_id)
+        const media = suggestions.length
+          ? suggestions.map(s => ({
+              id: s.anilist_id,
+              title: { userPreferred: s.canonical_title },
+              coverImage: { large: s.cover_key ?? '' },
+              format: s.format,
+              seasonYear: s.season_year,
+              episodes: s.episode_count
+            }))
+          : (await API.search({ search: query, sort: ['SEARCH_MATCH'], perPage: 10 })).media ?? []
         if (current !== token) return
         results.replaceChildren()
-        const media = page.media ?? []
         if (!media.length) {
-          results.append(U.el('div', { class: 'search-modal-empty', text: 'No results.' }))
+          results.append(U.el('div', { class: 'search-modal-empty', text: T('search.empty') }))
           return
         }
         for (const m of media) {
@@ -250,7 +266,7 @@ const App = {
         }
       } catch (e) {
         if (current !== token) return
-        results.replaceChildren(U.el('div', { class: 'search-modal-empty', text: 'Search failed: ' + e.message }))
+        results.replaceChildren(U.el('div', { class: 'search-modal-empty', text: T('search.failed') + ' ' + e.message }))
       }
     }, 300))
 

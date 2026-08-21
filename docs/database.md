@@ -69,7 +69,7 @@ in the SQL. The patterns:
 - **Trigram GIN** (`pg_trgm`) on `anime.canonical_title` and
   `anime_synonyms.synonym` for typo-tolerant fallback search;
   **tsvector GIN** on `anime.search` (weighted title A / synopsis C,
-  maintained by trigger) as the OpenSearch fallback.
+  maintained by trigger). This is the search backend, not a fallback — see docs/search.md.
 - **FK helper indexes** on every child side used for lookups (Postgres does
   not auto-index FKs).
 

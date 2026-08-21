@@ -9,6 +9,7 @@
 // the mapping/upsert can be unit-tested without touching the network.
 
 import { pool, transaction } from '../db.ts'
+import { resolveFields, applyResolution, CURRENT_COLUMNS, type CurrentRow } from '../lib/metadata.ts'
 
 import type pg from 'pg'
 
@@ -119,25 +120,27 @@ export async function upsertMedia (client: pg.PoolClient, media: AniListMedia, c
   const format = media.format && FORMATS.has(media.format) ? media.format : null
   const status = media.status && STATUSES.has(media.status) ? media.status : null
 
-  await client.query(
-    `UPDATE anime SET
-       canonical_title = coalesce($2, canonical_title),
-       synopsis = coalesce($3, synopsis),
-       average_score = $4, popularity = coalesce($5, popularity),
-       season = coalesce($6::anime_season, season), season_year = coalesce($7, season_year),
-       start_date = coalesce($8::date, start_date), end_date = coalesce($9::date, end_date),
-       episode_count = coalesce(nullif($10, 0), episode_count), episode_duration = coalesce($11, episode_duration),
-       format = coalesce($12::anime_format, format), status = coalesce($13::anime_status, status),
-       is_adult = coalesce($14, is_adult), source_material = coalesce($15, source_material),
-       updated_at = now()
-     WHERE id = $1`,
-    [animeId, title.userPreferred ?? title.romaji ?? null, stripHtml(media.description),
-      media.averageScore ?? null, media.popularity ?? null,
-      media.season ?? null, media.seasonYear ?? null,
-      dateStr(media.startDate), dateStr(media.endDate),
-      media.episodes ?? 0, media.duration ?? null,
-      format, status, media.isAdult ?? null, media.source ?? null]
-  )
+  // Canonical fields go through the conflict-resolution layer instead of a
+  // blind UPDATE: anything an operator edited by hand is locked, and a
+  // lower-precedence provider cannot overwrite a higher-ranked one.
+  const current = await client.query<CurrentRow>(`SELECT ${CURRENT_COLUMNS} FROM anime WHERE id = $1`, [animeId])
+  const resolution = resolveFields(current.rows[0] ?? {}, {
+    canonical_title: title.userPreferred ?? title.romaji ?? null,
+    synopsis: stripHtml(media.description),
+    average_score: media.averageScore ?? null,
+    popularity: media.popularity ?? null,
+    season: media.season ?? null,
+    season_year: media.seasonYear ?? null,
+    start_date: dateStr(media.startDate),
+    end_date: dateStr(media.endDate),
+    episode_count: media.episodes || null,
+    episode_duration: media.duration ?? null,
+    format,
+    status,
+    is_adult: media.isAdult ?? null,
+    source_material: media.source ?? null
+  }, 'anilist')
+  await applyResolution(client, animeId, resolution)
 
   if (media.idMal) {
     await client.query('UPDATE anime_mappings SET mal_id = coalesce(mal_id, $2), updated_at = now() WHERE anime_id = $1', [animeId, media.idMal])

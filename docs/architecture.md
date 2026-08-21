@@ -69,13 +69,19 @@ Playback progress is the hottest write path: the player PATCHes every ~10 s;
 the API writes to the Redis hash and a worker flushes dirty entries to
 `watch_progress` every 30 s. A crash loses at most 30 s of positions.
 
-### OpenSearch
-One `anime` index: titles (edge-ngram for autocomplete), synonyms, genres,
-tags, popularity/trending signals for ranking. Indexed by a worker on every
-catalogue mutation (outbox pattern: `anime` updates enqueue a reindex job).
-Search API: full-text with fuzziness, autocomplete suggester, and a
-"semantic" mode that expands the query with tag vectors (AI search).
-Postgres `tsvector`/trigram indexes remain as a degraded-mode fallback.
+### Search — Postgres, not OpenSearch
+
+Search runs entirely in Postgres: `pg_trgm` and `tsvector` over canonical
+titles, `anime_titles` and `anime_synonyms`, with tiered ranking so an exact
+title always outranks a fuzzy near-miss. See [`search.md`](./search.md).
+
+`docker-compose.yml` still carries an OpenSearch service, and this document
+originally planned an `anime` index behind an outbox reindex worker. That was
+**deliberately not built**: at ~25k catalogue rows Postgres answers off its
+indexes in single-digit milliseconds, while OpenSearch would cost ~1 GB of RAM
+on a single VPS, a JVM to operate and an index to keep in sync. Revisit at
+several hundred thousand entries, or for a requirement Postgres cannot serve
+(learned ranking from click feedback, multi-language analyzers).
 
 ### Queue
 Durable Postgres-backed job queue (`jobs` table, `FOR UPDATE SKIP LOCKED`,
@@ -90,7 +96,6 @@ Workers are separate deployables in `server/src/workers/`
 | `notify` | fan out notifications (DB inbox + push + email) |
 | `stats` | roll up watch_history → profile_stats, watch_stats_daily; XP/achievements |
 | `import` | metadata importers (AniList/AniDB/TVDB dumps → catalogue) |
-| `search-index` | OpenSearch reindexing |
 | `ext-review` | static-analysis pipeline for submitted extension packages |
 | `media` | image resize/blurhash/dominant-color on upload |
 | `maintenance` | partition creation, retention pruning, health checks |

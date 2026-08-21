@@ -52,7 +52,8 @@ One service, two protocols over the same service layer:
 | GET | `/v1/anime/trending` · `/popular` · `/schedule` | curated rails; schedule takes `?from&to` |
 | GET | `/v1/anime/:id` | full detail (titles, genres, companies, stats) |
 | GET | `/v1/anime/:id/episodes` · `/relations` · `/characters` · `/staff` · `/recommendations` · `/reviews` | sub-resources |
-| GET | `/v1/search` | OpenSearch: `?q&mode=fulltext|autocomplete|semantic` |
+| GET | `/v1/anime/search` | tiered search: `?q` plus `&genre&year&season&format&status&sort&limit&offset&nsfw`. Matches canonical, romaji/english/native and synonym titles; each row reports its `tier` and `matched_title`. See [`search.md`](./search.md) |
+| GET | `/v1/anime/suggest` | quick-search box: `?q&limit&nsfw`, minimal payload, no telemetry |
 | PATCH | `/v1/anime/:id` | edit metadata (`anime.edit` permission; audited) |
 
 ### Playback & library
@@ -106,6 +107,10 @@ One service, two protocols over the same service layer:
 | GET/POST/PATCH/DELETE | `/v1/admin/webhooks` | outbound webhooks (`admin.webhooks.manage`) |
 | POST | `/v1/admin/webhooks/:id/test` | fire a test event synchronously |
 | GET | `/v1/admin/webhooks/events` · `/:id/deliveries` | event catalog + delivery log |
+| GET/POST/PATCH/DELETE | `/v1/admin/catalogue` · `/:id` · `/:id/episodes` | catalogue management incl. hidden entries (`anime.*` / `episode.*`) |
+| POST | `/v1/admin/catalogue/:id/unlock` | release fields back to the importers (`anime.edit`) |
+| GET | `/v1/admin/catalogue/duplicates` | proposed duplicate pairs (`anime.merge`) |
+| POST | `/v1/admin/catalogue/:id/merge` | merge another entry into this one — irreversible (`anime.merge`) |
 
 ### Outbound webhooks
 Admin-configured endpoints subscribe per-event. Discord URLs receive rich
