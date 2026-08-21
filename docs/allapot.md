@@ -72,6 +72,24 @@ bővítmény‑rendszerrel.
 - [x] **Epizód hozzáadás / szerkesztés / törlés** (szám, cím, dátum, hossz, filler/recap, synopsis)
 - [x] A publikus `/v1/anime` végpontok (browse, search, schedule, detail, episodes) mind **szűrnek** a láthatóságra
 
+### VPS Health & Monitoring (kész) — [`monitoring.md`](./monitoring.md)
+- [x] **Liveness / readiness szétválasztva**: `/v1/health` triviális marad (LB/Docker), új `/v1/health/ready` cache‑elt aggregát (HEALTHY/DEGRADED/UNHEALTHY)
+- [x] **Capability‑aware service‑próbák**: Postgres kemény függőség; Redis/RabbitMQ/OpenSearch/MinIO **csak ha konfigurálva van** → nincs hamis riasztás
+- [x] **Metrika‑gyűjtés a workerben** (60 mp), 22+ mérőszám `/proc`‑ból és `node:os`‑ból, **0 új függőség**
+- [x] **Tárolás + retention**: `system_metrics` (havi partíciók, 7 nap), `system_metrics_hourly` (1 év), `service_status`
+- [x] **Dokumentált, futásidőben állítható küszöbök** (`site_settings`), zöld/sárga/piros osztályozás
+- [x] **Admin dashboard** (Infrastructure szekció): valós értékek, service‑rács, dependency‑map, 24 órás sparkline‑ok
+- [x] **P0 hotfix**: a `worker` bekerült a compose‑ba (nélküle a particionált táblák insertjei elhaltak volna)
+
+### Security hardening (kész) — [`security.md`](./security.md)
+- [x] **Rate limiting**: globális 300/perc, login/register 10/15 perc, refresh 60/15 perc, írás 30/5 perc — health **soha** nem limitált
+- [x] **Body limit** (1 MB) → 413, séma‑validáció minden route‑on
+- [x] **Security headerek + CSP** (`script-src 'self'`, `frame-ancestors 'none'`) — igazoltan nem töri a klienst
+- [x] **JWT‑titok fail‑fast** production‑ben (placeholder/rövid titok → nem indul el), compose is megköveteli
+- [x] **CORS**: production‑ben a wildcard same‑origin‑ra esik vissza
+- [x] **Login timing‑enumeráció lezárva** (decoy‑hash, 1,5% eltérés)
+- [x] **CI helyreállítva**: typecheck + tesztek + migrációk + worker + build, `main` ágon
+
 ### #1 — DB library‑sync (kész)
 - [x] **Bejelentkezve a lokális könyvtár a fiókhoz szinkronizál** és eszközök közt követi a felhasználót
 - [x] **Push (lokál → DB):** minden könyvtár‑írás (`Store.saveEntry`/`setProgress`/`removeEntry`) tükröződik a DB‑be (státusz + epizód‑haladás), debounce‑olva
@@ -88,6 +106,7 @@ bővítmény‑rendszerrel.
 A felhasználó által kért sorrend (a #6 és #1 kész, ezek jönnek „folytasd"‑ra):
 
 1. ~~**#1 — DB library‑sync**~~ ✅ **kész** (lásd fent)
+   *Következőnek javasolt: alerting (debounce/cooldown/recovery) + diagnosztika/benchmark mód.*
 2. **#2 — Reviews** (értékelések): a `reviews`, `review_votes` táblák megvannak, UI+API hátra
 3. **#3 — Custom lists / Collections**: `custom_lists`, `custom_list_items`, `collections`, `collection_lists` táblák megvannak
 4. **#4 — Follows/Friendships + Forums/Clubs**: `follows`, `friendships`, `forums`, `clubs`, `topics`, `posts`, `club_members` táblák megvannak

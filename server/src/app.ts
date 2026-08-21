@@ -14,6 +14,7 @@ import { config } from './config.ts'
 import { schema, resolvers, loaders } from './graphql/schema.ts'
 import wsPlugin from './lib/ws.ts'
 import authPlugin from './plugins/auth.ts'
+import securityPlugin from './plugins/security.ts'
 import animeRoutes from './routes/anime.ts'
 import authRoutes from './routes/auth.ts'
 import commentRoutes from './routes/comments.ts'
@@ -35,9 +36,15 @@ import type { FastifyError, FastifyInstance } from 'fastify'
 export async function buildApp (): Promise<FastifyInstance> {
   const app = Fastify({
     logger: { level: config.isProd ? 'info' : 'debug' },
-    trustProxy: true
+    trustProxy: true,
+    // Cap request bodies. Nothing Yume accepts is large — the biggest payloads
+    // are comment/review text and extension manifests — so this bounds memory
+    // use from hostile requests. Fastify's default is the same 1 MB; setting it
+    // explicitly makes the intent (and the place to change it) obvious.
+    bodyLimit: Number(process.env.BODY_LIMIT_BYTES ?? 1_048_576)
   })
 
+  await app.register(securityPlugin)
   await app.register(cors, { origin: config.corsOrigins })
   await app.register(authPlugin)
   await app.register(wsPlugin)

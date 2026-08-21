@@ -5,12 +5,14 @@ import { queryOne } from '../db.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
+import { WRITE_LIMIT } from '../plugins/security.ts'
 
 const SUBJECTS = ['comment', 'post', 'topic', 'review', 'user', 'extension', 'message'] as const
 const REASONS = ['spam', 'harassment', 'nsfw', 'spoiler', 'illegal', 'other'] as const
 
 const routes: FastifyPluginAsync = async fastify => {
   fastify.post('/', {
+    config: WRITE_LIMIT,
     preHandler: fastify.authenticate,
     schema: {
       body: {

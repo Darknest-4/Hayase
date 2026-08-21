@@ -7,6 +7,7 @@ import { emitEvent } from '../lib/webhooks.ts'
 import { notify } from '../workers/notify.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
+import { WRITE_LIMIT } from '../plugins/security.ts'
 
 const SUBJECT_TYPES = ['anime', 'episode', 'post', 'extension', 'review'] as const
 
@@ -65,6 +66,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.post('/', {
+    config: WRITE_LIMIT,
     preHandler: fastify.requirePermission('community.post'),
     schema: {
       body: {

@@ -11,11 +11,19 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://yume:yume@postgres:5432/yume
-      JWT_SECRET: dev-only-jwt-secret-change-me
+      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:-yume}@postgres:5432/yume
+      # Required. The app refuses to boot in production with a placeholder or a
+      # secret under 32 chars. Put it in a .env file next to this compose file:
+      #   JWT_SECRET=$(openssl rand -base64 48)
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env — generate with: openssl rand -base64 48}
       PORT: '4000'
       HOST: 0.0.0.0
-      CORS_ORIGINS: '*'
+      # CORS is same-origin by default in production, which is what this
+      # single-container deployment needs. Only set this if you host the web
+      # client on a different origin, e.g. CORS_ORIGINS=https://app.example.com
+      # CORS_ORIGINS: ''
+      # Enable once the VPS terminates HTTPS (usually behind a reverse proxy):
+      # ENABLE_HSTS: 'true'
     ports: ['4000:4000']
 
   # Background worker — REQUIRED in production. It creates next month's
@@ -29,7 +37,9 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://yume:yume@postgres:5432/yume
+      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:-yume}@postgres:5432/yume
+      # the worker loads the same config module, which validates this at import
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env — generate with: openssl rand -base64 48}
       # where the worker reaches the API to measure its response time
       SELF_URL: http://app:4000
       # Host filesystem for disk metrics. /proc is already the host's inside a
@@ -52,7 +62,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://yume:yume@postgres:5432/yume
+      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:-yume}@postgres:5432/yume
       # SEED_URL: <override the dump source, or mount a file and pass its path>
     command: ['sh', '-c', 'node --experimental-strip-types src/lib/migrate.ts && node --experimental-strip-types scripts/seed.ts']
 
@@ -67,7 +77,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://yume:yume@postgres:5432/yume
+      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:-yume}@postgres:5432/yume
       # AL_DELAY_MS: '2000'   # pacing between AniList batches of 50
     command: ['npm', 'run', 'import:anilist']
 
@@ -75,7 +85,8 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: yume
-      POSTGRES_PASSWORD: yume
+      # Change this for a real deployment: POSTGRES_PASSWORD=... in .env
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-yume}
       POSTGRES_DB: yume
     ports: ['5432:5432']
     volumes: ['pgdata:/var/lib/postgresql/data']
