@@ -1,7 +1,10 @@
 // /v1/anime — catalogue browse, detail, episodes, schedule.
 // Public (no auth). Cursor pagination on (sort value, id) keyset.
 
-import { query, queryOne } from '../db.ts'
+import { pool, query, queryOne } from '../db.ts'
+import { SEARCH_SORTS, recordSearch, searchAnime, suggest } from '../lib/search.ts'
+
+import type { SearchFilters } from '../lib/search.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
 
@@ -111,7 +114,10 @@ const routes: FastifyPluginAsync = async fastify => {
     return { data }
   })
 
-  // full-text + typo-tolerant search (tsvector + trigram, incl. synonyms)
+  // ---- search ----
+  // Tiered ranking across canonical titles, anime_titles (romaji/english/
+  // native) and synonyms, with combinable catalogue filters. See
+  // server/src/lib/search.ts for the tier definitions.
   fastify.get('/search', {
     schema: {
       querystring: {
@@ -119,34 +125,44 @@ const routes: FastifyPluginAsync = async fastify => {
         required: ['q'],
         properties: {
           q: { type: 'string', minLength: 1, maxLength: 200 },
-          limit: { type: 'integer', minimum: 1, maximum: 50, default: 10 },
+          genre: { type: 'string', maxLength: 40 },
+          year: { type: 'integer', minimum: 1917, maximum: 2100 },
+          season: { enum: ['WINTER', 'SPRING', 'SUMMER', 'FALL'] },
+          format: { enum: ['TV', 'TV_SHORT', 'MOVIE', 'SPECIAL', 'OVA', 'ONA', 'MUSIC'] },
+          status: { enum: ['NOT_YET_RELEASED', 'RELEASING', 'FINISHED', 'CANCELLED', 'HIATUS'] },
+          sort: { enum: Object.keys(SEARCH_SORTS), default: 'relevance' },
+          limit: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
+          offset: { type: 'integer', minimum: 0, maximum: 1000, default: 0 },
+          nsfw: { type: 'boolean', default: false }
+        }
+      }
+    }
+  }, async request => {
+    const { q, ...filters } = request.query as { q: string } & SearchFilters
+    const data = await searchAnime(pool, q, filters)
+    // telemetry is fire-and-forget: a zero-result query is a catalogue gap
+    // worth reporting, but recording it must never delay the response
+    void recordSearch(pool, q, data.length, request.headers['x-profile-id'] as string | undefined)
+    return { data, query: q }
+  })
+
+  // Quick-search box: same ranking, minimal payload, no telemetry (it fires
+  // on every keystroke — storing those would be noise, not signal).
+  fastify.get('/suggest', {
+    schema: {
+      querystring: {
+        type: 'object',
+        required: ['q'],
+        properties: {
+          q: { type: 'string', minLength: 1, maxLength: 100 },
+          limit: { type: 'integer', minimum: 1, maximum: 15, default: 8 },
           nsfw: { type: 'boolean', default: false }
         }
       }
     }
   }, async request => {
     const { q, limit, nsfw } = request.query as { q: string, limit?: number, nsfw?: boolean }
-    const rows = await query(
-      `SELECT DISTINCT ON (a.id) a.id, a.canonical_title, a.format, a.status, a.season, a.season_year,
-              a.episode_count, a.average_score, a.is_adult,
-              img.object_key AS cover_key,
-              greatest(
-                similarity(a.canonical_title, $1),
-                coalesce((SELECT max(similarity(s.synonym, $1)) FROM anime_synonyms s WHERE s.anime_id = a.id), 0)
-              ) AS sim
-       FROM anime a
-       LEFT JOIN anime_images img ON img.anime_id = a.id AND img.kind = 'cover' AND img.is_primary
-       WHERE a.visibility = 'public'
-         AND (${nsfw ? 'true' : 'NOT a.is_adult'})
-         AND (a.search @@ websearch_to_tsquery('simple', $1)
-              OR a.canonical_title % $1
-              OR EXISTS (SELECT 1 FROM anime_synonyms s WHERE s.anime_id = a.id AND s.synonym % $1))
-       ORDER BY a.id, sim DESC
-       LIMIT 200`,
-      [q]
-    )
-    rows.sort((x, y) => Number(y.sim) - Number(x.sim))
-    return { data: rows.slice(0, limit ?? 10) }
+    return { data: await suggest(pool, q, limit, nsfw) }
   })
 
   // ---- AniList id bridge ----

@@ -267,7 +267,7 @@ nem jelenik meg.
     szerverre (`library_entries` + a REST/GraphQL végpontok készen).
 
 ### Infrastruktúra (élő környezetet igényel)
-21. **OpenSearch-indexelő** worker (a Postgres-fallback keresés már él).
+21. ~~OpenSearch-indexelő worker~~ — **elvetve, szándékosan**: a keresés Postgresen fut (tsvector + pg_trgm, rétegelt rangsor); indoklás: `docs/search.md`.
 22. **S3/MinIO média-pipeline** (borítók újrahostolása, blurhash).
 23. **Redis-adapterek** (rate-limit, cache, több-példányos WS pub/sub) —
     a seam-ek elő vannak készítve.

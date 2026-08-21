@@ -158,6 +158,31 @@ const YumeAPI = {
     return created.id
   },
 
+  // ---- catalogue search ----
+  // Tiered ranking over the Yume catalogue (canonical titles, romaji/english/
+  // native titles and synonyms). The client stays usable without a backend —
+  // callers fall back to AniList when these return null.
+
+  async searchCatalogue (query, filters = {}) {
+    const params = new URLSearchParams({ q: query })
+    for (const [k, v] of Object.entries(filters)) if (v !== undefined && v !== '' && v !== false) params.set(k, v)
+    try {
+      const { data } = await this._request('/v1/anime/search?' + params.toString())
+      return data
+    } catch (e) {
+      return null // backend unreachable — the caller uses AniList instead
+    }
+  },
+
+  async suggest (query, limit = 8) {
+    try {
+      const { data } = await this._request(`/v1/anime/suggest?q=${encodeURIComponent(query)}&limit=${limit}`)
+      return data
+    } catch (e) {
+      return null
+    }
+  },
+
   // ---- comments ----
 
   comments (subjectType, subjectId) {
@@ -277,7 +302,12 @@ const YumeAPI = {
       episodes: id => YumeAPI._request(`/v1/admin/catalogue/${id}/episodes`, { auth: true }),
       addEpisode: (id, body) => YumeAPI._request(`/v1/admin/catalogue/${id}/episodes`, { method: 'POST', auth: true, body }),
       updateEpisode: (eid, body) => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}`, { method: 'PATCH', auth: true, body }),
-      removeEpisode: eid => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}`, { method: 'DELETE', auth: true })
+      removeEpisode: eid => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}`, { method: 'DELETE', auth: true }),
+      // metadata provenance & duplicate handling
+      unlock: (id, fields) => YumeAPI._request(`/v1/admin/catalogue/${id}/unlock`, { method: 'POST', auth: true, body: { fields } }),
+      duplicates: (threshold = 0.86, limit = 50) =>
+        YumeAPI._request(`/v1/admin/catalogue/duplicates?threshold=${threshold}&limit=${limit}`, { auth: true }),
+      merge: (id, sourceId) => YumeAPI._request(`/v1/admin/catalogue/${id}/merge`, { method: 'POST', auth: true, body: { sourceId } })
     }
   },
 

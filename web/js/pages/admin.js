@@ -349,7 +349,8 @@ const PageAdmin = {
       U.el('select', { class: 'select', onchange: e => { state.visibility = e.target.value; loadList() } },
         [['', 'All visibility'], ['public', 'Public'], ['unlisted', 'Unlisted'], ['hidden', 'Hidden']].map(([v, l]) =>
           U.el('option', { value: v, text: l }))),
-      can('anime.create') ? U.el('button', { class: 'btn btn-primary btn-sm', onclick: () => openEditor(null) }, [document.createTextNode('+ New anime')]) : null
+      can('anime.create') ? U.el('button', { class: 'btn btn-primary btn-sm', onclick: () => openEditor(null) }, [document.createTextNode('+ New anime')]) : null,
+      can('anime.merge') ? U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => { state.selected = null; this.renderCatDuplicates(editCol, can, () => { loadList(); this.renderCatDuplicates(editCol, can, loadList) }) } }, [document.createTextNode('Duplicates')]) : null
     ])
     listCol.append(toolbar, listBox)
 
@@ -490,8 +491,73 @@ const PageAdmin = {
       form.append(U.el('div', { class: 'callout', text: 'You have read-only access to the catalogue.' }))
     }
 
+    // ---- metadata provenance (existing anime only) ----
+    if (!isNew) this.renderCatProvenance(form, anime, { can, onSaved })
+
     // ---- episodes (existing anime only) ----
     if (!isNew) this.renderCatEpisodes(form, anime, can)
+  },
+
+  // Shows where each field's value came from and which fields are locked
+  // against the importers. Saving in this editor locks whatever it wrote, so
+  // the only action needed here is releasing a field back to automation.
+  renderCatProvenance (form, anime, { can, onSaved }) {
+    const locked = anime.locked_fields ?? []
+    const sources = anime.metadata_sources ?? {}
+    const fields = [...new Set([...locked, ...Object.keys(sources)])].sort()
+    if (!fields.length) return
+
+    const wrap = U.el('div', { class: 'cat-provenance' })
+    wrap.append(U.el('h3', { class: 'detail-section-title', style: 'margin:0 0 .5rem;', text: 'Metadata sources' }))
+    wrap.append(U.el('p', { class: 'cat-vis-hint', text: 'A locked field was set by hand and is never overwritten by the AniList importer. Release it to let automatic updates resume.' }))
+
+    const table = U.el('div', { class: 'prov-table' })
+    for (const field of fields) {
+      const src = sources[field]
+      const isLocked = locked.includes(field)
+      table.append(U.el('div', { class: 'prov-row' }, [
+        U.el('code', { class: 'prov-field', text: field }),
+        U.el('span', { class: 'prov-source', text: src ? [src.provider, src.at ? U.relTime(new Date(src.at)) : null].filter(Boolean).join(' · ') : 'unknown' }),
+        isLocked
+          ? U.el('span', { class: 'vis-badge vis-hidden', text: 'locked' })
+          : U.el('span', { class: 'prov-auto', text: 'automatic' }),
+        isLocked && can('anime.edit')
+          ? U.el('button', { class: 'btn btn-ghost btn-sm', onclick: async e => {
+              e.target.disabled = true
+              try { await YumeAPI.admin.catalogue.unlock(anime.id, [field]); U.toast(`"${field}" released to the importer`); onSaved?.() } catch (err) { U.toast(err.message, 'error'); e.target.disabled = false }
+            } }, [document.createTextNode('Release')])
+          : null
+      ]))
+    }
+    wrap.append(table)
+    form.append(wrap)
+  },
+
+  // Duplicate scan. Read-only by design: it proposes pairs and a human with
+  // anime.merge confirms each one, because a merge cannot be undone.
+  async renderCatDuplicates (host, can, reload) {
+    host.replaceChildren(U.el('div', { class: 'spinner' }))
+    try {
+      const { data } = await YumeAPI.admin.catalogue.duplicates()
+      host.replaceChildren()
+      host.append(U.el('p', { class: 'cat-vis-hint', text: 'Entries with near-identical titles in the same year and format. Merging moves titles, synonyms, genres, tags, external ids and library entries onto the entry you keep, then deletes the other one. This cannot be undone.' }))
+      if (!data.length) { host.append(U.el('div', { class: 'empty-state', style: 'padding:1rem;', text: 'No likely duplicates found.' })); return }
+      for (const d of data) {
+        const keep = (winner, loser, title) => can('anime.merge')
+          ? U.el('button', { class: 'btn btn-sm', onclick: async () => {
+              if (!confirm(`Keep "${title}" and merge the other entry into it? This cannot be undone.`)) return
+              try { await YumeAPI.admin.catalogue.merge(winner, loser); U.toast('Merged'); reload() } catch (e) { U.toast(e.message, 'error') }
+            } }, [document.createTextNode('Keep this')])
+          : null
+        host.append(U.el('div', { class: 'dup-pair' }, [
+          U.el('div', { class: 'dup-side' }, [U.el('div', { class: 'dup-title', text: d.a_title }), keep(d.a_id, d.b_id, d.a_title)]),
+          U.el('div', { class: 'dup-meta', text: `${(Number(d.similarity) * 100).toFixed(0)}% · ${d.season_year ?? '—'} · ${d.format ?? '—'}` }),
+          U.el('div', { class: 'dup-side' }, [U.el('div', { class: 'dup-title', text: d.b_title }), keep(d.b_id, d.a_id, d.b_title)])
+        ]))
+      }
+    } catch (e) {
+      host.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+    }
   },
 
   async renderCatEpisodes (form, anime, can) {

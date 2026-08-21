@@ -54,6 +54,16 @@ window.Copy = {
     episodeShort: 'Ep '
   },
 
+  // quick search (Ctrl+K) and the search page
+  search: {
+    prompt: 'Type to search…',
+    empty: 'No results.',
+    failed: 'Search failed:',
+    placeholder: 'Search anime...',
+    catalogueBadge: 'catalogue',
+    matchedVia: 'matched'
+  },
+
   // site footer
   footer: {
     tagline: 'Track, discover and watch anime — your list, your profiles, your way.',

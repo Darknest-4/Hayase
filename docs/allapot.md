@@ -103,6 +103,37 @@ bővítmény‑rendszerrel.
 - [x] **Extension health** (🟢🟡🔴⚪) hiba‑telemetriából, dokumentált küszöbökkel
 - [x] Igazolva: **17 sandbox‑biztonsági eset** böngészőben, mind átment
 
+### Streaming 2.0 — forrás‑absztrakció (kész) — [`streaming.md`](./streaming.md)
+- [x] **Egységes `StreamResult`**: url, típus, minőség, hang, feliratok, headerek, lejárat, forrás, direct/proxy, metaadat — a lejátszó nem tudja, melyik bővítmény adta
+- [x] **Automatikus fallback**: hibás forrásnál a motor **magától továbblép** a következőre; a felhasználó csak akkor lát hibát, ha már mind elfogyott
+- [x] **Playability előre eldöntve**: magnet → „desktop kliens kell", HLS/DASH → csak natív támogatással vagy regisztrált handlerrel, ismeretlen séma kizárva
+- [x] **Rangsor**: játszható → forrás‑health → accuracy → minőség → seederek (a romló források maguktól hátracsúsznak)
+- [x] **Bedugható formátum‑handler** (`registerHandler`) — **0 média‑függőség**, hls.js később becsatolható
+- [x] **Feliratok** a StreamResultból `<track>`‑ként; **lejárt link** meg sem próbálva; hiba → extension‑telemetria
+- [x] A forrás‑választó **több URL‑t** fogad (soronként egyet), így a fallback kézi forrásokkal is működik
+- [x] Igazolva: 13 motor‑teszt + 8 valós watch‑oldal teszt (köztük „két halott forráson át a harmadik játszik")
+
+### Metadata engine + Search 2.0 (kész) — [`search.md`](./search.md)
+- [x] **Megszűnt a néma felülírás**: az AniList‑importőr eddig `coalesce`‑szal ráírt a kézzel javított címre/leírásra — most **minden automatikus írás a konfliktus‑feloldó rétegen megy át** (`server/src/lib/metadata.ts`)
+- [x] **Ember‑zár (`anime.locked_fields`)**: amit az admin a katalógus‑szerkesztőben ment, az **zárolódik**, és automatikus forrás soha nem írja felül; csak ember oldhatja fel („Release" gomb / `POST …/unlock`)
+- [x] **Forrás‑rangsor** (`anime.metadata_sources`): `manual` 100 > `anilist` 60 > `mal` 50 > `aod` 30 > `stub` 10 > ismeretlen 0 — alacsonyabb rangú forrás nem írja felül a magasabbat, de **saját mezőjét bármelyik frissítheti**
+- [x] **Semmi nem törlődik hiány miatt**: `null`/üres bejövő érték kihagyva; üres tárolt mezőt bárki kitölthet
+- [x] **Volatilis statisztika kivétel**: `popularity`/`average_score` mindig a legfrissebb (de az ember‑zár ott is tart)
+- [x] **Provenance a felületen**: a szerkesztőben látszik, melyik mezőt melyik forrás mikor írta, és mi van zárolva
+- [x] **Duplikátum‑felismerés**: azonos `(év, formátum)` bucketen belüli trigram‑hasonlóság; a már `anime_relations`‑szel összekötött párok kizárva (folytatás nem duplikátum) — **csak javasol**, a merge `anime.merge` joggal és megerősítéssel megy
+- [x] **Merge**: címek (a vesztes címei szinonimaként megmaradnak), szinonimák, műfajok, tag‑ek, relációk, külső id‑k és könyvtár‑bejegyzések átkerülnek (két profilnál a **nagyobb haladás** marad), majd a vesztes sor törlődik — visszavonhatatlan
+- [x] **Cím‑normalizálás**: ékezet/írásjel/névelő nélkül, évad‑jelölés és római számok egységesítve (`Fate/Zero 2nd Season` ≡ `Fate Zero Season II`)
+
+**Search 2.0:**
+- [x] **A keresés eddig nem nézte az `anime_titles`‑t** — a romaji/angol/natív cím láthatatlan volt: az „Attack on Titan" **nem talált semmit**, mert a sor `Shingeki no Kyojin`. Most **minden címforma** keresve van
+- [x] **Rétegelt rangsor** (hogyan talált, nem csak mennyire): pontos kanonikus cím 100 → pontos alternatív cím 90 → pontos szinonima 80 → prefix 70 → tartalmazás 60 → full‑text 40 → elgépelés‑tűrő trigram 20; holtversenyben hasonlóság, majd népszerűség
+- [x] Ezért ad a `one piece` **One Piece**‑et a *One Piece Film: Red* előtt — a régi egypontszámos rangsor ezt nem garantálta
+- [x] **Kombinálható szűrők**: műfaj, év, évad, formátum, státusz, nsfw + `sort` (relevance/popularity/score/newest/title); rejtett és nem listázott sor **soha** nem jön vissza; minden szűrőérték kötött paraméter
+- [x] **`/v1/anime/suggest`**: gyorskereső‑doboz (Ctrl+K) — a kliens a katalógust részesíti előnyben, és **AniList‑re esik vissza**, ha nincs backend vagy a találatnak még nincs `anilist_id`‑ja
+- [x] **Telemetria**: a `search_stats` végre íródik (eddig üres tábla volt) — a 0 találatos kérés a katalógus‑hiány riport; a suggest **nem** naplóz (billentyűnként futna); csak a szöveg + találatszám tárolódik, IP/user‑agent nem, profil‑id csak valódi UUID esetén, 3 hónap után partícióval törlődik
+- [x] **Nincs OpenSearch — szándékosan**: 25 672 sornál a Postgres `pg_trgm`+`tsvector` a 0017 indexekről ezredmásodpercben válaszol; az OpenSearch ~1 GB RAM‑ot és egy külön üzemeltetett JVM‑et kérne mérhető haszon nélkül (indoklás és a felülvizsgálat feltétele: `docs/search.md`)
+- [x] Igazolva: **32 új unit‑teszt** (16 metadata + 16 search) + élő végpont‑ellenőrzés + 7 böngésző‑teszt a gyorskeresőre
+
 ### #1 — DB library‑sync (kész)
 - [x] **Bejelentkezve a lokális könyvtár a fiókhoz szinkronizál** és eszközök közt követi a felhasználót
 - [x] **Push (lokál → DB):** minden könyvtár‑írás (`Store.saveEntry`/`setProgress`/`removeEntry`) tükröződik a DB‑be (státusz + epizód‑haladás), debounce‑olva
@@ -120,6 +151,7 @@ A felhasználó által kért sorrend (a #6 és #1 kész, ezek jönnek „folytas
 
 1. ~~**#1 — DB library‑sync**~~ ✅ **kész** (lásd fent)
    *Az alerting és a diagnosztika is elkészült — lásd a monitoring szakaszt.*
+   *A **Metadata engine (#7)** és a **Search 2.0 (#8)** is kész — lásd fent és [`search.md`](./search.md).*
 2. **#2 — Reviews** (értékelések): a `reviews`, `review_votes` táblák megvannak, UI+API hátra
 3. **#3 — Custom lists / Collections**: `custom_lists`, `custom_list_items`, `collections`, `collection_lists` táblák megvannak
 4. **#4 — Follows/Friendships + Forums/Clubs**: `follows`, `friendships`, `forums`, `clubs`, `topics`, `posts`, `club_members` táblák megvannak
@@ -132,7 +164,7 @@ A felhasználó által kért sorrend (a #6 és #1 kész, ezek jönnek „folytas
 
 ## 4. Adatbázis — teljes tábla‑leltár (107 tábla)
 
-Migrációk: `0001`…`0013` (a `db/migrations/`‑ben, filename szerint követve a `schema_migrations`‑ben).
+Migrációk: `0001`…`0017` (a `db/migrations/`‑ben, filename szerint követve a `schema_migrations`‑ben).
 
 ### Fiók & auth (`0001`)
 `users`, `user_settings`, `sessions`, `devices`, `oauth_identities`, `api_keys`, `security_logs`
@@ -245,13 +277,19 @@ előtt jár**. Hogy semmi ne tűnjön „halottnak", minden jog `status` mezőt 
 - **`planned`** — katalogizált és kiosztható, de a funkciója még nincs kész (#2–#5)
 
 A Roles admin UI **LIVE / planned** jelvényt és csoportonkénti „n live" számot mutat.
-Jelenleg **15 `active`, 372 `planned`**. Ahogy egy modul beköt egy jogot,
+Jelenleg **18 `active`, 369 `planned`**. Ahogy egy modul beköt egy jogot,
 a státusza `active`‑ra vált (a `0014` UPDATE‑listáját bővítve).
 
-**A 15 élő jog:** `anime.view/create/edit/delete`, `episode.create/edit/delete`,
-`admin.analytics.view`, `admin.users.manage`, `admin.webhooks.manage`,
-`community.moderate`, `community.post`, `roles.manage`, `settings.system`,
-`extensions.publish`.
+**A 18 élő jog:** `anime.view/create/edit/delete`, **`anime.merge`**,
+`episode.create/edit/delete`, `admin.analytics.view`, `admin.users.manage`,
+`admin.webhooks.manage`, `community.moderate`, `community.post`, `roles.manage`,
+`settings.system`, `extensions.publish`, `system.metrics.view`,
+`system.diagnostics.run`.
+
+> Egy jog **csak akkor** kap `active` státuszt, ha valóban van route, ami
+> kikényszeríti. A `mapping.verify` például szándékosan maradt `planned`:
+> a merge‑útvonal az `anime.merge`‑öt ellenőrzi, a `mapping.verify`‑ot semmi —
+> így a Roles admin nem állít valótlant.
 
 > Miért nem több? A személyes végpontokat (saját könyvtár, profilok, like,
 > jelentés‑küldés) **helytelen** lenne joghoz kötni — ott sima `authenticate`
@@ -276,7 +314,7 @@ a státusza `active`‑ra vált (a `0014` UPDATE‑listáját bővítve).
 | Közösség | `comments`, `comment_likes`, `reports`, `moderation_actions` | `reviews`, `review_votes`, `follows`, `friendships`, `clubs(+members)`, `forums`, `topics`, `chats` |
 | Gamifikáció | `profile_stats`, `xp_events`, `watch_stats_daily` | `achievements`, `badges`, `user_badges`, `profile_achievements` |
 | Bővítmények | `extensions`, `extension_versions/installs/developers/permissions` | `extension_reviews` |
-| Rendszer | `roles`, `permissions`, `role_permissions`, `user_roles`, `notifications`, `webhooks`, `jobs`, `feature_flags`, `site_settings`, `watch_together_rooms`, analitika‑particiók | — |
+| Rendszer | `roles`, `permissions`, `role_permissions`, `user_roles`, `notifications`, `webhooks`, `jobs`, `feature_flags`, `site_settings`, `watch_together_rooms`, `search_stats`, analitika‑particiók | — |
 
 \* Az AniSkip jelenleg a **külső** AniSkip API‑ból megy, nem a `skip_segments` tábláiból.
 

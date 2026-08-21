@@ -4,7 +4,8 @@
 // and, unlike the public /v1/anime routes, these see hidden entries so
 // operators can find and restore them.
 
-import { query, queryOne } from '../db.ts'
+import { query, queryOne, pool, transaction } from '../db.ts'
+import { findDuplicates, lockFields, mergeAnime, unlockFields, MANAGED_FIELDS } from '../lib/metadata.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
@@ -107,7 +108,8 @@ const routes: FastifyPluginAsync = async fastify => {
     const anime = await queryOne(
       `SELECT id, canonical_title, format, status, season, season_year, start_date, end_date,
               episode_count, episode_duration, age_rating, is_adult, synopsis, country,
-              source_material, visibility, popularity, average_score, created_at, updated_at
+              source_material, visibility, popularity, average_score,
+              locked_fields, metadata_sources, created_at, updated_at
        FROM anime WHERE id = $1`,
       [id]
     )
@@ -162,6 +164,11 @@ const routes: FastifyPluginAsync = async fastify => {
       upd.values
     )
     if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    // A human just set these values: lock them so the AniList importer and any
+    // other automatic source stop overwriting them on the next run.
+    await lockFields(pool, id, Object.keys(body))
+
     const action = Object.prototype.hasOwnProperty.call(body, 'visibility') ? `visibility → ${row.visibility}` : 'edited'
     void emitEvent('catalogue.changed', { action, title: row.canonical_title, by: request.user.username })
     return row
@@ -249,6 +256,81 @@ const routes: FastifyPluginAsync = async fastify => {
     const ep = await queryOne('DELETE FROM episodes WHERE id = $1 RETURNING number', [eid])
     if (!ep) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
     return reply.code(204).send()
+  })
+
+  // ---- metadata provenance: release a field back to the importers ----
+  fastify.post('/:id/unlock', {
+    preHandler: fastify.requirePermission('anime.edit'),
+    schema: {
+      params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } },
+      body: {
+        type: 'object',
+        required: ['fields'],
+        additionalProperties: false,
+        properties: {
+          fields: { type: 'array', maxItems: 40, items: { enum: [...MANAGED_FIELDS] } }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { fields } = request.body as { fields: string[] }
+    const exists = await queryOne('SELECT 1 FROM anime WHERE id = $1', [id])
+    if (!exists) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    await unlockFields(pool, id, fields)
+    const row = await queryOne('SELECT locked_fields FROM anime WHERE id = $1', [id])
+    return row
+  })
+
+  // ---- duplicate detection ----
+  // Read-only: it proposes pairs, a human confirms each merge.
+  fastify.get('/duplicates', {
+    preHandler: fastify.requirePermission('anime.merge'),
+    schema: {
+      querystring: {
+        type: 'object',
+        properties: {
+          threshold: { type: 'number', minimum: 0.5, maximum: 0.99, default: 0.86 },
+          limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 }
+        }
+      }
+    }
+  }, async request => {
+    const { threshold, limit } = request.query as { threshold?: number, limit?: number }
+    return { data: await findDuplicates(pool, { threshold, limit }) }
+  })
+
+  // ---- merge two entries ----
+  // Destructive and irreversible, so it is never automatic: the duplicate
+  // scan only suggests, an operator with anime.merge confirms.
+  fastify.post('/:id/merge', {
+    preHandler: fastify.requirePermission('anime.merge'),
+    schema: {
+      params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } },
+      body: {
+        type: 'object',
+        required: ['sourceId'],
+        additionalProperties: false,
+        properties: { sourceId: { type: 'string', format: 'uuid' } }
+      }
+    }
+  }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { sourceId } = request.body as { sourceId: string }
+    if (id === sourceId) {
+      return reply.code(400).send({ type: 'about:blank', title: 'Bad Request', status: 400, detail: 'Cannot merge an entry into itself' })
+    }
+    const both = await query<{ id: string, canonical_title: string }>(
+      'SELECT id, canonical_title FROM anime WHERE id = ANY($1::uuid[])', [[id, sourceId]])
+    if (both.length !== 2) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    await transaction(client => mergeAnime(client, id, sourceId))
+    const target = both.find(r => r.id === id)
+    const source = both.find(r => r.id === sourceId)
+    void emitEvent('catalogue.changed', {
+      action: `merged "${source?.canonical_title}" into`, title: target?.canonical_title, by: request.user.username
+    })
+    return { id, merged: sourceId }
   })
 }
 

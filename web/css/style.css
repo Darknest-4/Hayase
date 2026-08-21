@@ -2824,3 +2824,28 @@ svg.chart .chart-name { font-size: 12px; fill: var(--fg); dominant-baseline: mid
   .mon-diag-name { flex-basis: 7rem; }
   .mon-diag-row { flex-wrap: wrap; }
 }
+
+/* ---- catalogue: metadata provenance + duplicate scan ---- */
+.cat-provenance { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+.prov-table { margin-top: .6rem; display: flex; flex-direction: column; gap: .3rem; }
+.prov-row {
+  display: grid; grid-template-columns: 12rem 1fr auto auto; gap: .6rem; align-items: center;
+  padding: .35rem .6rem; border-radius: var(--radius-sm); background: var(--bg-raise);
+}
+.prov-field { font-size: var(--text-xs); color: var(--fg); }
+.prov-source { font-size: var(--text-xs); color: var(--fg-faint); }
+.prov-auto { font-size: var(--text-xs); color: var(--fg-faint); opacity: .7; }
+
+.dup-pair {
+  display: grid; grid-template-columns: 1fr auto 1fr; gap: .8rem; align-items: center;
+  padding: .7rem; margin-bottom: .5rem; border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.dup-side { display: flex; flex-direction: column; gap: .4rem; align-items: flex-start; }
+.dup-title { font-size: var(--text-sm); font-weight: 600; }
+.dup-meta { font-size: var(--text-xs); color: var(--fg-faint); text-align: center; white-space: nowrap; }
+
+@media (max-width: 720px) {
+  .prov-row { grid-template-columns: 1fr auto; }
+  .dup-pair { grid-template-columns: 1fr; }
+  .dup-meta { text-align: left; }
+}
