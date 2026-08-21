@@ -19,7 +19,14 @@ import { config } from '../config.ts'
  */
 const CSP = [
   "default-src 'self'",
-  "script-src 'self'",
+  // blob: is required by the extension sandbox: the worker imports the
+  // hash-verified package as a module from an in-memory blob, which is how the
+  // bytes that execute are exactly the bytes that were reviewed. It does not
+  // grant initial execution — creating a blob already requires running script —
+  // and no remote origin is allowed, so injected code still cannot be fetched.
+  "script-src 'self' blob:",
+  // the sandbox worker itself is a same-origin file; blob workers stay blocked
+  "worker-src 'self'",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: blob: https:",      // artwork comes from AniList/MAL CDNs

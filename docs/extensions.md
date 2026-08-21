@@ -6,6 +6,29 @@ model is inherited from Hayase (per-extension sandboxed workers, accuracy
 capping) and extended with a **store, signed versioned packages, declared
 permissions and a review pipeline**.
 
+## Implementation status
+
+The format and permission model described below are **implemented and
+enforced**. What is live today:
+
+| Piece | Status |
+|---|---|
+| Manifest v3 validation | ✅ enforced at publish (`lib/extension-manifest.ts`) |
+| Permissions derived from the manifest | ✅ the store never trusts a separate list |
+| Permission escalation detection | ✅ reported on every new version |
+| Web Worker sandbox | ✅ `web/js/extension-worker.js` + `extension-host.js` |
+| `net:fetch` host allowlist | ✅ enforced host-side, credentials omitted |
+| `storage:local` isolation | ✅ namespaced and size-capped |
+| Package integrity (sha256) | ✅ verified before execution |
+| Kill switch + `minAppVersion` | ✅ checked before load |
+| Call timeouts + worker teardown | ✅ 10s, wedged workers are replaced |
+| Result sanitising + accuracy cap | ✅ enforced in the worker |
+| Extension health classification | ✅ from failure telemetry |
+| Package upload to object storage | ⏳ the portal still sends a manifest + hash, not bytes |
+| Human review queue UI | ⏳ static checks run; the moderator screen is pending |
+| `create-yume-extension` scaffold / CLI | ⏳ not built |
+| Dev-mode side-loading with hot reload | ⏳ not built |
+
 ## Extension types
 
 | Type | Resolves | Entry points |
@@ -89,6 +112,46 @@ worker inside the extension host process):
   the app down;
 - workers are recycled on version updates (old worker released, new one
   spun up, seamless to the user).
+
+### What the sandbox actually enforces
+
+The worker strips every ambient capability before any extension code runs
+(`fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `importScripts`,
+`Worker`, `SharedWorker`, `indexedDB`, `caches`, `navigator`, `crypto`), so an
+extension has no way to reach the network or storage except through the host
+bridge. That is defence in depth — **the host re-checks every request** and is
+the boundary that actually matters:
+
+| Request | Host-side check |
+|---|---|
+| `yume.fetch(url)` | `net:fetch` declared; hostname is in the manifest allowlist (exact or subdomain); `http(s)` only; method in GET/POST; `credentials: 'omit'`, `referrerPolicy: 'no-referrer'`; identity headers stripped; 8s timeout; 2 MB response cap (streamed, aborted past the cap); only `content-type` returned |
+| `yume.storage.*` | `storage:local` declared; key namespaced `ext:{slug}:{key}`; 64 KB value cap |
+| any call | 10s timeout — a hung worker is **terminated and removed**, not left running |
+| results | array capped at 200, per-field clamping, unknown keys dropped, torrent hashes format-checked |
+
+**CSP trade-off.** The sandbox worker is a same-origin file (`worker-src 'self'`),
+but it imports the hash-verified package as a module from an in-memory blob, so
+`script-src` allows `blob:`. This is what makes the executed bytes exactly the
+reviewed bytes. It does not grant initial execution — creating a blob already
+requires running script — and no remote origin is allowed, so injected code
+still cannot be fetched from elsewhere.
+
+## Extension health
+
+The client reports failures (`error`, `load_failure`) and deliberately does not
+report successes: one event per extension call would dwarf every other table.
+Health is therefore **failures per active install per week**, a rate that stays
+comparable as an extension grows:
+
+| Badge | Rate | Meaning |
+|---|---|---|
+| 🟢 healthy | < 0.1 | under one failure per ten installs per week |
+| 🟡 unstable | < 0.5 | under one failure per two installs per week |
+| 🔴 broken | ≥ 0.5 | at or above one failure per two installs |
+| ⚪ unknown | no installs, no failures | too new to judge |
+
+A brand-new extension reports `unknown` rather than being flattered with a green
+badge. Health appears on the store list and detail responses.
 
 ## Store & lifecycle
 

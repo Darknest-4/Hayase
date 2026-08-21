@@ -291,6 +291,18 @@ const YumeAPI = {
 
   extension (slug) {
     return this._request('/v1/extensions/' + encodeURIComponent(slug))
+  },
+
+  /**
+   * Anonymous sandbox failure telemetry. Best-effort: a reporting failure must
+   * never surface to the user or break the extension flow that triggered it.
+   */
+  reportExtensionEvent (slug, event, detail = {}) {
+    return this._request(`/v1/extensions/${encodeURIComponent(slug)}/events`, {
+      method: 'POST',
+      auth: true,
+      body: { event, message: detail.message, versionId: detail.versionId, appVersion: detail.appVersion }
+    }).catch(() => {})
   }
 }
 

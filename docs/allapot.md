@@ -92,6 +92,17 @@ bővítmény‑rendszerrel.
 - [x] **Login timing‑enumeráció lezárva** (decoy‑hash, 1,5% eltérés)
 - [x] **CI helyreállítva**: typecheck + tesztek + migrációk + worker + build, `main` ágon
 
+### Extension 2.0 — sandbox & manifest (kész) — [`extensions.md`](./extensions.md)
+- [x] **Manifest v3 validáció** kikényszerítve publikáláskor; a **manifest az egyetlen igazságforrás** (a hívó külön permission‑listája megszűnt)
+- [x] **Jogosultság‑eszkaláció detektálás** minden új verziónál (új permission vagy bővített host‑lista)
+- [x] **Web Worker sandbox**: minden ambient képesség eltávolítva; a host **újraellenőriz** minden kérést
+- [x] **`net:fetch` host‑allowlist**, `credentials: omit`, identitás‑headerek szűrve, 2 MB / 8 s korlát
+- [x] **`storage:local` izolálva** (`ext:{slug}:{kulcs}`, 64 KB)
+- [x] **Integritás**: sha256 ellenőrzés futtatás előtt · **kill switch** · **minAppVersion** kompatibilitás
+- [x] **10 s hívás‑timeout**, beragadt worker leállítva; eredmények szanitálva, accuracy‑plafon a beolvasott mezők alapján
+- [x] **Extension health** (🟢🟡🔴⚪) hiba‑telemetriából, dokumentált küszöbökkel
+- [x] Igazolva: **17 sandbox‑biztonsági eset** böngészőben, mind átment
+
 ### #1 — DB library‑sync (kész)
 - [x] **Bejelentkezve a lokális könyvtár a fiókhoz szinkronizál** és eszközök közt követi a felhasználót
 - [x] **Push (lokál → DB):** minden könyvtár‑írás (`Store.saveEntry`/`setProgress`/`removeEntry`) tükröződik a DB‑be (státusz + epizód‑haladás), debounce‑olva
