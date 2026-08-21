@@ -1,4 +1,4 @@
-/* global window, document, U, C, YumeAPI */
+/* global window, document, U, C, YumeAPI, Charts */
 // Admin dashboard — overview analytics, user management and the
 // moderation queue. Only reachable with the right permissions; the
 // server enforces them regardless.
@@ -9,6 +9,7 @@ const PageAdmin = {
     { key: 'users',    label: 'Users',       sub: 'Accounts, suspensions & bans', perm: 'admin.users.manage', render: 'renderUsers', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
     { key: 'reports',  label: 'Reports',     sub: 'Moderation queue', perm: 'community.moderate', render: 'renderReports', icon: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>' },
     { key: 'catalogue', label: 'Catalogue', sub: 'Anime, episodes & visibility', perm: 'anime.view', render: 'renderCatalogue', icon: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>' },
+    { key: 'monitoring', label: 'Infrastructure', sub: 'VPS health & services', perm: 'system.metrics.view', render: 'renderMonitoring', icon: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>' },
     { key: 'roles',    label: 'Roles',       sub: 'Permissions & RBAC', perm: 'roles.manage', render: 'renderRoles', icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>' },
     { key: 'webhooks', label: 'Webhooks',    sub: 'Outbound integrations', perm: 'admin.webhooks.manage', render: 'renderWebhooks', icon: '<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>' },
     { key: 'config',   label: 'Site Config', sub: 'Feature flags & settings', perm: 'settings.system', render: 'renderConfig', icon: '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>' }
@@ -561,6 +562,166 @@ const PageAdmin = {
         U.toast(isNew ? 'Episode added' : 'Episode updated'); backdrop.remove(); onDone?.()
       } catch (e) { U.toast(e.message, 'error') }
     })
+  },
+
+  // ---- Infrastructure: VPS health & service status ----
+  LEVEL_DOT: { green: '🟢', yellow: '🟡', red: '🔴', not_configured: '⚪' },
+  LEVEL_WORD: { green: 'Healthy', yellow: 'Warning', red: 'Critical', not_configured: 'Not configured' },
+
+  fmtBytes (bytes) {
+    if (bytes === null || bytes === undefined) return '—'
+    const units = ['B', 'KB', 'MB', 'GB', 'TB']
+    let value = bytes; let unit = 0
+    while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++ }
+    return `${value.toFixed(value >= 100 || unit <= 1 ? 0 : 1)} ${units[unit]}`
+  },
+
+  fmtBps (bps) {
+    if (bps === null || bps === undefined) return '—'
+    if (bps >= 1e9) return (bps / 1e9).toFixed(2) + ' Gbps'
+    if (bps >= 1e6) return (bps / 1e6).toFixed(1) + ' Mbps'
+    if (bps >= 1e3) return (bps / 1e3).toFixed(0) + ' Kbps'
+    return Math.round(bps) + ' bps'
+  },
+
+  fmtUptime (seconds) {
+    if (!seconds) return '—'
+    const d = Math.floor(seconds / 86400)
+    const h = Math.floor((seconds % 86400) / 3600)
+    const m = Math.floor((seconds % 3600) / 60)
+    return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`
+  },
+
+  async renderMonitoring (content) {
+    const state = { history: {} }
+
+    const load = async () => {
+      // stop polling once the admin navigates to another section
+      if (!document.body.contains(content)) { clearInterval(state.timer); return }
+      let data
+      try {
+        data = await YumeAPI.admin.monitoring.current()
+      } catch (e) {
+        content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load monitoring: ' + e.message }))
+        return
+      }
+      this.paintMonitoring(content, data, state)
+    }
+
+    await load()
+    state.timer = setInterval(load, 30_000)
+  },
+
+  paintMonitoring (content, data, state) {
+    const m = data.metrics ?? {}
+    const value = key => m[key]?.value ?? null
+    const level = key => m[key]?.level ?? null
+    content.replaceChildren()
+
+    // ---- overall banner ----
+    const banner = U.el('div', { class: 'mon-banner mon-' + data.level }, [
+      U.el('span', { class: 'mon-banner-dot', text: this.LEVEL_DOT[data.level] ?? '⚪' }),
+      U.el('div', { style: 'flex-grow:1;' }, [
+        U.el('div', { class: 'mon-banner-title', text: this.LEVEL_WORD[data.level] ?? 'Unknown' }),
+        U.el('div', { class: 'mon-banner-sub', text: data.stale
+          ? 'No fresh samples — the monitor worker looks stopped. Values below may be out of date.'
+          : `Last collected ${data.collectedAt ? U.relTime(new Date(data.collectedAt)) : 'never'}` })
+      ])
+    ])
+    content.append(banner)
+
+    // ---- metric cards ----
+    const card = (label, big, sub, lvl) => U.el('div', { class: 'mon-card' + (lvl ? ' mon-' + lvl : '') }, [
+      U.el('div', { class: 'mon-card-head' }, [
+        U.el('span', { class: 'mon-card-label', text: label }),
+        lvl ? U.el('span', { class: 'mon-card-dot', text: this.LEVEL_DOT[lvl] }) : null
+      ]),
+      U.el('div', { class: 'mon-card-value', text: big }),
+      sub ? U.el('div', { class: 'mon-card-sub', text: sub }) : null
+    ])
+
+    const pct = v => v === null ? '—' : v.toFixed(1) + '%'
+    const ms = v => v === null ? '—' : Math.round(v) + ' ms'
+
+    const grid = U.el('div', { class: 'mon-grid' }, [
+      card('CPU', pct(value('cpu.usage_pct')),
+        `load ${(value('cpu.load1') ?? 0).toFixed(2)} · ${(value('cpu.load_per_core') ?? 0).toFixed(2)}/core`,
+        level('cpu.usage_pct')),
+      card('RAM', pct(value('mem.used_pct')),
+        `${this.fmtBytes(value('mem.used_bytes'))} / ${this.fmtBytes(value('mem.total_bytes'))}`,
+        level('mem.used_pct')),
+      card('Disk', pct(value('disk.used_pct')),
+        `${this.fmtBytes(value('disk.used_bytes'))} / ${this.fmtBytes(value('disk.total_bytes'))}`,
+        level('disk.used_pct')),
+      card('Swap', value('swap.used_pct') === null ? '—' : pct(value('swap.used_pct')),
+        value('swap.used_pct') === 0 ? 'none in use' : 'of configured swap', level('swap.used_pct')),
+      card('Network', this.fmtBps(value('net.rx_bps')),
+        `↓ ${this.fmtBps(value('net.rx_bps'))} · ↑ ${this.fmtBps(value('net.tx_bps'))}`, level('net.drop_pct')),
+      card('Net latency', ms(value('net.latency_ms')), 'TCP connect RTT', level('net.latency_ms')),
+      card('API latency', ms(value('api.latency_ms')), 'self-probe of /v1/health', level('api.latency_ms')),
+      card('DB latency', ms(value('db.latency_ms')), 'round-trip for SELECT 1', level('db.latency_ms')),
+      card('Disk I/O', this.fmtBps((value('disk.read_bps') ?? 0) + (value('disk.write_bps') ?? 0)),
+        `${Math.round(value('disk.iops') ?? 0)} IOPS · await ${ms(value('disk.await_ms'))}`, level('disk.await_ms')),
+      card('Queue', String(Math.round(value('queue.pending') ?? 0)),
+        `${Math.round(value('queue.dead') ?? 0)} dead letters`, level('queue.pending')),
+      card('Uptime', this.fmtUptime(value('host.uptime_sec')), 'since last host boot', null)
+    ])
+    content.append(grid)
+
+    // ---- services ----
+    content.append(U.el('h2', { class: 'detail-section-title', text: 'Services' }))
+    const services = U.el('div', { class: 'mon-services' })
+    for (const s of data.services ?? []) {
+      services.append(U.el('div', { class: 'mon-service mon-' + s.status }, [
+        U.el('span', { class: 'mon-service-dot', text: this.LEVEL_DOT[s.status] ?? '⚪' }),
+        U.el('div', { class: 'mon-service-main' }, [
+          U.el('div', { class: 'mon-service-name', text: s.service }),
+          U.el('div', { class: 'mon-service-sub', text: s.detail ?? this.LEVEL_WORD[s.status] ?? s.status })
+        ]),
+        U.el('span', { class: 'mon-service-latency', text: s.latency_ms === null || s.latency_ms === undefined ? '' : Math.round(s.latency_ms) + ' ms' })
+      ]))
+    }
+    content.append(services)
+
+    // ---- dependency map: what a red service actually breaks ----
+    content.append(U.el('h2', { class: 'detail-section-title', text: 'Dependencies' }))
+    const statusOf = Object.fromEntries((data.services ?? []).map(s => [s.service, s.status]))
+    const deps = U.el('div', { class: 'mon-deps' })
+    for (const d of data.dependencies ?? []) {
+      const st = statusOf[d.service] ?? 'not_configured'
+      deps.append(U.el('div', { class: 'mon-dep' }, [
+        U.el('div', { class: 'mon-dep-head' }, [
+          U.el('span', { text: this.LEVEL_DOT[st] ?? '⚪' }),
+          U.el('b', { text: d.service }),
+          U.el('span', { class: 'mon-dep-tag' + (d.required ? ' mon-dep-required' : ''), text: d.required ? 'required' : 'optional' })
+        ]),
+        U.el('ul', { class: 'mon-dep-list' }, d.provides.map(p => U.el('li', { text: p })))
+      ]))
+    }
+    content.append(deps)
+
+    // ---- history sparklines ----
+    content.append(U.el('h2', { class: 'detail-section-title', text: 'Last 24 hours' }))
+    const trends = U.el('div', { class: 'mon-trends' })
+    content.append(trends)
+    for (const [metric, label, max] of [['cpu.usage_pct', 'CPU %', 100], ['mem.used_pct', 'RAM %', 100], ['api.latency_ms', 'API latency (ms)', null], ['db.latency_ms', 'DB latency (ms)', null]]) {
+      const box = U.el('div', { class: 'mon-trend' }, [
+        U.el('div', { class: 'mon-trend-label', text: label }),
+        U.el('div', { class: 'spinner' })
+      ])
+      trends.append(box)
+      YumeAPI.admin.monitoring.history(metric, 24).then(res => {
+        const values = (res.points ?? []).map(p => p.value)
+        box.replaceChildren(
+          U.el('div', { class: 'mon-trend-label', text: label }),
+          values.length
+            ? Charts.sparkline(values, { label, max })
+            : U.el('div', { class: 'mon-trend-empty', text: 'no samples yet' })
+        )
+      }).catch(() => {
+        box.replaceChildren(U.el('div', { class: 'mon-trend-label', text: label }), U.el('div', { class: 'mon-trend-empty', text: 'unavailable' }))
+      })
+    }
   },
 
   async renderOverview (content) {

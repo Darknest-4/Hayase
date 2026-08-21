@@ -6,6 +6,7 @@ services:
   # the whole app (API + static web client) in one container
   app:
     build: .
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
@@ -16,6 +17,30 @@ services:
       HOST: 0.0.0.0
       CORS_ORIGINS: '*'
     ports: ['4000:4000']
+
+  # Background worker — REQUIRED in production. It creates next month's
+  # partitions and enforces retention (without it, inserts into the
+  # time-partitioned tables start failing once existing partitions run out),
+  # delivers webhooks, computes stats rollups and collects VPS metrics.
+  worker:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://yume:yume@postgres:5432/yume
+      # where the worker reaches the API to measure its response time
+      SELF_URL: http://app:4000
+      # Host filesystem for disk metrics. /proc is already the host's inside a
+      # container, but statfs('/') would measure the container overlay — so the
+      # host root is bind-mounted read-only, the same approach node-exporter uses.
+      DISK_PATH: /host
+      # MONITOR_INTERVAL_MS: '60000'      # collection cadence
+      # METRICS_RETENTION_DAYS: '7'       # raw sample retention
+    volumes:
+      - /:/host:ro
+    command: ['npm', 'run', 'worker']
 
   # one-shot catalogue seed (25k anime + episodes) into the persistent volume.
   # Run once: docker compose --profile seed run --rm seed

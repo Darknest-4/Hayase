@@ -25,6 +25,7 @@ import webhookRoutes from './routes/webhooks.ts'
 import { publicConfig, adminConfig } from './routes/config.ts'
 import roleRoutes from './routes/roles.ts'
 import catalogueRoutes from './routes/catalogue.ts'
+import { publicReadiness, adminMonitoring } from './routes/monitoring.ts'
 import reportRoutes from './routes/reports.ts'
 import extensionRoutes from './routes/extensions.ts'
 import libraryRoutes from './routes/library.ts'
@@ -69,6 +70,8 @@ export async function buildApp (): Promise<FastifyInstance> {
     }
   })
 
+  // Liveness: zero dependencies, always cheap — this is what Docker and load
+  // balancers poll. Dependency-aware readiness lives at /v1/health/ready.
   app.get('/v1/health', async () => ({ status: 'ok' }))
 
   await app.register(publicConfig, { prefix: '/v1/config' })
@@ -86,6 +89,8 @@ export async function buildApp (): Promise<FastifyInstance> {
   await app.register(webhookRoutes, { prefix: '/v1/admin/webhooks' })
   await app.register(roleRoutes, { prefix: '/v1/admin/roles' })
   await app.register(catalogueRoutes, { prefix: '/v1/admin/catalogue' })
+  await app.register(publicReadiness, { prefix: '/v1/health' })
+  await app.register(adminMonitoring, { prefix: '/v1/admin/monitoring' })
 
   // Serve the static web client from the same origin so the whole app runs as
   // one container/port (WEB_ROOT overrides; defaults to the repo's web/).

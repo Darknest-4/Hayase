@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Yume API gateway — Fastify REST/GraphQL service",
+  "description": "Yume API gateway \u2014 Fastify REST/GraphQL service",
   "scripts": {
     "dev": "node --watch --experimental-strip-types src/index.ts",
     "build": "tsc",
@@ -13,7 +13,8 @@
     "worker": "node --experimental-strip-types src/workers/index.ts",
     "worker:once": "node --experimental-strip-types src/workers/index.ts --once",
     "seed": "node --experimental-strip-types scripts/seed.ts",
-    "import:anilist": "node --experimental-strip-types scripts/import-anilist.ts"
+    "import:anilist": "node --experimental-strip-types scripts/import-anilist.ts",
+    "test": "node --experimental-strip-types --test test/*.test.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",

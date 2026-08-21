@@ -49,6 +49,30 @@ const Charts = {
     return this._svg(W, H, children, label)
   },
 
+  // compact sparkline for a metric's recent history: data = [numbers]
+  // Scaled to its own min/max so small variations stay visible; when a
+  // ceiling is known (percentages) pass max to keep the scale honest.
+  sparkline (values, { label = 'Trend', accent = 'var(--accent)', max = null, height = 44 } = {}) {
+    const W = 240; const H = height; const pad = 3
+    if (!values.length) return this._svg(W, H, [], label)
+    const hi = max ?? Math.max(...values)
+    const lo = max != null ? 0 : Math.min(...values)
+    const span = hi - lo || 1
+    const step = values.length > 1 ? (W - pad * 2) / (values.length - 1) : 0
+    const y = v => H - pad - ((v - lo) / span) * (H - pad * 2)
+    const points = values.map((v, i) => `${(pad + i * step).toFixed(1)},${y(v).toFixed(1)}`).join(' ')
+
+    const area = this._el('polygon', {
+      points: `${pad},${H - pad} ${points} ${(pad + (values.length - 1) * step).toFixed(1)},${H - pad}`,
+      fill: accent, opacity: '0.14'
+    })
+    const line = this._el('polyline', {
+      points, fill: 'none', stroke: accent, 'stroke-width': '2',
+      'stroke-linejoin': 'round', 'stroke-linecap': 'round'
+    })
+    return this._svg(W, H, [area, line], label)
+  },
+
   // horizontal ranked bars: data = [{label, value, display}]
   ranked (data, { label = 'Ranking', accent = 'var(--accent)' } = {}) {
     const rowH = 30; const W = 640; const H = data.length * rowH + 10; const labelW = 150

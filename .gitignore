@@ -24,3 +24,4 @@ vite.config.ts.timestamp-*
 *.mkv
 *.webm
 *src/routes/test/**
+dist/

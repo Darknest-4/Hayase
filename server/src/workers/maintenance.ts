@@ -15,7 +15,10 @@ const PARTITIONED = [
   { table: 'search_stats', column: 'created_at', retentionMonths: 3 },
   { table: 'performance_metrics', column: 'created_at', retentionMonths: 3 },
   { table: 'audit_logs', column: 'created_at', retentionMonths: null },
-  { table: 'error_logs', column: 'created_at', retentionMonths: 1 }
+  { table: 'error_logs', column: 'created_at', retentionMonths: 1 },
+  // raw VPS samples: the monitor worker prunes rows at day granularity;
+  // dropping month-old partitions is the backstop if it stops running
+  { table: 'system_metrics', column: 'created_at', retentionMonths: 1 }
 ] as const
 
 function monthStart (offsetMonths: number): Date {

@@ -2731,3 +2731,63 @@ svg.chart .chart-name { font-size: 12px; fill: var(--fg); dominant-baseline: mid
   font-size: .9rem; flex-shrink: 0;
 }
 .profile-menu-sep { height: 1px; background: var(--border); margin: var(--space-2) 0; }
+
+/* ===== admin: infrastructure monitoring ===== */
+
+.mon-banner {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-lg);
+  border: 1px solid var(--border); background: var(--bg-raised);
+  margin-bottom: var(--space-4);
+}
+.mon-banner-dot { font-size: 1.4rem; line-height: 1; }
+.mon-banner-title { font-weight: var(--weight-bold); font-size: var(--text-base); }
+.mon-banner-sub { font-size: var(--text-xs); color: var(--fg-faint); margin-top: .1rem; }
+.mon-banner.mon-green { border-color: color-mix(in oklab, var(--green-500, #22c55e) 45%, transparent); }
+.mon-banner.mon-yellow { border-color: color-mix(in oklab, var(--amber-500, #f59e0b) 50%, transparent); background: color-mix(in oklab, var(--amber-500, #f59e0b) 8%, var(--bg-raised)); }
+.mon-banner.mon-red { border-color: color-mix(in oklab, var(--danger) 55%, transparent); background: color-mix(in oklab, var(--danger) 8%, var(--bg-raised)); }
+
+.mon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: var(--space-3); }
+.mon-card {
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  background: var(--bg-raised); padding: var(--space-3);
+  border-left-width: 3px; border-left-color: var(--border);
+}
+.mon-card.mon-green { border-left-color: var(--green-500, #22c55e); }
+.mon-card.mon-yellow { border-left-color: var(--amber-500, #f59e0b); }
+.mon-card.mon-red { border-left-color: var(--danger); }
+.mon-card-head { display: flex; align-items: center; justify-content: space-between; gap: .4rem; }
+.mon-card-label { font-size: .65rem; text-transform: uppercase; letter-spacing: .06em; color: var(--fg-faint); font-weight: var(--weight-bold); }
+.mon-card-dot { font-size: .7rem; }
+.mon-card-value { font-size: 1.5rem; font-weight: var(--weight-extrabold); margin-top: .35rem; line-height: 1.1; }
+.mon-card-sub { font-size: var(--text-xs); color: var(--fg-faint); margin-top: .2rem; }
+
+.mon-services { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .5rem; }
+.mon-service {
+  display: flex; align-items: center; gap: .6rem; padding: .55rem .7rem;
+  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-raised);
+}
+.mon-service.mon-not_configured { opacity: .6; }
+.mon-service-main { flex-grow: 1; min-width: 0; }
+.mon-service-name { font-weight: var(--weight-semibold); font-size: var(--text-sm); text-transform: capitalize; }
+.mon-service-sub { font-size: var(--text-xs); color: var(--fg-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mon-service-latency { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-muted); }
+
+.mon-deps { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: .6rem; }
+.mon-dep { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-raised); padding: .6rem .75rem; }
+.mon-dep-head { display: flex; align-items: center; gap: .45rem; font-size: var(--text-sm); text-transform: capitalize; }
+.mon-dep-tag { margin-left: auto; font-size: .55rem; text-transform: uppercase; letter-spacing: .05em; padding: .1rem .35rem; border-radius: var(--radius-sm); background: color-mix(in oklab, var(--fg-faint) 14%, transparent); color: var(--fg-faint); }
+.mon-dep-tag.mon-dep-required { background: color-mix(in oklab, var(--accent) 16%, transparent); color: var(--accent); }
+.mon-dep-list { margin: .4rem 0 0; padding-left: 1.1rem; font-size: var(--text-xs); color: var(--fg-faint); }
+.mon-dep-list li { margin: .1rem 0; }
+
+.mon-trends { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: .75rem; }
+.mon-trend { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-raised); padding: .6rem .7rem; }
+.mon-trend-label { font-size: var(--text-xs); color: var(--fg-faint); margin-bottom: .3rem; }
+.mon-trend .chart { width: 100%; height: auto; }
+.mon-trend-empty { font-size: var(--text-xs); color: var(--fg-faint); padding: .8rem 0; }
+
+@media (max-width: 700px) {
+  .mon-grid { grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); }
+  .mon-card-value { font-size: 1.25rem; }
+}

@@ -4,7 +4,7 @@
 
 import { pool, query, queryOne } from '../db.ts'
 
-export type QueueName = 'stats' | 'notify' | 'maintenance' | 'import' | 'search-index' | 'ext-review' | 'webhook'
+export type QueueName = 'stats' | 'notify' | 'maintenance' | 'import' | 'search-index' | 'ext-review' | 'webhook' | 'monitor'
 
 export interface Job {
   id: string
