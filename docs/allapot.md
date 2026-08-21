@@ -156,13 +156,26 @@ A felhasználó által kért sorrend (a #6 és #1 kész, ezek jönnek „folytas
 3. **#3 — Custom lists / Collections**: `custom_lists`, `custom_list_items`, `collections`, `collection_lists` táblák megvannak
 4. **#4 — Follows/Friendships + Forums/Clubs**: `follows`, `friendships`, `forums`, `clubs`, `topics`, `posts`, `club_members` táblák megvannak
 5. **#5 — AI Center / Marketplace / Plugin API**: `ai` jogosultság‑csoport (16) megvan, funkció hátra
-6. **Discord bot** — **terv kész, kód még nincs**: [`discord-bot.md`](./discord-bot.md).
-   Lényeg: a bejelentések fele **már megvan** a webhook‑rendszerben (Discord‑embed
-   rendereléssel), a parancs‑rész pedig **HTTP interactions**‑szel, **0 új
-   függőséggel** megépíthető — a Node 22 natívan ellenőrzi a Discord Ed25519
-   aláírását (leellenőrizve). Nem kell `discord.js` és nem kell gateway‑folyamat
-   a VPS‑en. A `/link` az `oauth_identities`‑re ül (a `'discord'` provider már
-   engedélyezett a sémában), tehát **nem lesz második auth‑rendszer**.
+6. **Discord bot (gateway)** — **terv kész, kód még nincs**: [`discord-bot.md`](./discord-bot.md).
+   Saját **`bot/`** mappa, **saját `package.json`** (a `discord.js` így soha nem
+   kerül a szerver függőségei közé), saját `Dockerfile` és **külön compose‑service**,
+   tehát a Docker indítja a többivel együtt.
+   **A bot soha nem nyúl közvetlenül a Postgreshez** — mindent a meglévő API‑n
+   keresztül ír, így megmarad a validáció, az RBAC, a láthatóság és a rate limit.
+   A fiók‑összekötés az `oauth_identities`‑re ül (`'discord'` provider már engedélyezett),
+   és **nem lesz második auth‑rendszer**: egy service‑kredencilállal a bot rövid életű
+   (5 perces) sima access tokent kér a linkelt userre, onnantól közönséges API‑kliens.
+   A Yume → bot irány a **meglévő webhook‑rendszert** használja (retry, delivery‑log,
+   auto‑tiltás már megvan).
+   Funkciók: katalógus‑parancsok autocomplete‑tel (a `/v1/anime/suggest`‑re ül),
+   személyes könyvtár‑parancsok, XP/achievement (`profile_stats`, `xp_events`),
+   adás‑értesítés + automatikus epizód‑topik, rang‑szinkron, üdvözlés, reaction‑role,
+   **Watch Together ↔ Discord hangcsatorna összekötés**, link‑unfurling, és
+   moderációs híd gombokkal.
+   Egy új backend‑darab kell hozzá: **ma semmi nem veszi észre, hogy egy epizód adásba került**
+   → új `episode.aired` esemény (ez az in‑app értesítéseknek is kelleni fog).
+   ⚠️ Két **privileged intent** (`MessageContent`, `GuildMembers`) 100 szerver fölött
+   Discord‑jóváhagyást igényel — az érintett funkciók külön kapcsolhatók.
 
 > Megjegyzés: sok jövőbeli funkció **sémája már létezik** (a táblák seedeltek/migrálva),
 > csak az API‑végpont és a kliens‑UI hiányzik — ezért gyors lesz ráépíteni.
