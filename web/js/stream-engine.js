@@ -264,8 +264,21 @@ const StreamEngine = {
 
       this._applySubtitles(video, candidate)
       try {
-        if (handler) detach = handler(video, candidate)
-        else { video.src = candidate.url; video.load() }
+        if (handler) {
+          // A handler may be async — the HLS one has to fetch its player
+          // before it can attach anything. Either way the detach function is
+          // captured, and a rejection fails this candidate so the engine
+          // moves on to the next instead of stalling on a dead source.
+          const attached = handler(video, candidate)
+          if (attached && typeof attached.then === 'function') {
+            attached.then(
+              teardown => { detach = typeof teardown === 'function' ? teardown : null },
+              error => fail(String(error?.message ?? error))
+            )
+          } else if (typeof attached === 'function') {
+            detach = attached
+          }
+        } else { video.src = candidate.url; video.load() }
       } catch (error) {
         fail(String(error?.message ?? error))
       }

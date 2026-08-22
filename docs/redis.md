@@ -45,3 +45,36 @@ Order of work when it comes:
 Until then, `REDIS_URL` being set does exactly one thing: it turns on the
 health probe in `lib/probes.ts`. Unset, that probe reports `not_configured`
 rather than raising a false alarm.
+
+---
+
+# RabbitMQ — removed
+
+`docker-compose.yml` also carried a RabbitMQ service. It has been **removed**,
+by the same standard applied to OpenSearch and Redis: infrastructure earns its
+place by solving a problem that exists now.
+
+The job queue runs on Postgres (`jobs`, `FOR UPDATE SKIP LOCKED`) with retries,
+exponential backoff, dedupe keys, lease heartbeats, per-handler timeouts,
+concurrent lanes and dead-letter handling. At Yume's volume that is not a
+compromise — it is fewer moving parts, one backup that covers the queue too,
+and transactional enqueue alongside the write that caused it, which a separate
+broker cannot give you without an outbox.
+
+A broker becomes the right answer at a throughput where polling Postgres is the
+bottleneck, or when jobs must fan out to consumers written in other languages.
+Neither is true, and if either becomes true the queue's public surface
+(`enqueue`, `runWorker`) is small enough to swap behind.
+
+---
+
+# MinIO — removed
+
+Carried in compose for extension package storage, which is now
+[content-addressed on the filesystem](./extensions.md). Packages are small,
+immutable and few; a volume backs up with everything else, and the store goes
+through one module (`server/src/lib/package-store.ts`) whose four functions an
+object-storage backend can replace without touching a call site.
+
+Reach for object storage when packages outgrow a single host's disk, or when
+more than one app instance must serve them — the same trigger as Redis.

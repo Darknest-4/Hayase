@@ -10,6 +10,8 @@ import fastifyStatic from '@fastify/static'
 import mercurius from 'mercurius'
 import Fastify from 'fastify'
 
+import { randomUUID } from 'node:crypto'
+
 import { config } from './config.ts'
 import { recordError } from './lib/errors.ts'
 import { schema, resolvers, loaders } from './graphql/schema.ts'
@@ -37,6 +39,11 @@ import type { FastifyError, FastifyInstance } from 'fastify'
 export async function buildApp (): Promise<FastifyInstance> {
   const app = Fastify({
     logger: { level: config.isProd ? 'info' : 'debug' },
+    // A stable id per request, echoed back on every response. Without it a
+    // user reporting "it failed at 14:03" cannot be tied to a log line, and a
+    // 500 gives them nothing to quote.
+    genReqId: (req) => (req.headers['x-request-id'] as string | undefined)?.slice(0, 64) ?? randomUUID(),
+    requestIdHeader: 'x-request-id',
     // Never a blanket true — see config.trustProxy for why that made the rate
     // limiter bypassable with a single header.
     trustProxy: config.trustProxy,
@@ -127,6 +134,11 @@ export async function buildApp (): Promise<FastifyInstance> {
   }
 
   // RFC 9457 problem+json for unhandled errors
+  app.addHook('onSend', async (request, reply, payload) => {
+    reply.header('X-Request-Id', request.id)
+    return payload
+  })
+
   app.setErrorHandler((error: FastifyError, request, reply) => {
     const status = error.statusCode ?? 500
     if (status >= 500) {
@@ -145,7 +157,10 @@ export async function buildApp (): Promise<FastifyInstance> {
       type: 'about:blank',
       title: status >= 500 ? 'Internal Server Error' : error.message,
       status,
-      detail: status >= 500 ? undefined : error.message
+      // A 5xx body must not leak internals, but it can carry the id that ties
+      // the report to the log line and the recorded error group.
+      detail: status >= 500 ? `Request ${request.id} failed — quote this id when reporting it` : error.message,
+      instance: request.id
     })
   })
 

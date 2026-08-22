@@ -66,6 +66,15 @@ jobs:
         env:
           DATABASE_URL: postgres://yume:yume@localhost:5432/yume
 
+      # These send real HTTP requests at the assembled application. Without
+      # them a commit that left every admin route unauthenticated would still
+      # go green, because nothing else in this pipeline exercises a route.
+      - name: Integration tests (routes, auth gates, rate limiting)
+        run: npm run test:integration
+        env:
+          DATABASE_URL: postgres://yume:yume@localhost:5432/yume
+          JWT_SECRET: ci-secret-not-used-for-anything-real-0123456789
+
       - name: Worker drains end to end
         run: npm run worker:once
         env:

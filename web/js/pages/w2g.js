@@ -22,12 +22,12 @@ const PageW2G = {
     if (this.room === code && this.socket?.readyState === WebSocket.OPEN) return
     this.disconnect()
 
-    const tokens = YumeAPI._tokens()
-    if (!tokens) throw new Error('Sign in to your Yume account first')
+    if (!YumeAPI._tokens()) throw new Error('Sign in to your Yume account first')
 
-    const base = YumeAPI.base().replace(/^http/, 'ws')
+    // A single-use ticket, not the access token: a WebSocket URL ends up in
+    // proxy logs and browser history, which is no place for a live credential.
+    const ws = await YumeAPI.openSocket()
     await new Promise((resolve, reject) => {
-      const ws = new WebSocket(`${base}/ws?token=${tokens.accessToken}`)
       ws.onopen = () => {
         ws.send(JSON.stringify({ type: 'join', channel: `w2g:${code}` }))
       }

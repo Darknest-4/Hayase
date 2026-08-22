@@ -22,6 +22,7 @@ const sha256 = (value: string): string => createHash('sha256').update(value).dig
 const DECOY_HASH = await hashPassword(randomBytes(32).toString('base64url'))
 
 interface UserRow {
+  token_version?: number
   id: string
   username: string
   password_hash: string | null
@@ -38,7 +39,7 @@ const credentialsSchema = {
 } as const
 
 const routes: FastifyPluginAsync = async fastify => {
-  async function issueTokens (user: { id: string, username: string }, ip?: string, userAgent?: string) {
+  async function issueTokens (user: { id: string, username: string, token_version?: number }, ip?: string, userAgent?: string) {
     const refreshToken = randomBytes(32).toString('base64url')
     const expiresAt = new Date(Date.now() + config.refreshTokenTtlDays * 86_400_000)
 
@@ -47,7 +48,11 @@ const routes: FastifyPluginAsync = async fastify => {
       [user.id, sha256(refreshToken), ip ?? null, userAgent ?? null, expiresAt]
     )
 
-    const accessToken = fastify.jwt.sign({ sub: user.id, username: user.username })
+    // The version travels in the token so revocation needs no blocklist:
+    // bumping users.token_version invalidates every outstanding one at once.
+    const version = user.token_version ?? (await queryOne<{ token_version: number }>(
+      'SELECT token_version FROM users WHERE id = $1', [user.id]))?.token_version ?? 0
+    const accessToken = fastify.jwt.sign({ sub: user.id, username: user.username, tv: version })
     return { accessToken, refreshToken, expiresAt: expiresAt.toISOString() }
   }
 
@@ -105,7 +110,7 @@ const routes: FastifyPluginAsync = async fastify => {
     const { identifier, password } = request.body as { identifier: string, password: string }
 
     const user = await queryOne<UserRow>(
-      'SELECT id, username, password_hash, status FROM users WHERE (email = $1 OR username = $1) AND deleted_at IS NULL',
+      'SELECT id, username, password_hash, status, token_version FROM users WHERE (email = $1 OR username = $1) AND deleted_at IS NULL',
       [identifier]
     )
 
@@ -174,6 +179,24 @@ const routes: FastifyPluginAsync = async fastify => {
       await query('UPDATE sessions SET revoked_at = now() WHERE refresh_hash = $1 AND user_id = $2', [sha256(refreshToken), request.user.sub])
     }
     return reply.code(204).send()
+  })
+
+  /**
+   * Exchange the access token for a single-use WebSocket ticket.
+   *
+   * The socket used to be opened as /ws?token=<access token>, which wrote a
+   * live credential into every reverse-proxy access log and the browser's
+   * history. A ticket is worth nothing once used, expires in under a minute,
+   * and is the only thing that ends up in those logs.
+   */
+  fastify.post('/ws-ticket', { preHandler: fastify.authenticate }, async request => {
+    const ticket = randomBytes(32).toString('base64url')
+    const expiresAt = new Date(Date.now() + 30_000)
+    await query(
+      'INSERT INTO ws_tickets (ticket, user_id, expires_at) VALUES ($1, $2, $3)',
+      [sha256(ticket), request.user.sub, expiresAt]
+    )
+    return { ticket, expiresAt: expiresAt.toISOString() }
   })
 }
 

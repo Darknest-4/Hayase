@@ -6,6 +6,8 @@
 // The hub is in-process; publish() is the single seam where a Redis
 // pub/sub adapter slots in for multi-instance deployments.
 
+import { createHash } from 'node:crypto'
+
 import websocket from '@fastify/websocket'
 import fp from 'fastify-plugin'
 
@@ -27,6 +29,8 @@ interface Client {
   /** Consecutive refusals; enough of them close the socket. */
   strikes: number
 }
+
+const sha256 = (value: string): string => createHash('sha256').update(value).digest('hex')
 
 const channels = new Map<string, Set<Client>>()
 const clients = new Set<Client>()
@@ -220,15 +224,25 @@ export default fp(async (app: FastifyInstance) => {
   app.addHook('onClose', async () => clearInterval(sweep))
 
   app.get('/ws', { websocket: true }, (socket, req) => {
-    // auth: ?token=<access JWT>
-    let payload: { sub: string, username: string }
-    try {
-      const token = (req.query as { token?: string }).token ?? ''
-      payload = app.jwt.verify(token)
-    } catch {
-      socket.close(4401, 'unauthorized')
-      return
-    }
+    // Auth by single-use ticket (?ticket=…), obtained from POST /v1/auth/ws-ticket.
+    // The access token itself is deliberately NOT accepted here: a browser
+    // cannot set headers on a WebSocket handshake, so anything in the URL ends
+    // up in proxy logs and history — which a 15-minute credential must not.
+    void (async () => {
+      let payload: { sub: string, username: string, tv?: number }
+      const ticket = (req.query as { ticket?: string }).ticket ?? ''
+      if (!ticket) { socket.close(4401, 'unauthorized'); return }
+
+      const row = await queryOne<{ user_id: string, username: string, token_version: number }>(
+        `UPDATE ws_tickets t SET used_at = now()
+           FROM users u
+          WHERE t.ticket = $1 AND t.used_at IS NULL AND t.expires_at > now()
+            AND u.id = t.user_id AND u.status = 'active' AND u.deleted_at IS NULL
+        RETURNING t.user_id, u.username, u.token_version`,
+        [sha256(ticket)]
+      )
+      if (!row) { socket.close(4401, 'unauthorized'); return }
+      payload = { sub: row.user_id, username: row.username, tv: row.token_version }
 
     const client: Client = {
       socket,
@@ -263,12 +277,16 @@ export default fp(async (app: FastifyInstance) => {
       })
     })
 
-    socket.on('close', () => {
-      clients.delete(client)
-      for (const channel of [...client.channels]) {
-        unsubscribe(client, channel)
-        if (channel.startsWith('w2g:')) publish(channel, { type: 'presence', count: presence(channel), left: client.username })
-      }
+      socket.on('close', () => {
+        clients.delete(client)
+        for (const channel of [...client.channels]) {
+          unsubscribe(client, channel)
+          if (channel.startsWith('w2g:')) publish(channel, { type: 'presence', count: presence(channel), left: client.username })
+        }
+      })
+    })().catch(err => {
+      app.log.error(err, 'ws handshake failed')
+      socket.close(4401, 'unauthorized')
     })
   })
 })

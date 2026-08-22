@@ -76,6 +76,10 @@ export async function pruneExpired (): Promise<string[]> {
 }
 
 export async function handleMaintenanceJob (_job: Job): Promise<void> {
+  // Spent and expired handshake tickets. Short-lived by design, so this only
+  // stops the table growing without bound.
+  await query('DELETE FROM ws_tickets WHERE expires_at < now() - interval \'1 hour\'')
+
   await ensurePartitions()
   await pruneExpired()
   await pruneDoneJobs()

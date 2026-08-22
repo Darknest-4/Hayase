@@ -1,6 +1,6 @@
 # Yume — full stack via Docker.
 # Usage: docker compose up            (starts the app + Postgres)
-#        docker compose --profile infra up -d   (also redis/opensearch/minio/rabbitmq)
+#        docker compose --profile infra up -d   (optional redis/opensearch/minio)
 # The app container serves BOTH the API and the web client on http://localhost:4000
 services:
   # the whole app (API + static web client) in one container
@@ -11,7 +11,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:-yume}@postgres:5432/yume
+      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/yume
       # Required. The app refuses to boot in production with a placeholder or a
       # secret under 32 chars. Put it in a .env file next to this compose file:
       #   JWT_SECRET=$(openssl rand -base64 48)
@@ -54,7 +54,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:-yume}@postgres:5432/yume
+      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/yume
       # the worker loads the same config module, which validates this at import
       JWT_SECRET: '${JWT_SECRET:?set JWT_SECRET in .env — generate one with `openssl rand -base64 48`}'
       # where the worker reaches the API to measure its response time
@@ -90,7 +90,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:-yume}@postgres:5432/yume
+      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/yume
       # SEED_URL: <override the dump source, or mount a file and pass its path>
     command: ['sh', '-c', 'node --experimental-strip-types src/lib/migrate.ts && node --experimental-strip-types scripts/seed.ts']
 
@@ -105,7 +105,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:-yume}@postgres:5432/yume
+      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/yume
       # AL_DELAY_MS: '2000'   # pacing between AniList batches of 50
     command: ['npm', 'run', 'import:anilist']
 
@@ -143,7 +143,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:-yume}@postgres:5432/yume
+      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/yume
       BACKUP_DIR: /backups
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
       BACKUP_AT_HOUR: ${BACKUP_AT_HOUR:-3}
@@ -157,8 +157,9 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: yume
-      # Change this for a real deployment: POSTGRES_PASSWORD=... in .env
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-yume}
+      # No default: a database password that falls back to a value published
+      # in this file is not a password. Put it in .env next to JWT_SECRET.
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env — generate one with `openssl rand -base64 32`}'
       POSTGRES_DB: yume
     # NOT published to the host: every service reaches Postgres over the compose
     # network as `postgres:5432`. Publishing it would expose the database on the
@@ -170,8 +171,11 @@ services:
       test: ['CMD-SHELL', 'pg_isready -U yume']
       interval: 5s
 
-  # optional infra for future scale-out — off by default, start with:
-  #   docker compose --profile infra up -d
+  # Redis is the one optional service still here, because it has a job waiting
+  # for it: sharing the WebSocket hub and the permission cache once a second
+  # app instance exists. Off by default until that day — see docs/redis.md.
+  # OpenSearch, MinIO and RabbitMQ were removed: search runs on Postgres,
+  # extension packages on the filesystem, and the job queue on Postgres.
   redis:
     image: redis:7-alpine
     profiles: ['infra']
@@ -179,32 +183,7 @@ services:
     ports: ['6379:6379']
     volumes: ['redisdata:/data']
 
-  opensearch:
-    image: opensearchproject/opensearch:2
-    profiles: ['infra']
-    environment:
-      discovery.type: single-node
-      plugins.security.disabled: 'true'
-      OPENSEARCH_INITIAL_ADMIN_PASSWORD: 'Dev-only-password-1!'
-      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
-    ports: ['9200:9200']
-    volumes: ['osdata:/usr/share/opensearch/data']
 
-  minio:
-    image: minio/minio
-    profiles: ['infra']
-    command: server /data --console-address ':9001'
-    environment:
-      MINIO_ROOT_USER: yume
-      MINIO_ROOT_PASSWORD: yume-dev-secret
-    ports: ['9000:9000', '9001:9001']
-    volumes: ['miniodata:/data']
-
-  rabbitmq:
-    image: rabbitmq:3-management-alpine
-    profiles: ['infra']
-    ports: ['5672:5672', '15672:15672']
-    volumes: ['rabbitdata:/var/lib/rabbitmq']
 
 volumes:
   pgdata:
@@ -213,6 +192,3 @@ volumes:
   caddydata:
   caddyconfig:
   redisdata:
-  osdata:
-  miniodata:
-  rabbitdata:

@@ -11,6 +11,7 @@
 // applies those decisions to the database and emits webhooks.
 
 import { query } from '../db.ts'
+import { enqueue } from './queue.ts'
 import { emitEvent } from './webhooks.ts'
 
 export type Severity = 'warning' | 'critical'
@@ -110,6 +111,37 @@ const openAlerts = async (): Promise<Map<string, AlertRow>> => {
  * Apply one cycle of readings: update alert state and emit notifications.
  * Returns what changed, which the worker logs and the tests assert on.
  */
+/**
+ * In-app fallback for a firing alert.
+ *
+ * Alerts only ever left the system through a webhook, so an install with none
+ * configured — or one whose webhook auto-disabled after 20 consecutive
+ * failures — lost critical alerts silently. This writes to the inbox of
+ * everyone who can see metrics, which needs no configuration to work.
+ *
+ * Best effort: an alert that cannot be delivered must never break the
+ * monitoring cycle that produced it.
+ */
+async function notifyOperators (reading: Reading): Promise<void> {
+  const operators = await query<{ user_id: string }>(
+    `SELECT DISTINCT ur.user_id
+       FROM user_roles ur
+       JOIN role_permissions rp ON rp.role_id = ur.role_id
+       JOIN permissions p ON p.id = rp.permission_id
+       JOIN users u ON u.id = ur.user_id
+      WHERE p.slug = 'system.metrics.view' AND u.status = 'active' AND u.deleted_at IS NULL`
+  )
+  for (const operator of operators) {
+    await enqueue('notify', {
+      userId: operator.user_id,
+      type: 'monitor.alert',
+      data: { subject: reading.subject, severity: reading.severity ?? 'unknown', value: reading.value ?? reading.detail ?? null },
+      // one inbox entry per operator per subject, not one per collection cycle
+      dedupe: `alert:${operator.user_id}:${reading.subject}`
+    })
+  }
+}
+
 export async function evaluate (
   readings: Reading[],
   options: AlertOptions = DEFAULT_OPTIONS,
@@ -165,6 +197,7 @@ export async function evaluate (
           threshold: reading.threshold ?? '—',
           duration: humanDuration(row!.started_at, now)
         }).catch(() => {})
+        void notifyOperators(reading).catch(() => {})
         fired.push(reading.subject)
         break
       }

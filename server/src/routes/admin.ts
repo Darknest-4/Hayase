@@ -4,6 +4,7 @@
 
 import { query, queryOne, transaction } from '../db.ts'
 import { emitEvent } from '../lib/webhooks.ts'
+import { invalidatePermissions } from '../plugins/auth.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
 
@@ -83,6 +84,11 @@ const routes: FastifyPluginAsync = async fastify => {
       if (status !== 'active') {
         // kill all sessions on suspend/ban
         await client.query('UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [id])
+        // Revoking the refresh token alone left the access token valid until
+        // it expired, so a banned account kept working for up to its lifetime.
+        // Bumping the version invalidates every outstanding one, atomically
+        // with the ban itself.
+        await client.query('UPDATE users SET token_version = token_version + 1 WHERE id = $1', [id])
       }
       const action = status === 'active' ? 'restore' : status === 'banned' ? 'ban' : 'suspend'
       await client.query(
@@ -94,6 +100,10 @@ const routes: FastifyPluginAsync = async fastify => {
         [request.user.sub, id, { status: before.status }, { status }]
       )
     })
+    // Drop the cached version/permissions so the change takes effect now
+    // rather than at the end of the cache TTL.
+    invalidatePermissions(id)
+
     const actor = await queryOne<{ username: string }>('SELECT username FROM users WHERE id = $1', [id])
     await emitEvent('user.moderated', { username: actor?.username, action: status === 'active' ? 'restore' : status, reason })
     return { id, status }

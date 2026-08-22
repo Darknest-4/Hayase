@@ -157,8 +157,9 @@ swallowed — it can never break a search.
 
 ## Why not OpenSearch
 
-`docker-compose.yml` carries an OpenSearch service and the schema comments
-mention it, but it is **not used, and deliberately so.**
+The schema comments mention OpenSearch and an earlier `docker-compose.yml`
+carried the service. It is **not used, and the service has now been removed**
+rather than left sitting there implying a plan.
 
 At 25,672 catalogue rows, Postgres with `pg_trgm` and `tsvector` answers off
 the indexes in migration 0017 in single-digit milliseconds. OpenSearch would

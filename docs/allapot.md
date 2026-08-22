@@ -74,7 +74,7 @@ bővítmény‑rendszerrel.
 
 ### VPS Health & Monitoring (kész) — [`monitoring.md`](./monitoring.md)
 - [x] **Liveness / readiness szétválasztva**: `/v1/health` triviális marad (LB/Docker), új `/v1/health/ready` cache‑elt aggregát (HEALTHY/DEGRADED/UNHEALTHY)
-- [x] **Capability‑aware service‑próbák**: Postgres kemény függőség; Redis/RabbitMQ/OpenSearch/MinIO **csak ha konfigurálva van** → nincs hamis riasztás
+- [x] **Capability‑aware service‑próbák**: Postgres kemény függőség; Redis/RabbitMQ/OpenSearch/MinIO **csak ha konfigurálva van** → nincs hamis riasztás (a próbák megmaradtak; a compose‑ból azóta kikerült minden, aminek nincs feladata — indoklás: `docs/redis.md`)
 - [x] **Metrika‑gyűjtés a workerben** (60 mp), 22+ mérőszám `/proc`‑ból és `node:os`‑ból, **0 új függőség**
 - [x] **Tárolás + retention**: `system_metrics` (havi partíciók, 7 nap), `system_metrics_hourly` (1 év), `service_status`
 - [x] **Dokumentált, futásidőben állítható küszöbök** (`site_settings`), zöld/sárga/piros osztályozás
