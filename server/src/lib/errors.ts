@@ -89,8 +89,12 @@ export async function recordError (
       [group.id, source, message, stack ?? null, context]
     )
     return group.id
-  } catch {
-    return undefined // never let telemetry mask the error it was describing
+  } catch (err) {
+    // Never let telemetry mask the error it was describing — but never fail
+    // silently either. A swallowed exception here means the error view is
+    // empty for a reason nobody can see, which is worse than no error view.
+    console.error('error tracking failed:', (err as Error).message)
+    return undefined
   }
 }
 

@@ -46,8 +46,15 @@ export const publicReadiness: FastifyPluginAsync = async fastify => {
         at: Date.now(),
         body: {
           status: overall(probes),
-          // name + colour only — no latency, detail, host or config data
-          services: probes.map(p => ({ name: p.service, status: p.status })),
+          // Name + colour only — no latency, detail, host or config data.
+          // Services that are not configured are omitted entirely rather than
+          // listed as "not_configured": that list is an inventory of what the
+          // deployment could be running, which an unauthenticated caller has
+          // no reason to receive. Administrators still see them in full at
+          // /v1/admin/monitoring/current.
+          services: probes
+            .filter(p => p.status !== 'not_configured')
+            .map(p => ({ name: p.service, status: p.status })),
           checkedAt: new Date().toISOString()
         }
       }

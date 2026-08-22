@@ -43,6 +43,7 @@ let client: pg.Client | undefined
 let deliverLocally: Deliver | undefined
 let stopped = false
 let retryDelay = 1_000
+let reconnectTimer: NodeJS.Timeout | undefined
 
 /** Whether cross-instance delivery is currently working. */
 export function connected (): boolean {
@@ -80,18 +81,37 @@ async function connect (log: (message: string, error?: unknown) => void): Promis
     log('pubsub connection lost, reconnecting', err)
     client = undefined
     next.end().catch(() => {})
-    if (!stopped) setTimeout(() => { void connect(log) }, retryDelay = Math.min(retryDelay * 2, 30_000))
+    scheduleReconnect(log)
   })
 
   try {
     await next.connect()
     await next.query(`LISTEN ${NOTIFY_CHANNEL}`)
+
+    // stop() may have run while this connect was in flight. Without this
+    // check the client is installed after shutdown and never closed — a
+    // leaked connection that keeps the process alive and, in a server that
+    // restarts under load, accumulates one per cycle.
+    if (stopped) { await next.end().catch(() => {}); return }
+
     client = next
     retryDelay = 1_000
   } catch (err) {
     log('pubsub connect failed, retrying', err)
-    if (!stopped) setTimeout(() => { void connect(log) }, retryDelay = Math.min(retryDelay * 2, 30_000))
+    await next.end().catch(() => {})
+    scheduleReconnect(log)
   }
+}
+
+/**
+ * Retry with backoff. The timer is unref'd so a pending reconnect can never be
+ * the reason a process refuses to exit.
+ */
+function scheduleReconnect (log: (message: string, error?: unknown) => void): void {
+  if (stopped) return
+  retryDelay = Math.min(retryDelay * 2, 30_000)
+  reconnectTimer = setTimeout(() => { void connect(log) }, retryDelay)
+  reconnectTimer.unref()
 }
 
 /**
@@ -126,6 +146,7 @@ export async function start (
 
 export async function stop (): Promise<void> {
   stopped = true
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = undefined }
   const current = client
   client = undefined
   await current?.end().catch(() => {})

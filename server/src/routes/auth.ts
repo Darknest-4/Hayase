@@ -79,27 +79,40 @@ const routes: FastifyPluginAsync = async fastify => {
 
     const passwordHash = await hashPassword(password)
 
-    const user = await transaction(async client => {
-      const { rows } = await client.query<{ id: string }>(
-        'INSERT INTO users (email, username, password_hash) VALUES ($1, $2, $3) RETURNING id',
-        [email, username, passwordHash]
-      )
-      const userId = rows[0]!.id
-      // default role + default profile
-      await client.query(
-        `INSERT INTO user_roles (user_id, role_id) SELECT $1, id FROM roles WHERE slug = 'user'`,
-        [userId]
-      )
-      await client.query(
-        'INSERT INTO user_profiles (user_id, display_name, is_default) VALUES ($1, $2, true)',
-        [userId, username]
-      )
-      await client.query(
-        'INSERT INTO security_logs (user_id, event, ip, user_agent) VALUES ($1, $2, $3, $4)',
-        [userId, 'register', request.ip, request.headers['user-agent'] ?? null]
-      )
-      return { id: userId, username }
-    })
+    // The check above is a courtesy, not a guarantee: two registrations racing
+    // each other both pass it, and the unique index is what actually decides.
+    // Catching that violation turns the loser into the same 409 instead of a
+    // 500 — which, before the error handler was fixed, also leaked the
+    // constraint name to the caller.
+    let user: { id: string, username: string }
+    try {
+      user = await transaction(async client => {
+        const { rows } = await client.query<{ id: string }>(
+          'INSERT INTO users (email, username, password_hash) VALUES ($1, $2, $3) RETURNING id',
+          [email, username, passwordHash]
+        )
+        const userId = rows[0]!.id
+        // default role + default profile
+        await client.query(
+          `INSERT INTO user_roles (user_id, role_id) SELECT $1, id FROM roles WHERE slug = 'user'`,
+          [userId]
+        )
+        await client.query(
+          'INSERT INTO user_profiles (user_id, display_name, is_default) VALUES ($1, $2, true)',
+          [userId, username]
+        )
+        await client.query(
+          'INSERT INTO security_logs (user_id, event, ip, user_agent) VALUES ($1, $2, $3, $4)',
+          [userId, 'register', request.ip, request.headers['user-agent'] ?? null]
+        )
+        return { id: userId, username }
+      })
+    } catch (err) {
+      if ((err as { code?: string }).code === '23505') {
+        return reply.code(409).send({ type: 'about:blank', title: 'Conflict', status: 409, detail: 'Email or username already in use' })
+      }
+      throw err
+    }
 
     await emitEvent('user.registered', { username: user.username })
     const tokens = await issueTokens(user, request.ip, request.headers['user-agent'])

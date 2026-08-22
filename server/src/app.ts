@@ -12,6 +12,8 @@ import Fastify from 'fastify'
 
 import { randomUUID } from 'node:crypto'
 
+import { GraphQLError, type ValidationRule } from 'graphql'
+
 import { config } from './config.ts'
 import { query } from './db.ts'
 import { recordError } from './lib/errors.ts'
@@ -36,6 +38,21 @@ import extensionRoutes from './routes/extensions.ts'
 import libraryRoutes from './routes/library.ts'
 
 import type { FastifyError, FastifyInstance } from 'fastify'
+
+/**
+ * Reject introspection queries.
+ *
+ * Mercurius has no switch for this — `graphiql: false` hides the IDE but the
+ * schema stays readable — so it is enforced as a GraphQL validation rule,
+ * which runs before any resolver.
+ */
+const noIntrospection: ValidationRule = context => ({
+  Field (node) {
+    if (node.name.value === '__schema' || node.name.value === '__type') {
+      context.reportError(new GraphQLError('GraphQL introspection is disabled'))
+    }
+  }
+})
 
 export async function buildApp (): Promise<FastifyInstance> {
   const app = Fastify({
@@ -87,9 +104,14 @@ export async function buildApp (): Promise<FastifyInstance> {
      * any resolver, so an enormous document costs CPU whatever it asks for.
      */
     queryDepth: Number(process.env.GRAPHQL_MAX_DEPTH ?? 10),
-    // Introspection is a map of the whole API. Useful in development, and in
-    // production it only helps someone probing for a resolver to abuse.
     allowBatchedQueries: false,
+    /**
+     * Introspection publishes the whole schema — every type, field and
+     * argument. Invaluable while developing, and in production it is a map
+     * for anyone looking for a resolver to abuse. Mercurius has no flag for
+     * this, so it is enforced as a validation rule.
+     */
+    validationRules: config.isProd ? [noIntrospection] : [],
     context: async request => {
       const ctx: { userId?: string, username?: string, profileId?: string } = {}
       const auth = request.headers.authorization
@@ -113,6 +135,53 @@ export async function buildApp (): Promise<FastifyInstance> {
   // Liveness: zero dependencies, always cheap — this is what Docker and load
   // balancers poll. Dependency-aware readiness lives at /v1/health/ready.
   app.get('/v1/health', async () => ({ status: 'ok' }))
+
+  /**
+   * Error handling.
+   *
+   * This MUST be registered before any route: Fastify binds the handler that
+   * exists in the encapsulation context at the moment a route is added, so a
+   * handler set afterwards silently does not apply. It was set after the route
+   * registrations, which meant none of this ran — route errors fell through to
+   * Fastify's default handler, which returns the raw exception message. An
+   * unauthenticated caller could read database error text, SQL state codes and
+   * the offending value straight out of a 500.
+   */
+  app.setErrorHandler((error: FastifyError, request, reply) => {
+    // Some throwers — the rate limiter's errorResponseBuilder among them —
+    // reject with a plain object already in this app's problem+json shape
+    // rather than an Error carrying statusCode. Passing those through
+    // unchanged keeps their status: reading only `statusCode` turned every
+    // 429 into a 500.
+    const shaped = error as unknown as { status?: number, title?: string, detail?: string, type?: string }
+    if (typeof shaped.status === 'number' && typeof shaped.title === 'string') {
+      return reply.code(shaped.status).type('application/problem+json')
+        .send({ ...shaped, instance: request.id })
+    }
+
+    const status = error.statusCode ?? 500
+    if (status >= 500) {
+      request.log.error(error)
+      // Persist it so the admin error view reflects reality. Fire-and-forget:
+      // the response must not wait on telemetry, and a telemetry failure must
+      // never replace the error the caller actually hit.
+      void recordError('api', error, {
+        route: request.routeOptions?.url ?? request.url,
+        method: request.method,
+        statusCode: status,
+        userId: (request.user as { sub?: string } | undefined)?.sub
+      })
+    }
+    void reply.code(status).type('application/problem+json').send({
+      type: 'about:blank',
+      title: status >= 500 ? 'Internal Server Error' : error.message,
+      status,
+      // A 5xx body must not leak internals, but it can carry the id that ties
+      // the report to the log line and the recorded error group.
+      detail: status >= 500 ? `Request ${request.id} failed — quote this id when reporting it` : error.message,
+      instance: request.id
+    })
+  })
 
   // The global body limit is sized for REST payloads; a GraphQL document is
   // parsed before anything else, so it gets its own, tighter ceiling.
@@ -194,30 +263,6 @@ export async function buildApp (): Promise<FastifyInstance> {
     ).catch(() => {}) // telemetry must never affect the response
   })
 
-  app.setErrorHandler((error: FastifyError, request, reply) => {
-    const status = error.statusCode ?? 500
-    if (status >= 500) {
-      request.log.error(error)
-      // Persist it so the admin error view reflects reality. Fire-and-forget:
-      // the response must not wait on telemetry, and a telemetry failure must
-      // never replace the error the caller actually hit.
-      void recordError('api', error, {
-        route: request.routeOptions?.url ?? request.url,
-        method: request.method,
-        statusCode: status,
-        userId: (request.user as { sub?: string } | undefined)?.sub
-      })
-    }
-    void reply.code(status).type('application/problem+json').send({
-      type: 'about:blank',
-      title: status >= 500 ? 'Internal Server Error' : error.message,
-      status,
-      // A 5xx body must not leak internals, but it can carry the id that ties
-      // the report to the log line and the recorded error group.
-      detail: status >= 500 ? `Request ${request.id} failed — quote this id when reporting it` : error.message,
-      instance: request.id
-    })
-  })
 
   return app
 }

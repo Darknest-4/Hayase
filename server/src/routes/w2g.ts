@@ -57,12 +57,22 @@ const routes: FastifyPluginAsync = async fastify => {
 
   fastify.delete('/:code', { preHandler: fastify.authenticate }, async (request, reply) => {
     const { code } = request.params as { code: string }
-    await query(
+    // Scoped to the host, so a stranger's request changes nothing — but it
+    // used to return 204 regardless, telling them it had worked. Report what
+    // actually happened instead.
+    const closed = await query(
       `UPDATE watch_together_rooms r SET closed_at = now()
        FROM user_profiles p
-       WHERE r.code = $1 AND r.closed_at IS NULL AND p.id = r.host_profile AND p.user_id = $2`,
+       WHERE r.code = $1 AND r.closed_at IS NULL AND p.id = r.host_profile AND p.user_id = $2
+       RETURNING r.id`,
       [code, request.user.sub]
     )
+    if (!closed.length) {
+      return reply.code(404).send({
+        type: 'about:blank', title: 'Not Found', status: 404,
+        detail: 'No open room with that code that you host'
+      })
+    }
     return reply.code(204).send()
   })
 }

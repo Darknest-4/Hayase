@@ -21,6 +21,8 @@ import type { FastifyPluginAsync } from 'fastify'
  * to be cast back to the column's type or the comparison operator will not
  * exist (date < text).
  */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 const SORTS = {
   popularity: { column: 'a.popularity', dir: 'DESC', nulls: 'LAST', cast: 'numeric' },
   trending: { column: 'a.trending', dir: 'DESC', nulls: 'LAST', cast: 'numeric' },
@@ -70,13 +72,18 @@ const routes: FastifyPluginAsync = async fastify => {
     if (q.cursor) {
       try {
         const decoded = JSON.parse(Buffer.from(q.cursor, 'base64url').toString()) as { v: unknown, id: unknown }
-        if (typeof decoded?.id === 'string') {
-          cursor = { v: (decoded.v as string | number | null) ?? null, id: decoded.id }
-        }
+        // The cursor is opaque state the client did not compose, so a stale or
+        // malformed one starts from the beginning rather than erroring. But it
+        // arrives from the network, so both fields are validated before they
+        // reach a query: an id that is not a uuid, or a value that is not a
+        // primitive, would otherwise fail the cast and surface as a 500 that
+        // anyone could trigger at will.
+        const validId = typeof decoded?.id === 'string' && UUID.test(decoded.id)
+        const value = decoded?.v ?? null
+        const validValue = value === null || typeof value === 'string' || typeof value === 'number'
+        if (validId && validValue) cursor = { v: value as string | number | null, id: decoded.id as string }
       } catch {
-        // A malformed cursor starts from the beginning rather than 400ing: it
-        // is opaque state the client did not compose, and a stale one is not
-        // the user's mistake.
+        // not decodable — same treatment
       }
     }
 
