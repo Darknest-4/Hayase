@@ -13,6 +13,7 @@ import Fastify from 'fastify'
 import { randomUUID } from 'node:crypto'
 
 import { config } from './config.ts'
+import { query } from './db.ts'
 import { recordError } from './lib/errors.ts'
 import { schema, resolvers, loaders } from './graphql/schema.ts'
 import wsPlugin from './lib/ws.ts'
@@ -76,6 +77,19 @@ export async function buildApp (): Promise<FastifyInstance> {
     resolvers,
     loaders,
     graphiql: !config.isProd,
+    /**
+     * A GraphQL endpoint accepts a query the caller composes, so unlike REST
+     * the cost of one request is not bounded by the route. Nested relations
+     * (anime → relations → anime → …) let a short query ask for an enormous
+     * result, which is a denial of service that needs no special tooling.
+     *
+     * Depth is capped, and query text is capped too — the parser runs before
+     * any resolver, so an enormous document costs CPU whatever it asks for.
+     */
+    queryDepth: Number(process.env.GRAPHQL_MAX_DEPTH ?? 10),
+    // Introspection is a map of the whole API. Useful in development, and in
+    // production it only helps someone probing for a resolver to abuse.
+    allowBatchedQueries: false,
     context: async request => {
       const ctx: { userId?: string, username?: string, profileId?: string } = {}
       const auth = request.headers.authorization
@@ -99,6 +113,20 @@ export async function buildApp (): Promise<FastifyInstance> {
   // Liveness: zero dependencies, always cheap — this is what Docker and load
   // balancers poll. Dependency-aware readiness lives at /v1/health/ready.
   app.get('/v1/health', async () => ({ status: 'ok' }))
+
+  // The global body limit is sized for REST payloads; a GraphQL document is
+  // parsed before anything else, so it gets its own, tighter ceiling.
+  app.addHook('preValidation', async (request, reply) => {
+    if (request.url.startsWith('/graphql') && typeof (request.body as { query?: string })?.query === 'string') {
+      const document = (request.body as { query: string }).query
+      if (document.length > Number(process.env.GRAPHQL_MAX_LENGTH ?? 8_000)) {
+        return reply.code(413).send({
+          type: 'about:blank', title: 'Payload Too Large', status: 413,
+          detail: 'GraphQL query is too long'
+        })
+      }
+    }
+  })
 
   await app.register(publicConfig, { prefix: '/v1/config' })
   await app.register(adminConfig, { prefix: '/v1/admin/config' })
@@ -137,6 +165,33 @@ export async function buildApp (): Promise<FastifyInstance> {
   app.addHook('onSend', async (request, reply, payload) => {
     reply.header('X-Request-Id', request.id)
     return payload
+  })
+
+  /**
+   * Sampled response timing.
+   *
+   * performance_metrics was created, partitioned and given a retention policy,
+   * and then never written to — the maintenance job has been keeping empty
+   * partitions tidy. The table's own comment specifies 1% sampling, which is
+   * what this does: enough to see a p95 move, cheap enough to ignore.
+   *
+   * The route pattern is recorded, never the URL, so an id in a path cannot
+   * turn into a million distinct labels (or leak into an analytics table).
+   */
+  const SAMPLE_RATE = Number(process.env.PERF_SAMPLE_RATE ?? 0.01)
+  app.addHook('onResponse', async (request, reply) => {
+    // Always keep the slow ones: a 1% sample of a rare 3-second request is
+    // usually zero rows, which is exactly the request worth seeing.
+    const elapsed = reply.elapsedTime
+    if (Math.random() >= SAMPLE_RATE && elapsed < 1_000) return
+    void query(
+      'INSERT INTO performance_metrics (metric, value_ms, labels) VALUES ($1, $2, $3)',
+      ['api.latency', elapsed.toFixed(2), {
+        route: request.routeOptions?.url ?? 'unmatched',
+        method: request.method,
+        status: reply.statusCode
+      }]
+    ).catch(() => {}) // telemetry must never affect the response
   })
 
   app.setErrorHandler((error: FastifyError, request, reply) => {

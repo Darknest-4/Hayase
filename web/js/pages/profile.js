@@ -82,8 +82,12 @@ const PageProfile = {
     }
 
     const statusToken = {
-      CURRENT: 'watching', REPEATING: 'watching', PLANNING: 'planning',
-      COMPLETED: 'completed', PAUSED: 'paused', DROPPED: 'dropped'
+      CURRENT: 'watching',
+      REPEATING: 'watching',
+      PLANNING: 'planning',
+      COMPLETED: 'completed',
+      PAUSED: 'paused',
+      DROPPED: 'dropped'
     }
     const max = Math.max(...statuses.map(([, count]) => count))
     const bars = U.el('div', { class: 'genre-bars' })

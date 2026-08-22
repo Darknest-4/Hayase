@@ -1,4 +1,4 @@
-/* global window, document, U, C, YumeAPI */
+/* global window, U, C, YumeAPI */
 // Community page — platform-wide recent discussion feed (Yume API),
 // with account sign-in when the user isn't authenticated yet.
 
@@ -12,10 +12,13 @@ const PageCommunity = {
     pad.append(content)
 
     if (!await YumeAPI.available()) {
-      content.replaceChildren(U.el('div', { class: 'callout', html: `
+      content.replaceChildren(U.el('div', {
+        class: 'callout',
+        html: `
         <b>Community is a platform feature.</b><br>
         No Yume API reachable at <code>${YumeAPI.base()}</code> — start the backend or set
-        your server in <a href="#/settings" style="text-decoration:underline">Settings</a>.` }))
+        your server in <a href="#/settings" style="text-decoration:underline">Settings</a>.`
+      }))
       return
     }
 

@@ -147,6 +147,10 @@ services:
       BACKUP_DIR: /backups
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
       BACKUP_AT_HOUR: ${BACKUP_AT_HOUR:-3}
+      # Copy each verified backup off this machine. Without it a hardware
+      # failure still ends the project — the dumps live on the same disk.
+      #   BACKUP_SYNC_CMD='rclone copy "$$1" remote:yume-backups'
+      BACKUP_SYNC_CMD: ${BACKUP_SYNC_CMD:-}
     volumes:
       - ./db:/db:ro
       - backups:/backups

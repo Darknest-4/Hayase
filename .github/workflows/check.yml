@@ -98,6 +98,12 @@ jobs:
         run: |
           shopt -s globstar
           for file in web/**/*.js; do
+            case "$file" in web/js/vendor/*) continue ;; esac   # third-party, not ours
             node --check "$file" || exit 1
           done
           echo "checked $(ls web/**/*.js | wc -l) files"
+
+      # The client ships as plain scripts with no build step, so style drift is
+      # only ever caught here. Vendored third-party code is excluded.
+      - name: Lint the client
+        run: npx --yes standard "web/**/*.js" "!web/js/vendor/**"

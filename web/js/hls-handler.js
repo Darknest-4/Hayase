@@ -1,4 +1,4 @@
-/* global window, document, HTMLMediaElement */
+/* global window, document */
 // HLS playback for the streaming engine.
 //
 // The engine has had a `registerHandler` seam since it was written, but no

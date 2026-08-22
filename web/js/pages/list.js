@@ -80,18 +80,21 @@ const PageList = {
         if (state.tab !== 'PLANNING') {
           controls.append(
             U.el('button', {
-              class: 'icon-btn', title: '-1 episode',
+              class: 'icon-btn',
+              title: '-1 episode',
               onclick: () => { Store.setProgress(media, (Store.entry(media.id)?.progress ?? 0) - 1); renderTabs(); renderContent() }
             }, [U.svg(C.MINUS, 13)]),
             U.el('span', { style: 'font-weight:800;font-size:.85rem;min-width:4.5rem;text-align:center;', text: `${entry.progress ?? 0}${total} ep` }),
             U.el('button', {
-              class: 'icon-btn', title: '+1 episode',
+              class: 'icon-btn',
+              title: '+1 episode',
               onclick: () => { Store.setProgress(media, (Store.entry(media.id)?.progress ?? 0) + 1); renderTabs(); renderContent() }
             }, [U.svg(C.PLUS, 13)])
           )
         }
         controls.append(U.el('button', {
-          class: 'icon-btn', title: 'Remove from list',
+          class: 'icon-btn',
+          title: 'Remove from list',
           onclick: () => {
             Store.removeEntry(media.id)
             U.toast('Removed from list')

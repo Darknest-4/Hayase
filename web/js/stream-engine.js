@@ -96,8 +96,8 @@ const StreamEngine = {
       audio: raw?.audio ? String(raw.audio).slice(0, 40) : null,
       subtitles: Array.isArray(raw?.subtitles)
         ? raw.subtitles.slice(0, 20)
-            .filter(s => s && typeof s.url === 'string')
-            .map(s => ({ url: String(s.url), label: String(s.label ?? 'Subtitles').slice(0, 60), lang: String(s.lang ?? '').slice(0, 12) }))
+          .filter(s => s && typeof s.url === 'string')
+          .map(s => ({ url: String(s.url), label: String(s.label ?? 'Subtitles').slice(0, 60), lang: String(s.lang ?? '').slice(0, 12) }))
         : [],
       // headers a source needs are recorded but NOT applied by the browser
       // player — a <video> element cannot send custom headers. They exist for
@@ -181,7 +181,8 @@ const StreamEngine = {
         const { ext, items } = outcome.value
         for (const item of items ?? []) {
           const normalised = this.normalise(item, {
-            slug: ext.slug, name: ext.name ?? ext.slug,
+            slug: ext.slug,
+            name: ext.name ?? ext.slug,
             accuracy: item.accuracy ?? ext.accuracy ?? 'low',
             health: ext.health ?? 'unknown'
           })

@@ -1,4 +1,4 @@
-/* global window, document, U, C, Store, Charts */
+/* global window, U, C, Store, Charts */
 // Analytics — a personal "year in review" style dashboard computed entirely
 // from the active profile's local library and watch history. Everything is
 // derived on the client from Store.list() + Store.history(); no network calls.

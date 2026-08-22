@@ -1,4 +1,4 @@
-/* global window, U, C, API */
+/* global API, C, MutationObserver, U, window */
 // Search page — text search plus the same filters the original search route has
 // (genre, season, year, format, status, sort), with load-more pagination.
 

@@ -1,4 +1,4 @@
-/* global window, document, U, Store */
+/* global Store, T, U, document, requestAnimationFrame, window */
 // Reusable render helpers: cards, horizontal sections, skeletons, modals.
 
 const C = {
@@ -193,13 +193,14 @@ const C = {
     const listBtn = entry
       ? U.el('span', { class: 'badge badge-theme', style: 'align-self:center;', text: U.listStatusMap[entry.status] })
       : U.el('button', {
-          class: 'preview-icon-btn', title: 'Add to Planning',
-          onclick: e => {
-            Store.saveEntry(media, { status: 'PLANNING' })
-            U.toast('Added to Planning')
-            e.currentTarget.replaceWith(U.el('span', { class: 'badge badge-theme', style: 'align-self:center;', text: 'Planning' }))
-          }
-        }, [U.svg(this.PLUS, 14)])
+        class: 'preview-icon-btn',
+        title: 'Add to Planning',
+        onclick: e => {
+          Store.saveEntry(media, { status: 'PLANNING' })
+          U.toast('Added to Planning')
+          e.currentTarget.replaceWith(U.el('span', { class: 'badge badge-theme', style: 'align-self:center;', text: 'Planning' }))
+        }
+      }, [U.svg(this.PLUS, 14)])
 
     const panel = U.el('div', { class: 'preview-panel' }, [
       head,
@@ -208,7 +209,7 @@ const C = {
         U.el('div', { class: 'preview-desc', text: U.plainDesc(media.description) }),
         (media.genres ?? []).length
           ? U.el('div', { class: 'preview-genres' }, media.genres.slice(0, 4).map(g =>
-              U.el('a', { class: 'preview-genre', href: `#/search?genre=${encodeURIComponent(g)}`, text: g, onclick: () => this._closePreview() })))
+            U.el('a', { class: 'preview-genre', href: `#/search?genre=${encodeURIComponent(g)}`, text: g, onclick: () => this._closePreview() })))
           : null,
         U.el('div', { class: 'preview-actions' }, [
           U.el('a', { class: 'btn btn-primary btn-sm', style: 'flex-grow:1;justify-content:center;', href: `#/watch/${media.id}:${next}`, onclick: () => this._closePreview() },

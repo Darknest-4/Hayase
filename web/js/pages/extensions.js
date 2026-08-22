@@ -39,7 +39,9 @@ const PageExtensions = {
 
       if (!await YumeAPI.available()) {
         content.replaceChildren(
-          U.el('div', { class: 'callout', html: `
+          U.el('div', {
+            class: 'callout',
+            html: `
             <b>Extension store is a platform feature.</b><br>
             No Yume API reachable at <code>${YumeAPI.base()}</code>.
             Start the backend (<code>docker compose up -d && cd server && npm run dev</code>)
@@ -47,7 +49,8 @@ const PageExtensions = {
             <br><br>
             Extensions resolve video sources (torrent, HTTP, NZB), subtitles and
             metadata inside sandboxed workers with declared permissions — see
-            <code>docs/extensions.md</code> for how to build one.` })
+            <code>docs/extensions.md</code> for how to build one.`
+          })
         )
         return
       }

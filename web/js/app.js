@@ -1,4 +1,4 @@
-/* global window, document, U, C, T, API, YumeAPI, Store, PageHome, PageSearch, PageAnime, PageSchedule, PageList, PageSettings */
+/* global API, C, PageAdmin, PageAnime, PageCommunity, PageDashboard, PageDeveloper, PageExtensions, PageHome, PageList, PageNotifications, PageProfile, PageProfiles, PageSchedule, PageSearch, PageSettings, PageW2G, PageWatch, Store, T, U, YumeAPI, document, requestAnimationFrame, window */
 // App bootstrap: hash router (same #/route scheme as the original SvelteKit
 // build), sidebar active state and the quick-search modal (Ctrl+K / S).
 
@@ -85,8 +85,8 @@ const App = {
 
   // ---- feature-flag / access gate ----
 
-  config: null,   // effective site config from /v1/config
-  perms: [],      // the signed-in user's permission slugs
+  config: null, // effective site config from /v1/config
+  perms: [], // the signed-in user's permission slugs
 
   // routes always reachable so users can configure the server / sign in
   _gateExempt: ['settings', 'profiles'],
@@ -116,7 +116,7 @@ const App = {
     const cfg = this.config
     if (!cfg) return true
     const flag = cfg.flags['feature.' + name]
-    if (!flag || !flag.enabled) return flag ? false : true
+    if (!flag || !flag.enabled) return !flag
     const signedIn = !!window.YumeAPI.user()
     if (flag.access === 'auth' && !signedIn) return false
     if (flag.access === 'permission' && !this.perms.includes(flag.permission)) return false
@@ -260,13 +260,13 @@ const App = {
         const suggestions = (await YumeAPI.suggest(query, 10) ?? []).filter(s => s.anilist_id)
         const media = suggestions.length
           ? suggestions.map(s => ({
-              id: s.anilist_id,
-              title: { userPreferred: s.canonical_title },
-              coverImage: { large: s.cover_key ?? '' },
-              format: s.format,
-              seasonYear: s.season_year,
-              episodes: s.episode_count
-            }))
+            id: s.anilist_id,
+            title: { userPreferred: s.canonical_title },
+            coverImage: { large: s.cover_key ?? '' },
+            format: s.format,
+            seasonYear: s.season_year,
+            episodes: s.episode_count
+          }))
           : (await API.search({ search: query, sort: ['SEARCH_MATCH'], perPage: 10 })).media ?? []
         if (current !== token) return
         results.replaceChildren()
@@ -309,7 +309,6 @@ const App = {
   },
 
   refreshAdminNav () {
-    /* global YumeAPI */
     const nav = document.getElementById('nav-admin')
     if (!nav) return
     // admin nav follows the same gate as the /admin route (page.admin flag)

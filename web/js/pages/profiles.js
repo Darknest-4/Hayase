@@ -68,10 +68,14 @@ const PageProfiles = {
 
     let chosenAvatar = profile?.avatar ?? this.AVATARS[0]
     const avatarGrid = U.el('div', { class: 'avatar-picker' }, this.AVATARS.map(a => {
-      const btn = U.el('button', { class: 'avatar-opt' + (a === chosenAvatar ? ' active' : ''), text: a, onclick: () => {
-        chosenAvatar = a
-        avatarGrid.querySelectorAll('.avatar-opt').forEach(x => x.classList.toggle('active', x.textContent === a))
-      } })
+      const btn = U.el('button', {
+        class: 'avatar-opt' + (a === chosenAvatar ? ' active' : ''),
+        text: a,
+        onclick: () => {
+          chosenAvatar = a
+          avatarGrid.querySelectorAll('.avatar-opt').forEach(x => x.classList.toggle('active', x.textContent === a))
+        }
+      })
       return btn
     }))
 
@@ -87,7 +91,8 @@ const PageProfiles = {
 
     if (!isNew && Store.profiles().length > 1) {
       fields.push(U.el('button', {
-        class: 'btn btn-sm', style: 'background:var(--danger);color:white;align-self:flex-start;',
+        class: 'btn btn-sm',
+        style: 'background:var(--danger);color:white;align-self:flex-start;',
         onclick: () => {
           if (!window.confirm(`Delete profile "${profile.name}" and all its data?`)) return
           Store.deleteProfile(profile.id)

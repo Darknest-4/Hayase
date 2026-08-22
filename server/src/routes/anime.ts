@@ -8,12 +8,25 @@ import type { SearchFilters } from '../lib/search.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
 
+/**
+ * Browse orderings, as keyset components rather than raw ORDER BY strings.
+ *
+ * Pagination used to base64-encode an OFFSET and call it a cursor, which meant
+ * Postgres re-read and discarded every skipped row: page 200 costs 200 pages of
+ * work. Keyset pagination carries the last row's sort value and id instead, so
+ * every page costs the same regardless of depth.
+ *
+ * `nulls` records where NULLs sort, because the comparison has to reproduce it,
+ * and `cast` is the column's type — a cursor value arrives as JSON, so it has
+ * to be cast back to the column's type or the comparison operator will not
+ * exist (date < text).
+ */
 const SORTS = {
-  popularity: 'a.popularity DESC',
-  trending: 'a.trending DESC',
-  score: 'a.average_score DESC NULLS LAST',
-  newest: 'a.start_date DESC NULLS LAST',
-  title: 'a.canonical_title ASC'
+  popularity: { column: 'a.popularity', dir: 'DESC', nulls: 'LAST', cast: 'numeric' },
+  trending: { column: 'a.trending', dir: 'DESC', nulls: 'LAST', cast: 'numeric' },
+  score: { column: 'a.average_score', dir: 'DESC', nulls: 'LAST', cast: 'numeric' },
+  newest: { column: 'a.start_date', dir: 'DESC', nulls: 'LAST', cast: 'date' },
+  title: { column: 'a.canonical_title', dir: 'ASC', nulls: 'LAST', cast: 'text' }
 } as const
 
 interface BrowseQuery {
@@ -50,7 +63,22 @@ const routes: FastifyPluginAsync = async fastify => {
     const q = request.query as BrowseQuery
     const sort = SORTS[q.sort ?? 'popularity']
     const limit = q.limit ?? 25
-    const offset = q.cursor ? Number(Buffer.from(q.cursor, 'base64url').toString()) || 0 : 0
+
+    // { v: last sort value, id: last row id } — opaque to the client, but a
+    // position in the ordering rather than a count of rows to throw away.
+    let cursor: { v: string | number | null, id: string } | undefined
+    if (q.cursor) {
+      try {
+        const decoded = JSON.parse(Buffer.from(q.cursor, 'base64url').toString()) as { v: unknown, id: unknown }
+        if (typeof decoded?.id === 'string') {
+          cursor = { v: (decoded.v as string | number | null) ?? null, id: decoded.id }
+        }
+      } catch {
+        // A malformed cursor starts from the beginning rather than 400ing: it
+        // is opaque state the client did not compose, and a stale one is not
+        // the user's mistake.
+      }
+    }
 
     const where: string[] = []
     const params: unknown[] = []
@@ -67,24 +95,53 @@ const routes: FastifyPluginAsync = async fastify => {
     if (q.status) add('a.status = ?', q.status)
     if (q.genre) add('EXISTS (SELECT 1 FROM anime_genres ag JOIN genres g ON g.id = ag.genre_id WHERE ag.anime_id = a.id AND g.slug = ?)', q.genre)
 
-    params.push(limit + 1, offset)
+    if (cursor) {
+      // Strictly "after" the last row in this ordering.
+      const compare = sort.dir === 'DESC' ? '<' : '>'
+      if (cursor.v === null) {
+        // NULLs sort last, so a NULL cursor has already passed every non-NULL
+        // row and only the id tiebreak remains. The value parameter is not
+        // bound at all here — an unreferenced parameter leaves Postgres unable
+        // to infer its type.
+        params.push(cursor.id)
+        where.push(`(${sort.column} IS NULL AND a.id > $${params.length}::uuid)`)
+      } else {
+        params.push(cursor.v, cursor.id)
+        const value = `$${params.length - 1}::${sort.cast}`
+        const id = `$${params.length}::uuid`
+        where.push(`(${sort.column} ${compare} ${value} OR ${sort.column} IS NULL
+                     OR (${sort.column} = ${value} AND a.id > ${id}))`)
+      }
+    }
+
+    params.push(limit + 1)
     const rows = await query(
       `SELECT a.id, a.canonical_title, a.format, a.status, a.season, a.season_year,
               a.episode_count, a.average_score, a.popularity, a.is_adult,
+              ${sort.column} AS sort_value,
               img.object_key AS cover_key, img.blurhash, img.dominant_color
        FROM anime a
        LEFT JOIN anime_images img ON img.anime_id = a.id AND img.kind = 'cover' AND img.is_primary
-       ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-       ORDER BY ${sort}, a.id
-       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+       WHERE ${where.join(' AND ')}
+       ORDER BY ${sort.column} ${sort.dir} NULLS ${sort.nulls}, a.id
+       LIMIT $${params.length}`,
       params
     )
 
     const hasMore = rows.length > limit
-    return {
-      data: rows.slice(0, limit),
-      nextCursor: hasMore ? Buffer.from(String(offset + limit)).toString('base64url') : null
-    }
+    const data = rows.slice(0, limit)
+    const last = data[data.length - 1]
+
+    // Read the cursor key BEFORE stripping it: slice() shares the row objects,
+    // so deleting the field from `data` also removes it from `rows`.
+    const nextCursor = hasMore && last
+      ? Buffer.from(JSON.stringify({ v: last.sort_value ?? null, id: last.id })).toString('base64url')
+      : null
+
+    // sort_value is the pagination key, not part of the resource
+    for (const row of data) delete (row as Record<string, unknown>).sort_value
+
+    return { data, nextCursor }
   })
 
   fastify.get('/schedule', {

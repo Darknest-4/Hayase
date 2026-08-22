@@ -1,18 +1,18 @@
-/* global window, document, U, C, YumeAPI, Charts */
+/* global C, Charts, U, YumeAPI, confirm, document, history, window */
 // Admin dashboard — overview analytics, user management and the
 // moderation queue. Only reachable with the right permissions; the
 // server enforces them regardless.
 
 const PageAdmin = {
   SECTIONS: [
-    { key: 'overview', label: 'Overview',    sub: 'Platform health & analytics', perm: 'admin.analytics.view', render: 'renderOverview', icon: '<path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>' },
-    { key: 'users',    label: 'Users',       sub: 'Accounts, suspensions & bans', perm: 'admin.users.manage', render: 'renderUsers', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
-    { key: 'reports',  label: 'Reports',     sub: 'Moderation queue', perm: 'community.moderate', render: 'renderReports', icon: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>' },
+    { key: 'overview', label: 'Overview', sub: 'Platform health & analytics', perm: 'admin.analytics.view', render: 'renderOverview', icon: '<path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>' },
+    { key: 'users', label: 'Users', sub: 'Accounts, suspensions & bans', perm: 'admin.users.manage', render: 'renderUsers', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
+    { key: 'reports', label: 'Reports', sub: 'Moderation queue', perm: 'community.moderate', render: 'renderReports', icon: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>' },
     { key: 'catalogue', label: 'Catalogue', sub: 'Anime, episodes & visibility', perm: 'anime.view', render: 'renderCatalogue', icon: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>' },
     { key: 'monitoring', label: 'Infrastructure', sub: 'VPS health & services', perm: 'system.metrics.view', render: 'renderMonitoring', icon: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>' },
-    { key: 'roles',    label: 'Roles',       sub: 'Permissions & RBAC', perm: 'roles.manage', render: 'renderRoles', icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>' },
-    { key: 'webhooks', label: 'Webhooks',    sub: 'Outbound integrations', perm: 'admin.webhooks.manage', render: 'renderWebhooks', icon: '<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>' },
-    { key: 'config',   label: 'Site Config', sub: 'Feature flags & settings', perm: 'settings.system', render: 'renderConfig', icon: '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>' }
+    { key: 'roles', label: 'Roles', sub: 'Permissions & RBAC', perm: 'roles.manage', render: 'renderRoles', icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>' },
+    { key: 'webhooks', label: 'Webhooks', sub: 'Outbound integrations', perm: 'admin.webhooks.manage', render: 'renderWebhooks', icon: '<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>' },
+    { key: 'config', label: 'Site Config', sub: 'Feature flags & settings', perm: 'settings.system', render: 'renderConfig', icon: '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>' }
   ],
 
   async render (root, params) {
@@ -178,7 +178,9 @@ const PageAdmin = {
           ])
           for (const p of visible) {
             const cb = U.el('input', {
-              type: 'checkbox', ...(has(p.slug) ? { checked: '' } : {}), ...(isAdmin ? { disabled: '' } : {}),
+              type: 'checkbox',
+              ...(has(p.slug) ? { checked: '' } : {}),
+              ...(isAdmin ? { disabled: '' } : {}),
               onchange: e => toggle(p.slug, e.target.checked, e.target)
             })
             groupBox.append(U.el('label', { class: 'perm-row' + (p.status === 'active' ? ' perm-active' : '') }, [
@@ -250,9 +252,13 @@ const PageAdmin = {
       return U.el('div', { class: 'setting-card', style: 'display:flex;align-items:center;gap:1rem;' }, [
         U.el('div', { style: 'flex-grow:1;' }, [U.el('h3', { style: 'margin:0;', text: title }), U.el('p', { style: 'margin:.2rem 0 0;', text: desc })]),
         U.el('label', { class: 'switch' }, [
-          U.el('input', { type: 'checkbox', ...(on ? { checked: '' } : {}), onchange: async e => {
-            try { await YumeAPI.admin.setSetting(key, e.target.checked); settings[key] = e.target.checked; U.toast('Saved'); await applyLive() } catch (err) { U.toast(err.message, 'error'); e.target.checked = on }
-          } }),
+          U.el('input', {
+            type: 'checkbox',
+            ...(on ? { checked: '' } : {}),
+            onchange: async e => {
+              try { await YumeAPI.admin.setSetting(key, e.target.checked); settings[key] = e.target.checked; U.toast('Saved'); await applyLive() } catch (err) { U.toast(err.message, 'error'); e.target.checked = on }
+            }
+          }),
           U.el('span', { class: 'slider' })
         ])
       ])
@@ -264,9 +270,14 @@ const PageAdmin = {
 
     const textSetting = (key, title, desc) => U.el('div', { class: 'setting-card' }, [
       U.el('h3', { text: title }), U.el('p', { text: desc }),
-      U.el('input', { class: 'input', style: 'min-width:20rem;', value: settings[key] ?? '', onchange: async e => {
-        try { await YumeAPI.admin.setSetting(key, e.target.value); U.toast('Saved'); await applyLive() } catch (err) { U.toast(err.message, 'error') }
-      } })
+      U.el('input', {
+        class: 'input',
+        style: 'min-width:20rem;',
+        value: settings[key] ?? '',
+        onchange: async e => {
+          try { await YumeAPI.admin.setSetting(key, e.target.value); U.toast('Saved'); await applyLive() } catch (err) { U.toast(err.message, 'error') }
+        }
+      })
     ])
     content.append(
       textSetting('site_name', 'Site name', 'Shown in the sidebar wordmark and the browser tab.'),
@@ -291,7 +302,9 @@ const PageAdmin = {
 
     const permInput = U.el('input', {
       class: 'input flag-perm' + (state.access === 'permission' ? '' : ' hidden'),
-      style: 'min-width:11rem;', placeholder: 'permission slug', value: state.permission ?? ''
+      style: 'min-width:11rem;',
+      placeholder: 'permission slug',
+      value: state.permission ?? ''
     })
 
     const save = async patch => {
@@ -299,7 +312,8 @@ const PageAdmin = {
     }
 
     const accessSel = U.el('select', {
-      class: 'select flag-access', onchange: async e => {
+      class: 'select flag-access',
+      onchange: async e => {
         state.access = e.target.value
         permInput.classList.toggle('hidden', state.access !== 'permission')
         await save({ access: state.access, requiredPermission: state.access === 'permission' ? (permInput.value.trim() || 'analytics.view') : null })
@@ -391,7 +405,8 @@ const PageAdmin = {
   catRow (a, state, openEditor) {
     const [label, cls] = this.VIS_BADGE[a.visibility] ?? this.VIS_BADGE.public
     const row = U.el('button', {
-      class: 'cat-row' + (a.id === state.selected ? ' active' : ''), dataset: { id: a.id },
+      class: 'cat-row' + (a.id === state.selected ? ' active' : ''),
+      dataset: { id: a.id },
       onclick: () => openEditor(a)
     }, [
       U.el('div', { class: 'cat-row-main' }, [
@@ -436,7 +451,6 @@ const PageAdmin = {
         ...opts.map(o => U.el('option', { value: o, text: o.replace(/_/g, ' '), ...(draft[key] === o ? { selected: '' } : {}) }))])
 
     // visibility — the headline control
-    const [visLabel] = this.VIS_BADGE[draft.visibility]
     form.append(U.el('div', { class: 'cat-visibility' }, [
       U.el('div', {}, [
         U.el('div', { class: 'cat-field-label', text: 'Visibility' }),
@@ -466,25 +480,35 @@ const PageAdmin = {
       const num = v => v === '' || v == null ? null : Number(v)
       const payload = () => ({
         canonical_title: draft.canonical_title.trim(),
-        format: draft.format, status: draft.status,
-        season: draft.season || null, season_year: num(draft.season_year),
-        episode_count: num(draft.episode_count), episode_duration: num(draft.episode_duration),
+        format: draft.format,
+        status: draft.status,
+        season: draft.season || null,
+        season_year: num(draft.season_year),
+        episode_count: num(draft.episode_count),
+        episode_duration: num(draft.episode_duration),
         source_material: draft.source_material.trim() || null,
-        synopsis: draft.synopsis.trim() || null, is_adult: draft.is_adult, visibility: draft.visibility
+        synopsis: draft.synopsis.trim() || null,
+        is_adult: draft.is_adult,
+        visibility: draft.visibility
       })
       const actions = U.el('div', { class: 'cat-actions' })
-      actions.append(U.el('button', { class: 'btn btn-primary', onclick: async () => {
-        if (!draft.canonical_title.trim()) return U.toast('Title is required', 'error')
-        try {
-          if (isNew) { const c = await YumeAPI.admin.catalogue.create(payload()); U.toast('Anime created'); onSaved?.(); anime = c }
-          else { await YumeAPI.admin.catalogue.update(anime.id, payload()); U.toast('Saved'); onSaved?.() }
-        } catch (e) { U.toast(e.message, 'error') }
-      } }, [document.createTextNode(isNew ? 'Create anime' : 'Save changes')]))
+      actions.append(U.el('button', {
+        class: 'btn btn-primary',
+        onclick: async () => {
+          if (!draft.canonical_title.trim()) return U.toast('Title is required', 'error')
+          try {
+            if (isNew) { const c = await YumeAPI.admin.catalogue.create(payload()); U.toast('Anime created'); onSaved?.(); anime = c } else { await YumeAPI.admin.catalogue.update(anime.id, payload()); U.toast('Saved'); onSaved?.() }
+          } catch (e) { U.toast(e.message, 'error') }
+        }
+      }, [document.createTextNode(isNew ? 'Create anime' : 'Save changes')]))
       if (!isNew && can('anime.delete')) {
-        actions.append(U.el('button', { class: 'btn btn-danger', onclick: async () => {
-          if (!confirm(`Delete "${anime.canonical_title}" and all its episodes? This cannot be undone.`)) return
-          try { await YumeAPI.admin.catalogue.remove(anime.id); U.toast('Deleted'); onDeleted?.() } catch (e) { U.toast(e.message, 'error') }
-        } }, [document.createTextNode('Delete')]))
+        actions.append(U.el('button', {
+          class: 'btn btn-danger',
+          onclick: async () => {
+            if (!confirm(`Delete "${anime.canonical_title}" and all its episodes? This cannot be undone.`)) return
+            try { await YumeAPI.admin.catalogue.remove(anime.id); U.toast('Deleted'); onDeleted?.() } catch (e) { U.toast(e.message, 'error') }
+          }
+        }, [document.createTextNode('Delete')]))
       }
       form.append(actions)
     } else {
@@ -522,10 +546,13 @@ const PageAdmin = {
           ? U.el('span', { class: 'vis-badge vis-hidden', text: 'locked' })
           : U.el('span', { class: 'prov-auto', text: 'automatic' }),
         isLocked && can('anime.edit')
-          ? U.el('button', { class: 'btn btn-ghost btn-sm', onclick: async e => {
+          ? U.el('button', {
+            class: 'btn btn-ghost btn-sm',
+            onclick: async e => {
               e.target.disabled = true
               try { await YumeAPI.admin.catalogue.unlock(anime.id, [field]); U.toast(`"${field}" released to the importer`); onSaved?.() } catch (err) { U.toast(err.message, 'error'); e.target.disabled = false }
-            } }, [document.createTextNode('Release')])
+            }
+          }, [document.createTextNode('Release')])
           : null
       ]))
     }
@@ -544,10 +571,13 @@ const PageAdmin = {
       if (!data.length) { host.append(U.el('div', { class: 'empty-state', style: 'padding:1rem;', text: 'No likely duplicates found.' })); return }
       for (const d of data) {
         const keep = (winner, loser, title) => can('anime.merge')
-          ? U.el('button', { class: 'btn btn-sm', onclick: async () => {
+          ? U.el('button', {
+            class: 'btn btn-sm',
+            onclick: async () => {
               if (!confirm(`Keep "${title}" and merge the other entry into it? This cannot be undone.`)) return
               try { await YumeAPI.admin.catalogue.merge(winner, loser); U.toast('Merged'); reload() } catch (e) { U.toast(e.message, 'error') }
-            } }, [document.createTextNode('Keep this')])
+            }
+          }, [document.createTextNode('Keep this')])
           : null
         host.append(U.el('div', { class: 'dup-pair' }, [
           U.el('div', { class: 'dup-side' }, [U.el('div', { class: 'dup-title', text: d.a_title }), keep(d.a_id, d.b_id, d.a_title)]),
@@ -583,10 +613,15 @@ const PageAdmin = {
               U.el('div', { class: 'cat-ep-sub', text: [ep.duration ? ep.duration + ' min' : null, flags || null].filter(Boolean).join(' · ') || '—' })
             ]),
             can('episode.edit') ? U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => this.episodeModal(anime, ep, () => load()) }, [document.createTextNode('Edit')]) : null,
-            can('episode.delete') ? U.el('button', { class: 'btn btn-ghost btn-sm cat-ep-del', onclick: async () => {
-              if (!confirm(`Delete episode ${ep.number}?`)) return
-              try { await YumeAPI.admin.catalogue.removeEpisode(ep.id); U.toast('Episode deleted'); load() } catch (e) { U.toast(e.message, 'error') }
-            } }, [document.createTextNode('✕')]) : null
+            can('episode.delete')
+              ? U.el('button', {
+                class: 'btn btn-ghost btn-sm cat-ep-del',
+                onclick: async () => {
+                  if (!confirm(`Delete episode ${ep.number}?`)) return
+                  try { await YumeAPI.admin.catalogue.removeEpisode(ep.id); U.toast('Episode deleted'); load() } catch (e) { U.toast(e.message, 'error') }
+                }
+              }, [document.createTextNode('✕')])
+              : null
           ]))
         }
       } catch (e) { wrap.replaceChildren(U.el('div', { class: 'error-state', text: e.message })) }
@@ -597,8 +632,12 @@ const PageAdmin = {
   episodeModal (anime, ep, onDone) {
     const isNew = !ep
     const d = {
-      number: ep?.number ?? '', title: ep?.title ?? '', synopsis: ep?.synopsis ?? '',
-      duration: ep?.duration ?? '', is_filler: ep?.is_filler ?? false, is_recap: ep?.is_recap ?? false,
+      number: ep?.number ?? '',
+      title: ep?.title ?? '',
+      synopsis: ep?.synopsis ?? '',
+      duration: ep?.duration ?? '',
+      is_filler: ep?.is_filler ?? false,
+      is_recap: ep?.is_recap ?? false,
       air_date: ep?.air_date ? String(ep.air_date).slice(0, 10) : ''
     }
     const inp = (key, attrs = {}) => U.el('input', { class: 'input', value: d[key], oninput: e => { d[key] = e.target.value }, ...attrs })
@@ -618,8 +657,12 @@ const PageAdmin = {
       if (d.number === '' || isNaN(Number(d.number))) return U.toast('A valid episode number is required', 'error')
       const num = v => v === '' || v == null ? null : Number(v)
       const body = {
-        number: Number(d.number), title: d.title.trim() || null, synopsis: d.synopsis.trim() || null,
-        duration: num(d.duration), is_filler: d.is_filler, is_recap: d.is_recap,
+        number: Number(d.number),
+        title: d.title.trim() || null,
+        synopsis: d.synopsis.trim() || null,
+        duration: num(d.duration),
+        is_filler: d.is_filler,
+        is_recap: d.is_recap,
         air_date: d.air_date ? new Date(d.air_date).toISOString() : null
       }
       try {
@@ -689,9 +732,12 @@ const PageAdmin = {
       U.el('span', { class: 'mon-banner-dot', text: this.LEVEL_DOT[data.level] ?? '⚪' }),
       U.el('div', { style: 'flex-grow:1;' }, [
         U.el('div', { class: 'mon-banner-title', text: this.LEVEL_WORD[data.level] ?? 'Unknown' }),
-        U.el('div', { class: 'mon-banner-sub', text: data.stale
-          ? 'No fresh samples — the monitor worker looks stopped. Values below may be out of date.'
-          : `Last collected ${data.collectedAt ? U.relTime(new Date(data.collectedAt)) : 'never'}` })
+        U.el('div', {
+          class: 'mon-banner-sub',
+          text: data.stale
+            ? 'No fresh samples — the monitor worker looks stopped. Values below may be out of date.'
+            : `Last collected ${data.collectedAt ? U.relTime(new Date(data.collectedAt)) : 'never'}`
+        })
       ])
     ])
     content.append(banner)
@@ -783,11 +829,14 @@ const PageAdmin = {
           U.el('span', { class: 'mon-alert-dot', text: a.severity === 'critical' ? '🔴' : '🟡' }),
           U.el('div', { class: 'mon-alert-main' }, [
             U.el('div', { class: 'mon-alert-subject', text: a.subject }),
-            U.el('div', { class: 'mon-alert-sub', text: [
-              a.value !== null && a.value !== undefined ? `value ${Number(a.value).toFixed(1)}` : null,
-              a.threshold !== null && a.threshold !== undefined ? `threshold ${Number(a.threshold)}` : null,
-              a.detail
-            ].filter(Boolean).join(' · ') || a.severity })
+            U.el('div', {
+              class: 'mon-alert-sub',
+              text: [
+                a.value !== null && a.value !== undefined ? `value ${Number(a.value).toFixed(1)}` : null,
+                a.threshold !== null && a.threshold !== undefined ? `threshold ${Number(a.threshold)}` : null,
+                a.detail
+              ].filter(Boolean).join(' · ') || a.severity
+            })
           ]),
           U.el('span', { class: 'mon-alert-since', text: 'since ' + U.relTime(new Date(a.started_at)) })
         ]))
@@ -855,9 +904,12 @@ const PageAdmin = {
         return
       }
       const scored = (report.results || []).length - (report.results || []).filter(r => r.status === 'skip').length
-      output.append(U.el('div', { class: 'mon-diag-total', text: `${report.passed}/${scored} PASS` +
+      output.append(U.el('div', {
+        class: 'mon-diag-total',
+        text: `${report.passed}/${scored} PASS` +
         (report.warned ? ` · ${report.warned} WARN` : '') + (report.failed ? ` · ${report.failed} FAIL` : '') +
-        ` · ${U.relTime(new Date(report.finished_at ?? report.started_at))}` }))
+        ` · ${U.relTime(new Date(report.finished_at ?? report.started_at))}`
+      }))
       let group = ''
       for (const r of report.results ?? []) {
         if (r.group !== group) { group = r.group; output.append(U.el('div', { class: 'mon-diag-group', text: group })) }
@@ -1101,12 +1153,13 @@ const PageAdmin = {
           ]),
           U.el('div', { class: 'list-row-sub', style: 'margin:.4rem 0;word-break:break-all;', text: hook.url.replace(/\/[^/]+$/, '/•••') }),
           U.el('div', { style: 'display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.6rem;' }, [
-            U.el('button', { class: 'btn btn-secondary btn-sm', onclick: async e => {
-              e.target.disabled = true
-              try { await YumeAPI.admin.testWebhook(hook.id); U.toast('Test delivered ✓') }
-              catch (err) { U.toast('Test failed: ' + err.message, 'error') }
-              finally { e.target.disabled = false }
-            } }, [document.createTextNode('Send test')]),
+            U.el('button', {
+              class: 'btn btn-secondary btn-sm',
+              onclick: async e => {
+                e.target.disabled = true
+                try { await YumeAPI.admin.testWebhook(hook.id); U.toast('Test delivered ✓') } catch (err) { U.toast('Test failed: ' + err.message, 'error') } finally { e.target.disabled = false }
+              }
+            }, [document.createTextNode('Send test')]),
             U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => this.webhookForm(content, events, hook) }, [document.createTextNode('Edit')]),
             U.el('button', {
               class: 'btn btn-ghost btn-sm',
@@ -1115,12 +1168,16 @@ const PageAdmin = {
                 this.renderWebhooks(content)
               }
             }, [document.createTextNode(hook.enabled ? 'Disable' : 'Enable')]),
-            U.el('button', { class: 'btn btn-sm', style: 'background:var(--danger);color:white;', onclick: async () => {
-              if (!window.confirm(`Delete webhook "${hook.name}"?`)) return
-              await YumeAPI.admin.deleteWebhook(hook.id)
-              U.toast('Webhook deleted')
-              this.renderWebhooks(content)
-            } }, [document.createTextNode('Delete')])
+            U.el('button', {
+              class: 'btn btn-sm',
+              style: 'background:var(--danger);color:white;',
+              onclick: async () => {
+                if (!window.confirm(`Delete webhook "${hook.name}"?`)) return
+                await YumeAPI.admin.deleteWebhook(hook.id)
+                U.toast('Webhook deleted')
+                this.renderWebhooks(content)
+              }
+            }, [document.createTextNode('Delete')])
           ])
         ]))
       }

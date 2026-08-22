@@ -53,8 +53,11 @@ const PageSettings = {
     const settings = Store.settings()
     wrap.append(this._card('Profile name', 'Shown on your profile page.',
       U.el('input', {
-        class: 'input', type: 'text', maxlength: '50',
-        value: settings.profileName ?? '', placeholder: 'Dreamer',
+        class: 'input',
+        type: 'text',
+        maxlength: '50',
+        value: settings.profileName ?? '',
+        placeholder: 'Dreamer',
         onchange: e => Store.saveSettings({ profileName: e.target.value.trim() || undefined })
       })
     ))
@@ -62,18 +65,23 @@ const PageSettings = {
     if (window.YumeAPI.user()) {
       const LABEL = { off: 'Not syncing', syncing: 'Syncing…', synced: '✓ Synced to your account', error: '⚠ Sync unavailable' }
       const statusEl = U.el('span', { class: 'list-row-sub', style: 'align-self:center;', text: LABEL[window.LibrarySync?.status ?? 'off'] })
-      const syncBtn = U.el('button', { class: 'btn btn-secondary btn-sm', onclick: async () => {
-        statusEl.textContent = LABEL.syncing
-        await window.LibrarySync?.init()
-        statusEl.textContent = LABEL[window.LibrarySync?.status ?? 'off']
-        U.toast(window.LibrarySync?.status === 'synced' ? 'Library synced' : 'Sync unavailable', window.LibrarySync?.status === 'error' ? 'error' : 'success')
-      } }, [document.createTextNode('Sync now')])
+      const syncBtn = U.el('button', {
+        class: 'btn btn-secondary btn-sm',
+        onclick: async () => {
+          statusEl.textContent = LABEL.syncing
+          await window.LibrarySync?.init()
+          statusEl.textContent = LABEL[window.LibrarySync?.status ?? 'off']
+          U.toast(window.LibrarySync?.status === 'synced' ? 'Library synced' : 'Sync unavailable', window.LibrarySync?.status === 'error' ? 'error' : 'success')
+        }
+      }, [document.createTextNode('Sync now')])
       wrap.append(this._card('Library sync', 'Your library status and episode progress sync to your account and follow you across devices while signed in.',
         U.el('div', { style: 'display:flex;gap:.6rem;flex-wrap:wrap;' }, [syncBtn, statusEl])))
     }
     wrap.append(this._card('Yume server', 'Backend endpoint for platform features (extension store, sync). Leave as-is for local development.',
       U.el('input', {
-        class: 'input', type: 'url', style: 'min-width:20rem;',
+        class: 'input',
+        type: 'url',
+        style: 'min-width:20rem;',
         value: window.YumeAPI.base(),
         onchange: e => { window.YumeAPI.setBase(e.target.value); U.toast('Yume server updated') }
       })
@@ -116,7 +124,8 @@ const PageSettings = {
     const settings = Store.settings()
     const nsfwToggle = U.el('label', { class: 'switch' }, [
       U.el('input', {
-        type: 'checkbox', ...(settings.nsfw ? { checked: '' } : {}),
+        type: 'checkbox',
+        ...(settings.nsfw ? { checked: '' } : {}),
         onchange: e => { Store.saveSettings({ nsfw: e.target.checked }); Store.clearCache() }
       }),
       U.el('span', { class: 'slider' })
@@ -125,7 +134,8 @@ const PageSettings = {
 
     const autoplayToggle = U.el('label', { class: 'switch' }, [
       U.el('input', {
-        type: 'checkbox', ...(settings.autoplay !== false ? { checked: '' } : {}),
+        type: 'checkbox',
+        ...(settings.autoplay !== false ? { checked: '' } : {}),
         onchange: e => Store.saveSettings({ autoplay: e.target.checked })
       }),
       U.el('span', { class: 'slider' })
@@ -134,7 +144,8 @@ const PageSettings = {
 
     const skipToggle = U.el('label', { class: 'switch' }, [
       U.el('input', {
-        type: 'checkbox', ...(settings.autoSkip ? { checked: '' } : {}),
+        type: 'checkbox',
+        ...(settings.autoSkip ? { checked: '' } : {}),
         onchange: e => Store.saveSettings({ autoSkip: e.target.checked })
       }),
       U.el('span', { class: 'slider' })
@@ -158,7 +169,8 @@ const PageSettings = {
     ]) {
       const toggle = U.el('label', { class: 'switch' }, [
         U.el('input', {
-          type: 'checkbox', ...(prefs[key] !== false ? { checked: '' } : {}),
+          type: 'checkbox',
+          ...(prefs[key] !== false ? { checked: '' } : {}),
           onchange: e => {
             const next = { ...(Store.settings().notifPrefs ?? { airing: true, resume: true, achievement: true }), [key]: e.target.checked }
             Store.saveSettings({ notifPrefs: next })
@@ -211,7 +223,8 @@ const PageSettings = {
           }
         }, [document.createTextNode('Import data')]),
         U.el('button', {
-          class: 'btn btn-sm', style: 'background:var(--danger);color:white;',
+          class: 'btn btn-sm',
+          style: 'background:var(--danger);color:white;',
           onclick: () => { if (window.confirm('Delete ALL local data (list, favourites, settings)?')) { Store.clearAll(); window.location.reload() } }
         }, [document.createTextNode('Delete all data')])
       ])

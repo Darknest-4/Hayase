@@ -16,11 +16,11 @@ const LibrarySync = {
   STATUS_TO_DB: { CURRENT: 'WATCHING', PLANNING: 'PLANNING', COMPLETED: 'COMPLETED', PAUSED: 'PAUSED', DROPPED: 'DROPPED', REPEATING: 'REWATCHING' },
   STATUS_FROM_DB: { WATCHING: 'CURRENT', PLANNING: 'PLANNING', COMPLETED: 'COMPLETED', PAUSED: 'PAUSED', DROPPED: 'DROPPED', REWATCHING: 'REPEATING' },
 
-  _profileId: null,       // server user_profiles.id used for sync
-  _muted: false,          // true while pulling, so we don't echo writes back
-  _timers: {},            // per-key debounce handles
-  _epCache: {},           // animeUuid → [{ id, number }] episode lookup cache
-  status: 'off',          // off | syncing | synced | error (for the Settings UI)
+  _profileId: null, // server user_profiles.id used for sync
+  _muted: false, // true while pulling, so we don't echo writes back
+  _timers: {}, // per-key debounce handles
+  _epCache: {}, // animeUuid → [{ id, number }] episode lookup cache
+  status: 'off', // off | syncing | synced | error (for the Settings UI)
 
   enabled () {
     return !!(window.YumeAPI?.user() && this._profileId)
@@ -78,8 +78,11 @@ const LibrarySync = {
         const dbAt = new Date(row.updated_at).getTime()
         if (local && (local.updatedAt ?? 0) >= dbAt) continue // local is newer → it wins (and will push)
         const media = local?.media ?? {
-          id, title: { userPreferred: row.canonical_title }, coverImage: {},
-          format: row.format, episodes: row.episode_count
+          id,
+          title: { userPreferred: row.canonical_title },
+          coverImage: {},
+          format: row.format,
+          episodes: row.episode_count
         }
         Store.saveEntry(media, { status: this.STATUS_FROM_DB[row.status] ?? 'PLANNING', progress: Number(row.progress) || 0 })
         changed = true

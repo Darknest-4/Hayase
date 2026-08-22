@@ -62,24 +62,24 @@ const PageAnime = {
     // star rating badge (reference: "★ 9.08")
     const starRow = media.averageScore
       ? U.el('div', { class: 'score-badges' }, [
-          U.el('span', { class: 'score-star' }, [
-            U.svg('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="currentColor" stroke="none"/>', 13),
-            document.createTextNode((media.averageScore / 10).toFixed(2))
-          ]),
-          media.favourites ? U.el('span', { class: 'score-favs', text: `${media.favourites.toLocaleString()} favourites` }) : null
-        ])
+        U.el('span', { class: 'score-star' }, [
+          U.svg('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="currentColor" stroke="none"/>', 13),
+          document.createTextNode((media.averageScore / 10).toFixed(2))
+        ]),
+        media.favourites ? U.el('span', { class: 'score-favs', text: `${media.favourites.toLocaleString()} favourites` }) : null
+      ])
       : null
 
     const descText = U.plainDesc(media.description)
     const desc = U.el('div', { class: 'detail-desc clamped', text: descText })
     const moreBtn = descText.length > 220
       ? U.el('button', {
-          class: 'showmore',
-          onclick: e => {
-            const clamped = desc.classList.toggle('clamped')
-            e.currentTarget.textContent = clamped ? 'Show more ⌄' : 'Show less ⌃'
-          }
-        }, [document.createTextNode('Show more ⌄')])
+        class: 'showmore',
+        onclick: e => {
+          const clamped = desc.classList.toggle('clamped')
+          e.currentTarget.textContent = clamped ? 'Show more ⌄' : 'Show less ⌃'
+        }
+      }, [document.createTextNode('Show more ⌄')])
       : null
 
     wrap.append(U.el('div', { class: 'detail-hero-row' }, [

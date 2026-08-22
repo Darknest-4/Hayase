@@ -20,6 +20,22 @@ async function migrate (): Promise<void> {
     (await pool.query<{ filename: string }>('SELECT filename FROM schema_migrations')).rows.map(row => row.filename)
   )
 
+  // A database created as SQL_ASCII silently turns every character limit into
+  // a byte limit: length('á') is 2, so a 4000-character body check rejects
+  // Hungarian or Japanese text at roughly half the documented length, with an
+  // error that points at the constraint rather than the cause. Postgres cannot
+  // change this after initdb, so it has to be caught before data exists.
+  const encoding = await pool.query<{ encoding: string }>("SELECT current_setting('server_encoding') AS encoding")
+  const serverEncoding = encoding.rows[0]?.encoding
+  if (serverEncoding !== 'UTF8') {
+    console.warn(
+      `WARNING: database encoding is ${serverEncoding}, not UTF8.\n` +
+      '  length() will count bytes instead of characters, so text limits apply at a fraction\n' +
+      '  of their documented size for non-ASCII content. This cannot be changed in place —\n' +
+      '  recreate the database with: CREATE DATABASE yume ENCODING \'UTF8\' TEMPLATE template0;'
+    )
+  }
+
   const files = (await readdir(migrationsDir)).filter(f => f.endsWith('.sql')).sort()
 
   // Serialise across processes.

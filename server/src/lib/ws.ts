@@ -12,6 +12,7 @@ import websocket from '@fastify/websocket'
 import fp from 'fastify-plugin'
 
 import { query, queryOne } from '../db.ts'
+import { broadcast, start as startPubSub, stop as stopPubSub } from './pubsub.ts'
 
 import type { FastifyInstance } from 'fastify'
 import type { WebSocket } from 'ws'
@@ -85,13 +86,39 @@ function unsubscribe (client: Client, channel: string): void {
   if (!set.size) channels.delete(channel)
 }
 
-/** Broadcast a payload to every subscriber of a channel. */
-export function publish (channel: string, payload: Record<string, unknown>, except?: Client): void {
+/**
+ * Deliver to this instance's subscribers only. Used both by publish() and by
+ * the pub/sub layer when a message arrives from another instance — a remote
+ * message must never be re-announced, or two instances would ping-pong it.
+ */
+function deliverLocal (channel: string, payload: Record<string, unknown>, except?: Client): void {
   const message = JSON.stringify({ channel, ...payload })
   for (const client of channels.get(channel) ?? []) {
     if (client === except) continue
     if (client.socket.readyState === client.socket.OPEN) client.socket.send(message)
   }
+}
+
+/**
+ * Broadcast a payload to every subscriber of a channel, on every instance.
+ *
+ * Local subscribers are served first and synchronously: this instance must not
+ * wait on the database to talk to its own clients. The announcement to other
+ * instances is best effort — if it fails, behaviour degrades to exactly what
+ * it was before this existed (single-instance), rather than losing the message
+ * locally too.
+ *
+ * `ref` names a persisted row to fall back on when the payload is too large
+ * for a NOTIFY; only chat can reach that size.
+ */
+export function publish (
+  channel: string,
+  payload: Record<string, unknown>,
+  except?: Client,
+  ref?: { table: 'messages', id: string }
+): void {
+  deliverLocal(channel, payload, except)
+  broadcast(channel, payload, ref)
 }
 
 export function presence (channel: string): number {
@@ -166,7 +193,12 @@ async function handleMessage (app: FastifyInstance, client: Client, raw: string)
         'INSERT INTO messages (chat_id, author_id, body) VALUES ($1, $2, $3) RETURNING id, created_at',
         [msg.chatId, client.userId, body]
       )
-      publish(channel, { type: 'chat', id: rows[0]!.id, body, author: client.username, createdAt: rows[0]!.created_at })
+      publish(
+        channel,
+        { type: 'chat', id: rows[0]!.id, body, author: client.username, createdAt: rows[0]!.created_at },
+        undefined,
+        { table: 'messages', id: rows[0]!.id }
+      )
       break
     }
 
@@ -216,6 +248,14 @@ async function reauthenticate (app: FastifyInstance): Promise<void> {
 
 export default fp(async (app: FastifyInstance) => {
   await app.register(websocket)
+
+  // Cross-instance fan-out. Remote messages are delivered locally only —
+  // never re-broadcast — so two instances cannot bounce a message forever.
+  await startPubSub(
+    (channel, payload) => deliverLocal(channel, payload),
+    (message, error) => app.log.warn({ err: error }, message)
+  )
+  app.addHook('onClose', async () => { await stopPubSub() })
 
   const sweep = setInterval(() => {
     void reauthenticate(app).catch(err => app.log.error(err, 'ws reauth sweep failed'))

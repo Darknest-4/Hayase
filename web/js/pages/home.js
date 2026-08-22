@@ -1,4 +1,4 @@
-/* global window, U, C, API, Store */
+/* global API, C, Store, T, U, window */
 // Home page — hero banner + the same sections as the original app/home route:
 // Continue Watching, Your List, Popular This Season, Trending Now,
 // All Time Popular and genre rows.
@@ -133,16 +133,16 @@ const PageHome = {
         U.el('p', { class: 'hero-desc', text: U.plainDesc(media.description) }),
         (media.genres ?? []).length
           ? U.el('div', { class: 'badges', style: 'margin-bottom:1rem;' }, media.genres.slice(0, 4).map(g =>
-              U.el('a', { class: 'badge', href: `#/search?genre=${encodeURIComponent(g)}`, text: g })))
+            U.el('a', { class: 'badge', href: `#/search?genre=${encodeURIComponent(g)}`, text: g })))
           : null,
         U.el('div', { class: 'hero-buttons' }, [
           U.el('a', { class: 'btn btn-primary', href: `#/watch/${media.id}:${(Store.entry(media.id)?.progress ?? 0) + 1}` }, [U.svg(C.PLAY, 15), document.createTextNode('Watch now')]),
           Store.entry(media.id)
             ? null
             : U.el('button', {
-                class: 'btn btn-secondary',
-                onclick: e => { Store.saveEntry(media, { status: 'PLANNING' }); U.toast('Added to Planning'); e.target.textContent = '✓ In your list' }
-              }, [document.createTextNode('+ Add to list')]),
+              class: 'btn btn-secondary',
+              onclick: e => { Store.saveEntry(media, { status: 'PLANNING' }); U.toast('Added to Planning'); e.target.textContent = '✓ In your list' }
+            }, [document.createTextNode('+ Add to list')]),
           U.el('button', { class: 'btn btn-secondary', onclick: () => C.trailerModal(media.trailer) }, [document.createTextNode('Trailer')]),
           U.el('a', { class: 'btn btn-ghost', href: `#/anime/${media.id}` }, [document.createTextNode('Details')])
         ])

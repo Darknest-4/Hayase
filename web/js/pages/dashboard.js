@@ -23,7 +23,8 @@ const PageDashboard = {
     root.append(window.C.spotlight(`${this._greeting()}, ${profile?.name ?? 'Dreamer'}`, {
       subtitle: 'Your dashboard',
       actions: U.el('a', {
-        class: 'btn btn-secondary btn-sm', style: 'margin-top:.8rem;',
+        class: 'btn btn-secondary btn-sm',
+        style: 'margin-top:.8rem;',
         href: editing ? '#/dashboard' : '#/dashboard?edit=1'
       }, [document.createTextNode(editing ? '✓ Done' : '⚙ Edit layout')])
     }))
