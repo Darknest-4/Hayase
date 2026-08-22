@@ -134,6 +134,31 @@ bővítmény‑rendszerrel.
 - [x] **Nincs OpenSearch — szándékosan**: 25 672 sornál a Postgres `pg_trgm`+`tsvector` a 0017 indexekről ezredmásodpercben válaszol; az OpenSearch ~1 GB RAM‑ot és egy külön üzemeltetett JVM‑et kérne mérhető haszon nélkül (indoklás és a felülvizsgálat feltétele: `docs/search.md`)
 - [x] Igazolva: **32 új unit‑teszt** (16 metadata + 16 search) + élő végpont‑ellenőrzés + 7 böngésző‑teszt a gyorskeresőre
 
+### Bővítmény‑bolt: csomag‑kiszolgálás (kész) — [`extensions.md`](./extensions.md)
+- [x] **Eddig egyetlen bővítményt sem lehetett futtatni**: a `package_key`/`package_hash`/`package_size` szabad szöveges JSON volt a fejlesztőtől, a bájtoknak nem volt hova kerülniük, és **`ExtensionHost.load()`‑ot soha semmi nem hívta** — a sandbox (17 teszttel igazolt) elérhetetlen volt
+- [x] **Tartalom‑címzett tároló** (`server/src/lib/package-store.ts`): a kulcs **maga a bájtok sha256‑ja**, amit a szerver számol — a publikáló nem állíthatja meg, mire hashelnek a saját bájtjai; azonos tartalom egy blobra esik össze; atomi írás (temp + rename), tehát csonka blob sosem kap érvényesnek látszó nevet
+- [x] **Feltöltés**: `POST /v1/dev/extensions/:slug/packages` — nyers forrás a törzsben (nem JSON, hogy ne kelljen kódolni‑dekódolni), külön body‑limit, UTF‑8 forrás‑ellenőrzés
+- [x] **A verzió csak feltöltött bájtokra hivatkozhat**: kitalált hash‑sel a publikálás 400‑at ad; a méret a tárolóból jön, nem a hívótól
+- [x] **Letöltés**: `GET /v1/extensions/:slug/versions/:version/package` — csak publikált verzió, `immutable` cache, erős ETag (304 revalidáció)
+- [x] **Utólag manipulált blob nem szolgálható ki**: visszaolvasáskor újra hasheljük, eltérésnél **410**, nem kód — igazolva: a blob módosítása után 410, visszaállítás után újra 200
+- [x] **Kliens‑lánc megépítve**: `ExtensionHost.bootstrap()` betölti a telepített, engedélyezett bővítményeket; `App.loadExtensions()` hívja induláskor és bejelentkezés után, kijelentkezéskor `unloadAll()` — így a következő fiók nem örökli az előző kódját
+- [x] **A sandbox eddig csak torrent‑alakú eredményt engedett át**: a `sanitiseResult()` fehérlistája eldobta a `url`‑t, tehát egy tökéletes `http` típusú bővítmény eredménye **némán elveszett**. Most átmennek a közvetlen forrás mezők is (url, quality, audio, container, feliratok, headerek, lejárat) — **séma‑ellenőrzéssel**: csak `http/https/magnet`, tehát `javascript:`/`data:`/`blob:` URL nem juthat a lejátszóhoz
+- [x] Igazolva böngészőben: telepítés → letöltés → hash‑ellenőrzés → sandbox → **a streaming motor valódi forrást kap a bővítmény kódjából**
+
+### Mentés és visszaállítás (kész) — [`backup.md`](./backup.md)
+- [x] **Eddig semmilyen mentés nem volt** — se dump, se ütemezés, se visszaállítási eljárás; egyetlen Docker‑volume tartotta az összes fiókot és nézési előzményt
+- [x] **`db/backup.sh`**: `pg_dump` custom formátumban (tömörített, táblánként is visszaállítható), `.partial` néven ír majd átnevez — **csonka dump sosem kap használhatónak látszó nevet**; 4 KB alatti dumpot elutasít
+- [x] **Ellenőrzés visszaállítással**: minden futás **valóban visszaállítja** a friss dumpot egy külön adatbázisba és ellenőrzi a soha nem üres táblákat — a puszta hibamentes visszaállítás nem elég, egy üres adatbázis is hibátlanul visszaáll. Sikertelenség → 2‑es kilépési kód, nem „elmentve, bízzunk benne"
+- [x] **`db/restore.sh`**: kiírja, mit fog megsemmisíteni, és **be kell gépelni az adatbázis nevét**; `--into` egy másolatba állít vissza az élő mellé; `--list`; `FORCE=1` csak gyakorlathoz
+- [x] **Docker‑szolgáltatás**: `backup` alapból indul, naponta 03:00 UTC‑kor (`BACKUP_AT_HOUR`), `backups` volume, `BACKUP_KEEP_DAYS` retenció — a prune **csak sikeres, ellenőrzött mentés után** fut
+- [x] **A csomagok nem a DB‑ben vannak** — ezt a `restore.sh` minden futás végén kiírja, mert ez az, amit hajnali 3‑kor el lehet felejteni
+- [x] Igazolva: mentés → ellenőrzés (17 migráció, 389 jog, 5 user) → valódi visszaállítás egy másolatba → rossz név esetén 4‑es kóddal megszakad
+
+### Docker: a compose fájl nem is indult el (javítva)
+- [x] **A `docker compose config` hibára futott** a `JWT_SECRET` sor óta: idézőjel nélküli YAML értékben volt `: `, amit a parser beágyazott leképezésnek olvas — vagyis **a `docker compose up` egyáltalán nem indult**. Idézőjelezve javítva, mindkét előfordulásnál
+- [x] **A Postgres portja már nincs kifelé publikálva** (`expose` a `ports` helyett): minden szolgáltatás a compose‑hálón éri el; helyi hozzáféréshez `docker compose exec postgres psql`
+- [x] Új volume‑ok: `packages` (bővítmény‑bájtok, a `node` felhasználó tulajdonában) és `backups`
+
 ### #1 — DB library‑sync (kész)
 - [x] **Bejelentkezve a lokális könyvtár a fiókhoz szinkronizál** és eszközök közt követi a felhasználót
 - [x] **Push (lokál → DB):** minden könyvtár‑írás (`Store.saveEntry`/`setProgress`/`removeEntry`) tükröződik a DB‑be (státusz + epizód‑haladás), debounce‑olva
@@ -156,6 +181,26 @@ A felhasználó által kért sorrend (a #6 és #1 kész, ezek jönnek „folytas
 3. **#3 — Custom lists / Collections**: `custom_lists`, `custom_list_items`, `collections`, `collection_lists` táblák megvannak
 4. **#4 — Follows/Friendships + Forums/Clubs**: `follows`, `friendships`, `forums`, `clubs`, `topics`, `posts`, `club_members` táblák megvannak
 5. **#5 — AI Center / Marketplace / Plugin API**: `ai` jogosultság‑csoport (16) megvan, funkció hátra
+6. **Discord bot (gateway)** — **terv kész, kód még nincs**: [`discord-bot.md`](./discord-bot.md).
+   Saját **`bot/`** mappa, **saját `package.json`** (a `discord.js` így soha nem
+   kerül a szerver függőségei közé), saját `Dockerfile` és **külön compose‑service**,
+   tehát a Docker indítja a többivel együtt.
+   **A bot soha nem nyúl közvetlenül a Postgreshez** — mindent a meglévő API‑n
+   keresztül ír, így megmarad a validáció, az RBAC, a láthatóság és a rate limit.
+   A fiók‑összekötés az `oauth_identities`‑re ül (`'discord'` provider már engedélyezett),
+   és **nem lesz második auth‑rendszer**: egy service‑kredencilállal a bot rövid életű
+   (5 perces) sima access tokent kér a linkelt userre, onnantól közönséges API‑kliens.
+   A Yume → bot irány a **meglévő webhook‑rendszert** használja (retry, delivery‑log,
+   auto‑tiltás már megvan).
+   Funkciók: katalógus‑parancsok autocomplete‑tel (a `/v1/anime/suggest`‑re ül),
+   személyes könyvtár‑parancsok, XP/achievement (`profile_stats`, `xp_events`),
+   adás‑értesítés + automatikus epizód‑topik, rang‑szinkron, üdvözlés, reaction‑role,
+   **Watch Together ↔ Discord hangcsatorna összekötés**, link‑unfurling, és
+   moderációs híd gombokkal.
+   Egy új backend‑darab kell hozzá: **ma semmi nem veszi észre, hogy egy epizód adásba került**
+   → új `episode.aired` esemény (ez az in‑app értesítéseknek is kelleni fog).
+   ⚠️ Két **privileged intent** (`MessageContent`, `GuildMembers`) 100 szerver fölött
+   Discord‑jóváhagyást igényel — az érintett funkciók külön kapcsolhatók.
 
 > Megjegyzés: sok jövőbeli funkció **sémája már létezik** (a táblák seedeltek/migrálva),
 > csak az API‑végpont és a kliens‑UI hiányzik — ezért gyors lesz ráépíteni.
@@ -322,6 +367,12 @@ a státusza `active`‑ra vált (a `0014` UPDATE‑listáját bővítve).
 `comments`, `hover_preview`, `image_search`, `watch_together`). 4 flag még a
 funkciójára vár: `reviews`/`custom_lists` (#2/#3), `trailers` (a funkció megvan,
 guard hátra), `registration` (a `site_settings.registration_open` szabályozza).
+
+**Redis:** a compose‑ban és a configban ott van, de **egyetlen sor kód sem
+használja — ez döntés, nem feledékenység**. Két feladat vár rá (RBAC‑gyorsítótár,
+WebSocket‑hub több példányhoz), de mindkettő korai egy példánynál. A kiváltó ok,
+amikor be kell vezetni: **a második app‑példány elindítása** — mert abban a
+pillanatban a WS‑hub némán elromlik. Indoklás: [`redis.md`](./redis.md).
 
 **Miért tartjuk meg a séma‑szintű táblákat/jogokat?** Mert a #2–#5 modulok pont
 ezekre épülnek — most eldobni, majd újra létrehozni felesleges munka lenne.

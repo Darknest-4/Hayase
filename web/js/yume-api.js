@@ -324,6 +324,28 @@ const YumeAPI = {
   },
 
   /**
+   * Fetch the source of one published extension version.
+   *
+   * Returned as text, not JSON: the sandbox hashes these exact bytes against
+   * the version's published hash before running them, so any re-encoding on
+   * the way would break the check that makes the package trustworthy.
+   */
+  async extensionPackage (slug, version) {
+    const res = await fetch(`${this.base()}/v1/extensions/${encodeURIComponent(slug)}/versions/${encodeURIComponent(version)}/package`)
+    if (!res.ok) {
+      if (res.status === 410) throw new Error('This version is no longer available from the store')
+      throw new Error(`Could not download ${slug} ${version} (HTTP ${res.status})`)
+    }
+    return res.text()
+  },
+
+  /** Extensions this account has installed, with the metadata the sandbox needs. */
+  async installedExtensions () {
+    const { data } = await this._request('/v1/extensions/installed', { auth: true })
+    return data
+  },
+
+  /**
    * Anonymous sandbox failure telemetry. Best-effort: a reporting failure must
    * never surface to the user or break the extension flow that triggered it.
    */

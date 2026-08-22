@@ -100,14 +100,76 @@ const num = (value, max) => {
   return Number.isFinite(n) && n >= 0 ? Math.min(n, max) : 0
 }
 
-/** Results cross the boundary as plain, bounded data — never live objects. */
+/**
+ * Schemes a result may name. The host only ever hands these to a <video>
+ * element or a torrent client, and anything else — javascript:, data:, blob:,
+ * file: — would be an injection dressed up as a stream, so it is dropped at
+ * the boundary rather than trusted to be rejected further downstream.
+ */
+const SAFE_SCHEMES = ['http:', 'https:', 'magnet:']
+
+function safeUrl (value, max = 2000) {
+  const raw = str(value, max)
+  if (!raw) return ''
+  try {
+    return SAFE_SCHEMES.includes(new URL(raw).protocol) ? raw : ''
+  } catch {
+    return '' // not a URL at all
+  }
+}
+
+/**
+ * Subtitle tracks travel as plain bounded records. The host turns these into
+ * <track> elements, so the url gets the same scheme check as the stream.
+ */
+function sanitiseSubtitles (value) {
+  if (!Array.isArray(value)) return []
+  return value.slice(0, 20).map(track => {
+    if (typeof track !== 'object' || track === null) return null
+    const url = safeUrl(track.url)
+    return url ? { url, label: str(track.label, 60) || 'Subtitles', lang: str(track.lang, 12) } : null
+  }).filter(Boolean)
+}
+
+/**
+ * Request headers a source needs. The browser player cannot apply them (a
+ * <video> element sends no custom headers) but the desktop client can, so they
+ * are carried across as bounded strings and nothing more.
+ */
+function sanitiseHeaders (value) {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return {}
+  const out = {}
+  for (const [name, header] of Object.entries(value).slice(0, 10)) {
+    if (!/^[A-Za-z0-9-]{1,40}$/.test(name)) continue // not a header name
+    const headerValue = str(header, 500)
+    if (headerValue) out[name] = headerValue
+  }
+  return out
+}
+
+/**
+ * Results cross the boundary as plain, bounded data — never live objects.
+ *
+ * The shape covers both source families the store declares. Torrent and NZB
+ * extensions return a link plus swarm health; http and subtitle extensions
+ * return a playable url with quality, audio, container and subtitle tracks.
+ * Until these direct-source fields existed the sanitiser dropped them, so an
+ * http extension could return a perfectly good stream and the engine would
+ * see nothing at all.
+ */
 function sanitiseResult (item) {
   if (typeof item !== 'object' || item === null) return null
   const title = str(item.title, 500)
   if (!title) return null
+
+  const link = safeUrl(item.link)
+  const url = safeUrl(item.url)
+  // a result that names no location is not a source
+  if (!link && !url) return null
+
   return {
     title,
-    link: str(item.link, 2000),
+    link,
     hash: /^[a-fA-F0-9]{40}$|^[A-Z2-7]{32}$/.test(String(item.hash ?? '')) ? String(item.hash) : '',
     seeders: num(item.seeders, 1e6),
     leechers: num(item.leechers, 1e6),
@@ -115,7 +177,17 @@ function sanitiseResult (item) {
     size: num(item.size, 1e13),
     date: item.date ? new Date(item.date).toISOString() : null,
     accuracy: clampAccuracy(item.accuracy),
-    type: str(item.type, 40) || undefined
+    type: str(item.type, 40) || undefined,
+
+    // ---- direct-source fields (http / subtitle extensions) ----
+    url,
+    quality: str(item.quality, 20),
+    audio: str(item.audio, 40),
+    container: str(item.container, 60),
+    subtitles: sanitiseSubtitles(item.subtitles),
+    headers: sanitiseHeaders(item.headers),
+    expiresAt: item.expiresAt ? new Date(item.expiresAt).getTime() || null : null,
+    mode: item.mode === 'proxy' ? 'proxy' : 'direct'
   }
 }
 

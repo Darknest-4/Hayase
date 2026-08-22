@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto'
 
 import { query, queryOne, transaction } from '../db.ts'
 import { escalatedPermissions, validateManifest } from '../lib/extension-manifest.ts'
+import { MAX_PACKAGE_BYTES, looksLikeSource, put, statBlob } from '../lib/package-store.ts'
 import { enqueue } from '../lib/queue.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 
@@ -114,23 +115,63 @@ const routes: FastifyPluginAsync = async fastify => {
 
   // ---------- versions ----------
 
-  // Upload a version. The package (code + manifest) is submitted inline as a
-  // base64 tarball reference; here we record it, snapshot the manifest and
-  // declared permissions, and queue static review. Object-storage upload of
-  // the bytes happens client-side to a presigned URL in production; in this
-  // build the packageKey/hash are provided by the caller.
+  /**
+   * Upload the package bytes. Returns the content hash, which is then quoted
+   * when publishing a version.
+   *
+   * The body is the raw source, not JSON: an extension package is a script,
+   * and wrapping it in JSON would only cost an encode/decode round trip. The
+   * hash is computed here from what actually arrived — a publisher never gets
+   * to assert what their own bytes hash to.
+   */
+  fastify.post('/extensions/:slug/packages', {
+    preHandler: fastify.requirePermission('extensions.publish'),
+    // the global body limit is sized for JSON payloads; a package is larger
+    bodyLimit: MAX_PACKAGE_BYTES,
+    schema: { params: { type: 'object', properties: { slug: { type: 'string' } } } }
+  }, async (request, reply) => {
+    const { slug } = request.params as { slug: string }
+    const ext = await ownedExtension(request.user.sub, slug)
+    if (!ext) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    const bytes = request.body as Buffer
+    if (!Buffer.isBuffer(bytes) || !bytes.length) {
+      return reply.code(400).send({
+        type: 'about:blank', title: 'Bad Request', status: 400,
+        detail: 'Send the package source as the raw request body with Content-Type: application/javascript'
+      })
+    }
+    if (!looksLikeSource(bytes)) {
+      return reply.code(400).send({
+        type: 'about:blank', title: 'Bad Request', status: 400,
+        detail: 'A package must be UTF-8 source code'
+      })
+    }
+
+    try {
+      const stored = await put(bytes)
+      return reply.code(201).send(stored)
+    } catch (err) {
+      return reply.code(400).send({
+        type: 'about:blank', title: 'Bad Request', status: 400, detail: (err as Error).message
+      })
+    }
+  })
+
+  // Publish a version against an already-uploaded package. The manifest and
+  // declared permissions are snapshotted here and static review is queued.
   fastify.post('/extensions/:slug/versions', {
     preHandler: fastify.requirePermission('extensions.publish'),
     schema: {
       params: { type: 'object', properties: { slug: { type: 'string' } } },
       body: {
         type: 'object',
-        required: ['version', 'packageKey', 'packageHash', 'packageSize', 'manifest'],
+        required: ['version', 'packageHash', 'manifest'],
         properties: {
           version: { type: 'string' },
-          packageKey: { type: 'string', maxLength: 300 },
+          // the hash returned by the package upload; size and key are derived
+          // from the stored blob, never taken from the caller
           packageHash: { type: 'string', pattern: '^[0-9a-f]{64}$' },
-          packageSize: { type: 'integer', minimum: 1, maximum: 5_000_000 },
           changelog: { type: 'string', maxLength: 5000 },
           minAppVersion: { type: 'string' },
           manifest: { type: 'object' }
@@ -143,7 +184,7 @@ const routes: FastifyPluginAsync = async fastify => {
   }, async (request, reply) => {
     const { slug } = request.params as { slug: string }
     const body = request.body as {
-      version: string, packageKey: string, packageHash: string, packageSize: number,
+      version: string, packageHash: string,
       changelog?: string, minAppVersion?: string, manifest: Record<string, unknown>
     }
 
@@ -153,6 +194,17 @@ const routes: FastifyPluginAsync = async fastify => {
 
     const ext = await ownedExtension(request.user.sub, slug)
     if (!ext) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    // A version can only reference bytes that were actually uploaded. This is
+    // what makes the recorded hash meaningful: it names a blob the server
+    // stored and hashed itself.
+    const stored = await statBlob(body.packageHash)
+    if (!stored) {
+      return reply.code(400).send({
+        type: 'about:blank', title: 'Bad Request', status: 400,
+        detail: 'No uploaded package with that hash — POST the source to /v1/dev/extensions/' + slug + '/packages first'
+      })
+    }
 
     // The manifest is the contract the sandbox enforces, so it is validated
     // here and every declaration is taken from it.
@@ -185,7 +237,7 @@ const routes: FastifyPluginAsync = async fastify => {
            (extension_id, version, package_key, package_hash, package_size, manifest, changelog, min_app_version, review_status)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
          RETURNING id, version, review_status, created_at`,
-        [ext.id, body.version, body.packageKey, body.packageHash, body.packageSize, body.manifest, body.changelog ?? null, manifest.minAppVersion ?? body.minAppVersion ?? null]
+        [ext.id, body.version, stored.hash, stored.hash, stored.size, body.manifest, body.changelog ?? null, manifest.minAppVersion ?? body.minAppVersion ?? null]
       )
       const versionId = rows[0]!.id
       for (const perm of check.permissions) {

@@ -15,7 +15,7 @@ services:
       # Required. The app refuses to boot in production with a placeholder or a
       # secret under 32 chars. Put it in a .env file next to this compose file:
       #   JWT_SECRET=$(openssl rand -base64 48)
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env — generate with: openssl rand -base64 48}
+      JWT_SECRET: '${JWT_SECRET:?set JWT_SECRET in .env — generate one with `openssl rand -base64 48`}'
       PORT: '4000'
       HOST: 0.0.0.0
       # CORS is same-origin by default in production, which is what this
@@ -25,6 +25,10 @@ services:
       # Enable once the VPS terminates HTTPS (usually behind a reverse proxy):
       # ENABLE_HSTS: 'true'
     ports: ['4000:4000']
+    volumes:
+      # Extension package bytes. These are NOT in the database, so a database
+      # backup alone does not restore them — see docs/backup.md.
+      - packages:/app/packages
 
   # Background worker — REQUIRED in production. It creates next month's
   # partitions and enforces retention (without it, inserts into the
@@ -39,7 +43,7 @@ services:
     environment:
       DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:-yume}@postgres:5432/yume
       # the worker loads the same config module, which validates this at import
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env — generate with: openssl rand -base64 48}
+      JWT_SECRET: '${JWT_SECRET:?set JWT_SECRET in .env — generate one with `openssl rand -base64 48`}'
       # where the worker reaches the API to measure its response time
       SELF_URL: http://app:4000
       # Host filesystem for disk metrics. /proc is already the host's inside a
@@ -81,6 +85,29 @@ services:
       # AL_DELAY_MS: '2000'   # pacing between AniList batches of 50
     command: ['npm', 'run', 'import:anilist']
 
+  # Database backups. Runs pg_dump daily, then proves the dump by restoring it
+  # into a scratch database — an unverified backup is a guess. Uses the same
+  # Postgres image so pg_dump always matches the server version.
+  #   docker compose run --rm backup db/backup.sh          take one now
+  #   docker compose run --rm backup db/restore.sh --list  see what exists
+  #   docker compose run --rm backup db/restore.sh         restore the newest
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:-yume}@postgres:5432/yume
+      BACKUP_DIR: /backups
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_AT_HOUR: ${BACKUP_AT_HOUR:-3}
+    volumes:
+      - ./db:/db:ro
+      - backups:/backups
+    working_dir: /
+    command: ['/db/backup-cron.sh']
+
   postgres:
     image: postgres:16-alpine
     environment:
@@ -88,7 +115,11 @@ services:
       # Change this for a real deployment: POSTGRES_PASSWORD=... in .env
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-yume}
       POSTGRES_DB: yume
-    ports: ['5432:5432']
+    # NOT published to the host: every service reaches Postgres over the compose
+    # network as `postgres:5432`. Publishing it would expose the database on the
+    # VPS's public interface. For local psql access use:
+    #   docker compose exec postgres psql -U yume yume
+    expose: ['5432']
     volumes: ['pgdata:/var/lib/postgresql/data']
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U yume']
@@ -132,6 +163,8 @@ services:
 
 volumes:
   pgdata:
+  packages:
+  backups:
   redisdata:
   osdata:
   miniodata:
