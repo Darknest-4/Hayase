@@ -11,6 +11,7 @@ import mercurius from 'mercurius'
 import Fastify from 'fastify'
 
 import { config } from './config.ts'
+import { recordError } from './lib/errors.ts'
 import { schema, resolvers, loaders } from './graphql/schema.ts'
 import wsPlugin from './lib/ws.ts'
 import authPlugin from './plugins/auth.ts'
@@ -36,12 +37,16 @@ import type { FastifyError, FastifyInstance } from 'fastify'
 export async function buildApp (): Promise<FastifyInstance> {
   const app = Fastify({
     logger: { level: config.isProd ? 'info' : 'debug' },
-    trustProxy: true,
+    // Never a blanket true — see config.trustProxy for why that made the rate
+    // limiter bypassable with a single header.
+    trustProxy: config.trustProxy,
     // Cap request bodies. Nothing Yume accepts is large — the biggest payloads
     // are comment/review text and extension manifests — so this bounds memory
     // use from hostile requests. Fastify's default is the same 1 MB; setting it
     // explicitly makes the intent (and the place to change it) obvious.
-    bodyLimit: Number(process.env.BODY_LIMIT_BYTES ?? 1_048_576)
+    bodyLimit: Number(process.env.BODY_LIMIT_BYTES ?? 1_048_576),
+    requestTimeout: config.requestTimeoutMs,
+    connectionTimeout: config.connectionTimeoutMs
   })
 
   // Extension packages are uploaded as raw source, not JSON — see
@@ -124,7 +129,18 @@ export async function buildApp (): Promise<FastifyInstance> {
   // RFC 9457 problem+json for unhandled errors
   app.setErrorHandler((error: FastifyError, request, reply) => {
     const status = error.statusCode ?? 500
-    if (status >= 500) request.log.error(error)
+    if (status >= 500) {
+      request.log.error(error)
+      // Persist it so the admin error view reflects reality. Fire-and-forget:
+      // the response must not wait on telemetry, and a telemetry failure must
+      // never replace the error the caller actually hit.
+      void recordError('api', error, {
+        route: request.routeOptions?.url ?? request.url,
+        method: request.method,
+        statusCode: status,
+        userId: (request.user as { sub?: string } | undefined)?.sub
+      })
+    }
     void reply.code(status).type('application/problem+json').send({
       type: 'about:blank',
       title: status >= 500 ? 'Internal Server Error' : error.message,

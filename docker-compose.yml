@@ -22,9 +22,22 @@ services:
       # single-container deployment needs. Only set this if you host the web
       # client on a different origin, e.g. CORS_ORIGINS=https://app.example.com
       # CORS_ORIGINS: ''
-      # Enable once the VPS terminates HTTPS (usually behind a reverse proxy):
-      # ENABLE_HSTS: 'true'
-    ports: ['4000:4000']
+      # Only the Docker network may set X-Forwarded-For. Never `true`: that
+      # trusts the header from anyone and makes rate limiting bypassable.
+      TRUST_PROXY: ${TRUST_PROXY:-172.16.0.0/12}
+    # Not published: caddy is the only way in. Expose it again only if you are
+    # running without the proxy and know the request is already on a trusted
+    # network.
+    expose: ['4000']
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:4000/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits: { memory: 768M }
     volumes:
       # Extension package bytes. These are NOT in the database, so a database
       # backup alone does not restore them — see docs/backup.md.
@@ -55,6 +68,17 @@ services:
     volumes:
       - /:/host:ro
     command: ['npm', 'run', 'worker']
+    healthcheck:
+      # The worker has no port, so liveness is "the process can still reach the
+      # database" — which is what it needs in order to do anything at all.
+      test: ['CMD', 'node', '--experimental-strip-types', '-e', "import('./src/db.ts').then(m=>m.query('SELECT 1')).then(()=>process.exit(0)).catch(()=>process.exit(1))"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits: { memory: 512M }
 
   # one-shot catalogue seed (25k anime + episodes) into the persistent volume.
   # Run once: docker compose --profile seed run --rm seed
@@ -84,6 +108,27 @@ services:
       DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:-yume}@postgres:5432/yume
       # AL_DELAY_MS: '2000'   # pacing between AniList batches of 50
     command: ['npm', 'run', 'import:anilist']
+
+  # HTTPS terminator. Obtains and renews a Let's Encrypt certificate for
+  # YUME_DOMAIN automatically; without a domain set it serves plain HTTP on :80
+  # so local `docker compose up` still works.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [app]
+    environment:
+      YUME_DOMAIN: ${YUME_DOMAIN:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    ports: ['80:80', '443:443', '443:443/udp']
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://127.0.0.1:80/v1/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   # Database backups. Runs pg_dump daily, then proves the dump by restoring it
   # into a scratch database — an unverified backup is a guess. Uses the same
@@ -165,6 +210,8 @@ volumes:
   pgdata:
   packages:
   backups:
+  caddydata:
+  caddyconfig:
   redisdata:
   osdata:
   miniodata:

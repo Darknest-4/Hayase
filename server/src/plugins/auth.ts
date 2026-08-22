@@ -33,7 +33,31 @@ declare module 'fastify' {
   }
 }
 
+/**
+ * Permission-set cache.
+ *
+ * Every privileged request ran a three-table join, with no cache anywhere —
+ * the comment above promised a per-request memo that was never written. An
+ * admin page load meant a dozen of those against a small connection pool.
+ *
+ * In-process and short-lived on purpose: correct for a single instance, and
+ * bounded staleness (a revoked role takes effect within the TTL) rather than
+ * an invalidation protocol nothing yet needs. When a second app instance
+ * appears this is one of the two places Redis takes over — see docs/redis.md.
+ */
+const PERMISSION_TTL_MS = Number(process.env.PERMISSION_CACHE_TTL_MS ?? 30_000)
+const permissionCache = new Map<string, { permissions: Set<string>, expires: number }>()
+
+/** Drop a user's cached set — called whenever their roles change. */
+export function invalidatePermissions (userId?: string): void {
+  if (userId) permissionCache.delete(userId)
+  else permissionCache.clear()
+}
+
 async function loadPermissions (userId: string): Promise<Set<string>> {
+  const hit = permissionCache.get(userId)
+  if (hit && hit.expires > Date.now()) return hit.permissions
+
   const rows = await query<{ slug: string }>(
     `SELECT DISTINCT p.slug
      FROM user_roles ur
@@ -42,7 +66,16 @@ async function loadPermissions (userId: string): Promise<Set<string>> {
      WHERE ur.user_id = $1`,
     [userId]
   )
-  return new Set(rows.map(row => row.slug))
+  const permissions = new Set(rows.map(row => row.slug))
+  permissionCache.set(userId, { permissions, expires: Date.now() + PERMISSION_TTL_MS })
+
+  // The cache is keyed per user and entries expire, but a long-lived process
+  // with many users would still grow — so it is swept when it gets large.
+  if (permissionCache.size > 5_000) {
+    const now = Date.now()
+    for (const [key, entry] of permissionCache) if (entry.expires <= now) permissionCache.delete(key)
+  }
+  return permissions
 }
 
 export default fp(async fastify => {

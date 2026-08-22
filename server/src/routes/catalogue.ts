@@ -5,6 +5,7 @@
 // operators can find and restore them.
 
 import { query, queryOne, pool, transaction } from '../db.ts'
+import { audit } from '../lib/audit.ts'
 import { findDuplicates, lockFields, mergeAnime, unlockFields, MANAGED_FIELDS } from '../lib/metadata.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 
@@ -140,6 +141,7 @@ const routes: FastifyPluginAsync = async fastify => {
         body.season_year ?? null, body.episode_count ?? null, body.episode_duration ?? null,
         body.synopsis ?? null, body.source_material ?? null, body.is_adult ?? null, body.visibility ?? null]
     )
+    await audit(request.user.sub, 'anime.create', 'anime', created?.id ?? null, null, { title: created?.canonical_title })
     void emitEvent('catalogue.changed', { action: 'created', title: created?.canonical_title, by: request.user.username })
     return reply.code(201).send(created)
   })
@@ -169,6 +171,8 @@ const routes: FastifyPluginAsync = async fastify => {
     // other automatic source stop overwriting them on the next run.
     await lockFields(pool, id, Object.keys(body))
 
+    await audit(request.user.sub, 'anime.edit', 'anime', id, null, { fields: Object.keys(body) })
+
     const action = Object.prototype.hasOwnProperty.call(body, 'visibility') ? `visibility → ${row.visibility}` : 'edited'
     void emitEvent('catalogue.changed', { action, title: row.canonical_title, by: request.user.username })
     return row
@@ -182,6 +186,7 @@ const routes: FastifyPluginAsync = async fastify => {
     const { id } = request.params as { id: string }
     const row = await queryOne<{ canonical_title: string }>('DELETE FROM anime WHERE id = $1 RETURNING canonical_title', [id])
     if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    await audit(request.user.sub, 'anime.delete', 'anime', id, { title: row.canonical_title }, null)
     void emitEvent('catalogue.changed', { action: 'deleted', title: row.canonical_title, by: request.user.username })
     return reply.code(204).send()
   })
@@ -278,6 +283,7 @@ const routes: FastifyPluginAsync = async fastify => {
     const exists = await queryOne('SELECT 1 FROM anime WHERE id = $1', [id])
     if (!exists) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
     await unlockFields(pool, id, fields)
+    await audit(request.user.sub, 'anime.unlock', 'anime', id, null, { fields })
     const row = await queryOne('SELECT locked_fields FROM anime WHERE id = $1', [id])
     return row
   })
@@ -327,6 +333,10 @@ const routes: FastifyPluginAsync = async fastify => {
     await transaction(client => mergeAnime(client, id, sourceId))
     const target = both.find(r => r.id === id)
     const source = both.find(r => r.id === sourceId)
+    // A merge deletes a row permanently, so it is the single most important
+    // catalogue action to be able to reconstruct afterwards.
+    await audit(request.user.sub, 'anime.merge', 'anime', id,
+      { merged: source?.canonical_title, mergedId: sourceId }, { kept: target?.canonical_title })
     void emitEvent('catalogue.changed', {
       action: `merged "${source?.canonical_title}" into`, title: target?.canonical_title, by: request.user.username
     })
