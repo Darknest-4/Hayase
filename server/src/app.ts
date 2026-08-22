@@ -44,6 +44,13 @@ export async function buildApp (): Promise<FastifyInstance> {
     bodyLimit: Number(process.env.BODY_LIMIT_BYTES ?? 1_048_576)
   })
 
+  // Extension packages are uploaded as raw source, not JSON — see
+  // lib/package-store.ts. Only these content types bypass the JSON parser,
+  // and the route that accepts them sets its own (larger) body limit.
+  for (const mime of ['application/javascript', 'text/javascript', 'application/octet-stream']) {
+    app.addContentTypeParser(mime, { parseAs: 'buffer' }, (_request, body, done) => { done(null, body) })
+  }
+
   await app.register(securityPlugin)
   await app.register(cors, { origin: config.corsOrigins })
   await app.register(authPlugin)

@@ -167,8 +167,31 @@ const App = {
     this.refreshAdminNav()
     this.applyNavVisibility()
     this.navigate()
+
+    this.loadExtensions()
     if (window.YumeAPI.user()) window.LibrarySync?.init() // pull the account library + start mirroring
     else window.LibrarySync?.reset() // signed out → stop mirroring
+  },
+
+  /**
+   * Load this account's installed extensions into the sandbox.
+   *
+   * Runs off the critical path: the streaming engine asks whichever ones are
+   * ready when a source is actually needed, so a slow store never delays the
+   * first render. Signed out, any previously loaded extension is dropped —
+   * the next account must not inherit the last one's code.
+   */
+  loadExtensions () {
+    const host = window.ExtensionHost
+    if (!host) return
+    if (!window.YumeAPI.user()) { host.unloadAll?.(); return }
+
+    host.bootstrap().then(result => {
+      if (result.loaded.length) console.info('[extensions] loaded:', result.loaded.join(', '))
+      for (const failure of result.failed) {
+        U.toast(`Extension "${failure.slug}" could not load — ${failure.error}`, 'error')
+      }
+    }).catch(error => console.warn('[extensions] bootstrap failed:', error.message))
   },
 
   async loadConfig () {
@@ -450,6 +473,7 @@ const App = {
     this.refreshAdminNav()
     this.applyNavVisibility()
     this.navigate()
+    this.loadExtensions()
 
     // sign-in library sync (best-effort, off the critical path)
     if (window.YumeAPI.user()) window.LibrarySync?.init()

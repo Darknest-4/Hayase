@@ -321,6 +321,56 @@ const ExtensionHost = {
     return true
   },
 
+  // ---------------------------------------------------------------- bootstrap
+
+  /**
+   * Load every enabled extension this account has installed.
+   *
+   * Until this existed the sandbox was unreachable: packages had nowhere to be
+   * stored and nothing ever called load(), so the streaming engine could only
+   * ever see manually pasted URLs. This is the path that turns an install into
+   * a working source.
+   *
+   * One extension failing must never stop the others, so each is loaded
+   * independently and failures are reported rather than thrown.
+   */
+  async bootstrap () {
+    if (!window.YumeAPI?.user?.()) return { loaded: [], failed: [] }
+
+    let installed
+    try {
+      installed = await window.YumeAPI.installedExtensions()
+    } catch (error) {
+      return { loaded: [], failed: [], unavailable: error.message }
+    }
+
+    const loaded = []
+    const failed = []
+
+    await Promise.all(installed.filter(ext => ext.enabled).map(async ext => {
+      try {
+        const source = await window.YumeAPI.extensionPackage(ext.slug, ext.version)
+        await this.load({
+          slug: ext.slug,
+          status: ext.status,
+          version: ext.version,
+          versionId: ext.version_id,
+          packageHash: ext.package_hash,
+          minAppVersion: ext.min_app_version,
+          permissions: ext.permissions,
+          options: ext.options,
+          source
+        })
+        loaded.push(ext.slug)
+      } catch (error) {
+        failed.push({ slug: ext.slug, error: error.message })
+        console.warn('[extensions] could not load', ext.slug, '—', error.message)
+      }
+    }))
+
+    return { loaded, failed }
+  },
+
   // ---------------------------------------------------------------- telemetry
 
   /**

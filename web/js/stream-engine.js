@@ -90,7 +90,9 @@ const StreamEngine = {
       url,
       kind,
       container,
-      quality: Number(raw?.quality) || this.detectQuality(raw?.title),
+      // quality may arrive as a number (1080), a label ("1080p") or not at
+      // all, in which case it is parsed out of the release title
+      quality: Number(raw?.quality) || this.detectQuality(raw?.quality) || this.detectQuality(raw?.title),
       audio: raw?.audio ? String(raw.audio).slice(0, 40) : null,
       subtitles: Array.isArray(raw?.subtitles)
         ? raw.subtitles.slice(0, 20)

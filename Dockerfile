@@ -19,10 +19,16 @@ COPY server/ ./
 COPY db/ /app/db/
 COPY web/ /app/web/
 
+# Extension packages are stored on disk, outside the database. Creating the
+# directory here (owned by the runtime user) means a fresh named volume mounted
+# over it inherits that ownership instead of coming up root-owned and unwritable.
+RUN mkdir -p /app/packages && chown node:node /app/packages
+
 ENV NODE_ENV=production \
     PORT=4000 \
     HOST=0.0.0.0 \
-    WEB_ROOT=/app/web
+    WEB_ROOT=/app/web \
+    PACKAGE_DIR=/app/packages
 EXPOSE 4000
 
 # Run as the built-in unprivileged user.

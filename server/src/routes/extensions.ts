@@ -2,6 +2,7 @@
 // client needs to load extensions into its sandbox.
 
 import { query, queryOne, transaction } from '../db.ts'
+import { get as getPackage } from '../lib/package-store.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 import { WRITE_LIMIT } from '../plugins/security.ts'
 
@@ -163,6 +164,60 @@ const routes: FastifyPluginAsync = async fastify => {
       health: classifyHealth(total, Number(extension.install_count ?? 0)),
       failures_7d: total
     }
+  })
+
+  /**
+   * Serve the package bytes for one version.
+   *
+   * This is the endpoint the sandbox loads from, so it is deliberately narrow:
+   * only a published version of a published extension is served, and only
+   * after the stored bytes have been re-verified against the hash the store
+   * recorded. A blob that no longer matches its hash is treated as missing
+   * rather than served, because serving it would run code nobody reviewed.
+   *
+   * Content-addressed storage makes the response immutable, so it can be
+   * cached indefinitely and revalidated with a strong ETag.
+   */
+  fastify.get('/:slug/versions/:version/package', {
+    schema: {
+      params: {
+        type: 'object',
+        properties: { slug: { type: 'string' }, version: { type: 'string' } }
+      }
+    }
+  }, async (request, reply) => {
+    const { slug, version } = request.params as { slug: string, version: string }
+
+    const row = await queryOne<{ package_hash: string, package_size: number }>(
+      `SELECT v.package_hash, v.package_size
+       FROM extension_versions v
+       JOIN extensions e ON e.id = v.extension_id
+       WHERE e.slug = $1 AND v.version = $2
+         AND v.published_at IS NOT NULL
+         AND e.status IN ('published', 'deprecated')`,
+      [slug, version]
+    )
+    if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    if (request.headers['if-none-match'] === `"${row.package_hash}"`) return reply.code(304).send()
+
+    const bytes = await getPackage(row.package_hash)
+    if (!bytes) {
+      // recorded but unreadable, or the bytes no longer hash to what was
+      // reviewed — either way this version cannot be served
+      request.log.error({ slug, version, hash: row.package_hash }, 'extension package missing or corrupt')
+      return reply.code(410).send({
+        type: 'about:blank', title: 'Gone', status: 410,
+        detail: 'The package for this version is no longer available'
+      })
+    }
+
+    return reply
+      .header('Content-Type', 'application/javascript; charset=utf-8')
+      .header('Cache-Control', 'public, max-age=31536000, immutable')
+      .header('ETag', `"${row.package_hash}"`)
+      .header('X-Content-Type-Options', 'nosniff')
+      .send(bytes)
   })
 
   fastify.post('/:slug/install', { preHandler: fastify.authenticate }, async (request, reply) => {

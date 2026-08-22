@@ -61,6 +61,13 @@ export const config = {
   // probed only when its URL is configured here, otherwise it reports
   // "not_configured" instead of raising a false alarm. Yume itself needs none
   // of these today — Postgres is the only hard dependency.
+  //
+  // Redis is deliberately NOT adopted yet. It has two jobs waiting for it —
+  // caching the RBAC permission lookup, and backing the WebSocket hub so more
+  // than one app instance can share channels — but both are premature on a
+  // single instance, and an unused dependency is one more thing to operate and
+  // to fail. Adopt it when a second app instance is actually needed; until
+  // then setting REDIS_URL only enables its health probe. See docs/redis.md.
   redisUrl: process.env.REDIS_URL,
   rabbitUrl: process.env.RABBITMQ_URL,
   openSearchUrl: process.env.OPENSEARCH_URL,

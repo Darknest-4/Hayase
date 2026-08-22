@@ -6,6 +6,56 @@ model is inherited from Hayase (per-extension sandboxed workers, accuracy
 capping) and extended with a **store, signed versioned packages, declared
 permissions and a review pipeline**.
 
+## Package delivery
+
+A version's bytes live in a content-addressed store (`server/src/lib/package-store.ts`),
+not in the database. The key **is** the sha256 of the bytes, and the server
+computes it — a publisher never asserts what their own package hashes to.
+
+```
+POST /v1/dev/extensions/:slug/packages      raw source in the body → { hash, size }
+POST /v1/dev/extensions/:slug/versions      { version, packageHash, manifest }
+GET  /v1/extensions/:slug/versions/:v/package   the bytes the sandbox runs
+```
+
+Publishing a version whose `packageHash` was never uploaded is rejected, and
+the recorded size comes from the stored blob rather than the request. On the
+way out the bytes are re-hashed: a blob that no longer matches what was
+reviewed returns **410 Gone** instead of code, because serving it would run
+something nobody approved.
+
+Responses are `immutable` with a strong ETag — safe, since content addressing
+means a given URL can only ever return one thing.
+
+The client side is `ExtensionHost.bootstrap()`, called from `App.loadExtensions()`
+on page load and after sign-in. Each extension loads independently, so one
+failing never stops the others, and signing out unloads everything so the next
+account cannot inherit the previous one's code.
+
+**Packages are not in database dumps.** Back up the `packages` volume as well —
+see [`backup.md`](./backup.md).
+
+## Result shape
+
+Results crossing the sandbox boundary are plain bounded data. Two families are
+supported, and a result must name a location (`link` or `url`) to survive:
+
+| Field | For | Notes |
+|---|---|---|
+| `title` | all | required |
+| `link`, `hash`, `seeders`, `leechers`, `size`, `date` | torrent / nzb | swarm health |
+| `url` | http | the playable stream |
+| `quality`, `audio`, `container` | http | `"1080p"` or `1080` both parse |
+| `subtitles[]` | http / subtitle | `{ url, label, lang }` |
+| `headers` | http | recorded, not applied by the browser player |
+| `expiresAt`, `mode` | http | expiry and direct/proxy |
+
+Every URL is scheme-checked at the boundary: only `http:`, `https:` and
+`magnet:` pass. `javascript:`, `data:`, `blob:` and `file:` are dropped there
+rather than trusted to be rejected further down, because the host hands these
+straight to a `<video>` element.
+
+
 ## Implementation status
 
 The format and permission model described below are **implemented and
