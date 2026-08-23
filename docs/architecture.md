@@ -145,3 +145,85 @@ last-write-wins per field with server timestamps.
 `docker-compose.yml` starts Postgres, Caddy and
 an optional Redis for local development. The API reads all connections from env
 vars (12-factor); see `server/.env.example`.
+
+## Where anime data comes from
+
+The catalogue is the source of truth. External providers are the fallback.
+
+That ordering used to be the other way round, and it was invisible: the
+database held a full catalogue schema — titles, synonyms, genres, tags,
+images, relations, mappings, episodes, plus per-field provenance in
+`metadata_sources` — while the detail page called `API.media()`, which goes
+straight to `graphql.anilist.co` from the browser. Only quick search consulted
+the catalogue. So the catalogue behaved as a search index, and if AniList was
+down the detail page failed for titles whose every field was in our own
+database.
+
+### The resolver
+
+`web/js/catalogue.js` is the only module that knows both vocabularies. It maps
+a catalogue record into AniList's `Media` shape, because the whole UI is
+written against that shape and rewriting it would be a large change with no
+user-visible benefit.
+
+```
+Catalogue.media(id)      catalogue → AniList
+Catalogue.episodes(media) catalogue → ani.zip / Jikan
+```
+
+The enums need no translation: `anime_format`, `anime_status` and
+`anime_season` were defined with AniList's own values.
+
+### Identity
+
+`#/anime/:id` and `#/watch/:id:ep` accept **either** an AniList id (numeric) or
+a Yume catalogue id (uuid). Existing links keep working, and an anime that
+exists only in our catalogue is reachable — previously search dropped those
+rows, because the route could only navigate by AniList id.
+
+On the mapped record:
+
+| field | meaning |
+|---|---|
+| `id` | what the app navigates and stores by — the AniList id when there is one, the catalogue uuid otherwise |
+| `yumeId` | always the catalogue uuid |
+| `anilistId` / `idMal` | the real provider ids, or `null`. Provider links are omitted rather than built from a uuid |
+
+`id` falls back to the uuid deliberately: the library, favourites, resume
+points and the watch route all key off it, and a `null` there breaks every one
+of them silently.
+
+### Provider precedence
+
+`server/src/lib/metadata.ts` ranks sources; higher wins, and a field written by
+a higher-ranked source is not overwritten by a lower one.
+
+| rank | source | |
+|---|---|---|
+| 100 | `manual` | a human in the catalogue admin |
+| 60 | `anilist` | richest automatic source |
+| 50 | `mal` | MyAnimeList / Jikan |
+| 30 | `aod` | anime-offline-database — the bulk seed |
+| 10 | `stub` | placeholder row from `/v1/anime/resolve` |
+
+MyAnimeList is one source among several and ranks below AniList. `ani.zip`
+supplies episode images and titles; `anime_mappings` cross-references AniList,
+MAL, AniDB, Kitsu, TMDB, TVDB and IMDb ids.
+
+### Falling back
+
+A catalogue miss on a numeric id falls through to AniList. A miss on a uuid
+does not, because AniList has never heard of our identifiers — asking would be
+a guaranteed miss and a wasted round trip.
+
+Episodes fall back when the catalogue holds *no* episode rows. An empty
+`episodes` table for a series that has aired is a gap in our import, not a
+statement that the series has no episodes, and returning `[]` there would show
+the user an empty tab instead of the truth.
+
+### What this does not do
+
+It does not populate the catalogue. The importer (`scripts/import-anilist.ts`)
+and the AniList worker exist for that and have to be run. Until they are, most
+requests still miss and fall through — the difference is that they now fall
+*through* rather than going straight out.

@@ -859,6 +859,93 @@ describe('adversarial', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
     })
   })
 
+  // ---- the catalogue as a source of truth ----
+
+  describe('catalogue detail', () => {
+    let animeId = ''
+    let anilistId: number | null = null
+
+    before(async () => {
+      const { rows } = await pool.query(
+        `SELECT a.id, m.anilist_id FROM anime a
+         LEFT JOIN anime_mappings m ON m.anime_id = a.id
+         WHERE m.anilist_id IS NOT NULL LIMIT 1`)
+      if (rows[0]) {
+        animeId = String(rows[0].id)
+        anilistId = Number(rows[0].anilist_id)
+      }
+    })
+
+    test('the full record comes back by Yume id', async () => {
+      if (!animeId) return
+      const res = await app.inject({ url: `/v1/anime/${animeId}` })
+      assert.equal(res.statusCode, 200)
+      const body = res.json() as Record<string, unknown>
+      // The shape the client maps from — missing any of these sends the detail
+      // page back to AniList for a title we already hold.
+      for (const key of ['id', 'canonical_title', 'titles', 'synonyms', 'genres', 'tags', 'companies', 'images', 'mappings']) {
+        assert.ok(key in body, `the record must carry ${key}`)
+      }
+    })
+
+    test('the tsvector never leaves the server', async () => {
+      // `search` is an implementation detail of ranking, and it is large.
+      if (!animeId) return
+      const body = (await app.inject({ url: `/v1/anime/${animeId}` })).json() as Record<string, unknown>
+      assert.ok(!('search' in body), 'the search vector must not be serialised to clients')
+    })
+
+    test('one round trip by AniList id returns the whole record', async () => {
+      // Without ?full the client had to resolve the id and then fetch the
+      // record — two round trips on the most-loaded screen, which is the cost
+      // that made it skip the catalogue and call AniList directly instead.
+      if (anilistId === null) return
+      const bridge = await app.inject({ url: `/v1/anime/by-anilist/${anilistId}` })
+      assert.equal(bridge.statusCode, 200)
+      assert.deepEqual(Object.keys(bridge.json() as object).sort(), ['canonical_title', 'id'])
+
+      const full = await app.inject({ url: `/v1/anime/by-anilist/${anilistId}?full=true` })
+      assert.equal(full.statusCode, 200)
+      const body = full.json() as Record<string, unknown>
+      assert.equal(body.id, animeId)
+      assert.ok('titles' in body && 'genres' in body && 'mappings' in body)
+      assert.ok(!('search' in body))
+    })
+
+    test('an unknown id is 404 in both forms', async () => {
+      assert.equal((await app.inject({ url: `/v1/anime/${NONEXISTENT_UUID}` })).statusCode, 404)
+      assert.equal((await app.inject({ url: '/v1/anime/by-anilist/999999999?full=true' })).statusCode, 404)
+    })
+
+    test('relations carry the id the client links by', async () => {
+      if (!animeId) return
+      const res = await app.inject({ url: `/v1/anime/${animeId}/relations` })
+      assert.equal(res.statusCode, 200)
+      const { data } = res.json() as { data: Array<Record<string, unknown>> }
+      // A relation with no AniList mapping still has to be reachable, so the
+      // row carries both ids and the client picks whichever exists.
+      for (const row of data) {
+        assert.ok('id' in row, 'every relation needs a Yume id')
+        assert.ok('anilist_id' in row, 'and the AniList id when there is one')
+      }
+    })
+
+    test('episodes answer for a real anime and 404 for an unknown one', async () => {
+      if (!animeId) return
+      assert.equal((await app.inject({ url: `/v1/anime/${animeId}/episodes` })).statusCode, 200)
+      assert.equal((await app.inject({ url: `/v1/anime/${NONEXISTENT_UUID}/episodes` })).statusCode, 404)
+    })
+
+    test('the whole detail surface is public', async () => {
+      // The catalogue is the fallback for an unauthenticated visitor too;
+      // requiring a token here would push anonymous users back to AniList.
+      if (!animeId) return
+      for (const url of [`/v1/anime/${animeId}`, `/v1/anime/${animeId}/episodes`, `/v1/anime/${animeId}/relations`]) {
+        assert.equal((await app.inject({ url })).statusCode, 200, url)
+      }
+    })
+  })
+
   // ---- webhooks / SSRF at the route ----
 
   describe('webhook targets', () => {

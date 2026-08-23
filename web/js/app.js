@@ -257,10 +257,14 @@ const App = {
         // Rows without an anilist_id are dropped rather than discarding the
         // whole catalogue answer: the detail route navigates by AniList id,
         // so an unmapped row has nowhere to link to yet.
-        const suggestions = (await YumeAPI.suggest(query, 10) ?? []).filter(s => s.anilist_id)
+        // Rows without an AniList id used to be dropped, because the detail
+        // route could only navigate by AniList id — so a title that existed
+        // only in our own catalogue was unreachable through search. The route
+        // takes a Yume uuid now, so every row can be linked.
+        const suggestions = await YumeAPI.suggest(query, 10) ?? []
         const media = suggestions.length
           ? suggestions.map(s => ({
-            id: s.anilist_id,
+            id: s.anilist_id ?? s.id,
             title: { userPreferred: s.canonical_title },
             coverImage: { large: s.cover_key ?? '' },
             format: s.format,

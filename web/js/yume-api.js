@@ -178,6 +178,48 @@ const YumeAPI = {
     return new WebSocket(url)
   },
 
+  // ---- catalogue reads ----
+  //
+  // These return null — never throw — when the backend is unreachable, so the
+  // client stays usable standalone and the caller falls through to AniList.
+  // A 404 is also null: "we do not have it" and "we cannot be asked" lead to
+  // the same next step.
+
+  /**
+   * The full catalogue record, by Yume id (uuid) or AniList id (numeric).
+   *
+   * `full=true` on the AniList path returns the record in one round trip
+   * rather than resolving the id and then fetching it.
+   */
+  async catalogueMedia (id) {
+    const path = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(id))
+      ? '/v1/anime/' + id
+      : '/v1/anime/by-anilist/' + Number(id) + '?full=true'
+    try {
+      return await this._request(path)
+    } catch (e) {
+      return null
+    }
+  },
+
+  async catalogueEpisodes (yumeId) {
+    try {
+      const { data } = await this._request(`/v1/anime/${yumeId}/episodes`)
+      return data
+    } catch (e) {
+      return null
+    }
+  },
+
+  async catalogueRelations (yumeId) {
+    try {
+      const { data } = await this._request(`/v1/anime/${yumeId}/relations`)
+      return data
+    } catch (e) {
+      return null
+    }
+  },
+
   // ---- catalogue search ----
   // Tiered ranking over the Yume catalogue (canonical titles, romaji/english/
   // native titles and synonyms). The client stays usable without a backend —
