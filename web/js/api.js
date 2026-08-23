@@ -42,6 +42,23 @@ const API = {
 
   // ---------- AniList ----------
 
+  /**
+   * The shared Media selection.
+   *
+   * `relationType` carries `(version: 2)` here because it must carry the same
+   * argument in every selection of it. GraphQL merges two selections of one
+   * response name only when their arguments are identical, and the detail
+   * query spreads this fragment AND selects `relations` again with a richer
+   * node. When this one had no argument the two could not merge and AniList
+   * rejected the whole request:
+   *
+   *   Fields "relations" conflict because subfields "edges" conflict because
+   *   subfields "relationType" conflict because they have differing arguments.
+   *
+   * That failed the entire query, so a detail page falling back to AniList
+   * showed "Failed to load anime" instead of the anime. Differing
+   * sub-selections are fine — those merge — only the arguments may not differ.
+   */
   MEDIA_FRAGMENT: `
     fragment med on Media {
       id
@@ -64,7 +81,7 @@ const API = {
       nextAiringEpisode { episode airingAt }
       startDate { year month day }
       studios(isMain: true) { nodes { name } }
-      relations { edges { relationType node { id status } } }
+      relations { edges { relationType(version: 2) node { id status } } }
     }`,
 
   async al (query, variables = {}) {
