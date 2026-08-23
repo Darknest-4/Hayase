@@ -19,7 +19,8 @@
 import type pg from 'pg'
 
 /** Known metadata providers, ranked. Higher wins. */
-export const PROVIDER_RANK: Record<string, number> = {
+/** Module-local: read through rankOf(), which is the exported view of it. */
+const PROVIDER_RANK: Record<string, number> = {
   manual: 100, // a human in the catalogue admin
   anilist: 60, //  richest automatic source
   mal: 50,

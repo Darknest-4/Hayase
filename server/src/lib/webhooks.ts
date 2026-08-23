@@ -17,6 +17,7 @@ import type { Job } from './queue.ts'
 export const WEBHOOK_EVENTS = [
   'user.registered',        // new account
   'user.moderated',         // suspend/ban/restore
+  'user.password_reset_requested', // a reset was asked for — NEVER carries the token
   'comment.created',        // new top-level comment or reply
   'report.created',         // content reported
   'report.resolved',        // moderation decision
@@ -72,6 +73,11 @@ function renderEmbed (event: WebhookEvent, d: Record<string, unknown>): Embed {
   switch (event) {
     case 'user.registered':
       return { title: '👤 New user registered', color: COLORS.success, fields: [field('Username', d.username)] }
+    // Deliberately carries no token: this event is fanned out to every
+    // subscribed webhook, including ones that render into chat. The token
+    // travels only via PASSWORD_RESET_WEBHOOK_URL — see lib/reset-delivery.ts.
+    case 'user.password_reset_requested':
+      return { title: '🔑 Password reset requested', color: COLORS.warn, fields: [field('Username', d.username)] }
     case 'user.moderated':
       return {
         title: `🔨 User ${d.action}`,

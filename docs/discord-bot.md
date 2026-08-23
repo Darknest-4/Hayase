@@ -1,8 +1,13 @@
 # Yume Discord bot — design v2 (gateway)
 
-> **Status: design only.** No code yet. This supersedes the HTTP-interactions
-> design: you asked for everything that transport could *not* do, so this is
-> the full gateway bot.
+> **Status: cancelled design.** No code was ever written, and the work was
+> called off before any began — this is kept as a record of the decision and
+> the costing, not as a plan anybody is executing. Nothing in the repository
+> implements it, and nothing depends on it.
+>
+> It supersedes an earlier HTTP-interactions design: the request was for
+> everything that transport could *not* do, so this committed to a full
+> gateway bot, with the real costs stated in §11 rather than buried.
 
 **What changed and why.** The previous design recommended an HTTP interactions
 endpoint — no dependencies, no resident process. You asked for the features

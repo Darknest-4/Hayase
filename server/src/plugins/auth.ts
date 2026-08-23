@@ -23,6 +23,16 @@ export interface AccessTokenPayload {
    * token at once — no blocklist to store, expire and consult per request.
    */
   tv?: number
+  /**
+   * The session this token was minted under. Revoking that one row kills this
+   * token and leaves the account's other devices alone, which is what signing
+   * out of one device means. Without it, logout revoked the refresh token and
+   * the access token kept working for the rest of its lifetime.
+   *
+   * Optional so that tokens minted before this existed keep working until they
+   * expire — a deploy must not sign everyone out.
+   */
+  sid?: string
 }
 
 declare module '@fastify/jwt' {
@@ -57,10 +67,21 @@ const permissionCache = new Map<string, { permissions: Set<string>, expires: num
 /**
  * Cached token_version per user, sharing the permission cache's TTL: a
  * revocation takes effect within it, and the common case costs no query.
+ *
+ * The entry remembers which sessions were seen live, so a token whose session
+ * was revoked is not accepted from cache. A logged-out token must stop working
+ * immediately — a bounded delay is fine for a role change and not for a
+ * sign-out.
  */
-const versionCache = new Map<string, { version: number, expires: number }>()
+const versionCache = new Map<string, { version: number, expires: number, liveSessions: Set<string> }>()
 
-/** True when the token was minted under the user's current token_version. */
+/**
+ * True when the token is still the one the account and the session agree on.
+ *
+ * Two checks, one query:
+ *   * the account exists, is active, and its token_version still matches
+ *   * the session the token names has not been revoked or expired
+ */
 export async function tokenIsCurrent (payload: AccessTokenPayload): Promise<boolean> {
   const claimed = payload.tv ?? 0
   const hit = versionCache.get(payload.sub)
@@ -69,18 +90,55 @@ export async function tokenIsCurrent (payload: AccessTokenPayload): Promise<bool
   // freshly issued token into a 401 — a much worse failure than briefly
   // honouring a revoked one — and the cache goes stale whenever the version
   // changes outside this process (another instance, a manual fix).
-  if (hit && hit.expires > Date.now() && hit.version === claimed) return true
+  //
+  // A token carrying a session id must also find that session in the cached
+  // live set: revoking a session removes it, so a logged-out token misses and
+  // falls through to the query below rather than being waved past.
+  if (hit && hit.expires > Date.now() && hit.version === claimed) {
+    if (!payload.sid || hit.liveSessions.has(payload.sid)) return true
+  }
 
-  const rows = await query<{ token_version: number }>(
-    "SELECT token_version FROM users WHERE id = $1 AND status = 'active' AND deleted_at IS NULL",
-    [payload.sub]
+  const rows = await query<{ token_version: number, session_live: boolean }>(
+    `SELECT u.token_version,
+            ($2::uuid IS NULL OR EXISTS (
+               SELECT 1 FROM sessions s
+                WHERE s.id = $2::uuid AND s.revoked_at IS NULL AND s.expires_at > now()
+             )) AS session_live
+       FROM users u
+      WHERE u.id = $1 AND u.status = 'active' AND u.deleted_at IS NULL`,
+    [payload.sub, payload.sid ?? null]
   )
   if (!rows[0]) return false // gone, banned or suspended
-  versionCache.set(payload.sub, { version: rows[0].token_version, expires: Date.now() + PERMISSION_TTL_MS })
+  if (!rows[0].session_live) return false // signed out on this device
+
+  const live = hit && hit.expires > Date.now() ? hit.liveSessions : new Set<string>()
+  if (payload.sid) live.add(payload.sid)
+  versionCache.set(payload.sub, {
+    version: rows[0].token_version,
+    expires: Date.now() + PERMISSION_TTL_MS,
+    liveSessions: live
+  })
   return rows[0].token_version === claimed
 }
 
-/** Invalidate every outstanding access token for one user. */
+/**
+ * Forget a revoked session, so its access token stops being accepted from
+ * cache rather than at the end of the cache TTL.
+ */
+export function invalidateSession (userId: string, sessionId?: string): void {
+  const hit = versionCache.get(userId)
+  if (!hit) return
+  if (sessionId) hit.liveSessions.delete(sessionId)
+  else versionCache.delete(userId)
+}
+
+/**
+ * Invalidate every outstanding access token for one user, on every device.
+ *
+ * The heavy lever: a ban, a password change, or an explicit "sign out
+ * everywhere". Signing out of one device revokes that session instead — see
+ * invalidateSession.
+ */
 export async function revokeTokens (userId: string): Promise<void> {
   await query('UPDATE users SET token_version = token_version + 1 WHERE id = $1', [userId])
   versionCache.delete(userId)

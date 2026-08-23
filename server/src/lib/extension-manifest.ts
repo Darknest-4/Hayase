@@ -8,12 +8,13 @@
 // vague or undeclared is rejected at publish time rather than discovered at
 // runtime.
 
-export const MANIFEST_VERSION = 3
+/** Module-local: the validator below is the only thing that consults it. */
+const MANIFEST_VERSION = 3
 
 export const EXTENSION_TYPES = ['torrent', 'nzb', 'http', 'subtitle', 'metadata', 'theme'] as const
-export const PERMISSIONS = ['net:fetch', 'query:ids', 'query:titles', 'query:media', 'storage:local', 'player:subtitles'] as const
-export const ACCURACIES = ['high', 'medium', 'low'] as const
-export const MEDIA_KINDS = ['sub', 'dub', 'both'] as const
+const PERMISSIONS = ['net:fetch', 'query:ids', 'query:titles', 'query:media', 'storage:local', 'player:subtitles'] as const
+const ACCURACIES = ['high', 'medium', 'low'] as const
+const MEDIA_KINDS = ['sub', 'dub', 'both'] as const
 
 export type ExtensionType = typeof EXTENSION_TYPES[number]
 export type Permission = typeof PERMISSIONS[number]

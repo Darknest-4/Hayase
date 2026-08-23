@@ -7,6 +7,8 @@ import { query, queryOne } from '../db.ts'
 import { presence } from '../lib/ws.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 
+import { retryOnCollision } from '../lib/db-errors.ts'
+
 import type { FastifyPluginAsync } from 'fastify'
 
 const routes: FastifyPluginAsync = async fastify => {
@@ -42,26 +44,28 @@ const routes: FastifyPluginAsync = async fastify => {
      * about the request, so the caller should never see it. Five attempts put
      * the residual failure far below any other way this call can fail.
      */
-    let room
-    for (let attempt = 0; ; attempt++) {
-      const code = randomBytes(4).toString('hex')
-      try {
-        room = await queryOne(
-          `INSERT INTO watch_together_rooms (code, host_profile, episode_id, is_public)
-           VALUES ($1, $2, $3, $4)
-           RETURNING id, code, episode_id, is_public, created_at`,
-          [code, profile.id, episodeId ?? null, isPublic ?? false]
-        )
-        break
-      } catch (error) {
-        const duplicate = (error as { code?: string }).code === '23505'
-        if (!duplicate || attempt >= 4) throw error
-      }
-    }
+    const room = await retryOnCollision(async () => queryOne(
+      `INSERT INTO watch_together_rooms (code, host_profile, episode_id, is_public)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, code, episode_id, is_public, created_at`,
+      [randomBytes(4).toString('hex'), profile.id, episodeId ?? null, isPublic ?? false]
+    ))
     await emitEvent('w2g.room_created', { code: (room as { code: string }).code, host: profile.id })
     return reply.code(201).send(room)
   })
 
+  /**
+   * Read a room by its invite code.
+   *
+   * Unauthenticated on purpose: the code is the credential. This is a
+   * capability URL — holding the link is the authorisation, exactly as with a
+   * meeting link — so a room that is not listed is still readable by anyone
+   * who has been given its code.
+   *
+   * Note that `is_public` means *listed*, not *access-controlled*. The two
+   * read alike and are not the same thing. Chat messages are a separate
+   * endpoint and are NOT served this way.
+   */
   fastify.get('/:code', async (request, reply) => {
     const { code } = request.params as { code: string }
     const room = await queryOne(

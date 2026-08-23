@@ -2,6 +2,7 @@
 // client needs to load extensions into its sandbox.
 
 import { query, queryOne, transaction } from '../db.ts'
+import { EXTENSION_TYPES } from '../lib/extension-manifest.ts'
 import { get as getPackage } from '../lib/package-store.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 import { WRITE_LIMIT } from '../plugins/security.ts'
@@ -52,7 +53,7 @@ const routes: FastifyPluginAsync = async fastify => {
       querystring: {
         type: 'object',
         properties: {
-          type: { enum: ['torrent', 'nzb', 'http', 'subtitle', 'metadata', 'theme'] },
+          type: { enum: [...EXTENSION_TYPES] },
           sort: { enum: ['installs', 'rating', 'new'], default: 'installs' },
           limit: { type: 'integer', minimum: 1, maximum: 50, default: 25 }
         }

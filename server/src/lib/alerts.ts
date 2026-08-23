@@ -46,7 +46,8 @@ export interface AlertOptions {
   cooldownMs: number
 }
 
-export const DEFAULT_OPTIONS: AlertOptions = {
+/** Module-local: the fallback the exported entry points apply. */
+const DEFAULT_OPTIONS: AlertOptions = {
   // three cycles at the default 60s cadence = a problem must persist ~3 minutes
   debounceCycles: Number(process.env.ALERT_DEBOUNCE_CYCLES ?? 3),
   recoveryCycles: Number(process.env.ALERT_RECOVERY_CYCLES ?? 2),

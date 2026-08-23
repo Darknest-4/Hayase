@@ -11,9 +11,14 @@ import { MAX_PACKAGE_BYTES, looksLikeSource, put, statBlob } from '../lib/packag
 import { enqueue } from '../lib/queue.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 
+import { onUniqueViolation } from '../lib/db-errors.ts'
+import { EXTENSION_TYPES } from '../lib/extension-manifest.ts'
+
 import type { FastifyPluginAsync } from 'fastify'
 
-const TYPES = ['torrent', 'nzb', 'http', 'subtitle', 'metadata', 'theme'] as const
+// The one list, from the manifest validator — restating it here meant two
+// places to change when a type is added, and no error if only one changed.
+const TYPES = EXTENSION_TYPES
 const SEMVER = /^\d+\.\d+\.\d+$/
 
 const routes: FastifyPluginAsync = async fastify => {
@@ -122,20 +127,16 @@ const routes: FastifyPluginAsync = async fastify => {
     // of the same slug both pass it and one hits extensions_slug_key. That is
     // the same outcome the caller already has a 409 for, so it is reported as
     // one rather than as a 500 naming the constraint.
-    let ext
-    try {
-      ext = await queryOne(
+    const ext = await onUniqueViolation(
+      async () => queryOne(
         `INSERT INTO extensions (slug, owner_id, name, summary, description, type, status)
          VALUES ($1, $2, $3, $4, $5, $6, 'draft')
          RETURNING id, slug, name, summary, type, status, created_at`,
         [slug, request.user.sub, name, summary, description ?? null, type]
-      )
-    } catch (error) {
-      if ((error as { code?: string }).code === '23505') {
-        return reply.code(409).send({ type: 'about:blank', title: 'Conflict', status: 409, detail: 'Slug already taken' })
-      }
-      throw error
-    }
+      ),
+      () => undefined
+    )
+    if (!ext) return reply.code(409).send({ type: 'about:blank', title: 'Conflict', status: 409, detail: 'Slug already taken' })
     return reply.code(201).send(ext)
   })
 

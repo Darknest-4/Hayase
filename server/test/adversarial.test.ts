@@ -608,6 +608,257 @@ describe('adversarial', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
     })
   })
 
+  // ---- credentials ----
+
+  describe('password change', () => {
+    let account: Account
+
+    before(async () => { account = await register() })
+    after(async () => { await pool.query('DELETE FROM users WHERE id = $1', [account.id]) })
+
+    const change = async (currentPassword: string, newPassword: string, token = account.token) =>
+      app.inject({
+        method: 'POST',
+        url: '/v1/auth/password',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { currentPassword, newPassword }
+      })
+
+    test('the current password is required even though the caller is signed in', async () => {
+      // A stolen access token must not be enough to take ownership of an
+      // account. This endpoint is where that is decided.
+      const res = await change('completely-wrong-password', 'a-brand-new-password-9')
+      assert.equal(res.statusCode, 403)
+    })
+
+    test('the new password must differ from the current one', async () => {
+      const res = await change('a-long-enough-test-password-1', 'a-long-enough-test-password-1')
+      assert.equal(res.statusCode, 400)
+    })
+
+    test('a successful change ends every other session but not this one', async () => {
+      const second = await app.inject({
+        method: 'POST',
+        url: '/v1/auth/login',
+        payload: { identifier: account.username, password: 'a-long-enough-test-password-1' }
+      })
+      assert.equal(second.statusCode, 200)
+      const otherDevice = (second.json() as { accessToken: string }).accessToken
+
+      const res = await change('a-long-enough-test-password-1', 'a-brand-new-password-9')
+      assert.equal(res.statusCode, 200, res.body)
+      const fresh = (res.json() as { accessToken: string }).accessToken
+
+      // The other device is out — leaving an attacker's session alive would
+      // defeat the point of changing a password.
+      assert.equal((await app.inject({ url: '/v1/auth/permissions', headers: { authorization: `Bearer ${otherDevice}` } })).statusCode, 401)
+      // The device that made the change keeps working: signing someone out of
+      // the screen they are typing on is hostile, and they just proved
+      // ownership.
+      assert.equal((await app.inject({ url: '/v1/auth/permissions', headers: { authorization: `Bearer ${fresh}` } })).statusCode, 200)
+
+      const old = await app.inject({ method: 'POST', url: '/v1/auth/login', payload: { identifier: account.username, password: 'a-long-enough-test-password-1' } })
+      assert.equal(old.statusCode, 401, 'the old password must stop working')
+      account.token = fresh
+    })
+  })
+
+  describe('sign out', () => {
+    test('logout kills this device\'s access token immediately', async () => {
+      // Regression: logout revoked the refresh session and left the access
+      // token valid for the rest of its 15 minutes. Verified live before the
+      // fix — a request with a logged-out token still answered 200.
+      const account = await register()
+      const before = await app.inject({ url: '/v1/auth/permissions', headers: { authorization: `Bearer ${account.token}` } })
+      assert.equal(before.statusCode, 200)
+
+      const out = await app.inject({ method: 'POST', url: '/v1/auth/logout', headers: { authorization: `Bearer ${account.token}` }, payload: {} })
+      assert.equal(out.statusCode, 204)
+
+      const after = await app.inject({ url: '/v1/auth/permissions', headers: { authorization: `Bearer ${account.token}` } })
+      assert.equal(after.statusCode, 401, 'a logged-out access token must stop working at once')
+      await pool.query('DELETE FROM users WHERE id = $1', [account.id])
+    })
+
+    test('logout leaves the account\'s other devices signed in', async () => {
+      const account = await register()
+      const second = await app.inject({
+        method: 'POST', url: '/v1/auth/login',
+        payload: { identifier: account.username, password: 'a-long-enough-test-password-1' }
+      })
+      const otherDevice = (second.json() as { accessToken: string }).accessToken
+
+      await app.inject({ method: 'POST', url: '/v1/auth/logout', headers: { authorization: `Bearer ${account.token}` }, payload: {} })
+
+      const res = await app.inject({ url: '/v1/auth/permissions', headers: { authorization: `Bearer ${otherDevice}` } })
+      assert.equal(res.statusCode, 200, 'signing out one device must not sign out the others')
+      await pool.query('DELETE FROM users WHERE id = $1', [account.id])
+    })
+
+    test('logout-all signs out everywhere', async () => {
+      const account = await register()
+      const second = await app.inject({
+        method: 'POST', url: '/v1/auth/login',
+        payload: { identifier: account.username, password: 'a-long-enough-test-password-1' }
+      })
+      const otherDevice = (second.json() as { accessToken: string }).accessToken
+
+      const out = await app.inject({ method: 'POST', url: '/v1/auth/logout-all', headers: { authorization: `Bearer ${account.token}` } })
+      assert.equal(out.statusCode, 204)
+
+      for (const token of [account.token, otherDevice]) {
+        assert.equal((await app.inject({ url: '/v1/auth/permissions', headers: { authorization: `Bearer ${token}` } })).statusCode, 401)
+      }
+      await pool.query('DELETE FROM users WHERE id = $1', [account.id])
+    })
+  })
+
+  describe('password reset', () => {
+    let account: Account
+
+    before(async () => { account = await register() })
+    after(async () => { await pool.query('DELETE FROM users WHERE id = $1', [account.id]) })
+
+    const forgot = async (identifier: string) =>
+      app.inject({ method: 'POST', url: '/v1/auth/forgot', payload: { identifier } })
+
+    test('an unknown account answers exactly like a known one', async () => {
+      // Anything else is an account enumeration oracle, and this endpoint has
+      // to be unauthenticated.
+      const known = await forgot(account.username)
+      const unknown = await forgot('definitely-not-a-user-' + unique())
+      assert.equal(known.statusCode, 204)
+      assert.equal(unknown.statusCode, 204)
+      assert.equal(known.body, unknown.body)
+    })
+
+    test('the token is stored hashed, never in the clear', async () => {
+      await forgot(account.username)
+      const { rows } = await pool.query(
+        'SELECT token_hash FROM password_resets WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1', [account.id])
+      assert.ok(rows[0], 'a reset row should exist')
+      assert.match(String(rows[0]!.token_hash), /^[0-9a-f]{64}$/, 'only a sha256 may be stored')
+    })
+
+    test('a second request supersedes the first token', async () => {
+      // Otherwise a stolen older email still opens the account.
+      await forgot(account.username)
+      await forgot(account.username)
+      const { rows } = await pool.query(
+        'SELECT count(*)::int AS n FROM password_resets WHERE user_id = $1 AND used_at IS NULL', [account.id])
+      assert.equal(Number(rows[0]!.n), 1, 'only the newest token may remain usable')
+    })
+
+    test('an invalid, expired or reused token is refused', async () => {
+      for (const token of ['a'.repeat(43), 'not-a-real-token-value-here']) {
+        const res = await app.inject({ method: 'POST', url: '/v1/auth/reset', payload: { token, newPassword: 'a-brand-new-password-9' } })
+        assert.equal(res.statusCode, 400)
+      }
+
+      // An expired row must not be consumable either.
+      await pool.query(
+        `UPDATE password_resets SET expires_at = now() - interval '1 hour'
+          WHERE user_id = $1 AND used_at IS NULL`, [account.id])
+      const { rows } = await pool.query(
+        'SELECT token_hash FROM password_resets WHERE user_id = $1 AND used_at IS NULL LIMIT 1', [account.id])
+      if (rows[0]) {
+        const res = await app.inject({
+          method: 'POST', url: '/v1/auth/reset',
+          payload: { token: 'x'.repeat(43), newPassword: 'a-brand-new-password-9' }
+        })
+        assert.equal(res.statusCode, 400)
+      }
+    })
+  })
+
+  // ---- admin views that were written and never wired ----
+
+  describe('error triage', () => {
+    let adminToken = ''
+
+    before(async () => {
+      await pool.query(
+        `INSERT INTO user_roles (user_id, role_id)
+         SELECT $1, r.id FROM roles r WHERE r.slug = 'admin' ON CONFLICT DO NOTHING`, [victim.id])
+      const authPlugin = await import('../src/plugins/auth.ts')
+      authPlugin.invalidatePermissions()
+      adminToken = victim.token
+    })
+
+    after(async () => {
+      await pool.query('DELETE FROM user_roles WHERE user_id = $1', [victim.id])
+      const authPlugin = await import('../src/plugins/auth.ts')
+      authPlugin.invalidatePermissions()
+    })
+
+    test('a group can be listed, opened and resolved', async () => {
+      // All three functions existed and none had a caller, which left the
+      // triage loop built at both ends and missing its middle.
+      const { recordError } = await import('../src/lib/errors.ts')
+      const groupId = await recordError('api', new Error('triage probe ' + unique()), { route: '/probe' })
+      assert.ok(groupId)
+
+      const list = await app.inject({ url: '/v1/admin/errors?status=all&limit=200', headers: { authorization: `Bearer ${adminToken}` } })
+      assert.equal(list.statusCode, 200)
+
+      const detail = await app.inject({ url: `/v1/admin/errors/${groupId}`, headers: { authorization: `Bearer ${adminToken}` } })
+      assert.equal(detail.statusCode, 200, detail.body)
+      const body = detail.json() as { group: { id: string }, occurrences: unknown[] }
+      assert.equal(body.group.id, groupId)
+      assert.ok(body.occurrences.length >= 1, 'the stack must be readable, not just the count')
+
+      const patched = await app.inject({
+        method: 'PATCH', url: `/v1/admin/errors/${groupId}`,
+        headers: { authorization: `Bearer ${adminToken}` }, payload: { status: 'resolved' }
+      })
+      assert.equal(patched.statusCode, 200)
+
+      const { rows } = await pool.query('SELECT status FROM error_groups WHERE id = $1', [groupId])
+      assert.equal(rows[0]!.status, 'resolved')
+      await pool.query('DELETE FROM error_groups WHERE id = $1', [groupId])
+    })
+
+    test('a resolved group reopens when the bug comes back', async () => {
+      // This branch was unreachable: recordError reopens a resolved group, and
+      // nothing could set a status to resolved in the first place.
+      const { recordError } = await import('../src/lib/errors.ts')
+      const error = new Error('reopen probe ' + unique())
+      const groupId = await recordError('api', error, { route: '/probe' })
+
+      await app.inject({
+        method: 'PATCH', url: `/v1/admin/errors/${groupId}`,
+        headers: { authorization: `Bearer ${adminToken}` }, payload: { status: 'resolved' }
+      })
+      await recordError('api', error, { route: '/probe' })
+
+      const { rows } = await pool.query('SELECT status FROM error_groups WHERE id = $1', [groupId])
+      assert.equal(rows[0]!.status, 'open', 'a bug that comes back is news')
+      await pool.query('DELETE FROM error_groups WHERE id = $1', [groupId])
+    })
+
+    test('an unknown group is 404, not an empty 200', async () => {
+      for (const url of [`/v1/admin/errors/${NONEXISTENT_UUID}`]) {
+        assert.equal((await app.inject({ url, headers: { authorization: `Bearer ${adminToken}` } })).statusCode, 404)
+      }
+    })
+
+    test('the audit trail is readable and filterable', async () => {
+      const res = await app.inject({ url: '/v1/admin/audit?limit=5', headers: { authorization: `Bearer ${adminToken}` } })
+      assert.equal(res.statusCode, 200)
+      assert.ok(Array.isArray((res.json() as { data: unknown[] }).data))
+
+      const filtered = await app.inject({ url: '/v1/admin/audit?subjectType=user&limit=5', headers: { authorization: `Bearer ${adminToken}` } })
+      assert.equal(filtered.statusCode, 200)
+    })
+
+    test('both views refuse an ordinary account', async () => {
+      for (const url of ['/v1/admin/errors', '/v1/admin/audit']) {
+        assert.equal((await app.inject({ url, headers: { authorization: `Bearer ${attacker.token}` } })).statusCode, 403, url)
+        assert.equal((await app.inject({ url })).statusCode, 401, url)
+      }
+    })
+  })
+
   // ---- webhooks / SSRF at the route ----
 
   describe('webhook targets', () => {
