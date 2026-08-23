@@ -13,24 +13,39 @@ URL-pasted plugins. Two ideas are inherited and kept sacred:
 ## Repository layout
 
 ```
-├─ docs/                  Architecture, database, API and extension docs
-│  ├─ architecture.md     Services, caching, queue, search, scaling, ADRs
+├─ docs/                  Architecture, database, API and operations docs
+│  ├─ architecture.md     Services, queue, search, catalogue precedence,
+│  │                      publishing workflow, scaling, ADRs
 │  ├─ database.md         Schema guide: domains, ER, indexing, partitioning
 │  ├─ api.md              REST + GraphQL reference
-│  └─ extensions.md       Extension platform: manifest, permissions, store
-├─ db/migrations/         PostgreSQL 16 schema — 7 domain migrations,
-│                         ~100 relations, fully commented, verified clean
-├─ server/                API gateway — Fastify + TypeScript (Node 22)
-│                         auth (JWT + rotating refresh), RBAC, catalogue,
-│                         library/progress, extension store endpoints
+│  ├─ extensions.md       Extension platform: manifest, permissions, store
+│  ├─ security.md         Threat model and the controls that answer it
+│  ├─ backup.md           Backup, restore and what has not been rehearsed
+│  └─ redis.md            Why Redis is carried but not adopted
+├─ db/
+│  ├─ migrations/         PostgreSQL 16 schema — 20 migrations, ~100
+│  │                      relations, every one commented with its reasoning
+│  └─ *.sh               Backup, restore and cron scripts (POSIX sh)
+├─ server/                API gateway — Fastify 5 + TypeScript on Node 22
+│  ├─ src/                No build step: --experimental-strip-types
+│  └─ test/               13 suites, including the adversarial one
 ├─ packages/
-│  └─ design-tokens/      Yume design system tokens (CSS + JSON):
-│                         colors, type scale, spacing, motion, dark/light
-├─ web/                   Web client (framework-free HTML/CSS/JS SPA,
-│                         being migrated onto the design tokens + API)
-└─ docker-compose.yml     Local infra: Postgres, Redis, OpenSearch,
-                          MinIO, RabbitMQ
+│  └─ design-tokens/      Design tokens shared with native surfaces
+├─ web/                   Web client — framework-free HTML/CSS/JS SPA
+│  ├─ js/catalogue.js     Which source answers: our database, then AniList
+│  └─ test/               Engine, resolver and DOM-helper tests
+├─ .github/workflows/     CI: typecheck, tests, migrations, worker, lint
+├─ Caddyfile              TLS termination in front of the app
+└─ docker-compose.yml     app · worker · caddy · backup · postgres
 ```
+
+**Infrastructure is deliberately small.** Four times over, the obvious
+component was declined in favour of what Postgres already does:
+`LISTEN/NOTIFY` instead of Redis for cross-instance fan-out, full-text search
+instead of OpenSearch, a `jobs` table with `FOR UPDATE SKIP LOCKED` instead of
+RabbitMQ, and content-addressed files on disk instead of MinIO. Each decision
+is written next to the code that implements it. Redis is still read from the
+environment for a health probe and nothing else — see `docs/redis.md`.
 
 
 ## Screenshots
@@ -407,13 +422,26 @@ for reproducible shots. Click any section below to expand it. Full gallery in
 ## Quick start
 
 ```sh
-docker compose up -d                 # infrastructure
+docker compose up -d                 # postgres (app/worker/caddy optional)
 cd server
-cp .env.example .env
+cp .env.example .env                 # JWT_SECRET and POSTGRES_PASSWORD are required
 npm install
-npm run migrate                      # applies db/migrations in order
-npm run dev                          # API on :4000
+npm run migrate                      # applies db/migrations in order, idempotent
+npm run dev                          # API on :4000, no build step
 ```
+
+### Tests
+
+```sh
+npm test                             # every server suite
+npm run test:adversarial             # forgery, injection, SSRF, IDOR, races
+node --test ../web/test/*.test.mjs   # engine, catalogue resolver, DOM helper
+```
+
+The adversarial suite needs `DATABASE_URL`; without one it skips itself, which
+is why CI runs it as its own step **after** the database exists rather than
+inside the general unit-test step, where it would report green having checked
+nothing.
 
 ### Seed a real catalogue
 
@@ -438,6 +466,12 @@ curl -X POST localhost:4000/v1/auth/register \
 ```
 
 ## Status & roadmap
+
+The catalogue is the source of truth for anime data; AniList, ani.zip and
+Jikan are the fallback. Nothing imported is published until somebody publishes
+it — this platform serves a Hungarian audience and a Hungarian subtitle
+arrives days after an episode does, so both `anime.visibility` and
+`episodes.visibility` default to `hidden`. See `docs/architecture.md`.
 
 Delivered:
 - [x] Multiple profiles per account (Netflix-style): per-profile library,
@@ -474,7 +508,26 @@ Remaining:
       rollups, trending scores, partition creation + retention pruning,
       and an anime-offline-database catalogue importer (idempotent);
       progress completions now write watch_history + XP automatically
-- [ ] OpenSearch indexing and extension review pipeline workers
+- [x] Search over Postgres — typo-tolerant tsvector + trigram over titles and
+      synonyms. OpenSearch was declined rather than deferred: it earns its
+      place by solving a problem that exists now, and this one does not yet
+      (`docs/search.md`)
+- [x] Catalogue as the source of truth: the detail and watch pages read our
+      database first and fall back to a provider only on a miss; routes accept
+      a Yume id or an AniList id, so a title that exists only here is reachable
+- [x] Editorial publishing: per-anime and per-episode visibility, bulk range
+      publishing, an unfiltered admin list so staff can see what is *not*
+      live, and every change written to the audit trail
+- [x] Account recovery: password change and reset, session-bound access tokens
+      (signing out kills this device's token immediately and leaves the others
+      alone), and a separate sign-out-everywhere. Reset delivery is the
+      operator's — the token goes to one configured endpoint, never through
+      the admin-managed webhook fan-out
+- [x] Error triage and audit views in the admin panel — list, open a group for
+      its stack, resolve it; read who changed what and when
+- [ ] Restore rehearsal: the backup scripts are written and CI syntax-checks
+      them, but **no restore has been performed**. A backup that has never
+      been restored is a belief, not a backup
 - [x] GraphQL endpoint (/graphql, GraphiQL in dev) over the same service
       layer: anime/animePage/search/schedule/extensionPage/me queries with
       batched child-field loaders (titles, genres, mappings, episodes,

@@ -43,6 +43,35 @@ interface BrowseQuery {
   nsfw?: boolean
 }
 
+/**
+ * The full catalogue record for one anime.
+ *
+ * Extracted from GET /:id so the AniList bridge can answer with the same
+ * payload. The client's detail page needs the whole record, and resolving an
+ * AniList id to a Yume id and then fetching the record was two round trips for
+ * the single most-loaded screen in the app.
+ */
+async function animeDetail (id: string): Promise<Record<string, unknown> | undefined> {
+  const anime = await queryOne<Record<string, unknown>>(
+    `SELECT a.*,
+        (SELECT jsonb_object_agg(t.kind, t.title) FROM anime_titles t WHERE t.anime_id = a.id) AS titles,
+        (SELECT coalesce(jsonb_agg(s.synonym), '[]') FROM anime_synonyms s WHERE s.anime_id = a.id) AS synonyms,
+        (SELECT coalesce(jsonb_agg(g.name ORDER BY g.name), '[]') FROM anime_genres ag JOIN genres g ON g.id = ag.genre_id WHERE ag.anime_id = a.id) AS genres,
+        (SELECT coalesce(jsonb_agg(jsonb_build_object('name', tg.name, 'rank', at.rank) ORDER BY at.rank DESC), '[]')
+           FROM anime_tags at JOIN tags tg ON tg.id = at.tag_id WHERE at.anime_id = a.id) AS tags,
+        (SELECT coalesce(jsonb_agg(jsonb_build_object('name', c.name, 'role', ac.role, 'isMain', ac.is_main)), '[]')
+           FROM anime_companies ac JOIN companies c ON c.id = ac.company_id WHERE ac.anime_id = a.id) AS companies,
+        (SELECT coalesce(jsonb_agg(jsonb_build_object('kind', i.kind, 'key', i.object_key, 'blurhash', i.blurhash, 'color', i.dominant_color)), '[]')
+           FROM anime_images i WHERE i.anime_id = a.id AND i.is_primary) AS images,
+        (SELECT to_jsonb(m) - 'anime_id' FROM anime_mappings m WHERE m.anime_id = a.id) AS mappings
+       FROM anime a WHERE a.id = $1 AND a.visibility <> 'hidden'`,
+    [id]
+  )
+  // The tsvector is an implementation detail of search, not part of the record.
+  if (anime) delete anime.search
+  return anime
+}
+
 const routes: FastifyPluginAsync = async fastify => {
   fastify.get('/', {
     schema: {
@@ -234,17 +263,37 @@ const routes: FastifyPluginAsync = async fastify => {
   // These endpoints map anilist_id → Yume anime id so platform features
   // (comments, library sync) can attach to catalogue rows.
 
+  /**
+   * Look up a catalogue entry by its AniList id.
+   *
+   * `?full=true` returns the complete record rather than just the mapping.
+   * Without it the detail page had to resolve the id and then fetch the
+   * record — two round trips on the most-loaded screen in the app, which is
+   * exactly the cost that made the client skip the catalogue and call AniList
+   * directly instead.
+   */
   fastify.get('/by-anilist/:anilistId', {
-    schema: { params: { type: 'object', properties: { anilistId: { type: 'integer' } } } }
+    schema: {
+      params: { type: 'object', properties: { anilistId: { type: 'integer' } } },
+      querystring: { type: 'object', properties: { full: { type: 'boolean', default: false } } }
+    }
   }, async (request, reply) => {
     const { anilistId } = request.params as { anilistId: number }
+    const { full } = request.query as { full?: boolean }
+
     const row = await queryOne<{ id: string, canonical_title: string }>(
       `SELECT a.id, a.canonical_title FROM anime_mappings m JOIN anime a ON a.id = m.anime_id
        WHERE m.anilist_id = $1 AND a.visibility <> 'hidden'`,
       [anilistId]
     )
     if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
-    return row
+    if (!full) return row
+
+    const anime = await animeDetail(row.id)
+    // The row existed a statement ago; if it does not now it was hidden or
+    // deleted between the two, which is a 404 like any other miss.
+    if (!anime) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    return anime
   })
 
   fastify.post('/resolve', {
@@ -291,30 +340,30 @@ const routes: FastifyPluginAsync = async fastify => {
     schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
     const { id } = request.params as { id: string }
-
-    const anime = await queryOne(
-      `SELECT a.*,
-        (SELECT jsonb_object_agg(t.kind, t.title) FROM anime_titles t WHERE t.anime_id = a.id) AS titles,
-        (SELECT coalesce(jsonb_agg(s.synonym), '[]') FROM anime_synonyms s WHERE s.anime_id = a.id) AS synonyms,
-        (SELECT coalesce(jsonb_agg(g.name ORDER BY g.name), '[]') FROM anime_genres ag JOIN genres g ON g.id = ag.genre_id WHERE ag.anime_id = a.id) AS genres,
-        (SELECT coalesce(jsonb_agg(jsonb_build_object('name', tg.name, 'rank', at.rank) ORDER BY at.rank DESC), '[]')
-           FROM anime_tags at JOIN tags tg ON tg.id = at.tag_id WHERE at.anime_id = a.id) AS tags,
-        (SELECT coalesce(jsonb_agg(jsonb_build_object('name', c.name, 'role', ac.role, 'isMain', ac.is_main)), '[]')
-           FROM anime_companies ac JOIN companies c ON c.id = ac.company_id WHERE ac.anime_id = a.id) AS companies,
-        (SELECT coalesce(jsonb_agg(jsonb_build_object('kind', i.kind, 'key', i.object_key, 'blurhash', i.blurhash, 'color', i.dominant_color)), '[]')
-           FROM anime_images i WHERE i.anime_id = a.id AND i.is_primary) AS images,
-        (SELECT to_jsonb(m) - 'anime_id' FROM anime_mappings m WHERE m.anime_id = a.id) AS mappings
-       FROM anime a WHERE a.id = $1 AND a.visibility <> 'hidden'`,
-      [id]
-    )
-
-    if (!anime) {
-      return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
-    }
-    delete (anime as Record<string, unknown>).search
+    const anime = await animeDetail(id)
+    if (!anime) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
     return anime
   })
 
+  /**
+   * The published episodes of one anime.
+   *
+   * Only `public` ones are served. On a Hungarian site the subtitle arrives
+   * days after the episode does, so an imported episode must not be offered
+   * before somebody publishes it.
+   *
+   * `total` is the count of episodes we hold regardless of state, and it is
+   * load-bearing rather than informational. Without it an empty `data` is
+   * ambiguous, and the two meanings need opposite handling:
+   *
+   *   total = 0   we have no episode data → the client may fall back to
+   *               ani.zip, because our silence is ignorance
+   *   total > 0   we have episodes and publish none → the client must NOT
+   *               fall back, because our silence is a decision
+   *
+   * Without the distinction, hiding every episode would make the client fetch
+   * them from ani.zip and show them anyway — the feature would defeat itself.
+   */
   fastify.get('/:id/episodes', {
     schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
@@ -322,23 +371,29 @@ const routes: FastifyPluginAsync = async fastify => {
     const exists = await queryOne("SELECT 1 FROM anime WHERE id = $1 AND visibility <> 'hidden'", [id])
     if (!exists) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
 
-    const data = await query(
-      `SELECT id, number, absolute_number, title, synopsis, thumbnail_key,
-              air_date, duration, is_filler, is_recap
-       FROM episodes WHERE anime_id = $1 ORDER BY number`,
-      [id]
-    )
-    return { data }
+    const [data, counts] = await Promise.all([
+      query(
+        `SELECT id, number, absolute_number, title, synopsis, thumbnail_key,
+                air_date, duration, is_filler, is_recap
+         FROM episodes WHERE anime_id = $1 AND visibility = 'public' ORDER BY number`,
+        [id]
+      ),
+      queryOne<{ total: string }>('SELECT count(*)::int AS total FROM episodes WHERE anime_id = $1', [id])
+    ])
+    return { data, total: Number(counts?.total ?? 0) }
   })
 
   fastify.get('/:id/relations', async (request, reply) => {
     const { id } = request.params as { id: string }
     const data = await query(
       `SELECT r.relation, a.id, a.canonical_title, a.format, a.status,
-              img.object_key AS cover_key
+              img.object_key AS cover_key, m.anilist_id
        FROM anime_relations r
        JOIN anime a ON a.id = r.related_id
        LEFT JOIN anime_images img ON img.anime_id = a.id AND img.kind = 'cover' AND img.is_primary
+       -- the client links a related title by whichever id it has; without the
+       -- AniList id a catalogue-only relation had nowhere to point
+       LEFT JOIN anime_mappings m ON m.anime_id = a.id
        WHERE r.anime_id = $1`,
       [id]
     )

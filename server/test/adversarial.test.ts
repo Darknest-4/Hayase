@@ -859,6 +859,247 @@ describe('adversarial', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
     })
   })
 
+  // ---- the catalogue as a source of truth ----
+
+  describe('catalogue detail', () => {
+    let animeId = ''
+    let anilistId: number | null = null
+
+    before(async () => {
+      const { rows } = await pool.query(
+        `SELECT a.id, m.anilist_id FROM anime a
+         LEFT JOIN anime_mappings m ON m.anime_id = a.id
+         WHERE m.anilist_id IS NOT NULL LIMIT 1`)
+      if (rows[0]) {
+        animeId = String(rows[0].id)
+        anilistId = Number(rows[0].anilist_id)
+      }
+    })
+
+    test('the full record comes back by Yume id', async () => {
+      if (!animeId) return
+      const res = await app.inject({ url: `/v1/anime/${animeId}` })
+      assert.equal(res.statusCode, 200)
+      const body = res.json() as Record<string, unknown>
+      // The shape the client maps from — missing any of these sends the detail
+      // page back to AniList for a title we already hold.
+      for (const key of ['id', 'canonical_title', 'titles', 'synonyms', 'genres', 'tags', 'companies', 'images', 'mappings']) {
+        assert.ok(key in body, `the record must carry ${key}`)
+      }
+    })
+
+    test('the tsvector never leaves the server', async () => {
+      // `search` is an implementation detail of ranking, and it is large.
+      if (!animeId) return
+      const body = (await app.inject({ url: `/v1/anime/${animeId}` })).json() as Record<string, unknown>
+      assert.ok(!('search' in body), 'the search vector must not be serialised to clients')
+    })
+
+    test('one round trip by AniList id returns the whole record', async () => {
+      // Without ?full the client had to resolve the id and then fetch the
+      // record — two round trips on the most-loaded screen, which is the cost
+      // that made it skip the catalogue and call AniList directly instead.
+      if (anilistId === null) return
+      const bridge = await app.inject({ url: `/v1/anime/by-anilist/${anilistId}` })
+      assert.equal(bridge.statusCode, 200)
+      assert.deepEqual(Object.keys(bridge.json() as object).sort(), ['canonical_title', 'id'])
+
+      const full = await app.inject({ url: `/v1/anime/by-anilist/${anilistId}?full=true` })
+      assert.equal(full.statusCode, 200)
+      const body = full.json() as Record<string, unknown>
+      assert.equal(body.id, animeId)
+      assert.ok('titles' in body && 'genres' in body && 'mappings' in body)
+      assert.ok(!('search' in body))
+    })
+
+    test('an unknown id is 404 in both forms', async () => {
+      assert.equal((await app.inject({ url: `/v1/anime/${NONEXISTENT_UUID}` })).statusCode, 404)
+      assert.equal((await app.inject({ url: '/v1/anime/by-anilist/999999999?full=true' })).statusCode, 404)
+    })
+
+    test('relations carry the id the client links by', async () => {
+      if (!animeId) return
+      const res = await app.inject({ url: `/v1/anime/${animeId}/relations` })
+      assert.equal(res.statusCode, 200)
+      const { data } = res.json() as { data: Array<Record<string, unknown>> }
+      // A relation with no AniList mapping still has to be reachable, so the
+      // row carries both ids and the client picks whichever exists.
+      for (const row of data) {
+        assert.ok('id' in row, 'every relation needs a Yume id')
+        assert.ok('anilist_id' in row, 'and the AniList id when there is one')
+      }
+    })
+
+    test('episodes answer for a real anime and 404 for an unknown one', async () => {
+      if (!animeId) return
+      assert.equal((await app.inject({ url: `/v1/anime/${animeId}/episodes` })).statusCode, 200)
+      assert.equal((await app.inject({ url: `/v1/anime/${NONEXISTENT_UUID}/episodes` })).statusCode, 404)
+    })
+
+    test('the whole detail surface is public', async () => {
+      // The catalogue is the fallback for an unauthenticated visitor too;
+      // requiring a token here would push anonymous users back to AniList.
+      if (!animeId) return
+      for (const url of [`/v1/anime/${animeId}`, `/v1/anime/${animeId}/episodes`, `/v1/anime/${animeId}/relations`]) {
+        assert.equal((await app.inject({ url })).statusCode, 200, url)
+      }
+    })
+  })
+
+  // ---- editorial publishing ----
+
+  describe('publishing', () => {
+    let animeId = ''
+
+    before(async () => {
+      await pool.query(
+        `INSERT INTO user_roles (user_id, role_id)
+         SELECT $1, r.id FROM roles r WHERE r.slug = 'admin' ON CONFLICT DO NOTHING`, [victim.id])
+      const authPlugin = await import('../src/plugins/auth.ts')
+      authPlugin.invalidatePermissions()
+
+      const { rows } = await pool.query(
+        `INSERT INTO anime (canonical_title, format, status) VALUES ($1, 'TV', 'FINISHED') RETURNING id, visibility`,
+        ['adv publishing ' + unique()])
+      animeId = String(rows[0]!.id)
+      for (const n of [1, 2, 3]) {
+        await pool.query('INSERT INTO episodes (anime_id, number) VALUES ($1, $2)', [animeId, n])
+      }
+    })
+
+    after(async () => {
+      await pool.query('DELETE FROM anime WHERE id = $1', [animeId])
+      await pool.query('DELETE FROM user_roles WHERE user_id = $1', [victim.id])
+      const authPlugin = await import('../src/plugins/auth.ts')
+      authPlugin.invalidatePermissions()
+    })
+
+    const admin = (): Record<string, string> => ({ authorization: `Bearer ${victim.token}` })
+
+    test('a newly created anime is not public', async () => {
+      // The column default is the backstop: an import that forgets to say
+      // anything must not land on the public surface.
+      const { rows } = await pool.query('SELECT visibility FROM anime WHERE id = $1', [animeId])
+      assert.equal(rows[0]!.visibility, 'hidden', 'a fresh row must default to hidden')
+    })
+
+    test('a newly created episode is not public', async () => {
+      const { rows } = await pool.query(
+        "SELECT count(*)::int AS n FROM episodes WHERE anime_id = $1 AND visibility = 'public'", [animeId])
+      assert.equal(Number(rows[0]!.n), 0, 'imported episodes must not be offered before somebody publishes them')
+    })
+
+    test('a hidden anime is invisible to the public detail route', async () => {
+      assert.equal((await app.inject({ url: `/v1/anime/${animeId}` })).statusCode, 404)
+      assert.equal((await app.inject({ url: `/v1/anime/${animeId}/episodes` })).statusCode, 404)
+    })
+
+    test('the admin episode list shows unpublished episodes', async () => {
+      // Filtering here would hide exactly what staff came to look at.
+      const res = await app.inject({ url: `/v1/admin/catalogue/${animeId}/episodes`, headers: admin() })
+      assert.equal(res.statusCode, 200)
+      const { data } = res.json() as { data: Array<{ visibility: string }> }
+      assert.equal(data.length, 3)
+      assert.ok(data.every(e => e.visibility === 'hidden'))
+    })
+
+    test('publishing the anime does not publish its episodes', async () => {
+      // Two separate decisions: the page can go up while the episodes wait
+      // for their subtitles.
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/v1/admin/catalogue/${animeId}`,
+        headers: admin(),
+        payload: { visibility: 'public' }
+      })
+      assert.equal(res.statusCode, 200, res.body)
+
+      const list = await app.inject({ url: `/v1/anime/${animeId}/episodes` })
+      assert.equal(list.statusCode, 200)
+      const body = list.json() as { data: unknown[], total: number }
+      assert.equal(body.data.length, 0, 'no episode is published yet')
+      assert.equal(body.total, 3, 'but the client must know we hold three')
+    })
+
+    test('total is what stops the client routing around the decision', async () => {
+      // An empty data with total > 0 is the signal not to fall back to
+      // ani.zip. Without it, hiding every episode would show them anyway.
+      const body = (await app.inject({ url: `/v1/anime/${animeId}/episodes` })).json() as { data: unknown[], total: number }
+      assert.ok(body.total > body.data.length)
+    })
+
+    test('a range of episodes can be published in one call', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/v1/admin/catalogue/${animeId}/episodes/visibility`,
+        headers: admin(),
+        payload: { visibility: 'public', from: 1, to: 2 }
+      })
+      assert.equal(res.statusCode, 200, res.body)
+      assert.equal((res.json() as { changed: number }).changed, 2)
+
+      // number is `numeric` (specials are 5.5), so pg serialises it as a
+      // string — the client coerces it; the API contract is the value, not
+      // the JSON type.
+      const body = (await app.inject({ url: `/v1/anime/${animeId}/episodes` })).json() as { data: Array<{ number: string }>, total: number }
+      assert.deepEqual(body.data.map(e => Number(e.number)), [1, 2], 'episode 3 stays unpublished')
+      assert.equal(body.total, 3)
+    })
+
+    test('publishing the same range again changes nothing', async () => {
+      // The UPDATE is guarded on a real change, so a repeated call is not
+      // recorded as an editorial act that did not happen.
+      const res = await app.inject({
+        method: 'POST',
+        url: `/v1/admin/catalogue/${animeId}/episodes/visibility`,
+        headers: admin(),
+        payload: { visibility: 'public', from: 1, to: 2 }
+      })
+      assert.equal((res.json() as { changed: number }).changed, 0)
+    })
+
+    test('one episode can be pulled back on its own', async () => {
+      const { rows } = await pool.query('SELECT id FROM episodes WHERE anime_id = $1 AND number = 1', [animeId])
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/v1/admin/catalogue/episodes/${String(rows[0]!.id)}`,
+        headers: admin(),
+        payload: { visibility: 'hidden' }
+      })
+      assert.equal(res.statusCode, 200, res.body)
+
+      const body = (await app.inject({ url: `/v1/anime/${animeId}/episodes` })).json() as { data: Array<{ number: string }> }
+      assert.deepEqual(body.data.map(e => Number(e.number)), [2])
+    })
+
+    test('publishing is written to the audit trail', async () => {
+      // "Who put this live" is exactly the question asked afterwards.
+      const { rows } = await pool.query(
+        "SELECT count(*)::int AS n FROM audit_logs WHERE action = 'episode.visibility' AND actor_id = $1", [victim.id])
+      assert.ok(Number(rows[0]!.n) >= 2, 'both the bulk and the single change must be recorded')
+    })
+
+    test('an ordinary account cannot publish anything', async () => {
+      for (const call of [
+        { method: 'POST' as const, url: `/v1/admin/catalogue/${animeId}/episodes/visibility`, payload: { visibility: 'public' } },
+        { method: 'PATCH' as const, url: `/v1/admin/catalogue/${animeId}`, payload: { visibility: 'public' } }
+      ]) {
+        const res = await app.inject({ ...call, headers: { authorization: `Bearer ${attacker.token}` } })
+        assert.equal(res.statusCode, 403, call.url)
+      }
+    })
+
+    test('an unknown visibility value is refused', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/v1/admin/catalogue/${animeId}/episodes/visibility`,
+        headers: admin(),
+        payload: { visibility: 'sort-of-public' }
+      })
+      assert.equal(res.statusCode, 400)
+    })
+  })
+
   // ---- webhooks / SSRF at the route ----
 
   describe('webhook targets', () => {

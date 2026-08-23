@@ -1,4 +1,4 @@
-/* global window, document, U, C, API, Store */
+/* global window, document, U, C, Catalogue, Store */
 // Anime detail page — faithful to the original Hayase layout:
 // content scrolls over the global banner; cover bottom-aligned next to a
 // huge title; chips tinted with the cover's dominant color (score chip
@@ -10,9 +10,12 @@ const PageAnime = {
   async render (root, params, id) {
     root.append(U.el('div', { class: 'spinner' }))
 
+    // Catalogue first, AniList as the fallback — see js/catalogue.js. `id` is
+    // an AniList id or a Yume uuid; the resolver accepts either, which is what
+    // makes a catalogue-only title reachable at all.
     let media
     try {
-      media = await API.media(Number(id))
+      media = await Catalogue.media(id)
     } catch (e) {
       root.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load anime: ' + e.message }))
       return
@@ -173,7 +176,12 @@ const PageAnime = {
     }
 
     // AniList / MAL links
-    actions.append(U.el('a', { class: 'detail-icon-btn', title: 'AniList', href: `https://anilist.co/anime/${media.id}`, target: '_blank', rel: 'noopener', text: 'AL' }))
+    // Only when we actually have the mapping: media.id may be a Yume uuid for a
+    // catalogue-only title, and pointing anilist.co at that builds a dead link.
+    const anilistId = media.anilistId ?? (typeof media.id === 'number' ? media.id : null)
+    if (anilistId) {
+      actions.append(U.el('a', { class: 'detail-icon-btn', title: 'AniList', href: `https://anilist.co/anime/${anilistId}`, target: '_blank', rel: 'noopener', text: 'AL' }))
+    }
     if (media.idMal) {
       actions.append(U.el('a', { class: 'detail-icon-btn', title: 'MyAnimeList', href: `https://myanimelist.net/anime/${media.idMal}`, target: '_blank', rel: 'noopener', text: 'MAL' }))
     }
@@ -407,7 +415,7 @@ const PageAnime = {
   },
 
   async renderEpisodes (wrap, media) {
-    const episodes = await API.episodes(media)
+    const episodes = await Catalogue.episodes(media)
 
     if (!episodes.length) {
       wrap.replaceChildren(U.el('div', { class: 'empty-state', text: media.status === 'NOT_YET_RELEASED' ? 'Not yet aired.' : 'No episode data available.' }))

@@ -178,6 +178,55 @@ const YumeAPI = {
     return new WebSocket(url)
   },
 
+  // ---- catalogue reads ----
+  //
+  // These return null — never throw — when the backend is unreachable, so the
+  // client stays usable standalone and the caller falls through to AniList.
+  // A 404 is also null: "we do not have it" and "we cannot be asked" lead to
+  // the same next step.
+
+  /**
+   * The full catalogue record, by Yume id (uuid) or AniList id (numeric).
+   *
+   * `full=true` on the AniList path returns the record in one round trip
+   * rather than resolving the id and then fetching it.
+   */
+  async catalogueMedia (id) {
+    const path = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(id))
+      ? '/v1/anime/' + id
+      : '/v1/anime/by-anilist/' + Number(id) + '?full=true'
+    try {
+      return await this._request(path)
+    } catch (e) {
+      return null
+    }
+  },
+
+  /**
+   * Published episodes, plus how many we hold in total.
+   *
+   * The total is what lets the caller tell "we have no episode data" from "we
+   * have episodes and publish none" — see Catalogue.episodes. Returns null
+   * only when the backend could not be reached at all.
+   */
+  async catalogueEpisodes (yumeId) {
+    try {
+      const { data, total } = await this._request(`/v1/anime/${yumeId}/episodes`)
+      return { data, total: total ?? data.length }
+    } catch (e) {
+      return null
+    }
+  },
+
+  async catalogueRelations (yumeId) {
+    try {
+      const { data } = await this._request(`/v1/anime/${yumeId}/relations`)
+      return data
+    } catch (e) {
+      return null
+    }
+  },
+
   // ---- catalogue search ----
   // Tiered ranking over the Yume catalogue (canonical titles, romaji/english/
   // native titles and synonyms). The client stays usable without a backend —
@@ -323,11 +372,27 @@ const YumeAPI = {
       addEpisode: (id, body) => YumeAPI._request(`/v1/admin/catalogue/${id}/episodes`, { method: 'POST', auth: true, body }),
       updateEpisode: (eid, body) => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}`, { method: 'PATCH', auth: true, body }),
       removeEpisode: eid => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}`, { method: 'DELETE', auth: true }),
+      // Publish or take down a whole range at once: { visibility, from?, to? }
+      episodeVisibility: (id, body) => YumeAPI._request(`/v1/admin/catalogue/${id}/episodes/visibility`, { method: 'POST', auth: true, body }),
       // metadata provenance & duplicate handling
       unlock: (id, fields) => YumeAPI._request(`/v1/admin/catalogue/${id}/unlock`, { method: 'POST', auth: true, body: { fields } }),
       duplicates: (threshold = 0.86, limit = 50) =>
         YumeAPI._request(`/v1/admin/catalogue/duplicates?threshold=${threshold}&limit=${limit}`, { auth: true }),
       merge: (id, sourceId) => YumeAPI._request(`/v1/admin/catalogue/${id}/merge`, { method: 'POST', auth: true, body: { sourceId } })
+    },
+
+    // error triage — list groups, open one for its stack, change its status
+    errors: (status = 'open') => YumeAPI._request(`/v1/admin/errors?status=${status}&limit=100`, { auth: true }),
+    error: id => YumeAPI._request(`/v1/admin/errors/${id}`, { auth: true }),
+    setErrorStatus: (id, status) => YumeAPI._request(`/v1/admin/errors/${id}`, { method: 'PATCH', auth: true, body: { status } }),
+
+    // audit trail — who changed what, and when
+    audit: ({ subjectType, subjectId, actorId, limit = 50 } = {}) => {
+      const params = new URLSearchParams({ limit: String(limit) })
+      if (subjectType) params.set('subjectType', subjectType)
+      if (subjectId) params.set('subjectId', subjectId)
+      if (actorId) params.set('actorId', actorId)
+      return YumeAPI._request('/v1/admin/audit?' + params.toString(), { auth: true })
     }
   },
 
