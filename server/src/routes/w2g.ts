@@ -30,14 +30,35 @@ const routes: FastifyPluginAsync = async fastify => {
     )
     if (!profile) return reply.code(400).send({ type: 'about:blank', title: 'Bad Request', status: 400, detail: 'Account has no profile' })
 
-    const code = randomBytes(4).toString('hex')
-    const room = await queryOne(
-      `INSERT INTO watch_together_rooms (code, host_profile, episode_id, is_public)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, code, episode_id, is_public, created_at`,
-      [code, profile.id, episodeId ?? null, isPublic ?? false]
-    )
-    await emitEvent('w2g.room_created', { code, host: profile.id })
+    /**
+     * The invite code is the room's only credential, and the column is UNIQUE.
+     * It used to be generated once and inserted: a collision raised 23505 and
+     * escaped as a 500 with the constraint name in it. Four random bytes is
+     * 2^32, which sounds like plenty until you notice closed rooms are kept,
+     * so the occupied space only ever grows and every new room is drawn
+     * against all of history.
+     *
+     * Retrying is the honest fix — a collision is a fact about the draw, not
+     * about the request, so the caller should never see it. Five attempts put
+     * the residual failure far below any other way this call can fail.
+     */
+    let room
+    for (let attempt = 0; ; attempt++) {
+      const code = randomBytes(4).toString('hex')
+      try {
+        room = await queryOne(
+          `INSERT INTO watch_together_rooms (code, host_profile, episode_id, is_public)
+           VALUES ($1, $2, $3, $4)
+           RETURNING id, code, episode_id, is_public, created_at`,
+          [code, profile.id, episodeId ?? null, isPublic ?? false]
+        )
+        break
+      } catch (error) {
+        const duplicate = (error as { code?: string }).code === '23505'
+        if (!duplicate || attempt >= 4) throw error
+      }
+    }
+    await emitEvent('w2g.room_created', { code: (room as { code: string }).code, host: profile.id })
     return reply.code(201).send(room)
   })
 

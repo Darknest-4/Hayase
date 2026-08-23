@@ -93,15 +93,49 @@ const routes: FastifyPluginAsync = async fastify => {
       slug: string, name: string, summary: string, description?: string, type: string
     }
 
+    /**
+     * extensions.owner_id is a foreign key to extension_developers(user_id),
+     * not to users(id). Holding the extensions.publish permission is therefore
+     * not sufficient — the caller also needs a developer record, which
+     * POST /v1/dev/register creates.
+     *
+     * Without this check the insert violated the FK and escaped as an opaque
+     * 500: verified, a permitted user who had not registered got
+     * "Internal Server Error" from the store's only entry point, with nothing
+     * to indicate what was missing. GET /me and GET /extensions both answer
+     * 200 for such a user, so the portal looks usable right up to this call.
+     */
+    const developer = await queryOne('SELECT 1 FROM extension_developers WHERE user_id = $1', [request.user.sub])
+    if (!developer) {
+      return reply.code(409).send({
+        type: 'about:blank',
+        title: 'Conflict',
+        status: 409,
+        detail: 'Register as a developer first — POST /v1/dev/register'
+      })
+    }
+
     const taken = await queryOne('SELECT 1 FROM extensions WHERE slug = $1', [slug])
     if (taken) return reply.code(409).send({ type: 'about:blank', title: 'Conflict', status: 409, detail: 'Slug already taken' })
 
-    const ext = await queryOne(
-      `INSERT INTO extensions (slug, owner_id, name, summary, description, type, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'draft')
-       RETURNING id, slug, name, summary, type, status, created_at`,
-      [slug, request.user.sub, name, summary, description ?? null, type]
-    )
+    // The check above is a read followed by a write, so two parallel creates
+    // of the same slug both pass it and one hits extensions_slug_key. That is
+    // the same outcome the caller already has a 409 for, so it is reported as
+    // one rather than as a 500 naming the constraint.
+    let ext
+    try {
+      ext = await queryOne(
+        `INSERT INTO extensions (slug, owner_id, name, summary, description, type, status)
+         VALUES ($1, $2, $3, $4, $5, $6, 'draft')
+         RETURNING id, slug, name, summary, type, status, created_at`,
+        [slug, request.user.sub, name, summary, description ?? null, type]
+      )
+    } catch (error) {
+      if ((error as { code?: string }).code === '23505') {
+        return reply.code(409).send({ type: 'about:blank', title: 'Conflict', status: 409, detail: 'Slug already taken' })
+      }
+      throw error
+    }
     return reply.code(201).send(ext)
   })
 

@@ -496,8 +496,15 @@ describe('adversarial', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
       if (created.statusCode !== 201) return
       const id = (created.json() as { id: string }).id
 
-      await Promise.all(Array.from({ length: 6 }, async () =>
-        app.inject({ method: 'POST', url: `/v1/comments/${id}/like`, headers: auth(attacker) })))
+      const codes = await Promise.all(Array.from({ length: 8 }, async () =>
+        app.inject({ method: 'POST', url: `/v1/comments/${id}/like`, headers: auth(attacker) })
+          .then(r => r.statusCode)))
+
+      // The original assertion only checked the database, so it passed while
+      // the API was answering 500. A double-clicked like button really did
+      // return "500 Internal Server Error" carrying comment_likes_pkey:
+      // verified live as 200 200 200 500 500 500 across six parallel calls.
+      assert.ok(codes.every(c => c < 500), 'a raced toggle must not 500: ' + codes.join(' '))
 
       const { rows } = await pool.query(
         'SELECT count(*)::int AS n FROM comment_likes WHERE comment_id = $1', [id])
@@ -506,6 +513,98 @@ describe('adversarial', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
       const { rows: counted } = await pool.query('SELECT like_count FROM comments WHERE id = $1', [id])
       assert.ok(Number(counted[0]!.like_count) >= 0, 'like_count must never go negative')
       await pool.query('DELETE FROM comments WHERE id = $1', [id])
+    })
+  })
+
+  // ---- the extension store's entry point ----
+
+  describe('developer portal', () => {
+    before(async () => {
+      await pool.query(
+        `INSERT INTO user_roles (user_id, role_id)
+         SELECT $1, r.id FROM roles r WHERE r.slug = 'admin' ON CONFLICT DO NOTHING`, [attacker.id])
+      const authPlugin = await import('../src/plugins/auth.ts')
+      authPlugin.invalidatePermissions()
+    })
+
+    after(async () => {
+      await pool.query('DELETE FROM extensions WHERE slug LIKE $1', ['adv-%'])
+      await pool.query('DELETE FROM extension_developers WHERE user_id = $1', [attacker.id])
+      await pool.query('DELETE FROM user_roles WHERE user_id = $1', [attacker.id])
+      const authPlugin = await import('../src/plugins/auth.ts')
+      authPlugin.invalidatePermissions()
+    })
+
+    const create = async (slug: string): Promise<ReturnType<typeof app.inject>> => app.inject({
+      method: 'POST',
+      url: '/v1/dev/extensions',
+      headers: { authorization: `Bearer ${attacker.token}` },
+      payload: { slug, name: 'Adversarial', summary: 's', type: 'torrent' }
+    })
+
+    test('publishing without a developer record says so instead of 500ing', async () => {
+      // extensions.owner_id is a foreign key to extension_developers(user_id),
+      // not to users(id), so the extensions.publish permission alone is not
+      // enough. The FK violation used to escape as an opaque 500 from the
+      // store's only entry point — and GET /me and GET /extensions both answer
+      // 200 for such a user, so nothing before this call hinted at it.
+      const res = await create('adv-' + unique())
+      assert.equal(res.statusCode, 409, res.body)
+      assert.match((res.json() as { detail: string }).detail, /register/i)
+    })
+
+    test('parallel creates of one slug yield a single extension, no 500', async () => {
+      await app.inject({
+        method: 'POST',
+        url: '/v1/dev/register',
+        headers: { authorization: `Bearer ${attacker.token}` },
+        payload: { displayName: 'Adversarial Dev' }
+      })
+
+      const slug = 'adv-' + unique()
+      const codes = await Promise.all(Array.from({ length: 5 }, async () => (await create(slug)).statusCode))
+      assert.equal(codes.filter(c => c === 201).length, 1, 'exactly one create must win: ' + codes)
+      assert.ok(codes.every(c => c === 201 || c === 409), 'the rest must be 409, got ' + codes)
+
+      const { rows } = await pool.query('SELECT count(*)::int AS n FROM extensions WHERE slug = $1', [slug])
+      assert.equal(Number(rows[0]!.n), 1)
+    })
+  })
+
+  // ---- watch-together ----
+
+  describe('watch together', () => {
+    test('a room is created with a unique code and no duplicate-key escape', async () => {
+      // The code column is UNIQUE and four random bytes wide, and closed rooms
+      // are kept, so the occupied space only grows. Generating once and
+      // inserting made a collision a 500; it is retried now.
+      const { rows: animeRows } = await pool.query('SELECT id FROM anime LIMIT 1')
+      if (!animeRows[0]) return
+
+      const made = await Promise.all(Array.from({ length: 4 }, async () => app.inject({
+        method: 'POST',
+        url: '/v1/w2g',
+        headers: auth(victim),
+        payload: { animeId: String(animeRows[0]!.id), episode: 1 }
+      })))
+      assert.ok(made.every(r => r.statusCode === 201), 'room creation must not fail: ' + made.map(r => r.statusCode))
+      const codes = made.map(r => (r.json() as { code: string }).code)
+      assert.equal(new Set(codes).size, codes.length, 'codes must be distinct')
+
+      for (const room of made) await pool.query('DELETE FROM watch_together_rooms WHERE id = $1', [(room.json() as { id: string }).id])
+    })
+
+    test('another account cannot close a room it does not host', async () => {
+      const { rows: animeRows } = await pool.query('SELECT id FROM anime LIMIT 1')
+      if (!animeRows[0]) return
+      const made = await app.inject({
+        method: 'POST', url: '/v1/w2g', headers: auth(victim),
+        payload: { animeId: String(animeRows[0]!.id), episode: 1 }
+      })
+      const id = (made.json() as { id: string }).id
+      const res = await app.inject({ method: 'DELETE', url: `/v1/w2g/${id}`, headers: auth(attacker) })
+      assert.equal(res.statusCode, 404, 'a non-host must not be able to close a room')
+      await pool.query('DELETE FROM watch_together_rooms WHERE id = $1', [id])
     })
   })
 

@@ -38,6 +38,22 @@ function normaliseMessage (message: string): string {
     .slice(0, 300)
 }
 
+/** A readable message for anything that can be thrown, Error or not. */
+function describe (error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'string') return error
+  if (error !== null && typeof error === 'object') {
+    const shaped = error as { message?: unknown, title?: unknown, detail?: unknown }
+    if (typeof shaped.message === 'string') return shaped.message
+    // problem+json shaped rejections carry their meaning in title/detail
+    if (typeof shaped.title === 'string') {
+      return typeof shaped.detail === 'string' ? `${shaped.title}: ${shaped.detail}` : shaped.title
+    }
+    try { return JSON.stringify(error) } catch { return Object.prototype.toString.call(error) }
+  }
+  return String(error)
+}
+
 /**
  * Identity of a bug, not of an occurrence: source, normalised message, and the
  * first application stack frame. Route is deliberately excluded so the same
@@ -64,9 +80,19 @@ export async function recordError (
   error: Error,
   context: ErrorContext = {}
 ): Promise<string | undefined> {
+  // `error` is typed as Error for callers, but a thrown value is not
+  // guaranteed to be one — see describe() below.
   try {
-    const message = String(error.message ?? error).slice(0, 2000)
-    const stack = error.stack?.slice(0, 8000)
+    /**
+     * Not everything thrown is an Error. Fastify plugins reject with plain
+     * objects — the rate limiter's errorResponseBuilder among them — and
+     * `String({...})` is "[object Object]", with no stack to fingerprint on.
+     * Every such fault therefore collapsed into ONE group titled
+     * "api: [object Object]": 61 occurrences in this database, describing
+     * nothing. Serialising the object instead keeps distinct faults distinct.
+     */
+    const message = String(describe(error)).slice(0, 2000)
+    const stack = error?.stack?.slice(0, 8000)
     const print = fingerprint(source, message, stack)
     const title = `${source}: ${normaliseMessage(message)}`.slice(0, 300)
 
