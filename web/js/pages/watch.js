@@ -1,4 +1,4 @@
-/* global API, C, Catalogue, MutationObserver, PageW2G, Store, U, YumeAPI, document, location, window */
+/* global C, Catalogue, MutationObserver, PageW2G, Store, U, YumeAPI, document, location, window */
 // Watch page — modern embedded player. Progress is tracked automatically:
 // the exact second you reached is saved per profile and resumed next time,
 // history is logged the moment you start, and the episode is marked watched
@@ -133,7 +133,7 @@ const PageWatch = {
     if (total > 1) this.mountEpisodeList(side, media, episode, total, keepSrc)
 
     // ---- episode metadata: title + meta chips + expandable summary ----
-    API.episodes(media).then(list => {
+    Catalogue.episodes(media).then(list => {
       const ep = list.find(e => e.episode === episode) ?? list[episode - 1]
       if (!ep || (!ep.title && !ep.summary)) return
 
@@ -210,7 +210,7 @@ const PageWatch = {
     }
 
     renderRows(null)
-    API.episodes(media).then(meta => { if (meta?.length) renderRows(meta) }).catch(() => {})
+    Catalogue.episodes(media).then(meta => { if (meta?.length) renderRows(meta) }).catch(() => {})
   },
 
   /**
