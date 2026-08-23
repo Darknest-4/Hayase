@@ -93,11 +93,29 @@ export default fp(async fastify => {
     })
   })
 
-  fastify.addHook('onSend', async (_request, reply, payload) => {
+  fastify.addHook('onSend', async (request, reply, payload) => {
     for (const [header, value] of Object.entries(HEADERS)) reply.header(header, value)
     // HSTS only makes sense once traffic is actually HTTPS, and only in prod
     if (config.isProd && process.env.ENABLE_HSTS === 'true') {
       reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+    }
+
+    /**
+     * Authenticated responses must not be cached.
+     *
+     * These bodies are per-user — library entries, notifications, the account
+     * itself — and they were leaving with no Cache-Control at all. A shared
+     * cache is then free to apply its own heuristic freshness and hand one
+     * user's data to the next, and the browser will happily restore a signed-in
+     * page from the back/forward cache after sign-out.
+     *
+     * Only responses to a request that actually carried a credential are
+     * marked, and only when the route has not set its own value: the
+     * content-addressed package download is immutable by construction and its
+     * `public, max-age=31536000, immutable` must survive.
+     */
+    if (request.headers.authorization && !reply.getHeader('Cache-Control')) {
+      reply.header('Cache-Control', 'no-store')
     }
     return payload
   })

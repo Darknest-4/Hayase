@@ -165,3 +165,26 @@ docker compose exec postgres psql -U yume -c "DROP DATABASE yume_drill"
 ```
 
 Time it. If the answer is "I am not sure", that is the finding.
+
+---
+
+## Off-site copies
+
+`BACKUP_SYNC_CMD` runs after a **verified** backup, receiving the dump path as
+`$1`:
+
+```yaml
+# docker-compose.yml, backup service
+BACKUP_SYNC_CMD: 'rclone copy "$$1" remote:yume-backups'
+```
+
+```bash
+BACKUP_SYNC_CMD='rsync -az "$1" backup-host:/srv/yume/'
+BACKUP_SYNC_CMD='aws s3 cp "$1" s3://my-bucket/yume/'
+```
+
+A sync failure is logged loudly but does not fail the run: the local backup is
+already verified, and losing tomorrow's copy because today's upload broke would
+be the worse outcome. When it is unset, every run says so — a backup on the
+same disk as the database survives a bad deploy and a dropped table, but not
+the machine.

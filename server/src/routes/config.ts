@@ -5,6 +5,7 @@
 //   PATCH /v1/admin/config/settings/:key — set a global site setting
 
 import { query, queryOne } from '../db.ts'
+import { invalidateThresholds } from '../lib/thresholds.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
@@ -117,6 +118,12 @@ export const adminConfig: FastifyPluginAsync = async fastify => {
        ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, updated_at = now(), updated_by = $3`,
       [key, JSON.stringify(value), request.user.sub]
     )
+    // The threshold set is cached with a TTL, so without this an edited
+    // threshold sat inert until the cache expired — an operator raising a
+    // limit during an incident would watch it not take effect. The invalidator
+    // was written and never called.
+    if (key === 'monitor_thresholds') invalidateThresholds()
+
     void emitEvent('config.changed', { key, value: JSON.stringify(value), by: request.user.username })
     return { key, value }
   })

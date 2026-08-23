@@ -9,6 +9,7 @@ import { createHmac } from 'node:crypto'
 
 import { query, queryOne } from '../db.ts'
 import { enqueue } from './queue.ts'
+import { checkOutboundUrl } from './ssrf.ts'
 
 import type { Job } from './queue.ts'
 
@@ -16,6 +17,7 @@ import type { Job } from './queue.ts'
 export const WEBHOOK_EVENTS = [
   'user.registered',        // new account
   'user.moderated',         // suspend/ban/restore
+  'user.password_reset_requested', // a reset was asked for — NEVER carries the token
   'comment.created',        // new top-level comment or reply
   'report.created',         // content reported
   'report.resolved',        // moderation decision
@@ -71,6 +73,11 @@ function renderEmbed (event: WebhookEvent, d: Record<string, unknown>): Embed {
   switch (event) {
     case 'user.registered':
       return { title: '👤 New user registered', color: COLORS.success, fields: [field('Username', d.username)] }
+    // Deliberately carries no token: this event is fanned out to every
+    // subscribed webhook, including ones that render into chat. The token
+    // travels only via PASSWORD_RESET_WEBHOOK_URL — see lib/reset-delivery.ts.
+    case 'user.password_reset_requested':
+      return { title: '🔑 Password reset requested', color: COLORS.warn, fields: [field('Username', d.username)] }
     case 'user.moderated':
       return {
         title: `🔨 User ${d.action}`,
@@ -200,6 +207,23 @@ export async function deliver (webhookId: string, event: WebhookEvent, data: Rec
   const started = Date.now()
   let statusCode: number | null = null
   let error: string | null = null
+
+  // Checked here rather than only at creation: the URL is re-read from the
+  // database on every delivery, and DNS can change under a hostname that was
+  // public when it was saved.
+  const verdict = await checkOutboundUrl(hook.url)
+  if (!verdict.ok) {
+    await query(
+      `INSERT INTO webhook_deliveries (webhook_id, event, payload, status_code, error, duration_ms)
+       VALUES ($1, $2, $3, NULL, $4, 0)`,
+      [hook.id, event, { event, data, at }, `refused: ${verdict.reason}`]
+    )
+    // Disable it outright. A webhook aimed inward is either a mistake or an
+    // attempt, and retrying either one forever helps nobody.
+    await query('UPDATE webhooks SET enabled = false, last_error = $2 WHERE id = $1',
+      [hook.id, `refused: ${verdict.reason}`])
+    throw new Error(`webhook ${hook.id} refused: ${verdict.reason}`)
+  }
 
   try {
     const controller = new AbortController()

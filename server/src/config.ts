@@ -31,6 +31,42 @@ function jwtSecret (): string {
 }
 
 /**
+ * Which upstream proxies may set X-Forwarded-For.
+ *
+ * `trustProxy: true` trusts that header from *anyone*, so a request could
+ * simply declare its own client IP — and since the rate limiter keys on
+ * request.ip, every fabricated address got its own fresh quota. That turned
+ * the deliberately expensive login hash into both a brute-force and a
+ * CPU-exhaustion vector. Measured before the fix: 8 of 8 login attempts got
+ * through an exhausted limit by varying one header.
+ *
+ * The safe default is to trust nobody and use the real socket address.
+ * Deployments behind a reverse proxy set TRUST_PROXY to that proxy's address
+ * or subnet (e.g. the Docker network), or to a hop count.
+ */
+function trustProxy (): boolean | string[] | number {
+  const raw = process.env.TRUST_PROXY?.trim()
+  if (!raw || raw === 'false') return false
+
+  if (raw === 'true') {
+    // Blanket trust is exactly the misconfiguration that made the rate limit
+    // bypassable, so production refuses it rather than running exposed.
+    if (isProd) {
+      throw new Error(
+        'TRUST_PROXY=true trusts X-Forwarded-For from any client, which lets anyone bypass rate limiting. ' +
+        'Set it to your proxy\'s address or subnet (e.g. TRUST_PROXY=172.16.0.0/12) or a hop count (TRUST_PROXY=1).'
+      )
+    }
+    return true
+  }
+
+  const hops = Number(raw)
+  if (Number.isInteger(hops) && hops > 0) return hops
+
+  return raw.split(',').map(entry => entry.trim()).filter(Boolean)
+}
+
+/**
  * CORS. In development anything goes; in production a wildcard would let any
  * site drive the API with a user's bearer token, so an unset CORS_ORIGINS means
  * same-origin only (which is what the single-container deployment needs).
@@ -50,12 +86,27 @@ export const config = {
 
   databaseUrl: env('DATABASE_URL', isProd ? undefined : 'postgres://yume:yume@localhost:5432/yume'),
 
+  // Connection pool. Ten was too few to absorb a burst, and with no timeouts a
+  // single runaway query could hold a connection indefinitely — ten of those
+  // stalled the whole API while requests piled up invisibly on the pool wait.
+  dbPoolMax: Number(process.env.DB_POOL_MAX ?? 20),
+  dbConnectionTimeoutMs: Number(process.env.DB_CONNECTION_TIMEOUT_MS ?? 5_000),
+  /** Server-side cap on any single statement. 0 disables it. */
+  dbStatementTimeoutMs: Number(process.env.DB_STATEMENT_TIMEOUT_MS ?? 15_000),
+
+  // Slow-drip requests would otherwise hold connections open indefinitely.
+  requestTimeoutMs: Number(process.env.REQUEST_TIMEOUT_MS ?? 30_000),
+  connectionTimeoutMs: Number(process.env.CONNECTION_TIMEOUT_MS ?? 60_000),
+
   // JWT secrets MUST be provided in production (validated above)
   jwtSecret: jwtSecret(),
   accessTokenTtl: '15m',
   refreshTokenTtlDays: 30,
 
   corsOrigins: corsOrigins(),
+
+  /** See trustProxy() — defaults to trusting nobody. */
+  trustProxy: trustProxy(),
 
   // Optional infrastructure. Monitoring is capability-aware: a service is
   // probed only when its URL is configured here, otherwise it reports

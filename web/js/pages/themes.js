@@ -1,4 +1,4 @@
-/* global window, document, U, Store */
+/* global Store, U, document, getComputedStyle, window */
 // Theme Engine — pick a base (dark/light), choose an accent from curated
 // presets or a fully custom colour, and optionally tint surfaces toward the
 // accent. Applied live via CSS custom-property overrides (Store.applyTheme).
@@ -73,7 +73,8 @@ const PageThemes = {
         U.el('div', { class: 'list-row-sub', text: 'Drag the picker — the whole UI recolours live.' })
       ]),
       U.el('button', {
-        class: 'btn btn-secondary btn-sm', style: 'margin-left:auto;',
+        class: 'btn btn-secondary btn-sm',
+        style: 'margin-left:auto;',
         onclick: () => { Store.setTheme({ accent: '', tint: false }); window.App.navigate() }
       }, [document.createTextNode('Reset to default')])
     ]))

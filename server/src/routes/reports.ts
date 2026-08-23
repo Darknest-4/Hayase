@@ -10,6 +10,28 @@ import { WRITE_LIMIT } from '../plugins/security.ts'
 const SUBJECTS = ['comment', 'post', 'topic', 'review', 'user', 'extension', 'message'] as const
 const REASONS = ['spam', 'harassment', 'nsfw', 'spoiler', 'illegal', 'other'] as const
 
+/**
+ * The table each subject type lives in.
+ *
+ * Without this the endpoint accepted any well-formed uuid, so a report could
+ * name a subject that has never existed. Moderators then get a queue entry
+ * that opens to nothing, and since one report per (reporter, subject) is
+ * allowed, a single account can mint an unbounded number of them by
+ * generating fresh uuids — the moderation queue is the thing that breaks.
+ *
+ * The values are fixed literals matched to SUBJECTS, never request input, so
+ * the interpolation below cannot carry anything a caller controls.
+ */
+const SUBJECT_TABLE: Record<typeof SUBJECTS[number], string> = {
+  comment: 'comments',
+  post: 'posts',
+  topic: 'topics',
+  review: 'reviews',
+  user: 'users',
+  extension: 'extensions',
+  message: 'messages'
+}
+
 const routes: FastifyPluginAsync = async fastify => {
   fastify.post('/', {
     config: WRITE_LIMIT,
@@ -29,6 +51,14 @@ const routes: FastifyPluginAsync = async fastify => {
   }, async (request, reply) => {
     const { subjectType, subjectId, reason, details } = request.body as {
       subjectType: string, subjectId: string, reason: string, details?: string
+    }
+
+    const table = SUBJECT_TABLE[subjectType as typeof SUBJECTS[number]]
+    const subject = table ? await queryOne(`SELECT 1 FROM ${table} WHERE id = $1`, [subjectId]) : undefined
+    if (!subject) {
+      return reply.code(404).send({
+        type: 'about:blank', title: 'Not Found', status: 404, detail: 'That subject does not exist'
+      })
     }
 
     // one open report per (reporter, subject); repeat reports are no-ops

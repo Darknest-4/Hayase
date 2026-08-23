@@ -1,4 +1,4 @@
-/* global window, document, sessionStorage, U, C, API, Store, YumeAPI, PageW2G */
+/* global API, C, MutationObserver, PageW2G, Store, U, YumeAPI, document, location, window */
 // Watch page — modern embedded player. Progress is tracked automatically:
 // the exact second you reached is saved per profile and resumed next time,
 // history is logged the moment you start, and the episode is marked watched
@@ -92,9 +92,9 @@ const PageWatch = {
       // Watch Together — opens the sync-room popup (feature-flagged)
       (!window.App || window.App.featureOn('watch_together'))
         ? U.el('button', {
-            class: 'btn btn-secondary btn-sm w2g-open',
-            onclick: () => this.openW2G()
-          }, [U.svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>', 13), document.createTextNode('Watch Together')])
+          class: 'btn btn-secondary btn-sm w2g-open',
+          onclick: () => this.openW2G()
+        }, [U.svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>', 13), document.createTextNode('Watch Together')])
         : null,
       U.el('div', { style: 'flex-grow:1;' }),
       markBtn,
@@ -149,12 +149,12 @@ const PageWatch = {
         summary,
         summary && ep.summary.length > 160
           ? U.el('button', {
-              class: 'showmore',
-              onclick: e => {
-                const open = summary.classList.toggle('clamped')
-                e.currentTarget.textContent = open ? 'Show more ⌄' : 'Show less ⌃'
-              }
-            }, [document.createTextNode('Show more ⌄')])
+            class: 'showmore',
+            onclick: e => {
+              const open = summary.classList.toggle('clamped')
+              e.currentTarget.textContent = open ? 'Show more ⌄' : 'Show less ⌃'
+            }
+          }, [document.createTextNode('Show more ⌄')])
           : null
       ])
       const anchor = col.querySelector('#cw-card') ?? col.querySelector('.watch-actions')
@@ -191,9 +191,9 @@ const PageWatch = {
         }, [
           ep?.image
             ? U.el('div', { class: 'wep-thumb' }, [
-                U.el('img', { src: ep.image, loading: 'lazy', alt: '' }),
-                active ? U.el('div', { class: 'wep-playing' }, [U.svg(C.PLAY, 12)]) : null
-              ])
+              U.el('img', { src: ep.image, loading: 'lazy', alt: '' }),
+              active ? U.el('div', { class: 'wep-playing' }, [U.svg(C.PLAY, 12)]) : null
+            ])
             : U.el('div', { class: 'wep-num', text: String(n) }),
           U.el('div', { class: 'wep-body' }, [
             U.el('div', { class: 'wep-title', text: ep?.title ? `${n}. ${ep.title}` : `Episode ${n}` }),
@@ -278,10 +278,10 @@ const PageWatch = {
         U.el('div', { style: 'display:flex;gap:.6rem;' }, [input, U.el('button', { class: 'btn btn-primary', onclick: play }, [document.createTextNode('Play')])]),
         streams.length
           ? U.el('div', { style: 'margin-top:1rem;' }, [
-              U.el('div', { style: 'font-size:.75rem;font-weight:800;color:var(--fg-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.4rem;', text: 'Official streams' }),
-              U.el('div', { class: 'badges' }, streams.map(link =>
-                U.el('a', { class: 'badge badge-theme', href: link.url, target: '_blank', rel: 'noopener', text: link.site })))
-            ])
+            U.el('div', { style: 'font-size:.75rem;font-weight:800;color:var(--fg-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.4rem;', text: 'Official streams' }),
+            U.el('div', { class: 'badges' }, streams.map(link =>
+              U.el('a', { class: 'badge badge-theme', href: link.url, target: '_blank', rel: 'noopener', text: link.site })))
+          ])
           : null
       ])
     ]))
@@ -402,7 +402,8 @@ const PageWatch = {
 
     // Start playback through the engine: it ranks the candidates, tries them in
     // order and falls back automatically, so a dead link never dead-ends here.
-    void this.startPlayback(video, media, episode, src, giveUp)
+    this.startPlayback(video, media, episode, src, giveUp)
+      .catch(error => giveUp(String(error?.message ?? error)))
 
     // --- resume position (per profile) ---
     const saved = Store.getResume(media.id, episode)
@@ -568,8 +569,7 @@ const PageWatch = {
   refreshRoomBadge () {
     const badge = this._roomBadge
     if (!badge) return
-    if (PageW2G.room) { badge.textContent = '● Room ' + PageW2G.room; badge.classList.remove('hidden') }
-    else badge.classList.add('hidden')
+    if (PageW2G.room) { badge.textContent = '● Room ' + PageW2G.room; badge.classList.remove('hidden') } else badge.classList.add('hidden')
   },
 
   // connect to a room and wire the current video to it (idempotent per room)
@@ -634,7 +634,8 @@ const PageWatch = {
     bodyEl.replaceChildren()
     // create
     const createBtn = U.el('button', {
-      class: 'btn btn-primary', style: 'width:100%;',
+      class: 'btn btn-primary',
+      style: 'width:100%;',
       onclick: async () => {
         try {
           createBtn.disabled = true

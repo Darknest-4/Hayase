@@ -19,7 +19,7 @@ everything around them as a service-backed product with its own identity.
               └────────────▲─┘  └───▲────┘  └▲──────────────┘
                            │        │        │
                         ┌──┴────────┴────────┴────────┐
-                        │      Queue (RabbitMQ)       │
+                        │   Queue (Postgres jobs)     │
                         │ workers: notify · stats ·   │
                         │ import · ext-review · image │
                         └──────────────┬──────────────┘
@@ -75,8 +75,8 @@ Search runs entirely in Postgres: `pg_trgm` and `tsvector` over canonical
 titles, `anime_titles` and `anime_synonyms`, with tiered ranking so an exact
 title always outranks a fuzzy near-miss. See [`search.md`](./search.md).
 
-`docker-compose.yml` still carries an OpenSearch service, and this document
-originally planned an `anime` index behind an outbox reindex worker. That was
+This document originally planned an `anime` index behind an outbox reindex
+worker, and `docker-compose.yml` carried the service. That was
 **deliberately not built**: at ~25k catalogue rows Postgres answers off its
 indexes in single-digit milliseconds, while OpenSearch would cost ~1 GB of RAM
 on a single VPS, a JVM to operate and an index to keep in sync. Revisit at
@@ -86,8 +86,7 @@ several hundred thousand entries, or for a requirement Postgres cannot serve
 ### Queue
 Durable Postgres-backed job queue (`jobs` table, `FOR UPDATE SKIP LOCKED`,
 retries with exponential backoff, dedupe keys) — transactional with the
-data it acts on and zero extra infrastructure. RabbitMQ (topic exchange
-`yume.events`) is the drop-in upgrade path once fan-out volume demands it.
+data it acts on and zero extra infrastructure. A broker was considered and rejected (see docs/redis.md).events`) is the drop-in upgrade path once fan-out volume demands it.
 Workers are separate deployables in `server/src/workers/`
 (`npm run worker`, or `worker:once` to drain — used by tests and cron):
 
@@ -143,6 +142,6 @@ last-write-wins per field with server timestamps.
 
 ## Environments
 
-`docker-compose.yml` starts Postgres, Redis, OpenSearch, MinIO and
-RabbitMQ for local development. The API reads all connections from env
+`docker-compose.yml` starts Postgres, Caddy and
+an optional Redis for local development. The API reads all connections from env
 vars (12-factor); see `server/.env.example`.

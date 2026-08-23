@@ -3,6 +3,7 @@
 // daily rollup) by enqueueing with dedupe keys.
 
 import { pool } from '../db.ts'
+import { recordError } from '../lib/errors.ts'
 import { drain, enqueue, runWorker } from '../lib/queue.ts'
 import { handleWebhookJob } from '../lib/webhooks.ts'
 import { handleImportJob } from './importer.ts'
@@ -63,7 +64,10 @@ if (once) {
   console.log('worker running:', Object.keys(handlers).join(', '))
   await runWorker(handlers, {
     signal: controller.signal,
-    onError: (job, error) => console.error(`job ${job.queue}#${job.id} failed:`, error.message)
+    onError: (job, error) => {
+      console.error(`job ${job.queue}#${job.id} failed:`, error.message)
+      void recordError('worker', error, { queue: job.queue, jobId: job.id })
+    }
   })
   await pool.end()
 }

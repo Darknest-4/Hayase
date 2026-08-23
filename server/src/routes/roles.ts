@@ -3,6 +3,8 @@
 // role's granted slugs are readable here; individual grants toggle live.
 
 import { query, queryOne } from '../db.ts'
+import { invalidatePermissions } from '../plugins/auth.ts'
+import { audit } from '../lib/audit.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
@@ -59,6 +61,14 @@ const routes: FastifyPluginAsync = async fastify => {
     } else {
       await query('DELETE FROM role_permissions WHERE role_id = $1 AND permission_id = $2', [roleId, perm.id])
     }
+    // Cached permission sets are now wrong for everyone holding this role.
+    invalidatePermissions()
+
+    // Who may do what is exactly the change that must be reconstructable
+    // later; before this, only user status changes were audited at all.
+    await audit(request.user.sub, granted ? 'role.permission.grant' : 'role.permission.revoke', 'role', roleId,
+      { role: role.slug }, { permission: slug, granted })
+
     void emitEvent('config.changed', { key: `role:${role.slug}`, value: `${granted ? '+' : '−'} ${slug}`, by: request.user.username })
     return { ok: true, roleId, slug, granted }
   })

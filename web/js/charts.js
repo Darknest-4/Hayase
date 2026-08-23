@@ -36,7 +36,8 @@ const Charts = {
       const x = pad + i * bw
       const y = H - pad - h
       children.push(this._el('rect', { x: x + gap / 2, y, width: bw - gap, height: h, rx: 3, fill: accent }))
-      children.push(this._el('text', { x: x + bw / 2, y: H - pad + 14, 'text-anchor': 'middle', class: 'chart-label', fill: 'var(--fg-faint)' })).lastChild
+      // (An earlier version pushed a second, unlabelled <text> here as well —
+      // the label element built below is the only one that should exist.)
       const lbl = this._el('text', { x: x + bw / 2, y: H - pad + 14, 'text-anchor': 'middle' })
       lbl.setAttribute('class', 'chart-tick'); lbl.textContent = d.label
       children[children.length - 1] = lbl
@@ -64,11 +65,16 @@ const Charts = {
 
     const area = this._el('polygon', {
       points: `${pad},${H - pad} ${points} ${(pad + (values.length - 1) * step).toFixed(1)},${H - pad}`,
-      fill: accent, opacity: '0.14'
+      fill: accent,
+      opacity: '0.14'
     })
     const line = this._el('polyline', {
-      points, fill: 'none', stroke: accent, 'stroke-width': '2',
-      'stroke-linejoin': 'round', 'stroke-linecap': 'round'
+      points,
+      fill: 'none',
+      stroke: accent,
+      'stroke-width': '2',
+      'stroke-linejoin': 'round',
+      'stroke-linecap': 'round'
     })
     return this._svg(W, H, [area, line], label)
   },

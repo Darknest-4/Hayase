@@ -3,7 +3,10 @@
 // moderation_actions / audit_logs.
 
 import { query, queryOne, transaction } from '../db.ts'
+import { auditTrail } from '../lib/audit.ts'
+import { errorGroups, errorOccurrences, setErrorGroupStatus } from '../lib/errors.ts'
 import { emitEvent } from '../lib/webhooks.ts'
+import { invalidatePermissions } from '../plugins/auth.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
 
@@ -83,6 +86,11 @@ const routes: FastifyPluginAsync = async fastify => {
       if (status !== 'active') {
         // kill all sessions on suspend/ban
         await client.query('UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [id])
+        // Revoking the refresh token alone left the access token valid until
+        // it expired, so a banned account kept working for up to its lifetime.
+        // Bumping the version invalidates every outstanding one, atomically
+        // with the ban itself.
+        await client.query('UPDATE users SET token_version = token_version + 1 WHERE id = $1', [id])
       }
       const action = status === 'active' ? 'restore' : status === 'banned' ? 'ban' : 'suspend'
       await client.query(
@@ -94,6 +102,10 @@ const routes: FastifyPluginAsync = async fastify => {
         [request.user.sub, id, { status: before.status }, { status }]
       )
     })
+    // Drop the cached version/permissions so the change takes effect now
+    // rather than at the end of the cache TTL.
+    invalidatePermissions(id)
+
     const actor = await queryOne<{ username: string }>('SELECT username FROM users WHERE id = $1', [id])
     await emitEvent('user.moderated', { username: actor?.username, action: status === 'active' ? 'restore' : status, reason })
     return { id, status }
@@ -206,6 +218,110 @@ const routes: FastifyPluginAsync = async fastify => {
       query(`SELECT title, event_count, last_seen FROM error_groups WHERE status = 'open' ORDER BY last_seen DESC LIMIT 5`)
     ])
     return { users, content, watch, trending: top, jobs, errorGroups: errors }
+  })
+
+  // ---------- error triage ----------
+  //
+  // The analytics overview already showed group titles and counts. There was
+  // no way to open one and read its stack, and no way to mark one resolved —
+  // errorGroups(), errorOccurrences() and setErrorGroupStatus() were all
+  // written and none of them had a caller.
+  //
+  // The gap was quietly circular: recordError reopens a group whose status is
+  // 'resolved', because a bug that comes back is news, but nothing could ever
+  // set a status to 'resolved', so that branch was unreachable.
+
+  fastify.get('/errors', {
+    preHandler: fastify.requirePermission('admin.analytics.view'),
+    schema: {
+      querystring: {
+        type: 'object',
+        properties: {
+          status: { enum: ['open', 'resolved', 'ignored', 'all'], default: 'open' },
+          limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 }
+        }
+      }
+    }
+  }, async request => {
+    const { status, limit } = request.query as { status?: string, limit?: number }
+    return { data: await errorGroups(status ?? 'open', limit ?? 50) }
+  })
+
+  fastify.get('/errors/:id', {
+    preHandler: fastify.requirePermission('admin.analytics.view'),
+    schema: {
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'string', format: 'uuid' } } },
+      querystring: {
+        type: 'object',
+        properties: { limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 } }
+      }
+    }
+  }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { limit } = request.query as { limit?: number }
+
+    const group = await queryOne(
+      `SELECT id, fingerprint, title, status, event_count, first_seen, last_seen
+         FROM error_groups WHERE id = $1`,
+      [id]
+    )
+    if (!group) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    return { group, occurrences: await errorOccurrences(id, limit ?? 20) }
+  })
+
+  fastify.patch('/errors/:id', {
+    preHandler: fastify.requirePermission('admin.analytics.view'),
+    schema: {
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'string', format: 'uuid' } } },
+      body: {
+        type: 'object',
+        required: ['status'],
+        properties: { status: { enum: ['open', 'resolved', 'ignored'] } }
+      }
+    }
+  }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { status } = request.body as { status: 'open' | 'resolved' | 'ignored' }
+
+    if (!await setErrorGroupStatus(id, status)) {
+      return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    }
+    return { id, status }
+  })
+
+  // ---------- audit trail ----------
+  //
+  // audit_logs is partitioned by month and actively written; auditTrail() read
+  // it and had no caller, and no route exposed it. An audit log nobody can
+  // read is storage, not accountability — and it is the first thing anyone
+  // asks for after an incident.
+
+  fastify.get('/audit', {
+    preHandler: fastify.requirePermission('admin.users.manage'),
+    schema: {
+      querystring: {
+        type: 'object',
+        properties: {
+          subjectType: { enum: ['user', 'role', 'anime', 'episode', 'config', 'webhook', 'extension'] },
+          subjectId: { type: 'string', format: 'uuid' },
+          actorId: { type: 'string', format: 'uuid' },
+          limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 }
+        }
+      }
+    }
+  }, async request => {
+    const { subjectType, subjectId, actorId, limit } = request.query as {
+      subjectType?: string, subjectId?: string, actorId?: string, limit?: number
+    }
+    // exactOptionalPropertyTypes: only pass the filters that were supplied
+    const filter: { subjectType?: string, subjectId?: string, actorId?: string, limit?: number } = {}
+    if (subjectType) filter.subjectType = subjectType
+    if (subjectId) filter.subjectId = subjectId
+    if (actorId) filter.actorId = actorId
+    if (limit) filter.limit = limit
+
+    return { data: await auditTrail(filter) }
   })
 }
 

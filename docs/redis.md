@@ -45,3 +45,57 @@ Order of work when it comes:
 Until then, `REDIS_URL` being set does exactly one thing: it turns on the
 health probe in `lib/probes.ts`. Unset, that probe reports `not_configured`
 rather than raising a false alarm.
+
+---
+
+# RabbitMQ — removed
+
+`docker-compose.yml` also carried a RabbitMQ service. It has been **removed**,
+by the same standard applied to OpenSearch and Redis: infrastructure earns its
+place by solving a problem that exists now.
+
+The job queue runs on Postgres (`jobs`, `FOR UPDATE SKIP LOCKED`) with retries,
+exponential backoff, dedupe keys, lease heartbeats, per-handler timeouts,
+concurrent lanes and dead-letter handling. At Yume's volume that is not a
+compromise — it is fewer moving parts, one backup that covers the queue too,
+and transactional enqueue alongside the write that caused it, which a separate
+broker cannot give you without an outbox.
+
+A broker becomes the right answer at a throughput where polling Postgres is the
+bottleneck, or when jobs must fan out to consumers written in other languages.
+Neither is true, and if either becomes true the queue's public surface
+(`enqueue`, `runWorker`) is small enough to swap behind.
+
+---
+
+# MinIO — removed
+
+Carried in compose for extension package storage, which is now
+[content-addressed on the filesystem](./extensions.md). Packages are small,
+immutable and few; a volume backs up with everything else, and the store goes
+through one module (`server/src/lib/package-store.ts`) whose four functions an
+object-storage backend can replace without touching a call site.
+
+Reach for object storage when packages outgrow a single host's disk, or when
+more than one app instance must serve them — the same trigger as Redis.
+
+---
+
+# Cover images — still hotlinked, deliberately
+
+`anime_images.object_key` holds a full AniList CDN URL rather than a key into
+our own storage — the column name promises more than it delivers. Artwork is
+therefore served by someone else's infrastructure, which we control neither for
+availability nor under their terms of use.
+
+This is **not fixed**, and the reasoning is the same one applied to Redis and
+MinIO: caching ~25,000 covers means a fetch pipeline, several GB of disk, cache
+invalidation when artwork changes, and a migration of existing rows — real work
+for a problem that has not bitten yet. The metadata comes from AniList too, so
+a source that stops serving us breaks more than the images.
+
+**Adopt when** either happens: AniList starts rate-limiting or blocking
+hotlinked images, or the catalogue stops depending on AniList for metadata. The
+machinery already exists — `server/src/lib/package-store.ts` is a
+content-addressed store whose four functions would serve images unchanged, and
+the `packages` volume is already backed up.

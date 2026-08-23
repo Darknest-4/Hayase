@@ -1,4 +1,4 @@
-/* global window, document, U, YumeAPI, WebSocket */
+/* global U, WebSocket, YumeAPI, document, sessionStorage, window */
 // Watch Together — create/join rooms (Yume API) and watch in sync.
 // Playback sync runs over the /ws socket; PageWatch picks up the ?w2g=
 // param and relays play/pause/seek between room members.
@@ -22,12 +22,12 @@ const PageW2G = {
     if (this.room === code && this.socket?.readyState === WebSocket.OPEN) return
     this.disconnect()
 
-    const tokens = YumeAPI._tokens()
-    if (!tokens) throw new Error('Sign in to your Yume account first')
+    if (!YumeAPI._tokens()) throw new Error('Sign in to your Yume account first')
 
-    const base = YumeAPI.base().replace(/^http/, 'ws')
+    // A single-use ticket, not the access token: a WebSocket URL ends up in
+    // proxy logs and browser history, which is no place for a live credential.
+    const ws = await YumeAPI.openSocket()
     await new Promise((resolve, reject) => {
-      const ws = new WebSocket(`${base}/ws?token=${tokens.accessToken}`)
       ws.onopen = () => {
         ws.send(JSON.stringify({ type: 'join', channel: `w2g:${code}` }))
       }
@@ -129,7 +129,7 @@ const PageW2G = {
           class: 'btn btn-secondary btn-sm',
           onclick: () => { navigator.clipboard?.writeText(room.code).then(() => U.toast('Code copied')) }
         }, [document.createTextNode('Copy code')]),
-        U.el('a', { class: 'btn btn-primary btn-sm', href: `#/search` , onclick: () => { sessionStorage.setItem('w2g-pending', room.code); U.toast('Pick an anime — playback will sync to the room') } }, [document.createTextNode('Pick something to watch')]),
+        U.el('a', { class: 'btn btn-primary btn-sm', href: '#/search', onclick: () => { sessionStorage.setItem('w2g-pending', room.code); U.toast('Pick an anime — playback will sync to the room') } }, [document.createTextNode('Pick something to watch')]),
         U.el('button', {
           class: 'btn btn-ghost btn-sm',
           onclick: () => { this.disconnect(); window.location.hash = '#/w2g' }

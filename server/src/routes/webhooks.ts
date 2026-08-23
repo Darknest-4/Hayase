@@ -3,6 +3,7 @@
 
 import { query, queryOne } from '../db.ts'
 import { deliver, WEBHOOK_EVENTS, type WebhookEvent } from '../lib/webhooks.ts'
+import { checkOutboundUrl } from '../lib/ssrf.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
 
@@ -49,6 +50,16 @@ const routes: FastifyPluginAsync = async fastify => {
     }
   }, async (request, reply) => {
     const b = request.body as { name: string, url: string, format?: string, events?: string[], secret?: string, enabled?: boolean }
+
+    // Rejected here as well as at delivery, so a mistake surfaces while the
+    // operator is still looking at the form.
+    const verdict = await checkOutboundUrl(b.url)
+    if (!verdict.ok) {
+      return reply.code(400).send({
+        type: 'about:blank', title: 'Bad Request', status: 400,
+        detail: `That URL cannot be used: it ${verdict.reason}. Set WEBHOOK_ALLOWED_HOSTS to permit an internal host deliberately.`
+      })
+    }
     const hook = await queryOne(
       `INSERT INTO webhooks (name, url, format, events, secret, enabled, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7)

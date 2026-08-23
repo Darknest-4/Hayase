@@ -1,4 +1,4 @@
-/* global window, U, C, API */
+/* global API, C, T, U, window */
 // Schedule page — airing calendar for the coming week, grouped by day,
 // like the original app/schedule route.
 
@@ -59,7 +59,7 @@ const PageSchedule = {
       for (const item of items) {
         const time = new Date(item.airingAt * 1000).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
         row.append(C.card(item.media, {
-          subline: null,
+          subline: null
           // custom subline via wrapper below
         }))
         const card = row.lastChild

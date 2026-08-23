@@ -120,6 +120,10 @@
   <script src="js/library-sync.js"></script>
   <script src="js/extension-host.js"></script>
   <script src="js/stream-engine.js"></script>
+  <!-- HLS support. The player itself (js/vendor/hls.min.mjs) is fetched only
+       when an HLS stream is actually encountered, so this costs nothing on a
+       page that never plays one. -->
+  <script src="js/hls-handler.js"></script>
   <script src="js/components.js"></script>
   <script src="js/charts.js"></script>
   <script src="js/pages/home.js"></script>

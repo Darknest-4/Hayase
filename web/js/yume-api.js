@@ -1,4 +1,4 @@
-/* global window, fetch, localStorage */
+/* global window, fetch, localStorage, WebSocket */
 // Yume backend adapter. The client works standalone (AniList/Jikan direct),
 // but when a Yume API is reachable it powers platform features: accounts,
 // comments/community and the extension store.
@@ -156,6 +156,26 @@ const YumeAPI = {
     })
     this._resolveCache[media.id] = created.id
     return created.id
+  },
+
+  /**
+   * A single-use ticket for the WebSocket handshake.
+   *
+   * A browser cannot set headers on a WebSocket upgrade, so whatever
+   * authenticates it ends up in the URL — and therefore in proxy access logs
+   * and browser history. A ticket is worth nothing once used and expires in
+   * seconds, so that is what goes there instead of the access token.
+   */
+  async wsTicket () {
+    const { ticket } = await this._request('/v1/auth/ws-ticket', { method: 'POST', auth: true })
+    return ticket
+  },
+
+  /** Open an authenticated socket. Resolves once the handshake succeeds. */
+  async openSocket () {
+    const ticket = await this.wsTicket()
+    const url = this.base().replace(/^http/, 'ws') + '/ws?ticket=' + encodeURIComponent(ticket)
+    return new WebSocket(url)
   },
 
   // ---- catalogue search ----

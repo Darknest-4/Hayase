@@ -41,7 +41,8 @@ const PageDeveloper = {
       U.el('p', { text: 'Publish extensions that resolve sources, subtitles or metadata. Extensions run sandboxed with the permissions they declare — see the extension docs before you start.' }),
       U.el('div', { style: 'display:flex;flex-direction:column;gap:.6rem;' }, [name, site]),
       U.el('button', {
-        class: 'btn btn-primary btn-sm', style: 'margin-top:.75rem;',
+        class: 'btn btn-primary btn-sm',
+        style: 'margin-top:.75rem;',
         onclick: async () => {
           if (name.value.trim().length < 2) return U.toast('Enter a publisher name', 'error')
           try {
@@ -83,7 +84,8 @@ const PageDeveloper = {
       const STATUS_LABEL = { draft: 'Draft', in_review: 'In review', published: 'Published', suspended: 'Suspended', deprecated: 'Deprecated' }
       for (const ext of data) {
         list.append(U.el('div', {
-          class: 'list-row', style: 'cursor:pointer;',
+          class: 'list-row',
+          style: 'cursor:pointer;',
           onclick: () => this.showAnalytics(body, dev, ext)
         }, [
           U.el('div', { class: 'ext-icon', text: ext.name.slice(0, 1).toUpperCase() }),
@@ -117,7 +119,8 @@ const PageDeveloper = {
     ], async () => {
       try {
         await YumeAPI._request('/v1/dev/extensions', {
-          method: 'POST', auth: true,
+          method: 'POST',
+          auth: true,
           body: { slug: slug.value.trim(), name: name.value.trim(), summary: summary.value.trim(), description: desc.value.trim() || undefined, type: type.value }
         })
         U.toast('Extension listing created')
@@ -186,7 +189,7 @@ const PageDeveloper = {
     const hosts = U.el('input', { class: 'input', placeholder: 'net:fetch hosts, comma-separated (e.g. nyaa.si)' })
     const permBoxes = ['query:ids', 'query:titles', 'query:media', 'storage:local', 'player:subtitles'].map(p => {
       const cb = U.el('input', { type: 'checkbox', value: p })
-      return { p, cb, label: U.el('label', { style: 'display:flex;gap:.4rem;align-items:center;font-size:.8rem;', }, [cb, document.createTextNode(p)]) }
+      return { p, cb, label: U.el('label', { style: 'display:flex;gap:.4rem;align-items:center;font-size:.8rem;' }, [cb, document.createTextNode(p)]) }
     })
 
     const modal = this.modal('Upload version', [
@@ -226,7 +229,8 @@ const PageDeveloper = {
 
       try {
         await YumeAPI._request(`/v1/dev/extensions/${ext.slug}/versions`, {
-          method: 'POST', auth: true,
+          method: 'POST',
+          auth: true,
           body: {
             version: version.value.trim(),
             packageKey: `packages/${ext.slug}/${version.value.trim()}.tgz`,

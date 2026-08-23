@@ -15,6 +15,7 @@
 #   BACKUP_DIR       where dumps land          (default /backups)
 #   BACKUP_KEEP_DAYS how long to keep them     (default 14)
 #   BACKUP_VERIFY_DB scratch database name     (default yume_verify)
+#   BACKUP_SYNC_CMD  optional off-site copy command, receives the dump as $1
 #
 # Exit codes: 0 success · 1 dump failed · 2 verification failed · 3 misconfigured
 
@@ -110,6 +111,28 @@ fi
 # failed can never be the reason older backups disappeared.
 PRUNED=$(find "$BACKUP_DIR" -maxdepth 1 -name 'yume-*.dump' -type f -mtime "+$KEEP_DAYS" -print -delete | wc -l | tr -d ' ')
 [ "$PRUNED" -gt 0 ] && log "pruned $PRUNED backup(s) older than $KEEP_DAYS days"
+
+# ---------------------------------------------------------------- off-site
+# A backup on the same machine survives a bad deploy and a dropped table. It
+# does not survive the machine. BACKUP_SYNC_CMD runs after a verified backup
+# with the dump path as $1, so an operator can rsync or upload it without
+# editing this script:
+#
+#   BACKUP_SYNC_CMD='rclone copy "$1" remote:yume-backups'
+#   BACKUP_SYNC_CMD='rsync -az "$1" backup-host:/srv/yume/'
+#
+# A sync failure is loud but not fatal: the local backup is already verified,
+# and losing tomorrow's copy because today's upload failed would be worse.
+if [ -n "${BACKUP_SYNC_CMD:-}" ]; then
+  log "copying off-site"
+  if sh -c "$BACKUP_SYNC_CMD" -- "$DUMP"; then
+    log "off-site copy done"
+  else
+    log "WARNING: off-site copy FAILED — this backup exists only on this machine"
+  fi
+else
+  log "note: BACKUP_SYNC_CMD is not set, so backups live only on this machine"
+fi
 
 REMAINING=$(find "$BACKUP_DIR" -maxdepth 1 -name 'yume-*.dump' -type f | wc -l | tr -d ' ')
 log "done — $REMAINING backup(s) on hand"

@@ -140,20 +140,35 @@ const routes: FastifyPluginAsync = async fastify => {
     const exists = await queryOne('SELECT 1 FROM comments WHERE id = $1 AND hidden_at IS NULL', [id])
     if (!exists) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
 
+    /**
+     * Toggling has to survive being raced with itself.
+     *
+     * A double-clicked button sends two requests. Both found no row to delete,
+     * both inserted, and the second hit comment_likes_pkey — which escaped as
+     * a 500 carrying the constraint name. Verified: six parallel likes from
+     * one account returned 200 200 200 500 500 500.
+     *
+     * ON CONFLICT DO NOTHING makes the insert idempotent, and the counter is
+     * only moved when a row actually changed, so a lost race adds nothing.
+     */
     const liked = await transaction(async client => {
       const { rowCount } = await client.query(
         'DELETE FROM comment_likes WHERE comment_id = $1 AND user_id = $2',
         [id, request.user.sub]
       )
-      const removing = (rowCount ?? 0) > 0
-      if (!removing) {
-        await client.query('INSERT INTO comment_likes (comment_id, user_id) VALUES ($1, $2)', [id, request.user.sub])
+      if ((rowCount ?? 0) > 0) {
+        await client.query('UPDATE comments SET like_count = greatest(like_count - 1, 0) WHERE id = $1', [id])
+        return false
       }
-      await client.query(
-        `UPDATE comments SET like_count = greatest(like_count + $2, 0) WHERE id = $1`,
-        [id, removing ? -1 : 1]
+
+      const inserted = await client.query(
+        'INSERT INTO comment_likes (comment_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+        [id, request.user.sub]
       )
-      return !removing
+      if ((inserted.rowCount ?? 0) > 0) {
+        await client.query('UPDATE comments SET like_count = like_count + 1 WHERE id = $1', [id])
+      }
+      return true
     })
 
     return { liked }

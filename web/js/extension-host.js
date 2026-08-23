@@ -1,4 +1,4 @@
-/* global window, document, Worker, Blob, crypto, fetch, localStorage, AbortController, TextDecoder */
+/* global window, Worker, crypto, fetch, localStorage, AbortController, TextDecoder */
 // Extension sandbox — the host half.
 //
 // The worker deliberately has no capabilities; everything it wants goes through
@@ -21,11 +21,11 @@ const ExtensionHost = {
 
   CALL_TIMEOUT_MS: 10_000,
   FETCH_TIMEOUT_MS: 8000,
-  MAX_RESPONSE_BYTES: 2 * 1024 * 1024,   // 2 MB per extension request
-  MAX_STORAGE_BYTES: 64 * 1024,          // 64 KB per extension
+  MAX_RESPONSE_BYTES: 2 * 1024 * 1024, // 2 MB per extension request
+  MAX_STORAGE_BYTES: 64 * 1024, // 64 KB per extension
   ALLOWED_METHODS: ['GET', 'POST'],
 
-  _instances: new Map(),   // slug → instance
+  _instances: new Map(), // slug → instance
 
   // ---------------------------------------------------------------- helpers
 
@@ -154,7 +154,8 @@ const ExtensionHost = {
       instance.pending.set(id, {
         resolve: value => { clearTimeout(timer); resolve(value) },
         reject: error => { clearTimeout(timer); reject(error) },
-        started, method
+        started,
+        method
       })
       instance.worker.postMessage({ kind: 'call', id, method, query })
     })
