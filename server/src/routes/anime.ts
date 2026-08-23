@@ -345,6 +345,25 @@ const routes: FastifyPluginAsync = async fastify => {
     return anime
   })
 
+  /**
+   * The published episodes of one anime.
+   *
+   * Only `public` ones are served. On a Hungarian site the subtitle arrives
+   * days after the episode does, so an imported episode must not be offered
+   * before somebody publishes it.
+   *
+   * `total` is the count of episodes we hold regardless of state, and it is
+   * load-bearing rather than informational. Without it an empty `data` is
+   * ambiguous, and the two meanings need opposite handling:
+   *
+   *   total = 0   we have no episode data → the client may fall back to
+   *               ani.zip, because our silence is ignorance
+   *   total > 0   we have episodes and publish none → the client must NOT
+   *               fall back, because our silence is a decision
+   *
+   * Without the distinction, hiding every episode would make the client fetch
+   * them from ani.zip and show them anyway — the feature would defeat itself.
+   */
   fastify.get('/:id/episodes', {
     schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
@@ -352,13 +371,16 @@ const routes: FastifyPluginAsync = async fastify => {
     const exists = await queryOne("SELECT 1 FROM anime WHERE id = $1 AND visibility <> 'hidden'", [id])
     if (!exists) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
 
-    const data = await query(
-      `SELECT id, number, absolute_number, title, synopsis, thumbnail_key,
-              air_date, duration, is_filler, is_recap
-       FROM episodes WHERE anime_id = $1 ORDER BY number`,
-      [id]
-    )
-    return { data }
+    const [data, counts] = await Promise.all([
+      query(
+        `SELECT id, number, absolute_number, title, synopsis, thumbnail_key,
+                air_date, duration, is_filler, is_recap
+         FROM episodes WHERE anime_id = $1 AND visibility = 'public' ORDER BY number`,
+        [id]
+      ),
+      queryOne<{ total: string }>('SELECT count(*)::int AS total FROM episodes WHERE anime_id = $1', [id])
+    ])
+    return { data, total: Number(counts?.total ?? 0) }
   })
 
   fastify.get('/:id/relations', async (request, reply) => {

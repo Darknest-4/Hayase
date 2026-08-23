@@ -182,18 +182,36 @@ const Catalogue = {
   /**
    * Episodes, catalogue first.
    *
-   * The catalogue answers only when it actually holds episode rows: an empty
-   * episodes table for a series that has aired is a gap in our import, not a
-   * statement that the series has no episodes, and returning [] there would
-   * show the user an empty tab instead of the truth.
+   * An empty answer from the catalogue means one of two opposite things, and
+   * they need opposite handling:
+   *
+   *   total = 0  we hold no episode data. Our silence is ignorance, so falling
+   *              back to ani.zip is right — returning [] would show the user
+   *              an empty tab instead of the truth.
+   *
+   *   total > 0  we hold episodes and publish none of them. Our silence is a
+   *              decision, and falling back would fetch them from ani.zip and
+   *              show them anyway — the publishing controls would be
+   *              decoration. So an empty list is served as an empty list.
+   *
+   * This is why the endpoint reports a total rather than just a list.
    */
   async episodes (media) {
     const yumeId = media?.yumeId
     if (yumeId) {
-      const rows = await YumeAPI.catalogueEpisodes(yumeId)
-      if (rows?.length) {
+      const answer = await YumeAPI.catalogueEpisodes(yumeId)
+      const rows = answer?.data ?? []
+
+      // We hold episodes but publish none: that is an answer, not a gap.
+      if (answer && !rows.length && answer.total > 0) return []
+
+      if (rows.length) {
         return rows.map(e => ({
-          episode: e.number,
+          // episodes.number is `numeric` — deliberately, because specials are
+          // numbered 5.5 — and pg serialises numeric as a string ('1.0'). The
+          // external path produces real numbers, so this coerces rather than
+          // leaving two shapes for the UI to guess between.
+          episode: Number(e.number),
           title: e.title ?? null,
           image: e.thumbnail_key ?? null,
           summary: e.synopsis ?? null,

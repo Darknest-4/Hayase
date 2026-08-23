@@ -233,33 +233,62 @@ describe('precedence', () => {
 })
 
 describe('episodes', () => {
+  // pg serialises `numeric` as a string; the rows arrive exactly like this.
   const EPISODE_ROWS = [
-    { number: 1, title: 'The Journey’s End', synopsis: 'A party returns.', thumbnail_key: 'https://cdn.example/1.jpg', air_date: '2023-09-29', duration: 24, is_filler: false },
-    { number: 2, title: 'It Didn’t Have to Be Magic', synopsis: null, thumbnail_key: null, air_date: '2023-09-29', duration: 24, is_filler: true }
+    { number: '1.0', title: 'The Journey’s End', synopsis: 'A party returns.', thumbnail_key: 'https://cdn.example/1.jpg', air_date: '2023-09-29', duration: 24, is_filler: false },
+    { number: '2.0', title: 'It Didn’t Have to Be Magic', synopsis: null, thumbnail_key: null, air_date: '2023-09-29', duration: 24, is_filler: true }
   ]
 
   it('serves catalogue episodes without touching ani.zip', async () => {
-    Catalogue = load({ catalogueEpisodes: () => EPISODE_ROWS })
+    Catalogue = load({ catalogueEpisodes: () => ({ data: EPISODE_ROWS, total: 2 }) })
     const list = await Catalogue.episodes({ yumeId: ROW.id, id: 154587 })
     assert.equal(list.length, 2)
-    assert.equal(list[0].episode, 1)
+    assert.strictEqual(list[0].episode, 1, 'a numeric string must be coerced, not passed through')
     assert.equal(list[0].title, 'The Journey’s End')
     assert.equal(list[0].image, 'https://cdn.example/1.jpg')
     assert.equal(list[1].filler, true)
     assert.equal(calls.aniZip, 0)
   })
 
-  it('falls back when the catalogue holds no episode rows', async () => {
-    // An empty episodes table for a series that has aired is a gap in our
-    // import, not a statement that the series has no episodes. Returning []
-    // would show the user an empty tab instead of the truth.
-    Catalogue = load({ catalogueEpisodes: () => [] })
+  it('falls back when we hold no episode data at all', async () => {
+    // total = 0: our silence is ignorance. An empty episodes table for a
+    // series that has aired is a gap in our import, not a statement that the
+    // series has no episodes, and returning [] would show the user an empty
+    // tab instead of the truth.
+    Catalogue = load({ catalogueEpisodes: () => ({ data: [], total: 0 }) })
+    const list = await Catalogue.episodes({ yumeId: ROW.id, id: 154587 })
+    assert.equal(list[0]._fromAniZip, true)
+  })
+
+  it('does NOT fall back when we hold episodes and publish none', async () => {
+    // total > 0 with nothing public: our silence is a decision. This is the
+    // case the publishing controls exist for — on a Hungarian site an episode
+    // is not offered before its subtitle exists. Falling back here would
+    // fetch the episodes from ani.zip and show them anyway, which would make
+    // the whole feature decoration.
+    Catalogue = load({ catalogueEpisodes: () => ({ data: [], total: 12 }) })
+    const list = await Catalogue.episodes({ yumeId: ROW.id, id: 154587 })
+    assert.deepEqual(plain(list), [])
+    assert.equal(calls.aniZip, 0, 'a publishing decision must not be routed around')
+  })
+
+  it('serves a partially published season without leaking the rest', async () => {
+    // Six subtitles have landed out of twelve. The viewer sees six.
+    Catalogue = load({ catalogueEpisodes: () => ({ data: EPISODE_ROWS, total: 12 }) })
+    const list = await Catalogue.episodes({ yumeId: ROW.id, id: 154587 })
+    assert.equal(list.length, 2)
+    assert.equal(calls.aniZip, 0)
+  })
+
+  it('falls back when the backend cannot be reached', async () => {
+    // null, not an empty answer: the client stays usable standalone.
+    Catalogue = load({ catalogueEpisodes: () => null })
     const list = await Catalogue.episodes({ yumeId: ROW.id, id: 154587 })
     assert.equal(list[0]._fromAniZip, true)
   })
 
   it('returns an empty list rather than throwing with nothing to ask', async () => {
-    Catalogue = load({ catalogueEpisodes: () => [] })
+    Catalogue = load({ catalogueEpisodes: () => ({ data: [], total: 0 }) })
     assert.deepEqual(plain(await Catalogue.episodes({ yumeId: ROW.id, id: null })), [])
     assert.equal(calls.aniZip, 0)
   })

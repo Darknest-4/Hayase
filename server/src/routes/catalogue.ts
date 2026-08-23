@@ -39,7 +39,11 @@ const EPISODE_FIELDS = {
   air_date: { type: ['string', 'null'], format: 'date-time' },
   duration: { type: ['integer', 'null'], minimum: 0 },
   is_filler: { type: 'boolean' },
-  is_recap: { type: 'boolean' }
+  is_recap: { type: 'boolean' },
+  // Editorial surface state. Defaults to hidden at the database level: on a
+  // Hungarian site the subtitle arrives days after the episode does, so an
+  // imported episode must not be offered before somebody publishes it.
+  visibility: { enum: VISIBILITIES }
 } as const
 
 // build a partial UPDATE from a whitelist; returns null when nothing to set
@@ -198,9 +202,11 @@ const routes: FastifyPluginAsync = async fastify => {
     const { id } = request.params as { id: string }
     const exists = await queryOne('SELECT 1 FROM anime WHERE id = $1', [id])
     if (!exists) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    // Deliberately unfiltered: the admin list exists to show staff what is
+    // NOT published, so filtering it would hide exactly what they came for.
     const data = await query(
       `SELECT id, number, absolute_number, title, synopsis, thumbnail_key,
-              air_date, duration, is_filler, is_recap
+              air_date, duration, is_filler, is_recap, visibility
        FROM episodes WHERE anime_id = $1 ORDER BY number`,
       [id]
     )
@@ -224,7 +230,7 @@ const routes: FastifyPluginAsync = async fastify => {
     const ep = await queryOne(
       `INSERT INTO episodes (anime_id, number, absolute_number, title, synopsis, air_date, duration, is_filler, is_recap)
        VALUES ($1, $2, $3, $4, $5, $6, $7, coalesce($8,false), coalesce($9,false))
-       RETURNING id, number, title, air_date, duration, is_filler, is_recap`,
+       RETURNING id, number, title, air_date, duration, is_filler, is_recap, visibility`,
       [id, body.number, body.absolute_number ?? null, body.title ?? null, body.synopsis ?? null,
         body.air_date ?? null, body.duration ?? null, body.is_filler ?? null, body.is_recap ?? null]
     )
@@ -246,11 +252,78 @@ const routes: FastifyPluginAsync = async fastify => {
     upd.values.push(eid)
     const ep = await queryOne(
       `UPDATE episodes SET ${upd.sql} WHERE id = $${upd.values.length}
-       RETURNING id, number, title, air_date, duration, is_filler, is_recap`,
+       RETURNING id, anime_id, number, title, air_date, duration, is_filler, is_recap, visibility`,
       upd.values
     )
     if (!ep) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    // Publishing is an editorial act, and "who put this live" is exactly the
+    // question asked afterwards. Only a visibility change is recorded — an
+    // edited synopsis is not the same kind of event.
+    if (typeof body.visibility === 'string') {
+      await audit(request.user.sub, 'episode.visibility', 'episode', String((ep as Record<string, unknown>).id),
+        null, { visibility: body.visibility, number: (ep as Record<string, unknown>).number })
+    }
     return ep
+  })
+
+  /**
+   * Publish or unpublish a whole season at once.
+   *
+   * The realistic workflow is per-anime, not per-episode: a batch of subtitles
+   * lands and twelve episodes go live together. Doing that one PATCH at a time
+   * is twelve chances to miss one, and a half-published season is the failure
+   * this whole feature exists to prevent.
+   *
+   * `from` and `to` bound it, so "publish 1-6 now, the rest when they are
+   * ready" is one call rather than a decision per episode.
+   */
+  fastify.post('/:id/episodes/visibility', {
+    preHandler: fastify.requirePermission('episode.edit'),
+    schema: {
+      params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } },
+      body: {
+        type: 'object',
+        required: ['visibility'],
+        additionalProperties: false,
+        properties: {
+          visibility: { enum: VISIBILITIES },
+          from: { type: 'integer', minimum: 0 },
+          to: { type: 'integer', minimum: 0 }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { visibility, from, to } = request.body as { visibility: string, from?: number, to?: number }
+
+    const anime = await queryOne<{ canonical_title: string }>('SELECT canonical_title FROM anime WHERE id = $1', [id])
+    if (!anime) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    const params: unknown[] = [id, visibility]
+    const bounds: string[] = []
+    if (from !== undefined) { params.push(from); bounds.push(`number >= $${params.length}`) }
+    if (to !== undefined) { params.push(to); bounds.push(`number <= $${params.length}`) }
+
+    const changed = await query<{ number: number }>(
+      `UPDATE episodes SET visibility = $2, updated_at = now()
+        WHERE anime_id = $1 ${bounds.length ? 'AND ' + bounds.join(' AND ') : ''}
+          AND visibility IS DISTINCT FROM $2
+        RETURNING number`,
+      params
+    )
+
+    await audit(request.user.sub, 'episode.visibility', 'anime', id, null, {
+      visibility, from: from ?? null, to: to ?? null, count: changed.length
+    })
+    if (changed.length) {
+      void emitEvent('catalogue.changed', {
+        action: `${visibility} × ${changed.length} episode(s)`,
+        title: anime.canonical_title,
+        by: request.user.username
+      })
+    }
+    return { visibility, changed: changed.length, episodes: changed.map(row => row.number) }
   })
 
   fastify.delete('/episodes/:eid', {

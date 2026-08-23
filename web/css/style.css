@@ -2569,6 +2569,29 @@ svg.chart .chart-name { font-size: 12px; fill: var(--fg); dominant-baseline: mid
 .cat-ep-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: var(--space-2); }
 .cat-ep-row { display: flex; align-items: center; gap: .75rem; padding: .5rem .6rem; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-raised); }
 .cat-ep-row + .cat-ep-row { margin-top: .35rem; }
+
+/* An unpublished episode is not a broken one — it is waiting for a subtitle.
+   Muted rather than alarming, but clearly distinct from a live row. */
+.cat-ep-row-unpublished { opacity: .62; border-style: dashed; }
+
+/* How much of the season viewers can actually reach, said once at the top
+   instead of left to be counted off the rows. */
+.cat-ep-summary {
+  padding: .5rem .6rem;
+  margin-bottom: .5rem;
+  border-radius: var(--radius-md);
+  font-size: .82rem;
+  color: var(--fg-muted);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+}
+/* Nothing published yet is the normal state right after an import, not a
+   fault — so this is drawn to be noticed, not to alarm. */
+.cat-ep-summary-none {
+  color: var(--info);
+  border-color: color-mix(in oklab, var(--info) 40%, var(--border));
+  background: color-mix(in oklab, var(--info) 10%, transparent);
+}
 .cat-ep-num { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--accent); font-weight: var(--weight-bold); min-width: 2.6rem; }
 .cat-ep-main { min-width: 0; flex-grow: 1; }
 .cat-ep-title { font-size: var(--text-sm); font-weight: var(--weight-medium); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

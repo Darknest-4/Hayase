@@ -592,8 +592,33 @@ const PageAdmin = {
 
   async renderCatEpisodes (form, anime, can) {
     const wrap = U.el('div', { class: 'cat-episodes' })
+
+    // Publishing a season happens in batches — a set of subtitles lands and
+    // several episodes go live together. Doing that one row at a time is one
+    // chance per episode to miss one, and a half-published season is exactly
+    // the state this is meant to prevent.
+    const bulk = async (visibility) => {
+      const label = visibility === 'public' ? 'Publish' : visibility === 'hidden' ? 'Unpublish' : 'Unlist'
+      const range = window.prompt(`${label} which episodes? Blank = all. Examples: "1-6", "3"`, '')
+      if (range === null) return
+      const body = { visibility }
+      const match = /^\s*(\d+)\s*(?:-\s*(\d+))?\s*$/.exec(range)
+      if (range.trim() && !match) return U.toast('Use a number or a range like 1-6', 'error')
+      if (match) {
+        body.from = Number(match[1])
+        body.to = Number(match[2] ?? match[1])
+      }
+      try {
+        const res = await YumeAPI.admin.catalogue.episodeVisibility(anime.id, body)
+        U.toast(res.changed ? `${label}ed ${res.changed} episode(s)` : 'Nothing to change')
+        load()
+      } catch (e) { U.toast(e.message, 'error') }
+    }
+
     form.append(U.el('div', { class: 'cat-ep-head' }, [
       U.el('h3', { class: 'detail-section-title', style: 'margin:0;', text: 'Episodes' }),
+      can('episode.edit') ? U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => bulk('public') }, [document.createTextNode('Publish…')]) : null,
+      can('episode.edit') ? U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => bulk('hidden') }, [document.createTextNode('Unpublish…')]) : null,
       can('episode.create') ? U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => this.episodeModal(anime, null, () => load()) }, [document.createTextNode('+ Add episode')]) : null
     ]))
     form.append(wrap)
@@ -604,14 +629,41 @@ const PageAdmin = {
         const { data } = await YumeAPI.admin.catalogue.episodes(anime.id)
         wrap.replaceChildren()
         if (!data.length) { wrap.append(U.el('div', { class: 'empty-state', style: 'padding:.75rem;', text: 'No episodes yet.' })); return }
+
+        // How much of the season is actually reachable, stated once rather
+        // than left to be counted off the rows.
+        const live = data.filter(e => e.visibility === 'public').length
+        wrap.append(U.el('div', {
+          class: 'cat-ep-summary' + (live === 0 ? ' cat-ep-summary-none' : ''),
+          text: live === data.length
+            ? `All ${data.length} episodes are published.`
+            : `${live} of ${data.length} episodes published — the rest are not reachable by viewers.`
+        }))
+
         for (const ep of data) {
           const flags = [ep.is_filler ? 'filler' : null, ep.is_recap ? 'recap' : null].filter(Boolean).join(' · ')
-          wrap.append(U.el('div', { class: 'cat-ep-row' }, [
+          const [visLabel, visClass] = this.VIS_BADGE[ep.visibility] ?? this.VIS_BADGE.hidden
+          wrap.append(U.el('div', { class: 'cat-ep-row' + (ep.visibility === 'public' ? '' : ' cat-ep-row-unpublished') }, [
             U.el('div', { class: 'cat-ep-num', text: '#' + ep.number }),
             U.el('div', { class: 'cat-ep-main' }, [
               U.el('div', { class: 'cat-ep-title', text: ep.title || `Episode ${ep.number}` }),
               U.el('div', { class: 'cat-ep-sub', text: [ep.duration ? ep.duration + ' min' : null, flags || null].filter(Boolean).join(' · ') || '—' })
             ]),
+            U.el('span', { class: 'cat-badge ' + visClass, text: visLabel }),
+            can('episode.edit')
+              ? U.el('button', {
+                class: 'btn btn-ghost btn-sm',
+                title: ep.visibility === 'public' ? 'Take this episode down' : 'Make this episode watchable',
+                onclick: async () => {
+                  const next = ep.visibility === 'public' ? 'hidden' : 'public'
+                  try {
+                    await YumeAPI.admin.catalogue.updateEpisode(ep.id, { visibility: next })
+                    U.toast(next === 'public' ? `Episode ${ep.number} published` : `Episode ${ep.number} taken down`)
+                    load()
+                  } catch (e) { U.toast(e.message, 'error') }
+                }
+              }, [document.createTextNode(ep.visibility === 'public' ? 'Unpublish' : 'Publish')])
+              : null,
             can('episode.edit') ? U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => this.episodeModal(anime, ep, () => load()) }, [document.createTextNode('Edit')]) : null,
             can('episode.delete')
               ? U.el('button', {

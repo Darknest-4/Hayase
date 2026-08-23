@@ -227,3 +227,66 @@ It does not populate the catalogue. The importer (`scripts/import-anilist.ts`)
 and the AniList worker exist for that and have to be run. Until they are, most
 requests still miss and fall through — the difference is that they now fall
 *through* rather than going straight out.
+
+## Publishing
+
+Nothing imported is published until somebody publishes it.
+
+This platform serves a Hungarian audience, and a Hungarian subtitle does not
+exist the moment an episode airs — it arrives days later. An import that landed
+straight on the public surface would advertise episodes nobody can watch, which
+is worse than not listing them at all. So the safe state is "not published",
+and publishing is a decision somebody makes and is accountable for.
+
+### Two independent decisions
+
+`anime.visibility` and `episodes.visibility` share one vocabulary and are set
+separately, because they answer different questions:
+
+| state | anime | episode |
+|---|---|---|
+| `public` | listed in browse, search and schedule; detail page works | listed and playable |
+| `unlisted` | reachable by direct link only | playable by direct link, not listed |
+| `hidden` | nowhere; the detail endpoint 404s | unavailable |
+
+Both default to `hidden`. The page can go up while the episodes wait for their
+subtitles — that is the normal shape of a season on this site, not an edge
+case.
+
+Migration 0020 set existing episodes to `public`. A migration that silently
+un-published live content would be a worse failure than the one it fixed.
+
+### `total` is load-bearing
+
+`GET /v1/anime/:id/episodes` returns `{ data, total }`, where `total` counts
+episodes in every state. Without it an empty `data` is ambiguous, and the two
+meanings need opposite handling:
+
+- **`total = 0`** — we hold no episode data. Our silence is ignorance, so the
+  client may fall back to ani.zip.
+- **`total > 0`** — we hold episodes and publish none. Our silence is a
+  decision, and the client must not fall back.
+
+Without the distinction, hiding every episode would make the client fetch them
+from ani.zip and show them anyway. The publishing controls would be decoration.
+`web/js/catalogue.js` implements this rule and `web/test/catalogue.test.mjs`
+pins it.
+
+### Managing it
+
+The admin catalogue editor lists **all** episodes, unfiltered — staff need to
+see what is *not* published, which is the whole point — with a state badge per
+row, a one-click publish/unpublish, and a summary line saying how much of the
+season viewers can actually reach.
+
+`POST /v1/admin/catalogue/:id/episodes/visibility` takes
+`{ visibility, from?, to? }` and moves a whole range at once, because the real
+workflow is per-batch: a set of subtitles lands and several episodes go live
+together. Doing that one PATCH at a time is one chance per episode to miss one,
+and a half-published season is the state this exists to prevent. The update is
+guarded on a real change, so a repeated call reports `changed: 0` rather than
+recording an editorial act that did not happen.
+
+Visibility changes are written to `audit_logs` as `episode.visibility` and
+`anime.visibility` — "who put this live" is exactly the question asked
+afterwards.

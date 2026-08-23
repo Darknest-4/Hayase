@@ -202,10 +202,17 @@ const YumeAPI = {
     }
   },
 
+  /**
+   * Published episodes, plus how many we hold in total.
+   *
+   * The total is what lets the caller tell "we have no episode data" from "we
+   * have episodes and publish none" — see Catalogue.episodes. Returns null
+   * only when the backend could not be reached at all.
+   */
   async catalogueEpisodes (yumeId) {
     try {
-      const { data } = await this._request(`/v1/anime/${yumeId}/episodes`)
-      return data
+      const { data, total } = await this._request(`/v1/anime/${yumeId}/episodes`)
+      return { data, total: total ?? data.length }
     } catch (e) {
       return null
     }
@@ -365,6 +372,8 @@ const YumeAPI = {
       addEpisode: (id, body) => YumeAPI._request(`/v1/admin/catalogue/${id}/episodes`, { method: 'POST', auth: true, body }),
       updateEpisode: (eid, body) => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}`, { method: 'PATCH', auth: true, body }),
       removeEpisode: eid => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}`, { method: 'DELETE', auth: true }),
+      // Publish or take down a whole range at once: { visibility, from?, to? }
+      episodeVisibility: (id, body) => YumeAPI._request(`/v1/admin/catalogue/${id}/episodes/visibility`, { method: 'POST', auth: true, body }),
       // metadata provenance & duplicate handling
       unlock: (id, fields) => YumeAPI._request(`/v1/admin/catalogue/${id}/unlock`, { method: 'POST', auth: true, body: { fields } }),
       duplicates: (threshold = 0.86, limit = 50) =>

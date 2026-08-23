@@ -17,6 +17,9 @@ export type AuditAction =
   | 'role.permission.grant' | 'role.permission.revoke'
   | 'anime.create' | 'anime.edit' | 'anime.delete' | 'anime.merge' | 'anime.unlock'
   | 'episode.create' | 'episode.edit' | 'episode.delete'
+  // Publishing is its own act, separate from editing an episode's text: it is
+  // the one that decides whether viewers can reach the thing at all.
+  | 'episode.visibility' | 'anime.visibility'
   | 'config.flag' | 'config.setting'
   | 'webhook.create' | 'webhook.update' | 'webhook.delete'
   | 'extension.review'
