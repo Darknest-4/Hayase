@@ -1,4 +1,4 @@
-/* global API, C, MutationObserver, U, window */
+/* global C, Catalogue, MutationObserver, U, window */
 // Search page — text search plus the same filters the original search route has
 // (genre, season, year, format, status, sort), with load-more pagination.
 
@@ -69,7 +69,7 @@ const PageSearch = {
           results.replaceChildren(U.el('div', { class: 'empty-state', text: 'No confident match for that frame.' }))
           return
         }
-        const page = await API.search({ ids, perPage: 20 })
+        const page = await Catalogue.searchOrAniList({ ids, perPage: 20 })
         results.replaceChildren(C.grid(page.media ?? []))
         U.toast(`Best match: ${Math.round(hits[0].similarity * 100)}% • episode ${hits[0].episode ?? '?'}`)
       } catch (e) {
@@ -143,7 +143,7 @@ const PageSearch = {
       }
 
       try {
-        const page = await API.search(variables())
+        const page = await Catalogue.searchOrAniList(variables())
         if (current !== token) return
 
         const grid = append ? results.querySelector('.grid') : null

@@ -129,7 +129,19 @@ const routes: FastifyPluginAsync = async fastify => {
     if (q.year) add('a.season_year = ?', q.year)
     if (q.format) add('a.format = ?', q.format)
     if (q.status) add('a.status = ?', q.status)
-    if (q.genre) add('EXISTS (SELECT 1 FROM anime_genres ag JOIN genres g ON g.id = ag.genre_id WHERE ag.anime_id = a.id AND g.slug = ?)', q.genre)
+    // Slug OR name, case-insensitively. The client shows genre names and
+    // therefore sends "Action"; matching only the slug meant every genre rail
+    // on the home page silently returned nothing and fell back to AniList,
+    // with the catalogue holding 900 Action titles. A caller should not have
+    // to know our slugging rule to ask a question about a genre.
+    if (q.genre) {
+      // Bound once and referenced twice, so this cannot go through add(),
+      // which substitutes only the first placeholder.
+      params.push(q.genre)
+      const n = params.length
+      where.push(`EXISTS (SELECT 1 FROM anime_genres ag JOIN genres g ON g.id = ag.genre_id
+                           WHERE ag.anime_id = a.id AND (g.slug = lower($${n}) OR lower(g.name) = lower($${n})))`)
+    }
 
     if (cursor) {
       // Strictly "after" the last row in this ordering.
@@ -196,11 +208,16 @@ const routes: FastifyPluginAsync = async fastify => {
     const data = await query(
       `SELECT e.id AS episode_id, e.number AS episode, e.air_date,
               a.id AS anime_id, a.canonical_title, a.format, a.is_adult,
-              img.object_key AS cover_key
+              img.object_key AS cover_key, m.anilist_id
        FROM episodes e
        JOIN anime a ON a.id = e.anime_id
        LEFT JOIN anime_images img ON img.anime_id = a.id AND img.kind = 'cover' AND img.is_primary
-       WHERE e.air_date >= $1 AND e.air_date < $2 AND a.visibility = 'public'
+       -- the client links a row by whichever id it has, same rule as everywhere
+       LEFT JOIN anime_mappings m ON m.anime_id = a.id
+       -- only published episodes: a calendar listing something nobody can
+       -- watch yet is worse than one that waits
+       WHERE e.air_date >= $1 AND e.air_date < $2
+         AND a.visibility = 'public' AND e.visibility = 'public'
        ORDER BY e.air_date`,
       [from, to]
     )
@@ -262,6 +279,60 @@ const routes: FastifyPluginAsync = async fastify => {
   // The web client browses AniList ids until the catalogue import lands.
   // These endpoints map anilist_id → Yume anime id so platform features
   // (comments, library sync) can attach to catalogue rows.
+
+  /**
+   * Look up many catalogue entries by their AniList ids, in one request.
+   *
+   * The home page resolves whole rails this way — continue-watching,
+   * favourites, planning, the sequels of finished shows — because the library
+   * stores AniList ids and the rail needs cards. Without a batch route the
+   * client had no way to ask the catalogue for a set, so it asked AniList
+   * instead, one query for up to fifty titles.
+   *
+   * Card-shaped rather than full records: a rail draws a cover, a title and a
+   * score, and fetching every synonym and tag for fifty titles to render fifty
+   * covers would be a large waste on the most-loaded screen in the app.
+   *
+   * Order follows the ids as given. A rail is usually ordered by something the
+   * caller knows and the database does not — most recently watched, say — and
+   * re-sorting it here would silently discard that.
+   */
+  fastify.get('/by-anilist', {
+    schema: {
+      querystring: {
+        type: 'object',
+        required: ['ids'],
+        properties: {
+          // 50 is the largest rail the client builds; the cap is what stops a
+          // caller asking for the whole catalogue through this route.
+          ids: { type: 'string', maxLength: 600 }
+        }
+      }
+    }
+  }, async request => {
+    const { ids } = request.query as { ids: string }
+    const wanted = [...new Set(
+      ids.split(',').map(part => Number(part.trim())).filter(n => Number.isInteger(n) && n > 0)
+    )].slice(0, 50)
+    if (!wanted.length) return { data: [] }
+
+    const rows = await query<{ anilist_id: number }>(
+      `SELECT a.id, m.anilist_id, a.canonical_title, a.format, a.status,
+              a.season_year, a.episode_count, a.average_score, a.is_adult,
+              t.title AS romaji, te.title AS english,
+              img.object_key AS cover_key, img.dominant_color AS cover_color
+         FROM anime_mappings m
+         JOIN anime a ON a.id = m.anime_id
+         LEFT JOIN anime_titles t ON t.anime_id = a.id AND t.kind = 'romaji'
+         LEFT JOIN anime_titles te ON te.anime_id = a.id AND te.kind = 'english'
+         LEFT JOIN anime_images img ON img.anime_id = a.id AND img.kind = 'cover' AND img.is_primary
+        WHERE m.anilist_id = ANY($1::int[]) AND a.visibility = 'public'`,
+      [wanted]
+    )
+
+    const byId = new Map(rows.map(row => [row.anilist_id, row]))
+    return { data: wanted.map(id => byId.get(id)).filter(Boolean) }
+  })
 
   /**
    * Look up a catalogue entry by its AniList id.

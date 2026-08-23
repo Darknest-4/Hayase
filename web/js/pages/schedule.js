@@ -1,4 +1,4 @@
-/* global API, C, T, U, window */
+/* global C, Catalogue, T, U, window */
 // Schedule page — airing calendar for the coming week, grouped by day,
 // like the original app/schedule route.
 
@@ -17,7 +17,7 @@ const PageSchedule = {
 
     let schedules
     try {
-      schedules = await API.schedule(start, end)
+      schedules = await Catalogue.scheduleOrAniList(start, end)
     } catch (e) {
       container.replaceChildren(U.el('div', { class: 'error-state', text: T('schedule.loadError') + e.message }))
       return

@@ -1,4 +1,4 @@
-/* global API, C, Store, T, U, window */
+/* global C, Catalogue, Store, T, U, window */
 // Home page — hero banner + the same sections as the original app/home route:
 // Continue Watching, Your List, Popular This Season, Trending Now,
 // All Time Popular and genre rows.
@@ -29,7 +29,7 @@ const PageHome = {
     const continueIds = Store.continueIds()
     if (continueIds.length) {
       sections.append(C.section(T('home.continueWatching'),
-        API.search({ ids: continueIds.slice(0, 50), perPage: 50 }).then(page => {
+        Catalogue.searchOrAniList({ ids: continueIds.slice(0, 50), perPage: 50 }).then(page => {
           const media = page.media ?? []
           media.sort((a, b) => continueIds.indexOf(a.id) - continueIds.indexOf(b.id))
           return media
@@ -46,14 +46,14 @@ const PageHome = {
     const completedIds = Object.values(Store.list()).filter(e => e.status === 'COMPLETED').map(e => e.media.id)
     if (completedIds.length) {
       sections.append(C.section(T('home.sequelsYouMissed'),
-        API.search({ ids: completedIds.slice(0, 25), perPage: 25 }).then(async page => {
+        Catalogue.searchOrAniList({ ids: completedIds.slice(0, 25), perPage: 25 }).then(async page => {
           const inList = new Set(Object.keys(Store.list()).map(Number))
           const sequelIds = [...new Set((page.media ?? []).flatMap(m =>
             (m.relations?.edges ?? [])
               .filter(e => e?.relationType === 'SEQUEL' && e.node && ['FINISHED', 'RELEASING'].includes(e.node.status) && !inList.has(e.node.id))
               .map(e => e.node.id)))]
           if (!sequelIds.length) return []
-          const res = await API.search({ ids: sequelIds.slice(0, 25), perPage: 25 })
+          const res = await Catalogue.searchOrAniList({ ids: sequelIds.slice(0, 25), perPage: 25 })
           return res.media ?? []
         })))
     }
@@ -61,7 +61,7 @@ const PageHome = {
     const planningIds = Store.planningIds()
     if (planningIds.length) {
       sections.append(C.section(T('home.yourList'),
-        API.search({ ids: planningIds.slice(0, 50), perPage: 50, status: ['FINISHED', 'RELEASING'] }).then(page => page.media ?? []),
+        Catalogue.searchOrAniList({ ids: planningIds.slice(0, 50), perPage: 50, status: ['FINISHED', 'RELEASING'] }).then(page => page.media ?? []),
         { moreHref: '#/list' }))
     }
 
@@ -73,14 +73,14 @@ const PageHome = {
       if (def.vars.status) params.set('status', def.vars.status[0])
       params.set('sort', def.vars.sort[0])
 
-      sections.append(C.section(def.title, API.search(def.vars).then(page => page.media ?? []), {
+      sections.append(C.section(def.title, Catalogue.searchOrAniList(def.vars).then(page => page.media ?? []), {
         moreHref: '#/search?' + params.toString()
       }))
     }
 
     // hero from the #1 trending anime with a banner image
     try {
-      const page = await API.search({ sort: ['TRENDING_DESC'], perPage: 10 })
+      const page = await Catalogue.searchOrAniList({ sort: ['TRENDING_DESC'], perPage: 10 })
       const media = (page.media ?? []).find(m => m.bannerImage) ?? page.media?.[0]
       if (media) this.renderHero(hero, media)
     } catch (e) {

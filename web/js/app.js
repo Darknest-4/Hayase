@@ -1,4 +1,4 @@
-/* global API, C, PageAdmin, PageAnime, PageCommunity, PageDashboard, PageDeveloper, PageExtensions, PageHome, PageList, PageNotifications, PageProfile, PageProfiles, PageSchedule, PageSearch, PageSettings, PageW2G, PageWatch, Store, T, U, YumeAPI, document, requestAnimationFrame, window */
+/* global C, Catalogue, PageAdmin, PageAnime, PageCommunity, PageDashboard, PageDeveloper, PageExtensions, PageHome, PageList, PageNotifications, PageProfile, PageProfiles, PageSchedule, PageSearch, PageSettings, PageW2G, PageWatch, Store, T, U, YumeAPI, document, requestAnimationFrame, window */
 // App bootstrap: hash router (same #/route scheme as the original SvelteKit
 // build), sidebar active state and the quick-search modal (Ctrl+K / S).
 
@@ -271,7 +271,7 @@ const App = {
             seasonYear: s.season_year,
             episodes: s.episode_count
           }))
-          : (await API.search({ search: query, sort: ['SEARCH_MATCH'], perPage: 10 })).media ?? []
+          : (await Catalogue.searchOrAniList({ search: query, sort: ['SEARCH_MATCH'], perPage: 10 })).media ?? []
         if (current !== token) return
         results.replaceChildren()
         if (!media.length) {

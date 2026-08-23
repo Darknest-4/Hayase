@@ -179,6 +179,152 @@ const Catalogue = {
     return API.media(Number(id))
   },
 
+  // ------------------------------------------------------------- browsing
+
+  /**
+   * A catalogue row in the shape a card draws.
+   *
+   * Cards read title, coverImage, averageScore, episodes, format and
+   * seasonYear and nothing else, so the browse endpoints return exactly those
+   * rather than whole records — fetching every synonym and tag to render a
+   * cover would be a large waste on the busiest screens.
+   */
+  toCard (row) {
+    if (!row) return null
+    return {
+      id: row.anilist_id ?? row.id,
+      yumeId: row.id,
+      anilistId: row.anilist_id ?? null,
+      title: {
+        userPreferred: row.romaji ?? row.english ?? row.canonical_title,
+        romaji: row.romaji ?? row.canonical_title,
+        english: row.english ?? null
+      },
+      coverImage: { large: row.cover_key ?? '', extraLarge: row.cover_key ?? '', color: row.cover_color ?? null },
+      format: row.format ?? null,
+      status: row.status ?? null,
+      seasonYear: row.season_year ?? null,
+      episodes: row.episode_count ?? null,
+      averageScore: row.average_score ?? null,
+      isAdult: row.is_adult ?? false,
+      _fromCatalogue: true
+    }
+  },
+
+  /** AniList sort values -> the catalogue's own. Unknown ones fall through. */
+  SORTS: {
+    TRENDING_DESC: 'trending',
+    POPULARITY_DESC: 'popularity',
+    SCORE_DESC: 'score',
+    START_DATE_DESC: 'newest',
+    TITLE_ROMAJI: 'title'
+  },
+
+  /**
+   * AniList's search variables, answered from the catalogue.
+   *
+   * The pages were written against `API.search(variables) -> { media }`, so
+   * this presents the same interface and routes each shape of request to the
+   * endpoint that can serve it:
+   *
+   *   { ids }              -> the batch lookup, order preserved
+   *   { search }           -> full-text over titles and synonyms
+   *   { season, genre... } -> the filtered browse
+   *
+   * Returns null - never a partial answer - when the catalogue cannot serve
+   * the request, so the caller falls back to AniList with its own variables
+   * intact. A half-populated catalogue must degrade to the old behaviour
+   * rather than to an empty rail.
+   */
+  async search (variables = {}) {
+    const first = value => (Array.isArray(value) ? value[0] : value) ?? null
+    const limit = Math.min(50, variables.perPage ?? 25)
+
+    // ---- by ids: a rail resolving library entries into cards ----
+    if (Array.isArray(variables.ids) && variables.ids.length) {
+      const rows = await YumeAPI.catalogueByAniListIds(variables.ids.slice(0, 50))
+      // No rows at all means the catalogue does not hold this rail; a partial
+      // answer would silently shorten it, so that falls back too.
+      if (!rows?.length) return null
+      return { media: rows.map(r => this.toCard(r)) }
+    }
+
+    // ---- free text ----
+    if (variables.search) {
+      const rows = await YumeAPI.searchCatalogue(variables.search, {
+        genre: first(variables.genre) ?? undefined,
+        season: first(variables.season) ?? undefined,
+        year: variables.seasonYear ?? undefined,
+        format: first(variables.format) ?? undefined,
+        status: first(variables.status) ?? undefined,
+        limit
+      })
+      if (!rows?.length) return null
+      return { media: rows.map(r => this.toCard(r)) }
+    }
+
+    // ---- filtered / sorted browse ----
+    const answer = await YumeAPI.browseCatalogue({
+      season: first(variables.season) ?? undefined,
+      year: variables.seasonYear ?? undefined,
+      genre: first(variables.genre) ?? undefined,
+      format: first(variables.format) ?? undefined,
+      status: first(variables.status) ?? undefined,
+      sort: this.SORTS[first(variables.sort)] ?? undefined,
+      limit
+    })
+    if (!answer?.data?.length) return null
+    return { media: answer.data.map(r => this.toCard(r)), cursor: answer.cursor ?? null }
+  },
+
+  /**
+   * The airing calendar for a window, catalogue first.
+   *
+   * Only published episodes appear, which is the point: a schedule listing an
+   * episode nobody can watch yet is worse than one that waits.
+   */
+  async schedule (from, to) {
+    const rows = await YumeAPI.catalogueSchedule(from, to)
+    if (!rows?.length) return null
+    return rows
+  },
+
+  /**
+   * `search()` with the fallback applied — what the pages call.
+   *
+   * Kept separate from `search()` so the catalogue-only path stays testable
+   * without a network, and so the fallback is one decision in one place rather
+   * than a `?? API.search(...)` repeated at a dozen call sites where one of
+   * them would eventually be forgotten.
+   */
+  async searchOrAniList (variables = {}) {
+    return (await this.search(variables)) ?? API.search(variables)
+  },
+
+  /** `schedule()` with the fallback applied. */
+  async scheduleOrAniList (from, to) {
+    // The pages pass Date objects, because that is what API.schedule takes.
+    const iso = value => (value instanceof Date ? value.toISOString() : new Date(value).toISOString())
+    const rows = await this.schedule(iso(from), iso(to))
+    if (rows) {
+      // The catalogue answers with episode rows; the schedule page draws media
+      // cards with an episode number attached, so they are shaped here.
+      return rows.map(row => ({
+        episode: Number(row.episode),
+        airingAt: Math.floor(new Date(row.air_date).getTime() / 1000),
+        media: this.toCard({
+          id: row.anime_id,
+          anilist_id: row.anilist_id ?? null,
+          canonical_title: row.canonical_title,
+          format: row.format,
+          is_adult: row.is_adult,
+          cover_key: row.cover_key
+        })
+      }))
+    }
+    return API.schedule(from, to)
+  },
+
   /**
    * Episodes, catalogue first.
    *
