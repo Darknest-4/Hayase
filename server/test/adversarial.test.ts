@@ -1172,6 +1172,58 @@ describe('adversarial', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
     })
   })
 
+  // ---- the admin bootstrap ----
+
+  describe('admin bootstrap', () => {
+    // These run against a database that already has administrators — every
+    // other suite grants the role — which is exactly the state where this
+    // path must stay shut.
+
+    test('a new account is not promoted when an administrator exists', async () => {
+      const { rows: before } = await pool.query(
+        `SELECT count(*)::int AS n FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+          WHERE r.slug = 'admin'`)
+      // The suite's own fixtures grant admin, so this is the realistic state.
+      if (Number(before[0]!.n) === 0) return
+
+      const account = await register()
+      const { rows } = await pool.query(
+        `SELECT count(*)::int AS n FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+          WHERE ur.user_id = $1 AND r.slug = 'admin'`, [account.id])
+      assert.equal(Number(rows[0]!.n), 0, 'the bootstrap must be dead once anybody holds the role')
+
+      // And it really is an ordinary account.
+      const res = await app.inject({ url: '/v1/admin/users', headers: { authorization: `Bearer ${account.token}` } })
+      assert.equal(res.statusCode, 403)
+      await pool.query('DELETE FROM users WHERE id = $1', [account.id])
+    })
+
+    test('the promotion is recorded where somebody would look for it', async () => {
+      // Becoming an administrator is the most consequential thing that can
+      // happen to an account, and here it happens with nobody approving it.
+      // Whether or not this database was bootstrapped, the two records must
+      // agree with each other.
+      const { rows: sec } = await pool.query(
+        "SELECT user_id FROM security_logs WHERE event = 'admin_bootstrap'")
+      const { rows: aud } = await pool.query(
+        "SELECT subject_id FROM audit_logs WHERE action = 'user.role.bootstrap'")
+      assert.equal(sec.length, aud.length, 'both records are written together or not at all')
+      assert.ok(sec.length <= 1, 'at most one account is ever bootstrapped')
+      if (sec.length) {
+        assert.equal(String(aud[0]!.subject_id), String(sec[0]!.user_id))
+      }
+    })
+
+    test('at most one account holds the role by way of the bootstrap', async () => {
+      // The advisory lock is what makes this true under concurrency: without
+      // it two registrations arriving together both see no administrator
+      // under READ COMMITTED and both are promoted.
+      const { rows } = await pool.query(
+        "SELECT count(*)::int AS n FROM audit_logs WHERE action = 'user.role.bootstrap'")
+      assert.ok(Number(rows[0]!.n) <= 1)
+    })
+  })
+
   // ---- webhooks / SSRF at the route ----
 
   describe('webhook targets', () => {
