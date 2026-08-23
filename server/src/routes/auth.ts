@@ -150,6 +150,56 @@ const routes: FastifyPluginAsync = async fastify => {
           'INSERT INTO security_logs (user_id, event, ip, user_agent) VALUES ($1, $2, $3, $4)',
           [userId, 'register', request.ip, request.headers['user-agent'] ?? null]
         )
+
+        /**
+         * Bootstrap: the first account on an instance with no administrator
+         * becomes one.
+         *
+         * A fresh deployment otherwise has nobody who can reach the admin
+         * panel and no documented way to get there — the operator has to write
+         * SQL by hand, which is worse than this in every way that matters.
+         *
+         * The condition is "no administrator exists", not "this is the first
+         * user". Those differ in exactly the case that matters: once anybody
+         * holds the role, this path is dead, so it cannot hand out a second
+         * one later — after a purge of the users table, say.
+         *
+         * The advisory lock is what makes it safe under concurrency. Without
+         * it two registrations arriving together would both see no admin under
+         * READ COMMITTED and both be promoted. It is taken before the check
+         * and released with the transaction, so the second waits and then
+         * finds the admin the first created.
+         */
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['yume:admin-bootstrap'])
+        const { rows: promoted } = await client.query<{ id: string }>(
+          `INSERT INTO user_roles (user_id, role_id)
+           SELECT $1, r.id FROM roles r
+            WHERE r.slug = 'admin'
+              AND NOT EXISTS (
+                SELECT 1 FROM user_roles ur JOIN roles ar ON ar.id = ur.role_id
+                 WHERE ar.slug = 'admin'
+              )
+           RETURNING user_id AS id`,
+          [userId]
+        )
+        if (promoted.length) {
+          // Becoming an administrator is the single most consequential thing
+          // that can happen to an account, and it happens here without anyone
+          // approving it. It is recorded in both places somebody would look.
+          await client.query(
+            'INSERT INTO security_logs (user_id, event, ip, user_agent) VALUES ($1, $2, $3, $4)',
+            [userId, 'admin_bootstrap', request.ip, request.headers['user-agent'] ?? null]
+          )
+          await client.query(
+            // actor_id is uuid and subject_id is text, so the same parameter
+            // has to be cast for each — without it Postgres deduces two types
+            // for $1 and refuses to plan the statement.
+            `INSERT INTO audit_logs (actor_id, action, subject_type, subject_id, before, after)
+             VALUES ($1::uuid, 'user.role.bootstrap', 'user', $1::text, '{}'::jsonb, $2::jsonb)`,
+            [userId, JSON.stringify({ role: 'admin', reason: 'first account on an instance with no administrator' })]
+          )
+          request.log.warn({ userId, username }, 'first account promoted to administrator (no admin existed)')
+        }
         return { id: userId, username }
       }),
       () => undefined

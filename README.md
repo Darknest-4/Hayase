@@ -456,6 +456,23 @@ curl -o /tmp/aod.json https://raw.githubusercontent.com/manami-project/anime-off
 npm run seed /tmp/aod.json           # ~2 minutes, idempotent
 ```
 
+### The first administrator
+
+There is no shipped account and no default password — an account with a known
+password is a back door on every deployment that forgets to change it. Instead,
+**the first account registered on an instance that has no administrator becomes
+one**, and the same rule promotes the oldest existing account when migration
+0021 runs on a database that already has users.
+
+The condition is *"no administrator exists"*, not *"this is the first user"*.
+Once anybody holds the role the path is dead, so it cannot hand out a second
+one later. The promotion is written to `security_logs` and `audit_logs`, and
+logged at warn level, because it is the most consequential thing that can
+happen to an account and nobody approves it.
+
+Register immediately after deploying. Until you do, whoever registers first
+gets the panel.
+
 Smoke test:
 
 ```sh
