@@ -230,9 +230,33 @@ export async function buildApp (): Promise<FastifyInstance> {
     app.log.info(`serving web client from ${webRoot}`)
   }
 
-  // RFC 9457 problem+json for unhandled errors
   app.addHook('onSend', async (request, reply, payload) => {
     reply.header('X-Request-Id', request.id)
+
+    /**
+     * RFC 9457 says a problem document is served as application/problem+json.
+     * The error handler sets that, but the many routes that build their own
+     * 404/403/400 with reply.code(...).send({ type, title, status }) inherit
+     * Fastify's default application/json — so byte-identical bodies arrived
+     * under two different media types depending on which code path produced
+     * them. A client that switches on Content-Type sees an error document as
+     * an ordinary payload.
+     *
+     * Corrected here rather than in each route: one rule, and a route added
+     * later cannot forget it. Only a body that really is a problem document
+     * is relabelled, so ordinary JSON is untouched.
+     */
+    if (reply.statusCode >= 400 && typeof payload === 'string') {
+      const type = reply.getHeader('Content-Type')
+      if (typeof type === 'string' && type.startsWith('application/json')) {
+        try {
+          const body = JSON.parse(payload) as { type?: unknown, title?: unknown, status?: unknown }
+          if (typeof body.title === 'string' && typeof body.status === 'number' && typeof body.type === 'string') {
+            reply.header('Content-Type', 'application/problem+json; charset=utf-8')
+          }
+        } catch { /* not JSON after all — leave it alone */ }
+      }
+    }
     return payload
   })
 

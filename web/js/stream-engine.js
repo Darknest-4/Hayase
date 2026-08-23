@@ -79,7 +79,13 @@ const StreamEngine = {
    * Extensions are untrusted, so every field is coerced and bounded.
    */
   normalise (raw, source) {
-    const url = String(raw?.url ?? raw?.link ?? '')
+    // `||`, not `??`: the sandbox's sanitiseResult always emits BOTH keys, and
+    // writes an empty string for the one the extension did not supply. With
+    // `??` an empty `url` is a present value, so it won the fallback and every
+    // link-only result — which is every torrent result — normalised to '' and
+    // was dropped here without an error. The engine reported zero candidates
+    // and no failure, so the torrent path looked like "no sources found".
+    const url = String(raw?.url || raw?.link || '')
     if (!url) return null
     const kind = this.classify(url)
     const container = raw?.container ? String(raw.container).slice(0, 60) : null

@@ -9,6 +9,7 @@ import { createHmac } from 'node:crypto'
 
 import { query, queryOne } from '../db.ts'
 import { enqueue } from './queue.ts'
+import { checkOutboundUrl } from './ssrf.ts'
 
 import type { Job } from './queue.ts'
 
@@ -200,6 +201,23 @@ export async function deliver (webhookId: string, event: WebhookEvent, data: Rec
   const started = Date.now()
   let statusCode: number | null = null
   let error: string | null = null
+
+  // Checked here rather than only at creation: the URL is re-read from the
+  // database on every delivery, and DNS can change under a hostname that was
+  // public when it was saved.
+  const verdict = await checkOutboundUrl(hook.url)
+  if (!verdict.ok) {
+    await query(
+      `INSERT INTO webhook_deliveries (webhook_id, event, payload, status_code, error, duration_ms)
+       VALUES ($1, $2, $3, NULL, $4, 0)`,
+      [hook.id, event, { event, data, at }, `refused: ${verdict.reason}`]
+    )
+    // Disable it outright. A webhook aimed inward is either a mistake or an
+    // attempt, and retrying either one forever helps nobody.
+    await query('UPDATE webhooks SET enabled = false, last_error = $2 WHERE id = $1',
+      [hook.id, `refused: ${verdict.reason}`])
+    throw new Error(`webhook ${hook.id} refused: ${verdict.reason}`)
+  }
 
   try {
     const controller = new AbortController()

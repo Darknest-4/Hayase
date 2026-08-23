@@ -75,6 +75,20 @@ jobs:
           DATABASE_URL: postgres://yume:yume@localhost:5432/yume
           JWT_SECRET: ci-secret-not-used-for-anything-real-0123456789
 
+      # The security probes, made permanent. Each one was actually run against
+      # a live instance during the audit; the ones that found a defect say so
+      # in the test, so a reverted fix reports what it used to allow rather
+      # than only that an assertion failed.
+      #
+      # This needs its own step: the unit-test step above runs before the
+      # database exists, so without DATABASE_URL the whole suite skips itself
+      # and reports green having checked nothing.
+      - name: Adversarial tests (forgery, injection, SSRF, IDOR, races)
+        run: npm run test:adversarial
+        env:
+          DATABASE_URL: postgres://yume:yume@localhost:5432/yume
+          JWT_SECRET: ci-secret-not-used-for-anything-real-0123456789
+
       - name: Worker drains end to end
         run: npm run worker:once
         env:
@@ -104,6 +118,15 @@ jobs:
           echo "checked $(ls web/**/*.js | wc -l) files"
 
       # The client ships as plain scripts with no build step, so style drift is
-      # only ever caught here. Vendored third-party code is excluded.
+      # only ever caught here. Vendored third-party code is excluded via
+      # --ignore: standard has no support for a negated glob argument, and
+      # passing one made ESLint fail with "No files matching" — so this step
+      # was erroring out rather than linting anything.
       - name: Lint the client
-        run: npx --yes standard "web/**/*.js" "!web/js/vendor/**"
+        run: npx --yes standard --ignore "web/js/vendor/**" "web/**/*.js" "web/test/*.mjs"
+
+      # The engine is the one piece of client code with real logic in it —
+      # everything else is rendering. It loads against a small DOM stub, so it
+      # needs no browser and no server.
+      - name: Streaming engine tests
+        run: node --test web/test/*.test.mjs
