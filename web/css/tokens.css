@@ -26,6 +26,16 @@
   --violet-500: hsl(260 80% 65%);
   --amber-500: hsl(40 90% 55%);
 
+  /* Lighter steps of the semantic hues. These exist because badge text needs
+     more lift than a fill does: on a near-black surface the 500 step reads as
+     muddy at small sizes. style.css referenced them with hardcoded hex
+     fallbacks, which meant those badges silently left the token system and
+     could not follow a theme. */
+  --green-400: hsl(142 68% 58%);
+  --amber-400: hsl(40 92% 66%);
+  --red-400: hsl(0 78% 66%);
+  --blue-400: hsl(215 92% 70%);
+
   /* ---- semantic: dark (default) ---- */
   --bg: var(--ink-black);
   --bg-raised: var(--ink-900);          /* cards, rails */
@@ -66,7 +76,13 @@
   --text-3xl: 2.5rem;
   --weight-normal: 400;
   --weight-medium: 600;
+  /* semibold and extrabold were used in style.css and never defined, so every
+     rule that asked for one was invalid and the element fell back to whatever
+     it inherited. Named here rather than rewritten at each call site: the
+     scale wanted six steps, not four. */
+  --weight-semibold: 650;
   --weight-bold: 700;
+  --weight-extrabold: 780;
   --weight-black: 800;
   --leading-tight: 1.15;
   --leading-normal: 1.5;
@@ -85,6 +101,7 @@
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 10px;
+  --radius-xl: 14px;                    /* large empty states and placeholders */
   --radius-full: 999px;
 
   /* ---- elevation ---- */
@@ -123,6 +140,15 @@
   --accent-soft: hsl(346.6 79% 51% / .12);
   --primary: hsl(0 0% 8%);
   --primary-fg: hsl(0 0% 100%);
+
+  /* The 400 steps exist to lift small text off a near-black surface. On white
+     they do the opposite — a light green on white is barely there — so here
+     they go darker than the 500 rather than lighter. Same token, same job
+     (readable status text), opposite direction. */
+  --green-400: hsl(142 72% 30%);
+  --amber-400: hsl(40 95% 33%);
+  --red-400: hsl(0 74% 43%);
+  --blue-400: hsl(215 88% 44%);
   --shadow-1: 0 1px 3px hsl(0 0% 0% / .12);
   --shadow-2: 0 6px 20px hsl(0 0% 0% / .14);
   --shadow-3: 0 16px 48px hsl(0 0% 0% / .2);

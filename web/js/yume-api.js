@@ -379,6 +379,20 @@ const YumeAPI = {
       duplicates: (threshold = 0.86, limit = 50) =>
         YumeAPI._request(`/v1/admin/catalogue/duplicates?threshold=${threshold}&limit=${limit}`, { auth: true }),
       merge: (id, sourceId) => YumeAPI._request(`/v1/admin/catalogue/${id}/merge`, { method: 'POST', auth: true, body: { sourceId } })
+    },
+
+    // error triage — list groups, open one for its stack, change its status
+    errors: (status = 'open') => YumeAPI._request(`/v1/admin/errors?status=${status}&limit=100`, { auth: true }),
+    error: id => YumeAPI._request(`/v1/admin/errors/${id}`, { auth: true }),
+    setErrorStatus: (id, status) => YumeAPI._request(`/v1/admin/errors/${id}`, { method: 'PATCH', auth: true, body: { status } }),
+
+    // audit trail — who changed what, and when
+    audit: ({ subjectType, subjectId, actorId, limit = 50 } = {}) => {
+      const params = new URLSearchParams({ limit: String(limit) })
+      if (subjectType) params.set('subjectType', subjectType)
+      if (subjectId) params.set('subjectId', subjectId)
+      if (actorId) params.set('actorId', actorId)
+      return YumeAPI._request('/v1/admin/audit?' + params.toString(), { auth: true })
     }
   },
 

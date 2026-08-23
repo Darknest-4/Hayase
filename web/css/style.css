@@ -2410,46 +2410,72 @@ svg.chart .chart-name { font-size: 12px; fill: var(--fg); dominant-baseline: mid
 }
 .admin-nav {
   border-right: 1px solid var(--border);
-  background: color-mix(in oklab, var(--bg-raised) 45%, transparent);
-  padding: var(--space-5) var(--space-3);
+  background: var(--bg-raised);
+  padding: var(--space-4) var(--space-3) var(--space-5);
   position: sticky;
   top: 0;
   align-self: start;
   display: flex;
   flex-direction: column;
-  gap: .25rem;
+  gap: 1px;
 }
 .admin-nav-head {
   display: flex; align-items: center; gap: .5rem;
-  font-weight: var(--weight-black); font-size: var(--text-lg);
-  padding: 0 .7rem var(--space-4);
+  font-weight: var(--weight-extrabold); font-size: var(--text-base);
+  letter-spacing: -.01em;
+  padding: 0 .55rem var(--space-4);
 }
 .admin-nav-head svg { color: var(--accent); }
+/* How many sections this account can reach. A permission set is invisible
+   until something goes wrong with it. */
+.admin-nav-count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: .62rem;
+  font-weight: var(--weight-medium);
+  color: var(--fg-faint);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: .05rem .4rem;
+}
+
+/* Group headings carry the structure the flat list used to leave implicit. */
+.admin-nav-group {
+  font-size: .6rem;
+  font-weight: var(--weight-bold);
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  padding: var(--space-4) .55rem .3rem;
+}
+.admin-nav-group:first-of-type { padding-top: 0; }
+
 .admin-nav-item {
-  display: flex; align-items: center; gap: .7rem;
+  display: flex; align-items: center; gap: .6rem;
   text-align: left; border: none; background: none; cursor: pointer;
-  padding: .55rem .7rem;
+  padding: .42rem .55rem;
   border-radius: var(--radius-md);
   color: var(--fg-muted);
+  font-family: inherit;
   transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
-  position: relative;
 }
-.admin-nav-item:hover { background: var(--bg-raised); color: var(--fg); }
+.admin-nav-item:hover { background: var(--bg); color: var(--fg); }
 .admin-nav-item.active { background: var(--accent-soft); color: var(--accent); }
-.admin-nav-item.active::before {
-  content: ''; position: absolute; left: -.3rem; top: 50%; transform: translateY(-50%);
-  width: 3px; height: 1.3rem; border-radius: var(--radius-full); background: var(--accent);
-}
-.admin-nav-item svg { flex-shrink: 0; }
-.admin-nav-text b { display: block; font-size: var(--text-sm); font-weight: var(--weight-bold); }
-.admin-nav-text span { display: block; font-size: .64rem; color: var(--fg-faint); }
-.admin-nav-item.active .admin-nav-text span { color: color-mix(in srgb, var(--accent) 55%, var(--fg-faint)); }
+.admin-nav-item svg { flex-shrink: 0; opacity: .8; }
+.admin-nav-item.active svg { opacity: 1; }
+.admin-nav-label { font-size: var(--text-sm); font-weight: var(--weight-semibold); }
 
 .admin-content { padding: var(--space-5) var(--space-6) var(--space-7); min-width: 0; }
-.admin-content-head { margin-bottom: var(--space-4); padding-bottom: var(--space-3); border-bottom: 1px solid var(--border); }
-.admin-content-title { font-size: var(--text-2xl); font-weight: var(--weight-black); margin: 0; }
-.admin-content-sub { color: var(--fg-faint); font-size: var(--text-sm); margin: .15rem 0 0; }
+.admin-content-head { margin-bottom: var(--space-5); padding-bottom: var(--space-4); border-bottom: 1px solid var(--border); }
+.admin-content-heading { display: flex; align-items: flex-start; gap: .7rem; }
+.admin-content-heading > svg { color: var(--accent); margin-top: .2rem; flex-shrink: 0; }
+.admin-content-title { font-size: var(--text-xl); font-weight: var(--weight-extrabold); margin: 0; letter-spacing: -.015em; }
+.admin-content-sub { color: var(--fg-faint); font-size: var(--text-sm); margin: .1rem 0 0; }
 .admin-content-body { min-width: 0; }
+
+/* A filter row above a list. Shared by the error and audit views. */
+.admin-toolbar { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: var(--space-4); }
 
 @media (max-width: 820px) {
   .admin-shell { grid-template-columns: 1fr; min-height: 0; }
@@ -2458,11 +2484,110 @@ svg.chart .chart-name { font-size: 12px; fill: var(--fg); dominant-baseline: mid
     border-right: none; border-bottom: 1px solid var(--border);
     padding: var(--space-3);
   }
-  .admin-nav-head { display: none; }
+  .admin-nav-head, .admin-nav-group { display: none; }
   .admin-nav-item { flex-shrink: 0; }
-  .admin-nav-item.active::before { display: none; }
-  .admin-nav-text span { display: none; }
   .admin-content { padding: var(--space-4); }
+}
+
+/* ===== admin: error triage ===== */
+
+.err-layout { display: grid; grid-template-columns: minmax(0, 22rem) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
+.err-list { display: flex; flex-direction: column; gap: .3rem; }
+
+.err-row {
+  display: flex; align-items: center; gap: .7rem;
+  width: 100%; text-align: left; cursor: pointer; font-family: inherit;
+  padding: .55rem .65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  color: var(--fg);
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.err-row:hover { border-color: var(--border-strong); }
+.err-row.active { border-color: var(--accent); background: var(--accent-soft); }
+
+/* The occurrence count is the first thing worth knowing: one bug seen 4000
+   times and one seen twice need different attention. */
+.err-row-count {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--danger);
+  flex-shrink: 0;
+  min-width: 2.4rem;
+}
+.err-row-main { min-width: 0; flex: 1; }
+.err-row-title {
+  font-size: var(--text-sm); font-weight: var(--weight-semibold);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.err-row-sub { font-size: var(--text-xs); color: var(--fg-faint); }
+
+.err-detail {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+  padding: var(--space-4);
+  min-width: 0;
+}
+.err-detail-head { border-bottom: 1px solid var(--border); padding-bottom: var(--space-3); margin-bottom: var(--space-3); }
+.err-detail-title { margin: 0 0 .25rem; font-size: var(--text-base); font-weight: var(--weight-bold); overflow-wrap: anywhere; }
+.err-detail-meta { font-size: var(--text-xs); color: var(--fg-faint); }
+.err-actions { display: flex; gap: .4rem; margin-top: var(--space-3); }
+
+/* Occurrences are unbounded — a bug seen 4000 times has 4000 of them — so the
+   list scrolls inside the panel rather than making the page arbitrarily tall. */
+.err-occurrences { max-height: 26rem; overflow-y: auto; }
+.err-occ { border-top: 1px solid var(--border); }
+.err-occ summary {
+  cursor: pointer; padding: .45rem 0;
+  font-size: var(--text-xs); color: var(--fg-muted); font-family: var(--font-mono);
+}
+.err-occ summary:hover { color: var(--fg); }
+/* A stack trace is wide by nature — it scrolls in its own box rather than
+   pushing the page sideways. */
+.err-stack {
+  margin: 0 0 .6rem;
+  padding: .6rem .7rem;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: .68rem;
+  line-height: 1.55;
+  color: var(--fg-muted);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* ===== admin: audit trail ===== */
+
+.audit-rows { display: flex; flex-direction: column; }
+.audit-row {
+  display: grid;
+  grid-template-columns: minmax(9rem, auto) 5.5rem minmax(6rem, auto) minmax(0, 1fr) auto;
+  gap: .75rem; align-items: baseline;
+  padding: .45rem .6rem;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-xs);
+}
+.audit-row:hover { background: var(--bg-raised); }
+.audit-action { font-family: var(--font-mono); font-weight: var(--weight-semibold); color: var(--fg); }
+.audit-subject { color: var(--fg-faint); }
+.audit-actor { color: var(--accent); font-weight: var(--weight-semibold); }
+.audit-detail {
+  font-family: var(--font-mono); color: var(--fg-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.audit-when { color: var(--fg-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+@media (max-width: 900px) {
+  .err-layout { grid-template-columns: 1fr; }
+  /* The middle columns are context, not the point: on a narrow screen the
+     action, who did it and when are what survive. */
+  .audit-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .audit-subject, .audit-detail { display: none; }
 }
 
 /* ===== admin: roles & permissions ===== */
@@ -2507,10 +2632,10 @@ svg.chart .chart-name { font-size: 12px; fill: var(--fg); dominant-baseline: mid
 .perm-slug { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg); }
 .perm-desc { display: block; font-size: .68rem; color: var(--fg-faint); }
 .perm-badge { flex-shrink: 0; font-size: .55rem; font-weight: var(--weight-bold); text-transform: uppercase; letter-spacing: .05em; padding: .1rem .32rem; border-radius: var(--radius-sm); line-height: 1.4; }
-.perm-badge-live { color: var(--green-400, #4ade80); background: color-mix(in oklab, var(--green-500, #22c55e) 16%, transparent); }
+.perm-badge-live { color: var(--green-400); background: color-mix(in oklab, var(--green-500) 16%, transparent); }
 .perm-badge-planned { color: var(--fg-faint); background: color-mix(in oklab, var(--fg-faint) 12%, transparent); text-transform: none; letter-spacing: 0; }
-.perm-row.perm-active .perm-slug { color: var(--green-400, #4ade80); }
-.perm-live-count { font-size: .6rem; font-weight: var(--weight-bold); color: var(--green-400, #4ade80); background: color-mix(in oklab, var(--green-500, #22c55e) 14%, transparent); padding: .12rem .4rem; border-radius: var(--radius-sm); }
+.perm-row.perm-active .perm-slug { color: var(--green-400); }
+.perm-live-count { font-size: .6rem; font-weight: var(--weight-bold); color: var(--green-400); background: color-mix(in oklab, var(--green-500) 14%, transparent); padding: .12rem .4rem; border-radius: var(--radius-sm); }
 .perm-legend { font-size: var(--text-xs); color: var(--fg-muted); display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; margin: 0 0 var(--space-3); }
 
 @media (max-width: 820px) {
@@ -2542,8 +2667,8 @@ svg.chart .chart-name { font-size: 12px; fill: var(--fg); dominant-baseline: mid
 .cat-row-sub { font-size: var(--text-xs); color: var(--fg-faint); margin-top: .1rem; }
 
 .vis-badge { flex-shrink: 0; font-size: .6rem; font-weight: var(--weight-bold); text-transform: uppercase; letter-spacing: .04em; padding: .18rem .4rem; border-radius: var(--radius-sm); }
-.vis-public { color: var(--green-400, #4ade80); background: color-mix(in oklab, var(--green-500, #22c55e) 15%, transparent); }
-.vis-unlisted { color: var(--amber-400, #fbbf24); background: color-mix(in oklab, var(--amber-500, #f59e0b) 15%, transparent); }
+.vis-public { color: var(--green-400); background: color-mix(in oklab, var(--green-500) 15%, transparent); }
+.vis-unlisted { color: var(--amber-400); background: color-mix(in oklab, var(--amber-500) 15%, transparent); }
 .vis-hidden { color: var(--danger); background: color-mix(in oklab, var(--danger) 15%, transparent); }
 
 .cat-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); min-height: 22rem; color: var(--fg-faint); text-align: center; border: 1px dashed var(--border); border-radius: var(--radius-xl); }
@@ -2766,8 +2891,8 @@ svg.chart .chart-name { font-size: 12px; fill: var(--fg); dominant-baseline: mid
 .mon-banner-dot { font-size: 1.4rem; line-height: 1; }
 .mon-banner-title { font-weight: var(--weight-bold); font-size: var(--text-base); }
 .mon-banner-sub { font-size: var(--text-xs); color: var(--fg-faint); margin-top: .1rem; }
-.mon-banner.mon-green { border-color: color-mix(in oklab, var(--green-500, #22c55e) 45%, transparent); }
-.mon-banner.mon-yellow { border-color: color-mix(in oklab, var(--amber-500, #f59e0b) 50%, transparent); background: color-mix(in oklab, var(--amber-500, #f59e0b) 8%, var(--bg-raised)); }
+.mon-banner.mon-green { border-color: color-mix(in oklab, var(--green-500) 45%, transparent); }
+.mon-banner.mon-yellow { border-color: color-mix(in oklab, var(--amber-500) 50%, transparent); background: color-mix(in oklab, var(--amber-500) 8%, var(--bg-raised)); }
 .mon-banner.mon-red { border-color: color-mix(in oklab, var(--danger) 55%, transparent); background: color-mix(in oklab, var(--danger) 8%, var(--bg-raised)); }
 
 .mon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: var(--space-3); }
@@ -2776,8 +2901,8 @@ svg.chart .chart-name { font-size: 12px; fill: var(--fg); dominant-baseline: mid
   background: var(--bg-raised); padding: var(--space-3);
   border-left-width: 3px; border-left-color: var(--border);
 }
-.mon-card.mon-green { border-left-color: var(--green-500, #22c55e); }
-.mon-card.mon-yellow { border-left-color: var(--amber-500, #f59e0b); }
+.mon-card.mon-green { border-left-color: var(--green-500); }
+.mon-card.mon-yellow { border-left-color: var(--amber-500); }
 .mon-card.mon-red { border-left-color: var(--danger); }
 .mon-card-head { display: flex; align-items: center; justify-content: space-between; gap: .4rem; }
 .mon-card-label { font-size: .65rem; text-transform: uppercase; letter-spacing: .06em; color: var(--fg-faint); font-weight: var(--weight-bold); }
@@ -2820,7 +2945,7 @@ svg.chart .chart-name { font-size: 12px; fill: var(--fg); dominant-baseline: mid
 .mon-alert-none { display: flex; align-items: center; gap: .5rem; font-size: var(--text-sm); color: var(--fg-faint); padding: .6rem .75rem; border: 1px dashed var(--border); border-radius: var(--radius-md); }
 .mon-alert { display: flex; align-items: center; gap: .7rem; padding: .6rem .75rem; border: 1px solid var(--border); border-left-width: 3px; border-radius: var(--radius-md); background: var(--bg-raised); }
 .mon-alert + .mon-alert { margin-top: .4rem; }
-.mon-alert.mon-yellow { border-left-color: var(--amber-500, #f59e0b); }
+.mon-alert.mon-yellow { border-left-color: var(--amber-500); }
 .mon-alert.mon-red { border-left-color: var(--danger); }
 .mon-alert-main { flex-grow: 1; min-width: 0; }
 .mon-alert-subject { font-family: var(--font-mono); font-size: var(--text-sm); font-weight: var(--weight-semibold); }
@@ -2837,8 +2962,8 @@ svg.chart .chart-name { font-size: 12px; fill: var(--fg); dominant-baseline: mid
 .mon-diag-row { display: flex; align-items: center; gap: .6rem; padding: .2rem 0; font-size: var(--text-sm); }
 .mon-diag-name { flex: 0 0 11rem; }
 .mon-diag-status { font-family: var(--font-mono); font-size: .65rem; font-weight: var(--weight-bold); padding: .1rem .35rem; border-radius: var(--radius-sm); }
-.mon-diag-pass .mon-diag-status { color: var(--green-400, #4ade80); background: color-mix(in oklab, var(--green-500, #22c55e) 15%, transparent); }
-.mon-diag-warn .mon-diag-status { color: var(--amber-400, #fbbf24); background: color-mix(in oklab, var(--amber-500, #f59e0b) 15%, transparent); }
+.mon-diag-pass .mon-diag-status { color: var(--green-400); background: color-mix(in oklab, var(--green-500) 15%, transparent); }
+.mon-diag-warn .mon-diag-status { color: var(--amber-400); background: color-mix(in oklab, var(--amber-500) 15%, transparent); }
 .mon-diag-fail .mon-diag-status { color: var(--danger); background: color-mix(in oklab, var(--danger) 15%, transparent); }
 .mon-diag-skip .mon-diag-status { color: var(--fg-faint); background: color-mix(in oklab, var(--fg-faint) 12%, transparent); }
 .mon-diag-value { color: var(--fg-faint); font-size: var(--text-xs); }
@@ -2853,7 +2978,7 @@ svg.chart .chart-name { font-size: 12px; fill: var(--fg); dominant-baseline: mid
 .prov-table { margin-top: .6rem; display: flex; flex-direction: column; gap: .3rem; }
 .prov-row {
   display: grid; grid-template-columns: 12rem 1fr auto auto; gap: .6rem; align-items: center;
-  padding: .35rem .6rem; border-radius: var(--radius-sm); background: var(--bg-raise);
+  padding: .35rem .6rem; border-radius: var(--radius-sm); background: var(--bg-raised);
 }
 .prov-field { font-size: var(--text-xs); color: var(--fg); }
 .prov-source { font-size: var(--text-xs); color: var(--fg-faint); }

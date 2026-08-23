@@ -21,7 +21,14 @@ const U = {
       else if (key === 'style') node.style.cssText = value
       else if (key.startsWith('on') && typeof value === 'function') node.addEventListener(key.slice(2), value)
       else if (key === 'dataset') Object.assign(node.dataset, value)
-      else node.setAttribute(key, value)
+      // A boolean attribute is "on" when it is PRESENT, whatever its value —
+      // setAttribute('selected', false) renders selected="false" and the
+      // browser reads that as selected. Passing a boolean therefore did the
+      // opposite of what it looks like, which is why call sites across the
+      // client spell it `...(cond ? { checked: '' } : {})` instead. Handling
+      // it here makes the obvious form correct and leaves that spelling
+      // working.
+      else if (typeof value === 'boolean') { if (value) node.setAttribute(key, '') } else node.setAttribute(key, value)
     }
     for (const child of [].concat(children)) {
       if (child == null) continue
