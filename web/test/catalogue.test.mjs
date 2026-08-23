@@ -68,7 +68,7 @@ let Catalogue
 let calls
 
 /** Stubs for the two things the resolver talks to. */
-function load ({ catalogueMedia, catalogueEpisodes, catalogueRelations, apiMedia, apiEpisodes } = {}) {
+function load ({ catalogueMedia, catalogueEpisodes, catalogueRelations, apiMedia, apiEpisodes, byIds, browse, text, schedule } = {}) {
   calls = { catalogue: 0, anilist: 0, aniZip: 0 }
   const window = {}
   const context = {
@@ -77,11 +77,17 @@ function load ({ catalogueMedia, catalogueEpisodes, catalogueRelations, apiMedia
     YumeAPI: {
       async catalogueMedia (id) { calls.catalogue++; return catalogueMedia ? catalogueMedia(id) : null },
       async catalogueEpisodes (id) { return catalogueEpisodes ? catalogueEpisodes(id) : null },
-      async catalogueRelations (id) { return catalogueRelations ? catalogueRelations(id) : null }
+      async catalogueRelations (id) { return catalogueRelations ? catalogueRelations(id) : null },
+      async catalogueByAniListIds (ids) { calls.byIds = ids; return byIds ? byIds(ids) : null },
+      async browseCatalogue (f) { calls.browse = f; return browse ? browse(f) : null },
+      async searchCatalogue (q, f) { calls.text = { q, f }; return text ? text(q, f) : null },
+      async catalogueSchedule (from, to) { calls.schedule = { from, to }; return schedule ? schedule(from, to) : null }
     },
     API: {
       async media (id) { calls.anilist++; return apiMedia ? apiMedia(id) : { id, _fromAniList: true } },
-      async episodes (media) { calls.aniZip++; return apiEpisodes ? apiEpisodes(media) : [{ episode: 1, _fromAniZip: true }] }
+      async episodes (media) { calls.aniZip++; return apiEpisodes ? apiEpisodes(media) : [{ episode: 1, _fromAniZip: true }] },
+      async search (v) { calls.anilistSearch = v; return { media: [{ id: 1, _fromAniList: true }] } },
+      async schedule (from, to) { calls.anilistSchedule = { from, to }; return [{ episode: 1, _fromAniList: true }] }
     }
   }
   context.globalThis = context
@@ -291,5 +297,141 @@ describe('episodes', () => {
     Catalogue = load({ catalogueEpisodes: () => ({ data: [], total: 0 }) })
     assert.deepEqual(plain(await Catalogue.episodes({ yumeId: ROW.id, id: null })), [])
     assert.equal(calls.aniZip, 0)
+  })
+})
+
+// ---------------------------------------------------------------- browsing
+
+/** A card-shaped row exactly as the browse endpoints return it. */
+const CARD = {
+  id: '22222222-2222-4333-8444-555555555555',
+  anilist_id: 154587,
+  canonical_title: 'Sousou no Frieren',
+  romaji: 'Sousou no Frieren',
+  english: 'Frieren: Beyond Journey\u2019s End',
+  format: 'TV',
+  status: 'FINISHED',
+  season_year: 2023,
+  episode_count: 28,
+  average_score: 91,
+  is_adult: false,
+  cover_key: 'https://cdn.example/cover.jpg',
+  cover_color: '#3a6ea5'
+}
+
+describe('card mapping', () => {
+  it('produces the fields a card actually draws', () => {
+    const card = Catalogue.toCard(CARD)
+    assert.equal(card.title.userPreferred, 'Sousou no Frieren')
+    assert.equal(card.coverImage.large, 'https://cdn.example/cover.jpg')
+    assert.equal(card.averageScore, 91)
+    assert.equal(card.episodes, 28)
+    assert.equal(card.seasonYear, 2023)
+    assert.equal(card.id, 154587, 'navigates by the AniList id when there is one')
+    assert.equal(card.yumeId, CARD.id)
+  })
+
+  it('keys a catalogue-only title by its own id', () => {
+    const card = Catalogue.toCard({ ...CARD, anilist_id: null })
+    assert.equal(card.id, CARD.id)
+    assert.equal(card.anilistId, null)
+  })
+})
+
+describe('search routing', () => {
+  it('sends an ids request to the batch lookup, not to browse', async () => {
+    Catalogue = load({ byIds: () => [CARD] })
+    const page = await Catalogue.search({ ids: [154587], perPage: 50 })
+    assert.equal(page.media.length, 1)
+    assert.deepEqual(plain(calls.byIds), [154587])
+    assert.equal(calls.browse, undefined)
+  })
+
+  it('sends free text to full-text search', async () => {
+    Catalogue = load({ text: () => [CARD] })
+    await Catalogue.search({ search: 'frieren', genre: ['Fantasy'], perPage: 30 })
+    assert.equal(calls.text.q, 'frieren')
+    assert.equal(calls.text.f.genre, 'Fantasy', 'AniList sends arrays; the catalogue takes one')
+  })
+
+  it('sends filters to browse and translates the sort', async () => {
+    Catalogue = load({ browse: () => ({ data: [CARD] }) })
+    await Catalogue.search({ sort: ['TRENDING_DESC'], season: 'FALL', seasonYear: 2023, perPage: 25 })
+    assert.equal(calls.browse.sort, 'trending')
+    assert.equal(calls.browse.season, 'FALL')
+    assert.equal(calls.browse.year, 2023)
+  })
+
+  it('caps a request at what the endpoint will serve', async () => {
+    Catalogue = load({ browse: () => ({ data: [CARD] }) })
+    await Catalogue.search({ perPage: 500 })
+    assert.equal(calls.browse.limit, 50)
+  })
+
+  it('returns null rather than a short rail when the catalogue has none of it', async () => {
+    // A partial answer would silently shorten a rail; the caller needs to know
+    // it should ask AniList with its own variables intact.
+    Catalogue = load({ byIds: () => [] })
+    assert.equal(await Catalogue.search({ ids: [1, 2, 3] }), null)
+  })
+
+  it('returns null when the backend is unreachable', async () => {
+    Catalogue = load({ browse: () => null })
+    assert.equal(await Catalogue.search({ sort: ['POPULARITY_DESC'] }), null)
+  })
+})
+
+describe('search fallback', () => {
+  it('does not call AniList when the catalogue answered', async () => {
+    Catalogue = load({ browse: () => ({ data: [CARD] }) })
+    const page = await Catalogue.searchOrAniList({ sort: ['POPULARITY_DESC'] })
+    assert.equal(page.media[0]._fromCatalogue, true)
+    assert.equal(calls.anilistSearch, undefined)
+  })
+
+  it('passes the original variables through on a miss', async () => {
+    // The fallback must not receive translated variables — AniList speaks its
+    // own dialect and a half-translated query would quietly return the wrong
+    // thing rather than failing.
+    Catalogue = load({ browse: () => null })
+    const vars = { sort: ['TRENDING_DESC'], perPage: 10 }
+    const page = await Catalogue.searchOrAniList(vars)
+    assert.equal(page.media[0]._fromAniList, true)
+    assert.deepEqual(plain(calls.anilistSearch), vars)
+  })
+})
+
+describe('schedule', () => {
+  const ROW = {
+    episode: '3.0',
+    air_date: '2023-10-13T15:00:00.000Z',
+    anime_id: CARD.id,
+    anilist_id: 154587,
+    canonical_title: 'Sousou no Frieren',
+    format: 'TV',
+    is_adult: false,
+    cover_key: 'https://cdn.example/cover.jpg'
+  }
+
+  it('shapes catalogue rows into what the calendar draws', async () => {
+    Catalogue = load({ schedule: () => [ROW] })
+    const list = await Catalogue.scheduleOrAniList(new Date('2023-10-13'), new Date('2023-10-20'))
+    assert.equal(list.length, 1)
+    assert.strictEqual(list[0].episode, 3, 'numeric comes back as a string and must be coerced')
+    assert.equal(list[0].media.title.userPreferred, 'Sousou no Frieren')
+    assert.equal(list[0].media.id, 154587)
+    assert.equal(typeof list[0].airingAt, 'number')
+  })
+
+  it('converts Date arguments to what the endpoint expects', async () => {
+    Catalogue = load({ schedule: () => [ROW] })
+    await Catalogue.scheduleOrAniList(new Date('2023-10-13T00:00:00Z'), new Date('2023-10-20T00:00:00Z'))
+    assert.equal(calls.schedule.from, '2023-10-13T00:00:00.000Z')
+  })
+
+  it('falls back when the catalogue has nothing for the window', async () => {
+    Catalogue = load({ schedule: () => [] })
+    const list = await Catalogue.scheduleOrAniList(new Date(), new Date())
+    assert.equal(list[0]._fromAniList, true)
   })
 })

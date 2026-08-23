@@ -1,4 +1,4 @@
-/* global window, document, U, C, Store */
+/* global C, Catalogue, Store, U, document, window */
 // My List page — the locally stored anime list with status tabs,
 // inline progress controls and favourites.
 
@@ -46,7 +46,7 @@ const PageList = {
         }
         content.append(U.el('div', { class: 'spinner' }))
         try {
-          const page = await window.API.search({ ids: favs.slice(0, 50), perPage: 50 })
+          const page = await Catalogue.searchOrAniList({ ids: favs.slice(0, 50), perPage: 50 })
           content.replaceChildren(C.grid(page.media ?? []))
         } catch (e) {
           content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load favourites.' }))

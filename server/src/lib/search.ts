@@ -103,8 +103,11 @@ export function buildSearchSql (filters: SearchFilters): { sql: string, params: 
   if (filters.format) where.push(`a.format = ${push(filters.format)}::anime_format`)
   if (filters.status) where.push(`a.status = ${push(filters.status)}::anime_status`)
   if (filters.genre) {
+    // Slug OR name, case-insensitively — the client shows genre names, so it
+    // sends "Action" and not "action". See the same fix in routes/anime.ts.
+    const g = push(filters.genre)
     where.push(`EXISTS (SELECT 1 FROM anime_genres ag JOIN genres g ON g.id = ag.genre_id
-                         WHERE ag.anime_id = a.id AND g.slug = ${push(filters.genre)})`)
+                         WHERE ag.anime_id = a.id AND (g.slug = lower(${g}) OR lower(g.name) = lower(${g})))`)
   }
 
   const explicitSort = filters.sort && filters.sort !== 'relevance' ? SEARCH_SORTS[filters.sort] : null

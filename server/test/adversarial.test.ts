@@ -866,10 +866,13 @@ describe('adversarial', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
     let anilistId: number | null = null
 
     before(async () => {
+      // Must be a PUBLISHED one: since migration 0020 an imported anime
+      // defaults to hidden, and a hidden record is a 404 by design — which is
+      // what this fixture used to pick after a real 25k-row import.
       const { rows } = await pool.query(
         `SELECT a.id, m.anilist_id FROM anime a
          LEFT JOIN anime_mappings m ON m.anime_id = a.id
-         WHERE m.anilist_id IS NOT NULL LIMIT 1`)
+         WHERE m.anilist_id IS NOT NULL AND a.visibility = 'public' LIMIT 1`)
       if (rows[0]) {
         animeId = String(rows[0].id)
         anilistId = Number(rows[0].anilist_id)
@@ -1097,6 +1100,75 @@ describe('adversarial', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
         payload: { visibility: 'sort-of-public' }
       })
       assert.equal(res.statusCode, 400)
+    })
+  })
+
+  // ---- batch lookup that lets the browse pages use the catalogue ----
+
+  describe('batch by AniList id', () => {
+    let ids: number[] = []
+
+    before(async () => {
+      const { rows } = await pool.query(
+        `SELECT m.anilist_id FROM anime_mappings m JOIN anime a ON a.id = m.anime_id
+          WHERE m.anilist_id IS NOT NULL AND a.visibility = 'public' LIMIT 3`)
+      ids = rows.map(r => Number(r.anilist_id))
+    })
+
+    test('returns card-shaped rows, not whole records', async () => {
+      if (!ids.length) return
+      const res = await app.inject({ url: `/v1/anime/by-anilist?ids=${ids.join(',')}` })
+      assert.equal(res.statusCode, 200)
+      const { data } = res.json() as { data: Array<Record<string, unknown>> }
+      assert.ok(data.length >= 1)
+      // A rail draws a cover, a title and a score. Fetching every synonym and
+      // tag for fifty titles to render fifty covers would be a large waste.
+      for (const key of ['id', 'anilist_id', 'canonical_title', 'cover_key']) {
+        assert.ok(key in data[0]!, `card must carry ${key}`)
+      }
+      assert.ok(!('synonyms' in data[0]!) && !('tags' in data[0]!), 'and nothing a card does not draw')
+    })
+
+    test('preserves the order the caller asked in', async () => {
+      // A rail is usually ordered by something the caller knows and the
+      // database does not — most recently watched, say.
+      if (ids.length < 2) return
+      const reversed = [...ids].reverse()
+      const res = await app.inject({ url: `/v1/anime/by-anilist?ids=${reversed.join(',')}` })
+      const { data } = res.json() as { data: Array<{ anilist_id: number }> }
+      assert.deepEqual(data.map(r => Number(r.anilist_id)), reversed.filter(id => data.some(r => Number(r.anilist_id) === id)))
+    })
+
+    test('an unpublished title is not returned', async () => {
+      const { rows } = await pool.query(
+        `SELECT m.anilist_id FROM anime_mappings m JOIN anime a ON a.id = m.anime_id
+          WHERE m.anilist_id IS NOT NULL AND a.visibility = 'hidden' LIMIT 1`)
+      if (!rows[0]) return
+      const res = await app.inject({ url: `/v1/anime/by-anilist?ids=${Number(rows[0].anilist_id)}` })
+      assert.deepEqual((res.json() as { data: unknown[] }).data, [], 'publishing applies here too')
+    })
+
+    test('junk in the id list is dropped, not reflected into a query', async () => {
+      for (const q of ['abc', '1;DROP TABLE anime', '-5', '1.5', '', ',,,']) {
+        const res = await app.inject({ url: `/v1/anime/by-anilist?ids=${encodeURIComponent(q)}` })
+        assert.ok(res.statusCode === 200 || res.statusCode === 400, `${q} gave ${res.statusCode}`)
+      }
+      const { rows } = await pool.query('SELECT count(*)::int AS n FROM anime')
+      assert.ok(Number(rows[0]!.n) > 0, 'the table is still there')
+    })
+
+    test('the batch is capped', async () => {
+      // Without a cap this route is a way to ask for the whole catalogue.
+      const many = Array.from({ length: 120 }, (_, i) => i + 1).join(',')
+      const res = await app.inject({ url: `/v1/anime/by-anilist?ids=${many}` })
+      assert.ok(res.statusCode === 200 || res.statusCode === 400)
+      if (res.statusCode === 200) {
+        assert.ok((res.json() as { data: unknown[] }).data.length <= 50)
+      }
+    })
+
+    test('ids is required', async () => {
+      assert.equal((await app.inject({ url: '/v1/anime/by-anilist' })).statusCode, 400)
     })
   })
 

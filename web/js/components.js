@@ -1,4 +1,4 @@
-/* global Store, T, U, document, requestAnimationFrame, window */
+/* global Catalogue, Store, T, U, document, requestAnimationFrame, window */
 // Reusable render helpers: cards, horizontal sections, skeletons, modals.
 
 const C = {
@@ -55,7 +55,7 @@ const C = {
     if (!this._spotlightPool) {
       this._spotlightPool = (async () => {
         try {
-          const page = await window.API.search({ sort: ['POPULARITY_DESC'], perPage: 50 })
+          const page = await Catalogue.searchOrAniList({ sort: ['POPULARITY_DESC'], perPage: 50 })
           return (page.media ?? []).filter(m => m.bannerImage)
         } catch (e) { return [] }
       })()

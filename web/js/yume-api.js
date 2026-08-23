@@ -218,6 +218,38 @@ const YumeAPI = {
     }
   },
 
+  /** Many catalogue entries by AniList id, order preserved. */
+  async catalogueByAniListIds (ids) {
+    if (!ids?.length) return []
+    try {
+      const { data } = await this._request('/v1/anime/by-anilist?ids=' + ids.join(','))
+      return data
+    } catch (e) {
+      return null
+    }
+  },
+
+  /** Filtered, sorted browse over the catalogue. */
+  async browseCatalogue (filters = {}) {
+    const params = new URLSearchParams()
+    for (const [k, v] of Object.entries(filters)) if (v !== undefined && v !== null && v !== '') params.set(k, v)
+    try {
+      return await this._request('/v1/anime/?' + params.toString())
+    } catch (e) {
+      return null
+    }
+  },
+
+  /** Published episodes airing in a window. */
+  async catalogueSchedule (from, to) {
+    try {
+      const { data } = await this._request(`/v1/anime/schedule?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+      return data
+    } catch (e) {
+      return null
+    }
+  },
+
   async catalogueRelations (yumeId) {
     try {
       const { data } = await this._request(`/v1/anime/${yumeId}/relations`)

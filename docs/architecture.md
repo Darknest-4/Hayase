@@ -290,3 +290,40 @@ recording an editorial act that did not happen.
 Visibility changes are written to `audit_logs` as `episode.visibility` and
 `anime.visibility` — "who put this live" is exactly the question asked
 afterwards.
+
+
+## Which surfaces read the catalogue
+
+All of them, as of the browse rewiring. `web/js/catalogue.js` presents
+AniList's own interface — `search(variables) → { media }` — so the pages did
+not have to be rewritten, and routes each shape of request to the endpoint that
+can serve it:
+
+| request | endpoint |
+|---|---|
+| `{ ids: [...] }` | `GET /v1/anime/by-anilist?ids=…` — batch, order preserved |
+| `{ search: '…' }` | `GET /v1/anime/search` — tsvector + trigram |
+| `{ season, genre, … }` | `GET /v1/anime/` — filtered, keyset-paginated |
+| schedule window | `GET /v1/anime/schedule` — published episodes only |
+
+The batch route is what made the home page possible: rails resolve library
+entries into cards, the library stores AniList ids, and without a way to ask
+for a set the client had to ask AniList. It returns card-shaped rows — cover,
+title, score, format, year — because fetching every synonym and tag for fifty
+titles to render fifty covers would be a large waste on the busiest screen.
+
+### Falling back is normal, not a failure
+
+`search()` returns `null` rather than a partial answer when the catalogue
+cannot serve a request, and `searchOrAniList()` is the single place the
+fallback is applied. Two cases are expected and correct:
+
+- **a season we do not hold** — the seed dump has no 2026 titles, so the
+  "popular this season" rail falls through;
+- **a schedule window with no published episodes** — the calendar asks for
+  this week, and an imported episode is not published until its subtitle
+  exists.
+
+Everything else is served locally. Verified in a browser against a real 25,703-
+title catalogue with all HTTPS blocked: home, search and schedule render, and
+the only outbound calls are the two above.
