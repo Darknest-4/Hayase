@@ -79,7 +79,7 @@ const PageSearch = {
 
     const filePick = U.el('input', { type: 'file', accept: 'image/*', style: 'display:none;' })
     filePick.addEventListener('change', () => { if (filePick.files[0]) imageSearch(filePick.files[0]) })
-    const imageBtn = U.el('button', { class: 'btn btn-ghost', title: 'Search by image (or paste/drop a frame)', onclick: () => filePick.click() }, [document.createTextNode('🖼 Image')])
+    const imageBtn = U.el('button', { class: 'btn btn-ghost', title: 'Search by image (or paste/drop a frame)', onclick: () => filePick.click() }, [document.createTextNode('Upload a frame')])
 
     const onPaste = e => {
       const item = [...(e.clipboardData?.items ?? [])].find(i => i.type.startsWith('image/'))
@@ -103,9 +103,31 @@ const PageSearch = {
     cleanup.observe(document.getElementById('page'), { childList: true })
 
     const imageOn = !window.App || window.App.featureOn('image_search')
-    pad.append(U.el('div', { class: 'filters' }, [
+
+    /**
+     * The filter panel is collapsible, and starts collapsed on a phone.
+     *
+     * At 390px it filled the entire first screen, so the results it filters
+     * were never visible at the same time as the filters — every search meant
+     * scrolling past the whole form to see whether it had worked. A <details>
+     * carries its own toggle and keyboard behaviour, so nothing here has to
+     * reimplement either.
+     *
+     * Open on anything wider, where the panel is a row and costs nothing.
+     */
+    const filterBox = U.el('details', { class: 'filters-box', open: !window.matchMedia('(max-width: 560px)').matches }, [
+      U.el('summary', { class: 'filters-summary' }, [
+        U.el('span', { text: 'Filters' }),
+        U.el('span', { class: 'filters-hint', text: 'search, genre, season, year, format, status, sort' })
+      ])
+    ])
+    pad.append(filterBox)
+    filterBox.append(U.el('div', { class: 'filters' }, [
       U.el('div', { class: 'filter-group', style: 'flex-grow:1;' }, [U.el('label', { text: 'Search' }), searchInput]),
-      imageOn ? U.el('div', { class: 'filter-group' }, [U.el('label', { text: '\u00a0' }), imageBtn]) : null,
+      // A blank label put this control under the neighbouring field's heading,
+      // so on a phone the image-search button read as part of GENRE. It says
+      // what it is now.
+      imageOn ? U.el('div', { class: 'filter-group' }, [U.el('label', { text: 'By image' }), imageBtn]) : null,
       imageOn ? filePick : null,
       mkSelect('Genre', 'genre', this.GENRES),
       mkSelect('Season', 'season', Object.keys(U.seasonMap), v => U.seasonMap[v]),
