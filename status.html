@@ -1,0 +1,2314 @@
+<!doctype html>
+<html lang="hu">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yume Állapotjelentés</title>
+<meta name="description" content="A Yume/Hayase repó teljes műszaki és funkcionális térképe — forráskódból ellenőrizve.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Nunito:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* ============================================================================
+   Yume állapotjelentés — a paletta a projekt saját tokenjeiből származik
+   (web/css/tokens.css): rózsa akcent, tinta-fekete alap. A semleges szín
+   enyhén rózsa felé hangolt, hogy választott legyen, ne örökölt.
+   ========================================================================= */
+:root {
+  --ground:        hsl(340 24% 98%);
+  --surface:       hsl(340 20% 100%);
+  --surface-2:     hsl(340 16% 96%);
+  --sunken:        hsl(340 14% 93%);
+  --ink:           hsl(340 12% 10%);
+  --ink-muted:     hsl(340 6% 34%);
+  --ink-faint:     hsl(340 5% 50%);
+  --line:          hsl(340 12% 88%);
+  --line-strong:   hsl(340 10% 78%);
+  --accent:        hsl(346.6 79% 45%);
+  --accent-soft:   hsl(346.6 79% 51% / .10);
+
+  --ok:      hsl(142 62% 32%);
+  --ok-bg:   hsl(142 62% 32% / .12);
+  --part:    hsl(40 92% 30%);
+  --part-bg: hsl(40 92% 45% / .16);
+  --unver:   hsl(215 82% 42%);
+  --unver-bg:hsl(215 82% 50% / .12);
+  --plan:    hsl(25 85% 38%);
+  --plan-bg: hsl(25 85% 50% / .13);
+  --bad:     hsl(0 70% 42%);
+  --bad-bg:  hsl(0 70% 50% / .12);
+  --dead:    hsl(340 6% 42%);
+  --dead-bg: hsl(340 6% 50% / .12);
+
+  --rail: 16.5rem;
+  --maxw: 74rem;
+  --r: 10px;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --body: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --display: 'Bricolage Grotesque', 'Nunito', system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:      hsl(340 14% 4%);
+    --surface:     hsl(340 12% 7%);
+    --surface-2:   hsl(340 11% 10%);
+    --sunken:      hsl(340 16% 3%);
+    --ink:         hsl(340 8% 96%);
+    --ink-muted:   hsl(340 6% 72%);
+    --ink-faint:   hsl(340 5% 52%);
+    --line:        hsl(340 9% 16%);
+    --line-strong: hsl(340 9% 26%);
+    --accent:      hsl(346.6 79% 58%);
+    --accent-soft: hsl(346.6 79% 51% / .16);
+
+    --ok:      hsl(142 60% 58%);
+    --ok-bg:   hsl(142 60% 45% / .16);
+    --part:    hsl(40 92% 64%);
+    --part-bg: hsl(40 92% 55% / .16);
+    --unver:   hsl(215 90% 70%);
+    --unver-bg:hsl(215 90% 60% / .16);
+    --plan:    hsl(25 90% 64%);
+    --plan-bg: hsl(25 90% 55% / .16);
+    --bad:     hsl(0 78% 68%);
+    --bad-bg:  hsl(0 78% 55% / .16);
+    --dead:    hsl(340 6% 60%);
+    --dead-bg: hsl(340 6% 50% / .16);
+  }
+}
+:root[data-theme="dark"] {
+  --ground:      hsl(340 14% 4%);
+  --surface:     hsl(340 12% 7%);
+  --surface-2:   hsl(340 11% 10%);
+  --sunken:      hsl(340 16% 3%);
+  --ink:         hsl(340 8% 96%);
+  --ink-muted:   hsl(340 6% 72%);
+  --ink-faint:   hsl(340 5% 52%);
+  --line:        hsl(340 9% 16%);
+  --line-strong: hsl(340 9% 26%);
+  --accent:      hsl(346.6 79% 58%);
+  --accent-soft: hsl(346.6 79% 51% / .16);
+  --ok:      hsl(142 60% 58%);
+  --ok-bg:   hsl(142 60% 45% / .16);
+  --part:    hsl(40 92% 64%);
+  --part-bg: hsl(40 92% 55% / .16);
+  --unver:   hsl(215 90% 70%);
+  --unver-bg:hsl(215 90% 60% / .16);
+  --plan:    hsl(25 90% 64%);
+  --plan-bg: hsl(25 90% 55% / .16);
+  --bad:     hsl(0 78% 68%);
+  --bad-bg:  hsl(0 78% 55% / .16);
+  --dead:    hsl(340 6% 60%);
+  --dead-bg: hsl(340 6% 50% / .16);
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 1.5rem; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { animation: none !important; transition: none !important; } }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, h4 { font-family: var(--display); font-weight: 800; text-wrap: balance; margin: 0; line-height: 1.15; }
+p { margin: 0; }
+a { color: var(--accent); }
+code, .mono { font-family: var(--mono); font-size: .84em; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+/* ---- shell ------------------------------------------------------------- */
+.shell { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); align-items: start; }
+/* Grid children default to min-width:auto, so one wide table would push the
+   whole page sideways instead of scrolling inside its own container. */
+.shell > * { min-width: 0; }
+.main, section, .panel, .grid > * { min-width: 0; }
+.rail {
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+  padding: 1.4rem 1rem;
+  display: flex; flex-direction: column; gap: 1rem;
+}
+.rail-brand { display: flex; flex-direction: column; gap: .1rem; }
+.rail-brand b { font-family: var(--display); font-size: 1.15rem; letter-spacing: -.02em; }
+.rail-brand span { font-size: .72rem; color: var(--ink-faint); text-transform: uppercase; letter-spacing: .09em; font-weight: 700; }
+.rail nav { display: flex; flex-direction: column; gap: .1rem; }
+.rail nav a {
+  display: flex; justify-content: space-between; gap: .5rem; align-items: baseline;
+  padding: .34rem .55rem; border-radius: 7px; text-decoration: none;
+  color: var(--ink-muted); font-size: .875rem; font-weight: 600;
+}
+.rail nav a:hover { background: var(--surface-2); color: var(--ink); }
+.rail nav a.on { background: var(--accent-soft); color: var(--accent); }
+.rail nav a i { font-style: normal; font-family: var(--mono); font-size: .7rem; color: var(--ink-faint); }
+.rail-sec { font-size: .68rem; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-faint); font-weight: 700; padding: .5rem .55rem .1rem; }
+
+.main { padding: 2rem clamp(1rem, 3vw, 2.5rem) 6rem; max-width: var(--maxw); margin: 0 auto; width: 100%; }
+section { scroll-margin-top: 1rem; margin-bottom: 3.5rem; }
+
+/* ---- header ------------------------------------------------------------ */
+.masthead { border-bottom: 2px solid var(--ink); padding-bottom: 1.4rem; margin-bottom: 2rem; }
+.eyebrow { font-family: var(--mono); font-size: .72rem; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+.masthead h1 { font-size: clamp(2.2rem, 6vw, 3.6rem); letter-spacing: -.035em; margin: .3rem 0 .5rem; }
+.masthead .lede { font-size: 1.05rem; color: var(--ink-muted); max-width: 60ch; }
+.meta-row { display: flex; flex-wrap: wrap; gap: 1.6rem; margin-top: 1.2rem; font-size: .8rem; }
+.meta-row div { display: flex; flex-direction: column; }
+.meta-row dt { font-size: .68rem; text-transform: uppercase; letter-spacing: .09em; color: var(--ink-faint); font-weight: 700; }
+.meta-row dd { margin: 0; font-family: var(--mono); font-size: .82rem; }
+
+/* ---- panels ------------------------------------------------------------ */
+.sec-head { display: flex; align-items: baseline; gap: .8rem; border-bottom: 1px solid var(--line); padding-bottom: .6rem; margin-bottom: 1.2rem; flex-wrap: wrap; }
+.sec-head h2 { font-size: 1.6rem; letter-spacing: -.02em; }
+.sec-head .n { font-family: var(--mono); font-size: .78rem; color: var(--ink-faint); }
+.sec-note { color: var(--ink-muted); max-width: 68ch; margin-bottom: 1.1rem; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 1.1rem 1.2rem; }
+.grid { display: grid; gap: .8rem; }
+.g2 { grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr)); }
+.g3 { grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+.g4 { grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); }
+
+/* ---- stat cards -------------------------------------------------------- */
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: .85rem .95rem; display: flex; flex-direction: column; gap: .15rem; }
+.stat b { font-family: var(--display); font-size: 1.9rem; letter-spacing: -.03em; font-variant-numeric: tabular-nums; line-height: 1; }
+.stat span { font-size: .74rem; color: var(--ink-faint); text-transform: uppercase; letter-spacing: .07em; font-weight: 700; }
+.stat small { font-size: .76rem; color: var(--ink-muted); }
+.stat.s-ok    { border-left: 3px solid var(--ok); }
+.stat.s-part  { border-left: 3px solid var(--part); }
+.stat.s-unver { border-left: 3px solid var(--unver); }
+.stat.s-plan  { border-left: 3px solid var(--plan); }
+.stat.s-bad   { border-left: 3px solid var(--bad); }
+.stat.s-dead  { border-left: 3px solid var(--dead); }
+
+/* ---- pills ------------------------------------------------------------- */
+.pill {
+  display: inline-flex; align-items: center; gap: .3rem; white-space: nowrap;
+  font-family: var(--mono); font-size: .68rem; font-weight: 600;
+  padding: .12rem .45rem; border-radius: 999px; letter-spacing: .02em;
+}
+.p-ok { background: var(--ok-bg); color: var(--ok); }
+.p-part { background: var(--part-bg); color: var(--part); }
+.p-unver { background: var(--unver-bg); color: var(--unver); }
+.p-plan { background: var(--plan-bg); color: var(--plan); }
+.p-bad { background: var(--bad-bg); color: var(--bad); }
+.p-dead { background: var(--dead-bg); color: var(--dead); }
+.p-neutral { background: var(--sunken); color: var(--ink-muted); }
+
+/* ---- tables ------------------------------------------------------------ */
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: .85rem; }
+th, td { text-align: left; padding: .5rem .7rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { position: sticky; top: 0; background: var(--surface-2); font-size: .7rem; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-faint); font-weight: 700; z-index: 1; }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: var(--surface-2); }
+td.mono, th.mono { font-family: var(--mono); font-size: .78rem; }
+.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); }
+
+/* ---- controls ---------------------------------------------------------- */
+.search {
+  width: 100%; padding: .5rem .7rem; border-radius: 8px; font-family: var(--body); font-size: .85rem;
+  border: 1px solid var(--line-strong); background: var(--ground); color: var(--ink);
+}
+.chips { display: flex; flex-wrap: wrap; gap: .35rem; margin: .8rem 0; }
+.chip {
+  font-family: var(--mono); font-size: .72rem; font-weight: 600; cursor: pointer;
+  padding: .2rem .55rem; border-radius: 999px; border: 1px solid var(--line-strong);
+  background: transparent; color: var(--ink-muted);
+}
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.count { font-family: var(--mono); font-size: .76rem; color: var(--ink-faint); }
+
+/* ---- feature cards ----------------------------------------------------- */
+details.feat { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); margin-bottom: .5rem; overflow: hidden; }
+details.feat > summary { cursor: pointer; padding: .7rem .9rem; display: flex; gap: .7rem; align-items: center; list-style: none; }
+details.feat > summary::-webkit-details-marker { display: none; }
+details.feat > summary::after { content: '+'; margin-left: auto; font-family: var(--mono); color: var(--ink-faint); }
+details.feat[open] > summary::after { content: '−'; }
+details.feat[open] > summary { border-bottom: 1px solid var(--line); background: var(--surface-2); }
+.feat-name { font-weight: 700; }
+.feat-cat { font-size: .72rem; color: var(--ink-faint); font-family: var(--mono); }
+.feat-body { padding: .9rem; display: grid; gap: .7rem; font-size: .87rem; }
+.feat-body dl { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: .3rem .8rem; margin: 0; }
+.feat-body dt { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-faint); font-weight: 700; padding-top: .15rem; }
+.feat-body dd { margin: 0; }
+.feat-body dd.paths { font-family: var(--mono); font-size: .76rem; color: var(--ink-muted); word-break: break-word; }
+.stripe-ok { border-left: 3px solid var(--ok); }
+.stripe-part { border-left: 3px solid var(--part); }
+.stripe-unver { border-left: 3px solid var(--unver); }
+.stripe-plan { border-left: 3px solid var(--plan); }
+.stripe-bad { border-left: 3px solid var(--bad); }
+.stripe-dead { border-left: 3px solid var(--dead); }
+
+/* ---- score bars -------------------------------------------------------- */
+.score-row { display: grid; grid-template-columns: 12rem 3.2rem minmax(6rem, 1fr) 3.5rem; gap: .6rem; align-items: center; padding: .45rem 0; border-bottom: 1px solid var(--line); font-size: .85rem; }
+.score-row:last-child { border-bottom: 0; }
+.bar { height: 7px; background: var(--sunken); border-radius: 999px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.score-row .num { font-size: .8rem; }
+.score-why { grid-column: 1 / -1; font-size: .8rem; color: var(--ink-muted); padding-bottom: .3rem; }
+
+/* ---- diagram ----------------------------------------------------------- */
+.diagram { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 1rem; }
+.diagram svg { display: block; min-width: 40rem; height: auto; }
+.node-box { fill: var(--surface-2); stroke: var(--line-strong); }
+.node-accent { fill: var(--accent-soft); stroke: var(--accent); }
+.node-dim { fill: transparent; stroke: var(--line-strong); stroke-dasharray: 4 3; }
+.node-t { fill: var(--ink); font-family: var(--body); font-size: 12px; font-weight: 700; }
+.node-s { fill: var(--ink-faint); font-family: var(--mono); font-size: 9.5px; }
+.edge { stroke: var(--line-strong); stroke-width: 1.4; fill: none; }
+.edge-accent { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+
+/* ---- tree -------------------------------------------------------------- */
+.tree { font-family: var(--mono); font-size: .8rem; line-height: 1.75; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 1rem; overflow-x: auto; white-space: pre; color: var(--ink-muted); }
+.tree b { color: var(--ink); font-weight: 600; }
+.tree em { color: var(--accent); font-style: normal; }
+
+/* ---- flow -------------------------------------------------------------- */
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; font-family: var(--mono); font-size: .76rem; margin-top: .4rem; }
+.flow span { background: var(--sunken); border-radius: 6px; padding: .18rem .45rem; }
+.flow i { color: var(--ink-faint); font-style: normal; }
+
+/* ---- callouts ---------------------------------------------------------- */
+.note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: .7rem .9rem; border-radius: 0 var(--r) var(--r) 0; font-size: .87rem; }
+.note.warn { border-color: var(--bad); background: var(--bad-bg); }
+ul.tight { margin: .3rem 0; padding-left: 1.1rem; }
+ul.tight li { margin-bottom: .2rem; }
+
+/* ---- ring -------------------------------------------------------------- */
+.ringwrap { display: flex; gap: 1.4rem; align-items: center; flex-wrap: wrap; }
+.ring { flex-shrink: 0; }
+.ring text.big { font-family: var(--display); font-size: 30px; font-weight: 800; fill: var(--ink); }
+.ring text.sub { font-family: var(--mono); font-size: 9px; fill: var(--ink-faint); }
+
+footer.end { border-top: 1px solid var(--line); padding-top: 1.2rem; color: var(--ink-faint); font-size: .8rem; }
+
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; }
+  .rail { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .rail nav { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); }
+  .rail-sec { grid-column: 1 / -1; }
+  .meta-row { gap: 1rem; }
+  .masthead h1 { font-size: 2rem; }
+  .feat-body dl { grid-template-columns: 1fr; }
+  .score-row { grid-template-columns: 1fr 3rem; }
+  .score-row .bar { grid-column: 1 / -1; }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+<aside class="rail">
+  <div class="rail-brand"><b>Yume állapot</b><span>2026-08-24</span></div>
+  <input id="globalSearch" class="search" type="search" placeholder="Keresés az egész jelentésben…" aria-label="Keresés">
+  <nav id="nav" aria-label="Szakaszok"></nav>
+</aside>
+<main class="main">
+
+<header class="masthead">
+  <div class="eyebrow">Projekt-státusz &amp; architektúra</div>
+  <h1>Yume / Hayase</h1>
+  <p class="lede">Teljes műszaki és funkcionális térkép. Minden állítás a <b>forráskódból</b> van ellenőrizve — ahol a dokumentáció és a kód eltér, a kód nyer, és a dokumentum ezt külön jelöli.</p>
+  <div class="meta-row">
+    <div><dt>Repó</dt><dd>Darknest-4/Hayase</dd></div>
+    <div><dt>Ág</dt><dd>claude/hayase-repo-pull-gcq81x</dd></div>
+    <div><dt>Commit</dt><dd>1fd221b</dd></div>
+    <div><dt>Készült</dt><dd>2026-08-24</dd></div>
+    <div><dt>Követett fájl</dt><dd>288</dd></div>
+    <div><dt>Commitok</dt><dd>120</dd></div>
+  </div>
+</header>
+
+<!-- ==================================================================== -->
+<section id="overview">
+  <div class="sec-head"><h2>Áttekintés</h2><span class="n">01</span></div>
+
+  <div class="panel" style="margin-bottom:1rem;">
+    <div class="ringwrap">
+      <svg class="ring" width="150" height="150" viewBox="0 0 150 150" role="img" aria-label="Megvalósítottság 66 százalék">
+        <circle cx="75" cy="75" r="62" fill="none" stroke="var(--sunken)" stroke-width="13"></circle>
+        <circle cx="75" cy="75" r="62" fill="none" stroke="var(--accent)" stroke-width="13" stroke-linecap="round"
+                stroke-dasharray="258 390" transform="rotate(-90 75 75)"></circle>
+        <text class="big" x="75" y="76" text-anchor="middle">66%</text>
+        <text class="sub" x="75" y="93" text-anchor="middle">MEGVALÓSÍTVA</text>
+      </svg>
+      <div style="flex:1;min-width:18rem;">
+        <h3 style="font-size:1.05rem;margin-bottom:.4rem;">Hogyan jön ki a 66%?</h3>
+        <p style="font-size:.88rem;color:var(--ink-muted);margin-bottom:.6rem;">Nem becslés. A lenti 57 funkció státuszának súlyozott átlaga, ahol
+          🟢&nbsp;=&nbsp;1,0 · 🔵&nbsp;=&nbsp;0,75 · 🟡&nbsp;=&nbsp;0,5 · ⚫&nbsp;=&nbsp;0,25 · 🟠&nbsp;és&nbsp;🔴&nbsp;=&nbsp;0.</p>
+        <div class="mono" style="font-size:.78rem;color:var(--ink-muted);">
+          (31×1,0 + 1×0,75 + 10×0,5 + 4×0,25 + 9×0 + 2×0) ÷ 57 = <b style="color:var(--ink)">0,66</b>
+        </div>
+        <p style="font-size:.83rem;color:var(--ink-muted);margin-top:.6rem;">Ez a <em>megvalósítottság</em>. A <em>minőség</em> külön pontszám — lásd a
+          <a href="#quality">Minőség</a> szakaszt (6,9/10), és a <a href="#prod">Éles üzem</a> értékelést.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid g4" style="margin-bottom:1rem;">
+    <div class="stat s-ok"><b>31</b><span>🟢 Kész</span></div>
+    <div class="stat s-part"><b>10</b><span>🟡 Részleges</span></div>
+    <div class="stat s-unver"><b>1</b><span>🔵 Ellenőrizetlen</span></div>
+    <div class="stat s-plan"><b>9</b><span>🟠 Tervezett</span></div>
+    <div class="stat s-bad"><b>2</b><span>🔴 Törött</span></div>
+    <div class="stat s-dead"><b>4</b><span>⚫ Használatlan</span></div>
+  </div>
+
+  <div class="grid g4">
+    <div class="stat"><b>20</b><span>Oldal / route</span><small>16 fő + 4 alias</small></div>
+    <div class="stat"><b>107</b><span>API végpont</span><small>+ GraphQL, + /ws</small></div>
+    <div class="stat"><b>99</b><span>DB tábla</span><small>+17 partíció</small></div>
+    <div class="stat"><b>23</b><span>Migráció</span></div>
+    <div class="stat"><b>7</b><span>Job-típus</span><small>1 worker-processz</small></div>
+    <div class="stat"><b>8</b><span>Kiegészítő</span><small>saját fejlesztésű</small></div>
+    <div class="stat"><b>645</b><span>Teszteset</span><small>36 fájl · mind zöld</small></div>
+    <div class="stat"><b>17</b><span>Talált hiba</span><small>2 kritikus · 4 magas</small></div>
+  </div>
+
+  <h3 style="margin:1.6rem 0 .6rem;font-size:1.05rem;">Az egy mondat, amit tudni kell</h3>
+  <div class="note warn">
+    <b>A platform erős, a termék magja hiányzik.</b> Fiókok, katalógus (25&nbsp;672 anime), RBAC, moderáció,
+    monitoring, kiegészítő-áruház — mind működik és tesztelt. De <b>a Yume önmagában egyetlen videót sem tud lejátszani</b>:
+    a <code>video_sources</code>, <code>source_mirrors</code>, <code>subtitle_tracks</code>, <code>audio_tracks</code> táblákra
+    egyetlen sor kód sem hivatkozik, a torrent a böngészőben nem játszható, és minden stream vagy kézzel beírt URL-ből,
+    vagy egy olyan kiegészítőből jön, amit a néző a saját szerverére mutat. Egy anime-streaming oldal, aminek nincs forrása.
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="arch">
+  <div class="sec-head"><h2>Architektúra</h2><span class="n">02</span></div>
+  <p class="sec-note">Egy konténer szolgálja ki az API-t és a statikus klienst; a worker külön processz. A szaggatott dobozok
+    <b>nincsenek bekötve</b> — a compose ismeri őket, de a kód nem használja őket.</p>
+
+  <div class="diagram">
+  <svg viewBox="0 0 900 470" role="img" aria-label="Architektúra-diagram">
+    <!-- browser -->
+    <rect class="node-accent" x="20" y="20" width="180" height="58" rx="8"></rect>
+    <text class="node-t" x="34" y="44">Böngésző</text>
+    <text class="node-s" x="34" y="62">web/ — keretrendszer nélküli SPA</text>
+
+    <!-- caddy -->
+    <rect class="node-box" x="250" y="20" width="150" height="58" rx="8"></rect>
+    <text class="node-t" x="264" y="44">Caddy</text>
+    <text class="node-s" x="264" y="62">TLS · :80 :443</text>
+
+    <!-- app -->
+    <rect class="node-accent" x="450" y="20" width="200" height="58" rx="8"></rect>
+    <text class="node-t" x="464" y="44">Yume API (Fastify)</text>
+    <text class="node-s" x="464" y="62">REST · GraphQL · /ws · statikus</text>
+
+    <!-- external -->
+    <rect class="node-box" x="700" y="20" width="180" height="58" rx="8"></rect>
+    <text class="node-t" x="714" y="44">Külső API-k</text>
+    <text class="node-s" x="714" y="62">AniList · Jikan · ani.zip</text>
+
+    <!-- layers under api -->
+    <rect class="node-box" x="450" y="115" width="95" height="46" rx="6"></rect>
+    <text class="node-s" x="462" y="134">auth plugin</text>
+    <text class="node-s" x="462" y="148">JWT + RBAC</text>
+    <rect class="node-box" x="555" y="115" width="95" height="46" rx="6"></rect>
+    <text class="node-s" x="567" y="134">security</text>
+    <text class="node-s" x="567" y="148">CSP + limitek</text>
+
+    <!-- postgres -->
+    <rect class="node-accent" x="450" y="200" width="200" height="58" rx="8"></rect>
+    <text class="node-t" x="464" y="224">PostgreSQL 16</text>
+    <text class="node-s" x="464" y="242">99 tábla · pg_trgm · tsvector</text>
+
+    <!-- worker -->
+    <rect class="node-box" x="180" y="200" width="200" height="58" rx="8"></rect>
+    <text class="node-t" x="194" y="224">Worker</text>
+    <text class="node-s" x="194" y="242">7 job-típus · DB-sor</text>
+
+    <!-- package store -->
+    <rect class="node-box" x="700" y="200" width="180" height="58" rx="8"></rect>
+    <text class="node-t" x="714" y="224">Csomagtár</text>
+    <text class="node-s" x="714" y="242">fájlrendszer · sha256</text>
+
+    <!-- workers detail -->
+    <rect class="node-box" x="20" y="300" width="360" height="52" rx="6"></rect>
+    <text class="node-s" x="34" y="320">monitor · maintenance · stats · notify · import · ext-review · webhook</text>
+    <text class="node-s" x="34" y="338">saját job-sor Postgres-ben (nincs külső bróker)</text>
+
+    <!-- sandbox -->
+    <rect class="node-box" x="20" y="115" width="180" height="70" rx="8"></rect>
+    <text class="node-t" x="34" y="139">Kiegészítő-sandbox</text>
+    <text class="node-s" x="34" y="156">Web Worker · host-allowlist</text>
+    <text class="node-s" x="34" y="170">8 saját csomag</text>
+
+    <!-- backup -->
+    <rect class="node-box" x="700" y="300" width="180" height="52" rx="6"></rect>
+    <text class="node-t" x="714" y="322">Backup</text>
+    <text class="node-s" x="714" y="340">pg_dump + visszaállítás-ellenőrzés</text>
+
+    <!-- not wired -->
+    <rect class="node-dim" x="450" y="395" width="120" height="46" rx="6"></rect>
+    <text class="node-s" x="462" y="414">Redis</text>
+    <text class="node-s" x="462" y="429">profil: infra</text>
+    <rect class="node-dim" x="590" y="395" width="140" height="46" rx="6"></rect>
+    <text class="node-s" x="602" y="414">RabbitMQ / MinIO</text>
+    <text class="node-s" x="602" y="429">eltávolítva</text>
+    <rect class="node-dim" x="750" y="395" width="130" height="46" rx="6"></rect>
+    <text class="node-s" x="762" y="414">OpenSearch</text>
+    <text class="node-s" x="762" y="429">elvetve — Postgres</text>
+    <text class="node-s" x="20" y="425">Szaggatott = a kód nem használja. A probe-ok ismerik őket,</text>
+    <text class="node-s" x="20" y="440">és „not_configured" státuszt adnak vissza.</text>
+
+    <!-- edges -->
+    <path class="edge-accent" d="M200 49 H250"></path>
+    <path class="edge-accent" d="M400 49 H450"></path>
+    <path class="edge" d="M650 49 H700"></path>
+    <path class="edge-accent" d="M110 78 V115"></path>
+    <path class="edge" d="M200 150 C 330 150, 700 120, 790 78" stroke-dasharray="3 3"></path>
+    <path class="edge-accent" d="M550 78 V115"></path>
+    <path class="edge-accent" d="M550 161 V200"></path>
+    <path class="edge" d="M380 229 H450"></path>
+    <path class="edge" d="M650 229 H700"></path>
+    <path class="edge" d="M280 258 V300"></path>
+    <path class="edge" d="M790 258 V300"></path>
+  </svg>
+  </div>
+
+  <div class="grid g2" style="margin-top:1rem;">
+    <div class="panel">
+      <h3 style="font-size:1rem;margin-bottom:.5rem;">Technológiai döntések</h3>
+      <table><tbody>
+        <tr><td><b>Kliens</b></td><td>Keretrendszer nélküli HTML/CSS/JS SPA, hash-router, <code>U.el()</code> DOM-helper. <b>Nincs build.</b></td></tr>
+        <tr><td><b>API</b></td><td>Fastify 5 + TypeScript, Node 22 <code>--experimental-strip-types</code>. <b>Nincs build lépés.</b></td></tr>
+        <tr><td><b>Adatbázis</b></td><td>PostgreSQL 16, <code>pg</code> pool, saját migrációfuttató, havi particionált naplótáblák.</td></tr>
+        <tr><td><b>Sor</b></td><td>Saját job-sor Postgres-ben (<code>jobs</code> tábla, <code>FOR UPDATE SKIP LOCKED</code>).</td></tr>
+        <tr><td><b>Keresés</b></td><td>tsvector + pg_trgm. OpenSearch tudatosan elvetve (25k sor).</td></tr>
+        <tr><td><b>Függőségek</b></td><td>10 futásidejű npm csomag összesen. Kliens-oldalon egyetlen vendorolt fájl (hls.js).</td></tr>
+      </tbody></table>
+    </div>
+    <div class="panel">
+      <h3 style="font-size:1rem;margin-bottom:.5rem;">Kódméret</h3>
+      <table><tbody>
+        <tr><td>server/src</td><td class="num">11 233</td><td class="mono">sor TS</td></tr>
+        <tr><td>web/js</td><td class="num">11 991</td><td class="mono">sor JS</td></tr>
+        <tr><td>db/migrations</td><td class="num">23</td><td class="mono">fájl</td></tr>
+        <tr><td>tesztek</td><td class="num">36</td><td class="mono">fájl / 645 eset</td></tr>
+        <tr><td>docs</td><td class="num">3 364</td><td class="mono">sor MD</td></tr>
+        <tr><td>legnagyobb fájl</td><td class="num">1 648</td><td class="mono">pages/admin.js</td></tr>
+      </tbody></table>
+      <p style="font-size:.8rem;color:var(--ink-muted);margin-top:.6rem;"><b>0</b> darab <code>TODO</code> / <code>FIXME</code> / <code>HACK</code> megjegyzés az egész repóban — a kód prózai magyarázatokat használ helyettük.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="pages">
+  <div class="sec-head"><h2>Oldalak és route-ok</h2><span class="n">03</span></div>
+  <p class="sec-note">A router hash-alapú (<code>#/route/arg?params</code>), a lapok globális <code>Page*</code> objektumok
+    <code>render(root, params, arg)</code> metódussal. Minden lapfájl be van húzva az <code>index.html</code>-ben, egy sincs holtan.</p>
+
+  <div class="tree"><b>#/home</b>            Főoldal — folytatás, szezon, műfaj-sávok
+ ├─ <b>#/search</b>       Kereső + szűrők
+ ├─ <b>#/schedule</b>     Heti menetrend
+ ├─ <b>#/anime/:id</b>    Részletek (AniList-id VAGY Yume-UUID)
+ │   └─ <b>#/watch/:id</b>   Lejátszó (?ep=N, ?w2g=kód)
+ ├─ <b>#/list</b>         Könyvtár (5 státusz + kedvencek)
+ ├─ <b>#/dashboard</b>    Személyes irányítópult
+ ├─ <b>#/profile</b>      Profil <em>?tab=analytics | achievements | history</em>
+ ├─ <b>#/profiles</b>     Profilváltó (Netflix-stílus)
+ ├─ <b>#/notifications</b> Értesítések (<em>helyi</em>, nem szerveres)
+ ├─ <b>#/community</b>    Közösségi feed
+ ├─ <b>#/w2g</b>          Közös nézés — szoba, chat, szinkron
+ ├─ <b>#/extensions</b>   Kiegészítő-áruház
+ ├─ <b>#/developer</b>    Fejlesztői portál
+ ├─ <b>#/settings</b>     Beállítások <em>?tab=appearance → témák</em>
+ └─ <b>#/admin</b>        Admin — 11 szekció, 4 csoport, jogosultság szerint
+     ├─ Insight    Overview · Errors · Audit log
+     ├─ People     Users · Roles · Reports
+     ├─ Content    Catalogue · Translations
+     └─ System     Infrastructure · Webhooks · Site config</div>
+
+  <div class="chips" id="pageChips" role="group" aria-label="Szűrés státusz szerint"></div>
+  <div class="tablewrap"><table id="pageTable">
+    <thead><tr><th>Route</th><th>Oldal</th><th>Cél</th><th>Hozzáférés</th><th>Adatforrás</th><th>Állapot</th></tr></thead>
+    <tbody></tbody>
+  </table></div>
+  <p class="count" id="pageCount"></p>
+
+  <div class="grid g2" style="margin-top:1rem;">
+    <div class="panel">
+      <h3 style="font-size:1rem;margin-bottom:.5rem;">Közös lap-viselkedés</h3>
+      <ul class="tight" style="font-size:.87rem;color:var(--ink-muted);">
+        <li><b>Töltés:</b> <code>.spinner</code> vagy <code>C.skeletonCard()</code> rács — minden lap valamelyiket használja.</li>
+        <li><b>Üres állapot:</b> <code>.empty-state</code> egységes osztály.</li>
+        <li><b>Hiba:</b> <code>.error-state</code> vagy <code>.callout</code> — <b>nem</b> egységes: a lapok fele csendben elnyeli a hibát (<code>catch → []</code>).</li>
+        <li><b>Mobil:</b> 18 media query; alsó ikonsáv + „több" lap, a sidebar 900px alatt eltűnik.</li>
+        <li><b>Modálok:</b> <code>C.trapModal()</code> fókuszcsapdával, <code>role="dialog"</code>, Esc-zárás.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3 style="font-size:1rem;margin-bottom:.5rem;">Hozzáférés</h3>
+      <ul class="tight" style="font-size:.87rem;color:var(--ink-muted);">
+        <li>A kliens <b>egyetlen lapot sem zár le</b> — az <code>#/admin</code> is megnyílik, csak üres jogosultsághalmaznál magyarázó szöveget mutat.</li>
+        <li>A tényleges védelem <b>szerveroldali</b>: minden admin-végpont <code>requirePermission()</code> mögött van (integrációs teszt bizonyítja).</li>
+        <li>Ez helyes felépítés, de azt jelenti, hogy a menü tartalma nem titok — a szekciók listája a kliens forrásában olvasható.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="features">
+  <div class="sec-head"><h2>Funkció-leltár</h2><span class="n">04</span><span class="count" id="featCount"></span></div>
+  <p class="sec-note">57 funkció, forráskódból ellenőrizve. Kattints egy sorra a részletekért: fájlok, adatbázis, hibamód, hiányzó darabok.
+    <b>Semmi nem „kész" attól, hogy létezik a fájl.</b></p>
+  <div class="chips" id="featChips" role="group" aria-label="Szűrés"></div>
+  <div id="featList"></div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="api">
+  <div class="sec-head"><h2>API</h2><span class="n">05</span><span class="count" id="apiCount"></span></div>
+  <p class="sec-note">107 REST végpont 17 modulban, plusz egy GraphQL endpoint és egy WebSocket. Hitelesítés: Bearer JWT.
+    Hibaformátum: RFC-9457 <code>application/problem+json</code> mindenütt, egy központi hibakezelőből.</p>
+  <div class="chips" id="apiChips" role="group" aria-label="Szűrés prefix szerint"></div>
+  <div class="tablewrap"><table id="apiTable">
+    <thead><tr><th>Metódus</th><th>Útvonal</th><th>Cél</th><th>Auth / jog</th><th>Kliens</th><th>Áll.</th></tr></thead>
+    <tbody></tbody>
+  </table></div>
+
+  <div class="grid g2" style="margin-top:1rem;">
+    <div class="panel">
+      <h3 style="font-size:1rem;margin-bottom:.5rem;">Rate limit rétegek</h3>
+      <table><tbody>
+        <tr><td class="mono">globális</td><td class="num">300</td><td>/ perc</td></tr>
+        <tr><td class="mono">AUTH_LIMIT</td><td class="num">10</td><td>/ 15 perc — jelszóvégpontok</td></tr>
+        <tr><td class="mono">REFRESH_LIMIT</td><td class="num">60</td><td>/ 15 perc</td></tr>
+        <tr><td class="mono">WRITE_LIMIT</td><td class="num">30</td><td>/ 5 perc — írások</td></tr>
+      </tbody></table>
+      <p style="font-size:.8rem;color:var(--ink-muted);margin-top:.5rem;">Memóriában tárolt számlálók: egy második példány indításakor a limit példányonként külön ketyeg.</p>
+    </div>
+    <div class="panel">
+      <h3 style="font-size:1rem;margin-bottom:.5rem;">GraphQL — teljes, de senki nem hívja</h3>
+      <p style="font-size:.87rem;color:var(--ink-muted);">599 sor séma, 5 query, 4 mutation, DataLoader-ekkel, mélységkorláttal, letiltott introspectionnel éles módban.
+        <b>A webkliens egyetlen hívást sem intéz hozzá</b> — mindent a REST-en keresztül csinál. Ez nem hiba, csak egy karbantartott, nem használt felület:
+        vagy külső fogyasztó kap rá, vagy a kliens átáll rá, de amíg egyik sem történik, két API-t kell szinkronban tartani.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="db">
+  <div class="sec-head"><h2>Adatbázis</h2><span class="n">06</span></div>
+  <p class="sec-note">99 alap tábla + 17 havi partíció, 23 migrációban. A migrációfuttató idempotens (a CI külön lépésben bizonyítja),
+    és <code>pg_advisory_lock</code>-kal sorosít, hogy két egyszerre induló példány ne fusson egymásra.</p>
+
+  <div class="grid g4" style="margin-bottom:1rem;">
+    <div class="stat"><b>99</b><span>alap tábla</span></div>
+    <div class="stat s-ok"><b>71</b><span>használatban</span><small>kód hivatkozik rá</small></div>
+    <div class="stat s-dead"><b>28</b><span>halott</span><small>0 kódhivatkozás</small></div>
+    <div class="stat"><b>295</b><span>jogosultság-sor</span><small>18 érvényesítve</small></div>
+  </div>
+
+  <h3 style="margin:1.4rem 0 .5rem;font-size:1.05rem;">A fő kapcsolatok</h3>
+  <div class="tree">users ──┬─ user_roles ── roles ── role_permissions ── permissions
+        ├─ sessions ── ws_tickets          (JWT rotáció + revokálás)
+        ├─ user_settings                   (nyelv, lejátszás, onboarding)
+        ├─ security_logs / audit_logs      (particionált)
+        └─ user_profiles ──┬─ library_entries ── anime
+                           ├─ watch_progress ── episodes
+                           ├─ watch_history*  ── xp_events ── profile_stats
+                           └─ search_stats
+
+anime ──┬─ anime_titles / anime_synonyms / anime_translations
+        ├─ anime_images / anime_tags / anime_genres / anime_mappings
+        ├─ anime_relations (gráf) / anime_companies ── companies
+        └─ episodes ──┬─ episode_translations
+                      ├─ watch_progress / watch_history
+                      └─ <em>video_sources ── source_mirrors</em>   ← 0 kódhivatkozás
+                         <em>subtitle_tracks / audio_tracks</em>     ← 0 kódhivatkozás
+
+extensions ──┬─ extension_versions ── extension_permissions
+             ├─ extension_installs (user × extension, options JSONB)
+             └─ extension_events (particionált) ── egészség-számítás</div>
+
+  <div class="chips" id="dbChips" role="group" aria-label="Szűrés"></div>
+  <div class="tablewrap"><table id="dbTable">
+    <thead><tr><th>Tábla</th><th>Cél</th><th>Ki használja</th><th>Áll.</th></tr></thead>
+    <tbody></tbody>
+  </table></div>
+  <p class="count" id="dbCount"></p>
+
+  <div class="note warn" style="margin-top:1rem;">
+    <b>A 28 halott tábla nem elírás.</b> Ezek megtervezett, létrehozott, indexelt táblák, amikhez soha nem íródott kód:
+    <code>achievements</code>, <code>badges</code>, <code>user_badges</code>, <code>profile_achievements</code>, <code>favorites</code>,
+    <code>bookmarks</code>, <code>custom_lists</code>, <code>custom_list_items</code>, <code>collection_lists</code>,
+    <code>clubs</code>, <code>club_members</code>, <code>forums</code>, <code>friendships</code>, <code>chats</code>,
+    <code>review_votes</code>, <code>list_likes</code>, <code>api_keys</code>, <code>oauth_identities</code>, <code>anime_characters</code>,
+    <code>anime_staff</code>, <code>anime_recommendations</code>, <code>character_voices</code>, <code>skip_segments</code>,
+    <code>video_sources</code>, <code>source_mirrors</code>, <code>subtitle_tracks</code>, <code>audio_tracks</code>, <code>extension_reviews</code>.
+    Nem ártanak, de minden migráció, minden mentés és minden séma-olvasás fizet értük — és azt sugallják, hogy a funkció létezik.
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="auth">
+  <div class="sec-head"><h2>Hitelesítés és biztonság</h2><span class="n">07</span></div>
+  <p class="sec-note">Ez a repó legerősebb része. Van egy külön <b>adverzariális teszt-suite</b> (53 eset), ami a valódi auditban
+    talált hibákat rögzíti — így egy visszavont javítás nemcsak elbukik, hanem megmondja, mit engedett meg korábban.</p>
+
+  <div class="tablewrap"><table>
+    <thead><tr><th>Terület</th><th>Megvalósítás</th><th>Bizonyíték</th><th>Áll.</th></tr></thead>
+    <tbody>
+      <tr><td>Jelszó</td><td>scrypt N=2¹⁷, r=8, p=1, 16 bájt só, <code>timingSafeEqual</code>. Önleíró formátum, hogy a paraméterek emelhetők legyenek.</td><td class="mono">lib/password.ts</td><td><span class="pill p-ok">🟢 KÉSZ</span></td></tr>
+      <tr><td>Access token</td><td>JWT 15 perc, <code>tv</code> (token-verzió) + <code>sid</code> (session) a payloadban.</td><td class="mono">plugins/auth.ts</td><td><span class="pill p-ok">🟢 KÉSZ</span></td></tr>
+      <tr><td>Refresh</td><td>Forgó refresh token 30 nap, sessions táblában; kijelentkezés egy eszközön csak azt az egy sort öli meg.</td><td class="mono">routes/auth.ts</td><td><span class="pill p-ok">🟢 KÉSZ</span></td></tr>
+      <tr><td>Tömeges revokálás</td><td><code>token_version</code> emelése bannál / jelszóváltásnál — nincs feketelista, amit kezelni kellene.</td><td class="mono">0018_token_revocation</td><td><span class="pill p-ok">🟢 KÉSZ</span></td></tr>
+      <tr><td>RBAC</td><td><code>requirePermission(slug)</code> preHandler, users→user_roles→role_permissions join, 30 s-es memóriacache.</td><td class="mono">plugins/auth.ts</td><td><span class="pill p-ok">🟢 KÉSZ</span></td></tr>
+      <tr><td>Első admin</td><td>A regisztráció adminná teszi az első fiókot, ha egy sincs; migráció 0021 ugyanezt teszi meglévő adatbázison. Nincs szállított jelszó.</td><td class="mono">0021 + routes/auth.ts</td><td><span class="pill p-ok">🟢 KÉSZ</span></td></tr>
+      <tr><td>CSP</td><td>Szigorú <code>script-src 'self' blob:</code>, <code>frame-ancestors 'none'</code>, <code>object-src 'none'</code>. A blob: a sandbox miatt kell, és nincs távoli origin engedve.</td><td class="mono">plugins/security.ts</td><td><span class="pill p-ok">🟢 KÉSZ</span></td></tr>
+      <tr><td>SSRF-védelem</td><td>Külön modul: privát tartományok, IPv6-mapped címek, DNS-rebind, átirányítás-lánc. 16 teszt.</td><td class="mono">lib/ssrf.ts</td><td><span class="pill p-ok">🟢 KÉSZ</span></td></tr>
+      <tr><td>Hibaszivárgás</td><td>5xx-nél csak request-id megy ki; a nyers kivételszöveg naplóba és <code>error_logs</code>-ba kerül.</td><td class="mono">app.ts setErrorHandler</td><td><span class="pill p-ok">🟢 KÉSZ</span></td></tr>
+      <tr><td>WebSocket auth</td><td>Egyszer használatos ticket + <b>ismételt ellenőrzés élő socketen</b> (a token lejárhat, a fiók bannolható).</td><td class="mono">lib/ws.ts</td><td><span class="pill p-ok">🟢 KÉSZ</span></td></tr>
+      <tr><td>CSRF</td><td>Nincs CSRF-token — és nem is kell: a hitelesítés Bearer fejlécen megy, nem sütin, tehát nincs ambient authority.</td><td class="mono">yume-api.js</td><td><span class="pill p-ok">🟢 KÉSZ</span></td></tr>
+      <tr><td>Titkok</td><td>Nincs commitolt <code>.env</code>. A <code>JWT_SECRET</code> éles módban elutasítja a placeholdert és a 32 karakternél rövidebbet. A DB-jelszónak nincs alapértéke a compose-ban.</td><td class="mono">config.ts, .gitignore</td><td><span class="pill p-ok">🟢 KÉSZ</span></td></tr>
+      <tr><td>Jogosultság-katalógus</td><td>295 jogosultság-sor van a migrációkban, de a kód <b>18-at</b> érvényesít. A többi UI-ban kapcsolgatható és semmit nem véd.</td><td class="mono">0012 vs requirePermission</td><td><span class="pill p-part">🟡 RÉSZLEGES</span></td></tr>
+      <tr><td>MFA</td><td><code>users.mfa_secret</code> oszlop létezik, TOTP-kód sehol. Egy oszlop nem funkció.</td><td class="mono">0001_users_auth.sql</td><td><span class="pill p-plan">🟠 TERVEZETT</span></td></tr>
+      <tr><td>OAuth</td><td><code>oauth_identities</code> tábla létezik, kód nulla. A <code>password_hash</code> nullázhatósága ezt anticipálja.</td><td class="mono">0001_users_auth.sql</td><td><span class="pill p-plan">🟠 TERVEZETT</span></td></tr>
+      <tr><td>Rate limit megosztás</td><td>Példányonkénti memória. Egy második app-példány duplázza az effektív limitet.</td><td class="mono">plugins/security.ts</td><td><span class="pill p-part">🟡 RÉSZLEGES</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="note" style="margin-top:1rem;">
+    <b>Titokkezelés — amit ez a jelentés szándékosan nem mutat.</b> A repóban van <code>.env.example</code> két változónévvel
+    (<code>JWT_SECRET</code>, <code>POSTGRES_PASSWORD</code>) és egy <code>server/.env.example</code> hattal. Ezek <b>csak nevek</b>,
+    értékek nélkül, és ez a dokumentum sem tartalmaz értéket, kapcsolati sztringet, tokent vagy kulcsot. Éles titok a repóban nincs.
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="services">
+  <div class="sec-head"><h2>Külső szolgáltatások</h2><span class="n">08</span></div>
+  <p class="sec-note">A <code>lib/probes.ts</code> hat szolgáltatást ismer; abból kettő kötelező, egy opcionális-de-fontos,
+    három pedig <b>soha nincs konfigurálva</b> és „not_configured" státusszal kimarad a jelentésből.</p>
+
+  <div class="tablewrap"><table>
+    <thead><tr><th>Szolgáltatás</th><th>Miért</th><th>Mi múlik rajta</th><th>Ha kiesik</th><th>Áll.</th></tr></thead>
+    <tbody>
+      <tr><td><b>PostgreSQL 16</b></td><td>Minden állandó adat</td><td>Fiókok, katalógus, könyvtár, közösség, jobok, monitoring</td><td>Az egész platform leáll. A kliens localStorage-ból még böngészhető.</td><td><span class="pill p-ok">🟢 KÖTELEZŐ</span></td></tr>
+      <tr><td><b>AniList GraphQL</b></td><td>Metaadat-tartalék + gazdagítás</td><td>Katalógus-import, részletlap tartalék</td><td>A katalógus továbbra is válaszol (az a forrás igazsága). Csak a nem importált címek esnek ki.</td><td><span class="pill p-ok">🟢 TARTALÉK</span></td></tr>
+      <tr><td><b>Jikan (MAL)</b></td><td>Epizódlisták MAL-id alapján</td><td>Kliens-oldali epizód-tartalék</td><td>A saját epizódtáblából jön az adat.</td><td><span class="pill p-ok">🟢 TARTALÉK</span></td></tr>
+      <tr><td><b>ani.zip</b></td><td>Epizódképek, címek, id-térkép</td><td>Epizódlista díszítése</td><td>Kép nélküli epizódsorok.</td><td><span class="pill p-ok">🟢 TARTALÉK</span></td></tr>
+      <tr><td><b>AniSkip</b></td><td>Intro/outro időbélyegek</td><td>Skip gomb</td><td>Nincs skip gomb. Beépített + kiegészítő is van rá.</td><td><span class="pill p-ok">🟢 OPCIONÁLIS</span></td></tr>
+      <tr><td><b>Worker processz</b></td><td>Partíciók, retenció, statisztika, webhookok, metrikák</td><td>Partíció-létrehozás — enélkül az inzertek <b>hibázni fognak</b>, ha elfogynak a partíciók</td><td>Lassan romlik, majd írás-hibák. A readiness sárgára vált 3 ciklus után.</td><td><span class="pill p-ok">🟢 KÖTELEZŐ ÉLESBEN</span></td></tr>
+      <tr><td><b>Caddy</b></td><td>TLS-terminálás, Let's Encrypt</td><td>HTTPS</td><td>Nincs bejövő forgalom (az app portja nincs publikálva).</td><td><span class="pill p-ok">🟢 KÉSZ</span></td></tr>
+      <tr><td>Redis</td><td>Tervezett: megosztott WS-hub + jogosultság-cache</td><td>Semmi ma</td><td>Semmi. <code>infra</code> profil mögött, alapból nem indul.</td><td><span class="pill p-plan">🟠 NEM BEKÖTÖTT</span></td></tr>
+      <tr><td>RabbitMQ · MinIO · OpenSearch</td><td>Korábbi tervek</td><td>Semmi</td><td>Semmi — eltávolítva a compose-ból. A probe-ok még ismerik őket.</td><td><span class="pill p-dead">⚫ ELVETVE</span></td></tr>
+      <tr><td>Discord</td><td>Webhook-formátum (embed)</td><td>Kimenő értesítések</td><td>A kézbesítés újrapróbál, majd feladja.</td><td><span class="pill p-part">🟡 CSAK WEBHOOK</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="note warn" style="margin-top:1rem;">
+    <b>Dokumentáció vs. valóság:</b> a <code>docs/discord-bot.md</code> 499 sorban ír le egy Discord-botot.
+    <b>Egyetlen sor bot-kód sincs a repóban.</b> Ami van: kimenő webhookok Discord-embed formázással. Ez 🟠 TERVEZETT, nem kész.
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="docker">
+  <div class="sec-head"><h2>Docker &amp; infrastruktúra</h2><span class="n">09</span></div>
+  <p class="sec-note">Egy Dockerfile, egyetlen fázis, nincs build lépés (Node 22 futtatja a TS-t közvetlenül).
+    Hét szolgáltatás a compose-ban, ebből három egyszeri („profile") feladat.</p>
+
+  <div class="tablewrap"><table>
+    <thead><tr><th>Szolgáltatás</th><th>Indul alapból</th><th>Port</th><th>Healthcheck</th><th>Kötet</th><th>Feladat</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">app</td><td>igen</td><td class="mono">expose 4000</td><td>fetch /v1/health · 30 s</td><td class="mono">packages</td><td>API + statikus kliens; boot: migrate → kiegészítők publikálása → start</td></tr>
+      <tr><td class="mono">worker</td><td>igen</td><td>—</td><td>SELECT 1 · 60 s</td><td class="mono">/:/host:ro</td><td>7 job-típus + VPS-metrika</td></tr>
+      <tr><td class="mono">postgres</td><td>igen</td><td class="mono">expose 5432</td><td>pg_isready · 5 s</td><td class="mono">pgdata</td><td>UTF8 + C.UTF-8 rögzítve initdb-ben</td></tr>
+      <tr><td class="mono">caddy</td><td>igen</td><td class="mono">80 · 443 · 443/udp</td><td>wget /v1/health · 30 s</td><td class="mono">caddydata</td><td>TLS, automatikus tanúsítvány</td></tr>
+      <tr><td class="mono">backup</td><td>igen</td><td>—</td><td>—</td><td class="mono">backups</td><td>napi pg_dump + <b>visszaállítás-ellenőrzés</b></td></tr>
+      <tr><td class="mono">seed</td><td>nem — <code>--profile seed</code></td><td>—</td><td>—</td><td>—</td><td>25 672 anime + 388 611 epizód</td></tr>
+      <tr><td class="mono">enrich</td><td>nem — <code>--profile enrich</code></td><td>—</td><td>—</td><td>—</td><td>AniList-gazdagítás</td></tr>
+      <tr><td class="mono">extensions</td><td>nem — <code>--profile extensions</code></td><td>—</td><td>—</td><td class="mono">packages</td><td>kiegészítők boltba publikálása</td></tr>
+      <tr><td class="mono">redis</td><td>nem — <code>--profile infra</code></td><td class="mono">6379</td><td>—</td><td class="mono">redisdata</td><td>nincs bekötve</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="grid g2" style="margin-top:1rem;">
+    <div class="panel">
+      <h3 style="font-size:1rem;margin-bottom:.5rem;">Amit jól csinál</h3>
+      <ul class="tight" style="font-size:.87rem;color:var(--ink-muted);">
+        <li>Az app port <b>nincs publikálva</b> — csak Caddyn át érhető el.</li>
+        <li>A Postgres port sincs publikálva.</li>
+        <li><code>TRUST_PROXY</code> egy CIDR-re szűkítve, sosem <code>true</code> — különben a rate limit megkerülhető lenne.</li>
+        <li>Nem-root felhasználó (<code>USER node</code>), a csomagkönyvtár tulajdonosa is ő.</li>
+        <li>Memórialimitek: app 768M, worker 512M.</li>
+        <li>A backup <b>visszatölti</b> a friss dumpot egy scratch adatbázisba — egy sosem visszaállított mentés nem mentés.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3 style="font-size:1rem;margin-bottom:.5rem;">Ami hiányzik</h3>
+      <ul class="tight" style="font-size:.87rem;color:var(--ink-muted);">
+        <li><b>Egy példány.</b> Nincs vízszintes skálázás; a WS-hub, a jogosultság-cache és a rate limit mind memóriában van.</li>
+        <li>Nincs deploy-pipeline — a CI épít és tesztel, de nem telepít.</li>
+        <li>Nincs staging környezet.</li>
+        <li>A backup a <b>ugyanazon a lemezen</b> él, hacsak nincs <code>BACKUP_SYNC_CMD</code> beállítva (a compose figyelmeztet erre).</li>
+        <li>Nincs image-verziózás/tag — <code>build: .</code> mindenhol.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="flows">
+  <div class="sec-head"><h2>Adatfolyamok</h2><span class="n">10</span></div>
+  <p class="sec-note">A hét legfontosabb út végig, a valódi fájlokkal. Ahol az út <b>megszakad</b> vagy elágazik a szerver és a
+    böngésző tárolója közé, ott ez ki van írva.</p>
+
+  <div class="grid g2">
+    <div class="panel">
+      <h3 style="font-size:1rem;">Regisztráció</h3>
+      <div class="flow"><span>C.authCard</span><i>→</i><span>YumeAPI.register</span><i>→</i><span>POST /v1/auth/register</span><i>→</i><span>scrypt</span><i>→</i><span>users</span><i>→</i><span>advisory lock: első admin?</span><i>→</i><span>security_logs</span><i>→</i><span>tokenek</span><i>→</i><span>localStorage yume-auth</span></div>
+      <p style="font-size:.83rem;color:var(--ink-muted);margin-top:.5rem;">Az első fiók adminná válik, ha egyetlen admin sincs. Ez tranzakcióban, advisory lock alatt fut, hogy két egyszerre érkező regisztráció ne csináljon két admint.</p>
+    </div>
+    <div class="panel">
+      <h3 style="font-size:1rem;">Anime-keresés</h3>
+      <div class="flow"><span>#/search</span><i>→</i><span>Catalogue.searchOrAniList</span><i>→</i><span>GET /v1/anime/search</span><i>→</i><span>lib/search.ts</span><i>→</i><span>tsvector 40p / trigram 20p</span><i>→</i><span>search_stats</span></div>
+      <p style="font-size:.83rem;color:var(--ink-muted);margin-top:.5rem;">Ha az API nem elérhető: <b>tartalék</b> egyenesen az AniList GraphQL-re a böngészőből. A találat AniList Media-alakra van képezve, hogy az UI ne tudja, melyik forrás válaszolt.</p>
+    </div>
+    <div class="panel">
+      <h3 style="font-size:1rem;">Epizód megnézése</h3>
+      <div class="flow"><span>#/watch/:id?ep=N</span><i>→</i><span>Catalogue.episodes</span><i>→</i><span>StreamEngine.candidates</span><i>→</i><span>ExtensionHost.collect(http|torrent|nzb)</span><i>→</i><span>rangsor</span><i>→</i><span>&lt;video&gt;</span><i>→</i><span>WatchTime.attach</span></div>
+      <p style="font-size:.83rem;color:var(--ink-muted);margin-top:.5rem;"><b>Itt szakad meg a lánc:</b> ha nincs telepítve forrás-kiegészítő, a jelöltlista üres, és marad a kézzel beillesztett URL. Torrent-találat esetén a motor őszintén megmondja: „torrent sources need the desktop client".</p>
+    </div>
+    <div class="panel">
+      <h3 style="font-size:1rem;">Nézési idő jóváírása</h3>
+      <div class="flow"><span>WatchTime 1 s-es tick</span><i>→</i><span>csak ha tényleg megy (paused/seeking/readyState)</span><i>→</i><span>≥80% mért idő</span><i>→</i><span>Store.setProgress</span><i>→</i><span>LibrarySync</span><i>→</i><span>PATCH /v1/me/progress/:id</span><i>→</i><span>watch_progress</span></div>
+      <p style="font-size:.83rem;color:var(--ink-muted);margin-top:.5rem;">A szerver a befejezettséget maga számolja: <code>positionSec / durationSec ≥ 0,85</code>. A kliens viszont <b>csak <code>positionSec</code>-et küld</b>, <code>durationSec</code>-et soha — így a feltétel sosem igaz, és a <code>watch_history</code> meg az <code>xp_events</code> üresen marad. Két külön befejezettség-szabály él egymás mellett. Lásd a hibalistát.</p>
+    </div>
+    <div class="panel">
+      <h3 style="font-size:1rem;">Beállítás mentése</h3>
+      <div class="flow"><span>#/settings</span><i>→</i><span>Prefs.set</span><i>→</i><span>localStorage (profilonként)</span><i>→</i><span>PATCH /v1/me/settings</span><i>→</i><span>lib/preferences.ts coerce</span><i>→</i><span>user_settings</span></div>
+      <p style="font-size:.83rem;color:var(--ink-muted);margin-top:.5rem;">Kétirányú: bejelentkezéskor a szerver adja vissza, és az <code>onboarding.done</code> zászlót is. A kliens akkor is működik, ha a push elbukik.</p>
+    </div>
+    <div class="panel">
+      <h3 style="font-size:1rem;">Kiegészítő telepítése</h3>
+      <div class="flow"><span>#/extensions</span><i>→</i><span>POST /:slug/install</span><i>→</i><span>alapértékek a manifestből</span><i>→</i><span>extension_installs</span><i>→</i><span>GET /installed</span><i>→</i><span>GET .../package</span><i>→</i><span>sha256 ellenőrzés</span><i>→</i><span>Web Worker</span></div>
+      <p style="font-size:.83rem;color:var(--ink-muted);margin-top:.5rem;">A böngésző ellenőrzi a letöltött bájtok hash-ét a bolt által rögzített értékkel — a futó kód pontosan az, amit átnéztek.</p>
+    </div>
+    <div class="panel">
+      <h3 style="font-size:1rem;">Közös nézés</h3>
+      <div class="flow"><span>POST /v1/w2g</span><i>→</i><span>kód</span><i>→</i><span>ws-ticket</span><i>→</i><span>/ws join w2g:kód</span><i>→</i><span>csak a host vezérel</span><i>→</i><span>publish → minden feliratkozó</span></div>
+      <p style="font-size:.83rem;color:var(--ink-muted);margin-top:.5rem;">A <code>pubsub</code> réteg Postgres LISTEN/NOTIFY-t használ a példányok között — ma egy példány van, de a felépítés kész a másodikra.</p>
+    </div>
+    <div class="panel">
+      <h3 style="font-size:1rem;">Katalógus-import</h3>
+      <div class="flow"><span>seed script</span><i>→</i><span>anime-offline-database</span><i>→</i><span>importer worker</span><i>→</i><span>anime + titles + synonyms + mappings</span><i>→</i><span>epizódgenerálás</span><i>→</i><span>filler-jelölés</span><i>→</i><span>trending újraszámolás</span></div>
+      <p style="font-size:.83rem;color:var(--ink-muted);margin-top:.5rem;">Az importált sorok <b>nem publikáltak</b>, amíg valaki ki nem publikálja őket (<code>0020_editorial_publishing</code>), és a kézzel szerkesztett mezőket a <code>locked_fields</code> védi a felülírástól.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="analytics">
+  <div class="sec-head"><h2>Analitika és tevékenység</h2><span class="n">11</span></div>
+  <p class="sec-note">Két külön világ: amit a <b>szerver</b> mér, és amit a <b>böngésző</b> mér. A felhasználónak mutatott
+    statisztikák szinte mind a böngészőből jönnek — ez a jelentés egyik legfontosabb megállapítása.</p>
+
+  <div class="tablewrap"><table>
+    <thead><tr><th>Mit mérünk</th><th>Hol tárolódik</th><th>Ki írja</th><th>Retenció</th><th>Áll.</th></tr></thead>
+    <tbody>
+      <tr><td>Bejelentkezés, hibás jelszó, kijelentkezés, jelszóváltás</td><td class="mono">security_logs</td><td>routes/auth.ts</td><td>végtelen</td><td><span class="pill p-ok">🟢</span></td></tr>
+      <tr><td>Admin-műveletek (ki mit változtatott)</td><td class="mono">audit_logs</td><td>lib/audit.ts</td><td>végtelen (particionált)</td><td><span class="pill p-ok">🟢</span></td></tr>
+      <tr><td>Szerverhibák, csoportosítva ujjlenyomat szerint</td><td class="mono">error_groups + error_logs</td><td>lib/errors.ts</td><td>1 hónap</td><td><span class="pill p-ok">🟢</span></td></tr>
+      <tr><td>Keresések (szöveg, találatszám, profil)</td><td class="mono">search_stats</td><td>lib/search.ts</td><td>3 hónap</td><td><span class="pill p-ok">🟢</span></td></tr>
+      <tr><td>API-válaszidő</td><td class="mono">performance_metrics</td><td>app.ts hook</td><td>3 hónap</td><td><span class="pill p-ok">🟢</span></td></tr>
+      <tr><td>VPS: CPU, memória, lemez, terhelés</td><td class="mono">system_metrics + _hourly</td><td>workers/monitor.ts</td><td>1 hónap nyers</td><td><span class="pill p-ok">🟢</span></td></tr>
+      <tr><td>Kiegészítő-hibák (névtelen)</td><td class="mono">extension_events</td><td>kliens → POST /events</td><td>3 hónap</td><td><span class="pill p-ok">🟢</span></td></tr>
+      <tr><td>Napi nézési összesítő</td><td class="mono">watch_stats_daily</td><td>workers/stats.ts</td><td>végtelen</td><td><span class="pill p-part">🟡 forrása üres</span></td></tr>
+      <tr><td>Epizód-előzmény, XP</td><td class="mono">watch_history, xp_events</td><td>routes/library.ts — csak ha <code>positionSec/durationSec ≥ 0,85</code></td><td>végtelen</td><td><span class="pill p-bad">🔴 sosem íródik</span></td></tr>
+      <tr><td><b>Oldalletöltés</b></td><td class="mono">page_views</td><td><b>senki</b> — a tábla létezik, a retenció is takarítja, de nulla írás</td><td>3 hónap</td><td><span class="pill p-dead">⚫</span></td></tr>
+      <tr><td>Nézési előzmény (amit a felhasználó lát)</td><td class="mono">localStorage: history::profil</td><td>pages/watch.js</td><td>böngésző élettartama</td><td><span class="pill p-part">🟡 csak helyi</span></td></tr>
+      <tr><td>Statisztika, achievementek, „perc megnézve"</td><td class="mono">localStorage</td><td>WatchTime + Store</td><td>böngésző élettartama</td><td><span class="pill p-part">🟡 csak helyi</span></td></tr>
+      <tr><td>Értesítések</td><td class="mono">localStorage: notif-state</td><td>Store.syncNotifications (a könyvtárból származtatva)</td><td>böngésző élettartama</td><td><span class="pill p-part">🟡 csak helyi</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="grid g2" style="margin-top:1rem;">
+    <div class="panel">
+      <h3 style="font-size:1rem;margin-bottom:.5rem;">Adatvédelmi következmények</h3>
+      <ul class="tight" style="font-size:.87rem;color:var(--ink-muted);">
+        <li>A <code>search_stats</code> tárolja a <b>keresési szöveget profil-azonosítóval</b> — ez a legérzékenyebb tábla a rendszerben.</li>
+        <li>A <code>security_logs</code> IP-t és user-agentet tárol, <b>végtelen ideig</b>. Nincs rá retenciós szabály.</li>
+        <li>A kiegészítő-telemetria szándékosan névtelen: nincs benne user-id, csak hibaosztály.</li>
+        <li>A <code>DELETE /v1/me/settings</code> létezik, de <b>nincs teljes fióktörlés</b> — a <code>users.deleted_at</code> oszlop megvan, a végpont nincs.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3 style="font-size:1rem;margin-bottom:.5rem;">Ami hiányzik a mérésből</h3>
+      <ul class="tight" style="font-size:.87rem;color:var(--ink-muted);">
+        <li>Nincs funnel: hányan nyitnak meg egy címet és hányan indítanak epizódot.</li>
+        <li>Nincs forrás-siker mérés: melyik kiegészítő milyen arányban ad lejátszható streamet.</li>
+        <li>Nincs kliensoldali hibajelentés (a szerver hibái mennek be, a böngészőé nem).</li>
+        <li>Nincs megtartás-mutató (D1/D7), pedig a <code>watch_history</code> pont ehhez kellene.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="health">
+  <div class="sec-head"><h2>Egészség és monitoring</h2><span class="n">12</span></div>
+  <p class="sec-note">Két szint, tudatosan szétválasztva: a nyilvános végpont semmit nem árul el a hostról, a részletes
+    kép jogosultság mögött van. Egyik végpont sem <b>gyűjt</b> — a worker gyűjt, ezek az utolsó pillanatképet olvassák.</p>
+
+  <div class="tablewrap"><table>
+    <thead><tr><th>Végpont</th><th>Mit ad</th><th>Auth</th><th>Cache</th><th>Áll.</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">GET /v1/health</td><td><code>{status:"ok"}</code> — nulla függőség, ez az, amit a Docker pollozik</td><td>nyilvános</td><td>—</td><td><span class="pill p-ok">🟢</span></td></tr>
+      <tr><td class="mono">GET /v1/health/ready</td><td>Szolgáltatásnevek + szín. UNHEALTHY esetén <b>503</b>, DEGRADED-nél 200.</td><td>nyilvános</td><td>5 s</td><td><span class="pill p-ok">🟢</span></td></tr>
+      <tr><td class="mono">GET /v1/admin/monitoring/current</td><td>CPU, memória, lemez, terhelés, függőség-térkép, küszöbök</td><td class="mono">system.metrics.view</td><td>—</td><td><span class="pill p-ok">🟢</span></td></tr>
+      <tr><td class="mono">GET .../history</td><td>Órás aggregátumok</td><td class="mono">system.metrics.view</td><td>—</td><td><span class="pill p-ok">🟢</span></td></tr>
+      <tr><td class="mono">GET .../alerts</td><td>Aktív + előzmény riasztások küszöb-átlépésből</td><td class="mono">system.metrics.view</td><td>—</td><td><span class="pill p-ok">🟢</span></td></tr>
+      <tr><td class="mono">POST .../diagnostics</td><td>Diagnosztikai futtatás sorba téve</td><td class="mono">system.diagnostics.run</td><td>—</td><td><span class="pill p-ok">🟢</span></td></tr>
+      <tr><td class="mono">GET .../queues</td><td>Job-sor mélység és kor</td><td class="mono">system.metrics.view</td><td>—</td><td><span class="pill p-ok">🟢</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="grid g2" style="margin-top:1rem;">
+    <div class="panel">
+      <h3 style="font-size:1rem;margin-bottom:.5rem;">Amit jól old meg</h3>
+      <ul class="tight" style="font-size:.87rem;color:var(--ink-muted);">
+        <li>A liveness-végpont nem érinti az adatbázist — így egy lassú DB nem indítja újra a konténert.</li>
+        <li>A readiness cache-elt (5 s), tehát a health-pollozás nem tudja megtaposni a függőségeket.</li>
+        <li>A worker „halott-e" kérdésre a <b>minta kora</b> a válasz (3 ciklus), nem egy külön heartbeat.</li>
+        <li>A nem konfigurált szolgáltatások kimaradnak a nyilvános válaszból — a lista maga is információ lenne.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3 style="font-size:1rem;margin-bottom:.5rem;">Ami hiányzik</h3>
+      <ul class="tight" style="font-size:.87rem;color:var(--ink-muted);">
+        <li><b>A riasztás nem megy sehova.</b> A <code>monitor_alerts</code> táblába íródik és az admin felületen látszik — nincs e-mail, push vagy Discord-kézbesítés.</li>
+        <li>Nincs elosztott trace / request-id végigfűzés a workerekig.</li>
+        <li>Nincs uptime-mérés kívülről (a saját magát mérő rendszer nem tud a saját kieséséről).</li>
+        <li>Nincs naplóaggregálás — a konténer stdout-ja az egyetlen napló.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="bugs">
+  <div class="sec-head"><h2>Hibák és kockázatok</h2><span class="n">13</span><span class="count" id="bugCount"></span></div>
+  <p class="sec-note">Minden tétel kódra hivatkozik. Ahol nem tudtam futtatással bizonyítani, ott
+    <b>„ellenőrzendő"</b> jelzés van — nem találgatok.</p>
+  <div class="chips" id="bugChips" role="group" aria-label="Szűrés súlyosság szerint"></div>
+  <div id="bugList"></div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="debt">
+  <div class="sec-head"><h2>Műszaki adósság</h2><span class="n">14</span></div>
+  <p class="sec-note">Nem hibák — a rendszer működik velük. De mindegyik növeli a következő változtatás árát.</p>
+
+  <div class="tablewrap"><table>
+    <thead><tr><th>Adósság</th><th>Hol</th><th>Miért számít</th><th>Méret</th></tr></thead>
+    <tbody>
+      <tr><td><b>Két igazságforrás a felhasználói adatra</b></td><td class="mono">web/js/store.js vs. server library/watch_progress</td><td>Az előzmény, a statisztika és az achievementek csak a böngészőben élnek; a szerver külön változatot tárol, amit senki nem olvas vissza. Böngészőváltás = adatvesztés a felhasználó szemszögéből.</td><td><span class="pill p-bad">nagy</span></td></tr>
+      <tr><td><b>Két befejezettség-szabály</b></td><td class="mono">watch-time.js (mért idő ≥80%) vs. routes/library.ts (pozíció ≥85%)</td><td>A kliens szándékosan elhagyta a pozíció-alapú számolást; a szerver megtartotta. Amelyik előbb tüzelne, az sosem fut le.</td><td><span class="pill p-part">közepes</span></td></tr>
+      <tr><td><b>295 jogosultság, 18 érvényesítve</b></td><td class="mono">0012_permissions_expansion.sql</td><td>Az admin UI-ban kapcsolgatható jogok többsége semmit nem véd. Aki ránéz, azt hiszi, védve van valami.</td><td><span class="pill p-part">közepes</span></td></tr>
+      <tr><td><b>28 halott tábla</b></td><td class="mono">db/migrations</td><td>Minden séma-olvasás, mentés és migráció fizet értük; a jelenlétük funkciót ígér.</td><td><span class="pill p-part">közepes</span></td></tr>
+      <tr><td><b>GraphQL és REST párhuzamosan</b></td><td class="mono">graphql/schema.ts (599 sor)</td><td>Két API-t kell szinkronban tartani, miközben a kliens csak az egyiket használja.</td><td><span class="pill p-part">közepes</span></td></tr>
+      <tr><td><b>pages/admin.js — 1 648 sor</b></td><td class="mono">web/js/pages/admin.js</td><td>11 szekció renderelője egy fájlban, egy objektumon. A többi lap 150–300 sor. Itt már nehéz megtalálni bármit.</td><td><span class="pill p-part">közepes</span></td></tr>
+      <tr><td><b>Design-token duplikáció</b></td><td class="mono">web/css/tokens.css vs packages/design-tokens/tokens.css</td><td>87 vs 80 token, egy érték már el is tért (<code>--card-w</code>). A csomagra semmi nem hivatkozik, csak a dokumentáció.</td><td><span class="pill p-part">kicsi</span></td></tr>
+      <tr><td><b>Nem egységes hibakezelés a kliensben</b></td><td class="mono">web/js/pages/*</td><td>Van, ahol <code>.error-state</code> jelenik meg, van, ahol <code>catch(e) { return }</code> — a felhasználó néma üres állapotot lát hiba helyett.</td><td><span class="pill p-part">közepes</span></td></tr>
+      <tr><td><b>Memóriában élő megosztott állapot</b></td><td class="mono">plugins/auth.ts, security.ts, lib/ws.ts</td><td>Jogosultság-cache, rate limit és WS-kliensek mind processz-lokálisak. A második példány elindítása csendben rontja a helyességet.</td><td><span class="pill p-part">közepes</span></td></tr>
+      <tr><td><b>Nincs kliensoldali típusellenőrzés</b></td><td class="mono">web/js/**</td><td>12 000 sor JS globálisokkal, <code>/* global */</code> kommentekkel. A CI szintaxist és stílust ellenőriz, típust nem.</td><td><span class="pill p-part">közepes</span></td></tr>
+      <tr><td><b>Sztringkulcsos i18n</b></td><td class="mono">web/i18n/hu.js</td><td>Az angol mondat a kulcs. Egy szövegjavítás az angol oldalon némán elveszíti a fordítást. 319 kulcsból 10 hiányzik (mind tulajdonnév vagy demószöveg).</td><td><span class="pill p-part">kicsi</span></td></tr>
+      <tr><td><b>Elavult dokumentáció-állítások</b></td><td class="mono">docs/extensions.md, docs/allapot.md</td><td>„Package upload ⏳ nincs kész" — pedig kész. „107 tábla" — 99+17. „387 jogosultság" — 295 sor. Aki a dokumentációból dolgozik, rossz képet kap.</td><td><span class="pill p-part">kicsi</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="missing">
+  <div class="sec-head"><h2>Hiányzó funkciók</h2><span class="n">15</span></div>
+  <p class="sec-note">Nem kitalált ötletek — mind abból következik, ami már ott van a kódban félkészen, vagy amit a
+    meglévő architektúra megkövetel.</p>
+
+  <div class="grid g2">
+    <div class="panel" style="border-left:3px solid var(--bad);">
+      <h3 style="font-size:1rem;margin-bottom:.5rem;">Nélkülözhetetlen (éles üzem előtt)</h3>
+      <ul class="tight" style="font-size:.87rem;">
+        <li><b>Legalább egy működő stream-forrás.</b> Ma egy friss telepítés semmit nem tud lejátszani. Ez nem egy hiányzó funkció — ez <em>a</em> funkció.</li>
+        <li><b>Szerveroldali nézési előzmény.</b> A <code>durationSec</code> küldése egysoros javítás, és feléleszti a <code>watch_history</code>-t, az XP-t és a napi rollupot.</li>
+        <li><b>Fióktörlés.</b> A <code>deleted_at</code> oszlop megvan, a végpont nincs. GDPR-igény esetén ma nincs mit tenni.</li>
+        <li><b>Riasztás-kézbesítés.</b> A monitoring mindent felismer és senkinek nem szól.</li>
+        <li><b>A fejlesztői portál verziófeltöltése</b> — jelenleg garantáltan hibára fut (lásd 🔴 hibák).</li>
+        <li><b>Retenció a <code>security_logs</code>-ra.</b> IP-címek végtelen ideig.</li>
+      </ul>
+    </div>
+    <div class="panel" style="border-left:3px solid var(--part);">
+      <h3 style="font-size:1rem;margin-bottom:.5rem;">Fontos</h3>
+      <ul class="tight" style="font-size:.87rem;">
+        <li>Szerveroldali profil-statisztika és achievement (a táblák megvannak, a logika a böngészőben van).</li>
+        <li>Szerveres értesítések bekötése — a tábla, a worker és a GraphQL kész, a kliens helyi listát mutat helyette.</li>
+        <li>Kedvencek szerverre (<code>favorites</code> tábla halott, a kliens localStorage-ban tartja).</li>
+        <li>Platform-hurok a kiegészítőknek: ütemezett futás (forrás-egészség ellenőrzés ma nem építhető meg).</li>
+        <li>OAuth (AniList/MAL) — a <code>oauth_identities</code> tábla ezt várja; enélkül nincs külső haladás-szinkron.</li>
+        <li>E2E teszt a lejátszóra és a bejelentkezésre (ma nulla böngészőteszt van a CI-ban).</li>
+      </ul>
+    </div>
+    <div class="panel" style="border-left:3px solid var(--unver);">
+      <h3 style="font-size:1rem;margin-bottom:.5rem;">Jó lenne</h3>
+      <ul class="tight" style="font-size:.87rem;">
+        <li>Ajánlórendszer (a <code>anime_recommendations</code> tábla üresen áll; ma csak kiegészítő tölti fel).</li>
+        <li>Karakter- és stáb-adat a saját katalógusban (ma AniList-kiegészítő nélkül üres a fül).</li>
+        <li>Egyéni listák / gyűjtemények (<code>custom_lists</code>, <code>collections</code> táblák).</li>
+        <li>Klubok, fórumok, üzenetek (táblák megvannak, a WS chat-csatorna is — kliens nincs).</li>
+        <li>Angol nyelvű felület teljessé tétele (ma a magyar a teljes, az angol a fallback).</li>
+        <li>SEO: a hash-router miatt egyetlen aloldal sem indexelhető.</li>
+      </ul>
+    </div>
+    <div class="panel" style="border-left:3px solid var(--dead);">
+      <h3 style="font-size:1rem;margin-bottom:.5rem;">Későbbi architektúra</h3>
+      <ul class="tight" style="font-size:.87rem;">
+        <li>Redis bekötése — csak akkor, amikor tényleg jön a második app-példány (a docs/redis.md pont ezt mondja).</li>
+        <li>Vízszintes skálázás: előtte a WS-hub, a rate limit és a jogosultság-cache megosztottá kell váljon.</li>
+        <li>Kliens-oldali típusrendszer vagy fokozatos TypeScript-átállás.</li>
+        <li>Discord-bot (499 sor dokumentáció áll készen hozzá, kód nulla).</li>
+        <li>CDN / kép-proxy a borítókhoz (ma közvetlenül az AniList CDN-ről töltenek a böngészők).</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="roadmap">
+  <div class="sec-head"><h2>Fejlesztési ütemterv</h2><span class="n">16</span></div>
+  <p class="sec-note">A fázisok sorrendje a repó tényleges állapotából jön, nem sablonból. A legfontosabb eltérés a szokásos
+    sorrendtől: <b>a forrás-infrastruktúra előrébb került</b>, mert nélküle a többi fázis egy olyan terméket csiszol, amit nem lehet használni.</p>
+
+  <div class="tablewrap"><table>
+    <thead><tr><th style="width:4.5rem;">Fázis</th><th>Cél</th><th>Miért most</th><th>Függ</th><th>Eredmény</th><th>Kockázat</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>0</b><br><span class="pill p-bad">kritikus</span></td>
+        <td>Törött utak javítása</td>
+        <td>Két olyan út van, ami garantáltan hibára fut, és egy adatfolyam, ami némán elvész. Ezek napok, nem hetek.</td>
+        <td>—</td>
+        <td>A fejlesztői portál publikál; a <code>watch_history</code> és az XP megtelik; a telepítésszámláló nem hazudik.</td>
+        <td>Alacsony. Mindegyik pontszerű javítás.</td>
+      </tr>
+      <tr>
+        <td><b>1</b><br><span class="pill p-bad">kritikus</span></td>
+        <td>Forrás-infrastruktúra</td>
+        <td>Ez az a fázis, ami nélkül a Yume nem streaming-oldal. Vagy a <code>video_sources</code> táblák kapnak kódot (saját/üzemeltetői források), vagy a kiegészítő-út lesz az egyetlen, és ezt ki kell mondani a felületen is.</td>
+        <td>Fázis 0</td>
+        <td>Egy friss telepítés le tud játszani valamit anélkül, hogy a felhasználó URL-t másolna be.</td>
+        <td><b>Magas — jogi.</b> A forrás megválasztása nem technikai kérdés. Saját jogtiszta tartalom vagy üzemeltetői szerver (Jellyfin/Plex/könyvtár) a védhető út.</td>
+      </tr>
+      <tr>
+        <td><b>2</b><br><span class="pill p-part">magas</span></td>
+        <td>A felhasználói adat visszaköltöztetése a szerverre</td>
+        <td>Ma az előzmény, a statisztika és az achievement a böngészőben él. Ez az egyetlen olyan adósság, ami a felhasználó számára <em>adatvesztésként</em> jelentkezik.</td>
+        <td>Fázis 0</td>
+        <td>Eszközfüggetlen profil: ugyanaz az előzmény telefonon és gépen.</td>
+        <td>Közepes. Migrálni kell a meglévő localStorage-tartalmat, különben a felhasználók „elvesztik" az adatot a váltáskor.</td>
+      </tr>
+      <tr>
+        <td><b>3</b><br><span class="pill p-part">magas</span></td>
+        <td>Éles üzem alapfeltételei</td>
+        <td>Fióktörlés, naplóretenció, riasztás-kézbesítés. Ezek nélkül az oldal nem üzemeltethető felelősen, függetlenül attól, hány funkciója van.</td>
+        <td>—</td>
+        <td>Kezelhető incidensek, teljesíthető adatkérések.</td>
+        <td>Alacsony.</td>
+      </tr>
+      <tr>
+        <td><b>4</b><br><span class="pill p-unver">közepes</span></td>
+        <td>Kiegészítő-platform kiteljesítése</td>
+        <td>A típus-diszpécselés és a telepítő UI most készült el; hiányzik az ütemezett futtatás és az áruház-oldal (értékelés, részletlap).</td>
+        <td>Fázis 1</td>
+        <td>A kiegészítők önállóan is életképesek: háttérben frissülnek, mérhető az egészségük, a felhasználó választ tud.</td>
+        <td>Közepes. A háttérhurok új támadási felület — időzítés és kvóta kell hozzá.</td>
+      </tr>
+      <tr>
+        <td><b>5</b><br><span class="pill p-unver">közepes</span></td>
+        <td>Felfedezés és személyre szabás</td>
+        <td>A katalógus és a keresés kész; az ajánlás és a kedvencek a meglévő táblákon ülnek.</td>
+        <td>Fázis 2</td>
+        <td>Értelmes főoldal, ami a nézési előzményből dolgozik.</td>
+        <td>Alacsony.</td>
+      </tr>
+      <tr>
+        <td><b>6</b><br><span class="pill p-unver">közepes</span></td>
+        <td>Szerveres értesítések</td>
+        <td>A tábla, a worker és a GraphQL kész — csak a kliens nem használja. Olcsó fázis, nagy hatással.</td>
+        <td>Fázis 2</td>
+        <td>Adásértesítés akkor is, ha a felhasználó nem nyitotta meg az oldalt.</td>
+        <td>Alacsony.</td>
+      </tr>
+      <tr>
+        <td><b>7</b><br><span class="pill p-plan">alacsony</span></td>
+        <td>Közösség kiteljesítése</td>
+        <td>Kommentek élnek; klubok, fórumok, üzenetek táblái üresen állnak. Csak akkor éri meg, ha van kit összehozni.</td>
+        <td>Fázis 5</td>
+        <td>Visszatérő felhasználók.</td>
+        <td>Közepes — moderációs terhet hoz, ami emberi erőforrás.</td>
+      </tr>
+      <tr>
+        <td><b>8</b><br><span class="pill p-plan">alacsony</span></td>
+        <td>Külső integrációk (OAuth, Discord)</td>
+        <td>Az <code>oauth_identities</code> tábla ezt várja; a Discord-doksi kész.</td>
+        <td>Fázis 3</td>
+        <td>AniList/MAL-szinkron, Discord-jelenlét.</td>
+        <td>Közepes — külső API-k szerződése és kvótája.</td>
+      </tr>
+      <tr>
+        <td><b>9</b><br><span class="pill p-plan">alacsony</span></td>
+        <td>Skálázás</td>
+        <td><b>Csak akkor</b>, ha a terhelés indokolja. Ma egy példány bőven elég; a korai skálázás elrontja a jelenlegi egyszerűséget.</td>
+        <td>Fázis 3</td>
+        <td>Több app-példány, megosztott állapot Redisben.</td>
+        <td>Magas — a memóriában élő állapot minden helyét meg kell találni. Ma három ilyen van.</td>
+      </tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="quality">
+  <div class="sec-head"><h2>Minőségi pontszám</h2><span class="n">17</span></div>
+  <p class="sec-note">Tíz kategória, mindegyik saját súllyal és bizonyítékkal. A súlyok azt tükrözik, mennyit számít
+    az adott kategória <b>ennél a projektnél</b> — egy streaming-oldalnál a tartalom-út többet nyom, mint a dokumentáció.</p>
+
+  <div class="panel">
+    <div id="scores"></div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;border-top:2px solid var(--ink);margin-top:.8rem;padding-top:.7rem;">
+      <b style="font-family:var(--display);font-size:1.1rem;">Súlyozott összpontszám</b>
+      <b style="font-family:var(--display);font-size:2rem;letter-spacing:-.03em;">6,9<span style="font-size:1rem;color:var(--ink-faint);"> / 10</span></b>
+    </div>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="prod">
+  <div class="sec-head"><h2>Éles üzemre való készenlét</h2><span class="n">18</span></div>
+  <div class="tablewrap"><table>
+    <thead><tr><th style="width:11rem;">Terület</th><th style="width:7rem;">Állapot</th><th>Indoklás</th></tr></thead>
+    <tbody>
+      <tr><td>Biztonság</td><td><span class="pill p-ok">🟢 KÉSZ</span></td><td>scrypt, forgó tokenek, session-kötött revokálás, RBAC, CSP, SSRF-védelem, adverzariális teszt-suite a CI-ban. A hiányzó MFA és OAuth funkció, nem sebezhetőség.</td></tr>
+      <tr><td>Megbízhatóság</td><td><span class="pill p-part">🟡 MUNKA KELL</span></td><td>Healthcheckek és restart-policy megvannak; de egy példány fut, és a worker kiesése csendben romlásba visz (partíciók fogynak).</td></tr>
+      <tr><td>Teljesítmény</td><td><span class="pill p-ok">🟢 KÉSZ</span></td><td>Indexelt keresés 25k soron, cache-elt readiness, jogosultság-memo, DataLoaderek. A válaszidőt maga a rendszer méri.</td></tr>
+      <tr><td>Skálázhatóság</td><td><span class="pill p-part">🟡 MUNKA KELL</span></td><td>Három processz-lokális állapot (WS-hub, rate limit, jogosultság-cache) akadályozza a második példányt. Tudatos, dokumentált döntés — de ez a plafon.</td></tr>
+      <tr><td>Monitoring</td><td><span class="pill p-part">🟡 MUNKA KELL</span></td><td>A gyűjtés és a küszöbfigyelés kész; <b>a riasztás nem megy sehova</b>, és nincs külső uptime-mérés.</td></tr>
+      <tr><td>Mentés</td><td><span class="pill p-ok">🟢 KÉSZ</span></td><td>Napi pg_dump + visszaállítás-ellenőrzés. Egyetlen kikötés: külső másolat csak akkor, ha az üzemeltető beállítja.</td></tr>
+      <tr><td>Helyreállítás</td><td><span class="pill p-part">🟡 MUNKA KELL</span></td><td>Van <code>restore.sh</code>, és a mentés bizonyítottan visszatölthető. De a kiegészítő-csomagok <b>nincsenek</b> a dumpban (fájlrendszeren élnek) — a docs/backup.md ezt ki is mondja.</td></tr>
+      <tr><td>Tesztelés</td><td><span class="pill p-part">🟡 MUNKA KELL</span></td><td>645 teszt, valódi Postgres a CI-ban, integrációs és adverzariális suite. Nulla böngészőteszt — a lejátszó, a router és a bejelentkezés UI-ja nincs automatán tesztelve.</td></tr>
+      <tr><td>Felhasználói élmény</td><td><span class="pill p-part">🟡 MUNKA KELL</span></td><td>Egységes töltő- és üres állapotok, mobil elrendezés kész. De a hibakezelés nem egységes, és a fő funkció (lejátszás) alapból nem működik konfiguráció nélkül.</td></tr>
+      <tr><td>Akadálymentesség</td><td><span class="pill p-bad">🔴 NEM KÉSZ</span></td><td>Van fókuszcsapda a modálokban és 13 <code>aria-label</code> — de nincs skip-link, a legtöbb ikongomb címkétlen, és semmi nem lett képernyőolvasóval végigpróbálva.</td></tr>
+      <tr><td>SEO</td><td><span class="pill p-bad">🔴 NEM KÉSZ</span></td><td>Hash-router: egyetlen aloldalnak sincs saját URL-je szerveroldalról. Nincs sitemap, nincs strukturált adat, egy <code>&lt;title&gt;</code> az egész alkalmazásra.</td></tr>
+      <tr><td>Nyelvesítés</td><td><span class="pill p-ok">🟢 KÉSZ</span></td><td>319 sztringből 309 fordítva; a maradék tulajdonnév vagy demószöveg. A nyelvváltás azonnali, a beállítás profilonként a szerveren van.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="files">
+  <div class="sec-head"><h2>Fájl-leltár</h2><span class="n">19</span><span class="count" id="fileCount"></span></div>
+  <p class="sec-note">A 288 követett fájlból 225 érdemi — a képernyőképek, az SVG-k, a vendorolt hls.js és a lock-fájl kimaradtak. Keress a fenti mezővel vagy itt.</p>
+  <input id="fileSearch" class="search" type="search" placeholder="Szűrés útvonalra vagy célra…" aria-label="Fájlkeresés" style="margin-bottom:.8rem;">
+  <div class="tablewrap" style="max-height:32rem;overflow-y:auto;"><table id="fileTable">
+    <thead><tr><th>Útvonal</th><th>Típus</th><th>Cél</th><th>Súly</th></tr></thead>
+    <tbody></tbody>
+  </table></div>
+</section>
+
+<!-- ==================================================================== -->
+<section id="method">
+  <div class="sec-head"><h2>Módszertan</h2><span class="n">20</span></div>
+  <div class="grid g2">
+    <div class="panel">
+      <h3 style="font-size:1rem;margin-bottom:.5rem;">Hogyan készült</h3>
+      <ul class="tight" style="font-size:.87rem;color:var(--ink-muted);">
+        <li>Mind a 288 követett fájl listázva; 157 érdemi fájl elolvasva vagy átvizsgálva.</li>
+        <li>A végpontok a route-fájlokból vannak kinyerve, nem a dokumentációból.</li>
+        <li>A „halott tábla" lista úgy készült, hogy minden tábla nevét visszakerestem a <code>server/src</code> és <code>server/scripts</code> alatt.</li>
+        <li>A tesztszámok valódi futtatásból: kliens 377, szerver 268 (ebből 53 adverzariális), plusz 20 integrációs élő Postgres ellen.</li>
+        <li>A lint (<code>standard</code>) lefuttatva: tiszta.</li>
+        <li>A típusellenőrzés (<code>tsc --noEmit</code>) lefuttatva: tiszta.</li>
+        <li>A git-előzmény átnézve annak eldöntésére, hogy egy funkció tényleg landolt-e.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3 style="font-size:1rem;margin-bottom:.5rem;">Amit nem tudtam biztosan ellenőrizni</h3>
+      <ul class="tight" style="font-size:.87rem;color:var(--ink-muted);">
+        <li><b>Éles adatmennyiség.</b> A 25 672 anime / 388 611 epizód a dokumentációból származik; a fejlesztői adatbázisban nem ellenőriztem újra.</li>
+        <li><b>A Docker-kép tényleges felépülése.</b> A Dockerfile és a compose statikusan átnézve; teljes <code>docker compose up</code> ebben a környezetben nem futott.</li>
+        <li><b>A Caddy TLS-út</b> valódi domainnel.</li>
+        <li><b>Kiegészítők valódi szolgáltatások ellen</b> (Jellyfin, Plex, OpenSubtitles) — mind csak stub-olt válaszokkal tesztelt.</li>
+        <li><b>Böngésző-kompatibilitás</b> Chromiumon kívül.</li>
+        <li><b>Terhelés alatti viselkedés</b> — nincs terheléses teszt, és szándékosan nem is futtattam.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="note" style="margin-top:1rem;">
+    <b>Ez a jelentés nem módosította az alkalmazást.</b> Egyetlen kivétel: egy <code>camelcase</code> lint-hiba javítása a
+    <code>web/test/extension-store.test.mjs</code> tesztfájlban, ami a CI-t pirosra vitte volna. Alkalmazáslogika, séma, API,
+    Docker és függőség változatlan.
+  </div>
+</section>
+
+<footer class="end">
+  <p>Yume / Hayase — állapotjelentés · forráskódból ellenőrizve · 2026-08-24 · commit <span class="mono">1fd221b</span></p>
+  <p style="margin-top:.3rem;">Titkot, tokent, jelszót és kapcsolati sztringet ez a dokumentum nem tartalmaz.</p>
+</footer>
+
+</main>
+</div>
+<script>
+/* ===========================================================================
+   Adatok. Minden bejegyzés forrásfájlra hivatkozik — a jelentés akkor is
+   ellenőrizhető marad, ha a kód közben változik.
+   ======================================================================== */
+
+const NAV = [
+  ['overview','Áttekintés','01'], ['arch','Architektúra','02'], ['pages','Oldalak','03'],
+  ['features','Funkciók','04'], ['api','API','05'], ['db','Adatbázis','06'],
+  ['auth','Biztonság','07'], ['services','Szolgáltatások','08'], ['docker','Docker','09'],
+  ['flows','Adatfolyamok','10'], ['analytics','Analitika','11'], ['health','Monitoring','12'],
+  ['bugs','Hibák','13'], ['debt','Adósság','14'], ['missing','Hiányzó','15'],
+  ['roadmap','Ütemterv','16'], ['quality','Minőség','17'], ['prod','Éles üzem','18'],
+  ['files','Fájlok','19'], ['method','Módszertan','20']
+]
+
+const ST = {
+  ok:    { label: '🟢 KÉSZ',           cls: 'ok'    },
+  part:  { label: '🟡 RÉSZLEGES',      cls: 'part'  },
+  unver: { label: '🔵 ELLENŐRIZETLEN', cls: 'unver' },
+  plan:  { label: '🟠 TERVEZETT',      cls: 'plan'  },
+  bad:   { label: '🔴 TÖRÖTT',         cls: 'bad'   },
+  dead:  { label: '⚫ HASZNÁLATLAN',   cls: 'dead'  }
+}
+
+/* ---- oldalak ---------------------------------------------------------- */
+const PAGES = [
+  ['#/home','Főoldal','Folytatás, szezon, műfaj-sávok','bárki','Katalógus → AniList tartalék','ok'],
+  ['#/search','Kereső','Teljes szöveges keresés + szűrők','bárki','Katalógus → AniList tartalék','ok'],
+  ['#/schedule','Menetrend','Heti adásnaptár','bárki','Katalógus → AniList tartalék','ok'],
+  ['#/anime/:id','Részletek','Borító, leírás, epizódok, fülek','bárki','Katalógus + kiegészítők','ok'],
+  ['#/watch/:id','Lejátszó','Videó, feliratok, skip, közös nézés','bárki','StreamEngine + kiegészítők','part'],
+  ['#/list','Könyvtár','5 státusz + kedvencek','bárki (helyi)','localStorage ↔ szerver','ok'],
+  ['#/dashboard','Irányítópult','Személyes összefoglaló','bárki (helyi)','localStorage','part'],
+  ['#/profile','Profil','Statisztika, achievement, előzmény fülek','bárki (helyi)','localStorage','part'],
+  ['#/profiles','Profilok','Profilváltó és -kezelés','bárki (helyi)','localStorage + szerver','ok'],
+  ['#/notifications','Értesítések','Adás-emlékeztetők','bárki (helyi)','localStorage — <b>nem</b> a szerver','part'],
+  ['#/community','Közösség','Legutóbbi kommentek','bárki','Yume API','ok'],
+  ['#/w2g','Közös nézés','Szoba, chat, szinkron lejátszás','bejelentkezve','Yume API + /ws','ok'],
+  ['#/extensions','Kiegészítők','Áruház, telepítés, beállítás','böngészés bárkinek, telepítés bejelentkezve','Yume API','ok'],
+  ['#/developer','Fejlesztői portál','Kiegészítő-kiadás, analitika','extensions.publish','Yume API','bad'],
+  ['#/settings','Beállítások','Nyelv, lejátszás, fiók, téma, API-cím','bárki','localStorage + /v1/me/settings','ok'],
+  ['#/admin','Admin','11 szekció 4 csoportban','jogosultság szerint','Yume API','ok'],
+  ['?tab=analytics','Analitika (alias)','Nézési statisztikák','bárki (helyi)','localStorage','part'],
+  ['?tab=achievements','Achievementek (alias)','Kitűzők a helyi előzményből','bárki (helyi)','localStorage','part'],
+  ['?tab=history','Előzmény (alias)','Megnyitott epizódok','bárki (helyi)','localStorage','part'],
+  ['?tab=appearance','Témák (alias)','Beépített + kiegészítő-témák','bárki','localStorage + kiegészítők','ok']
+]
+
+/* ---- funkciók --------------------------------------------------------- */
+const F = (name, cat, st, o) => Object.assign({ name, cat, st }, o)
+const FEATURES = [
+  F('Regisztráció és bejelentkezés','Fiók','ok',{
+    files:'routes/auth.ts · lib/password.ts · components.js (C.authCard)',
+    db:'users, sessions, security_logs',
+    how:'scrypt N=2¹⁷ hash, 15 perces access token + 30 napos forgó refresh. Az első fiók adminná válik, ha egy admin sincs — advisory lock alatt, hogy két egyidejű regisztráció ne csináljon kettőt.',
+    ok:'Tokenpár a localStorage-ba (yume-auth), a fejléc innen épül.',
+    fail:'409 foglalt e-mail/névre; 401 rossz jelszóra, mindkettő azonos szöveggel, hogy ne lehessen fiókot felderíteni. 10 próbálkozás / 15 perc.',
+    limits:'Nincs e-mail-megerősítés (az oszlop megvan), nincs MFA, nincs OAuth.'
+  }),
+  F('Token-forgatás és visszavonás','Fiók','ok',{
+    files:'plugins/auth.ts · routes/auth.ts · 0018_token_revocation.sql',
+    db:'sessions, users.token_version',
+    how:'A tokenben benne van a session-azonosító és a fiók token-verziója. Egy eszköz kijelentkeztetése egy sort öl meg; a bannolás vagy jelszóváltás a verziót emeli, ami egyszerre minden kiadott tokent érvénytelenít.',
+    ok:'A kijelentkezett token azonnal 401-et kap, nem a lejáratáig él tovább.',
+    fail:'Lejárt access tokennél a kliens egyszer megújít, majd újrapróbál; ha a refresh is elbukik, kijelentkezteti magát.',
+    limits:'A verzió-cache 30 s-ig él, tehát egy szerepkör-változás ennyit késhet. A kijelentkezés nem — az azonnal hat.'
+  }),
+  F('Jelszó-helyreállítás','Fiók','part',{
+    files:'routes/auth.ts · lib/reset-delivery.ts · 0019_password_recovery.sql',
+    db:'password_resets',
+    how:'Egyszer használatos, hashelt token időkorláttal. A „létezik-e ez az e-mail" kérdésre a válasz mindig ugyanaz.',
+    ok:'A jelszó cseréje után minden más session megszűnik.',
+    fail:'Lejárt vagy felhasznált token esetén ugyanaz a semleges hiba.',
+    limits:'<b>A kézbesítés nincs bekötve</b>: a modul készen áll, de nincs mögötte SMTP vagy más csatorna, tehát a levél ma nem megy sehova.'
+  }),
+  F('RBAC jogosultság-ellenőrzés','Fiók','part',{
+    files:'plugins/auth.ts · routes/roles.ts · pages/admin.js',
+    db:'roles, permissions, role_permissions, user_roles',
+    how:'requirePermission(slug) preHandler; a jogosultsághalmaz 30 s-ig memóriában.',
+    ok:'A védett végpont 403-mal utasít, mielőtt bármit is olvasna.',
+    fail:'Ismeretlen jogosultságnév = mindig 403 (nincs csendben átengedés).',
+    limits:'<b>295 jogosultság-sor van a migrációkban, a kód 18-at használ.</b> A többi kapcsolgatható a UI-ban, és semmit nem véd.'
+  }),
+  F('Profilok (több néző egy fiókon)','Fiók','ok',{
+    files:'store.js · pages/profiles.js · routes/profiles.ts',
+    db:'user_profiles',
+    how:'Helyi profilregisztráció + aktív profil azonosító; minden per-profil localStorage-kulcs utótagot kap. Bejelentkezve a szerver oldali profil is létrejön a szinkronhoz.',
+    ok:'A könyvtár, a beállítások és az előzmény profilonként külön él.',
+    fail:'Ismeretlen profil esetén az első profilra esik vissza.',
+    limits:'A helyi és a szerver oldali profil nem ugyanaz a fogalom — a szinkron egyetlen szerverprofilt használ.'
+  }),
+  F('Katalógus mint igazságforrás','Katalógus','ok',{
+    files:'web/js/catalogue.js · routes/anime.ts · lib/metadata.ts',
+    db:'anime, anime_titles, anime_synonyms, anime_images, anime_mappings, episodes',
+    how:'A kliens előbb a saját katalógust kérdezi, és csak utána megy az AniList-hez. A katalógus rekordja AniList Media-alakra van képezve, hogy az UI ne tudjon a különbségről.',
+    ok:'Egy cím, ami csak a saját adatbázisban van, elérhető és linkelhető (UUID-vel).',
+    fail:'Ha az API nem elérhető, a böngésző közvetlenül az AniList-re megy — a lap működik tovább.',
+    limits:'A karakter-, stáb- és ajánlás-táblákhoz nincs kód, tehát ezek a fülek katalógus-adatból üresek.'
+  }),
+  F('Keresés (elgépelés-tűrő)','Katalógus','ok',{
+    files:'lib/search.ts · 0017_metadata_search.sql · routes/anime.ts',
+    db:'anime.search (tsvector), anime_synonyms, pg_trgm indexek',
+    how:'Rétegzett pontozás: teljes szöveges találat 40, trigram-hasonlóság 20; holtversenyben hasonlóság, majd népszerűség dönt.',
+    ok:'Elgépelt cím és szinonima is talál; a lekérdezés ezredmásodpercekben fut 25k soron.',
+    fail:'API nélkül a kliens az AniList keresőjére esik vissza.',
+    limits:'Nincs facettált szűrés a keresőben (a böngésző-végponton van).'
+  }),
+  F('Magyar szövegkezelés (ékezetek)','Katalógus','ok',{
+    files:'lib/db-encoding.ts · 0022_hungarian_text.sql',
+    db:'unaccent kiterjesztés, hungarian_unaccent konfiguráció, ékezet-hajtogató trigram indexek',
+    how:'Az adatbázis kódolása initdb-ben rögzítve; a modul indulásnál ellenőriz, és üres adatbázisnál megtagadja a sémaépítést rossz kódolással.',
+    ok:'„almafa" megtalálja az „Almafá"-t; a rendezés magyarul helyes.',
+    fail:'Populált adatbázisnál csak figyelmeztet — egy szöveghiba miatt nem dönti le az éles rendszert.',
+    limits:'Az alapértelmezett kollációt szándékosan nem írja át (initdb után nem is lehetne).'
+  }),
+  F('Katalógus-import és gazdagítás','Katalógus','ok',{
+    files:'scripts/seed.ts · scripts/import-anilist.ts · workers/importer.ts · workers/anilist.ts',
+    db:'anime + 8 kapcsolódó tábla, metadata_sources, locked_fields',
+    how:'Az anime-offline-database dumpból tömeges import, epizódgenerálás valós epizódszámból, filler-jelölés külső listából, majd opcionális AniList-gazdagítás.',
+    ok:'25 672 anime, 388 611 epizód. Az importált sor nem publikált, amíg valaki ki nem publikálja.',
+    fail:'A gazdagítás rate limitre ütközve lassít; a részleges eredmény megmarad.',
+    limits:'Az AniList-végpont ebben a futtatókörnyezetben tiltott, tehát a gazdagítás itt nem tesztelhető.'
+  }),
+  F('Szerkesztői publikálás és zárolt mezők','Katalógus','ok',{
+    files:'routes/catalogue.ts · 0013_catalogue_visibility.sql · 0020_editorial_publishing.sql',
+    db:'anime.status, anime.locked_fields, episodes.visibility',
+    how:'Az importer nem írja felül a kézzel szerkesztett mezőket, és semmi nem publikus, amíg egy szerkesztő ki nem publikálja.',
+    ok:'A szerkesztő munkája túléli a következő importot.',
+    fail:'Publikálatlan sor a nyilvános végpontokon 404.',
+    limits:'Nincs vázlat-előnézet: a szerkesztő csak az admin felületen látja a publikálatlan sort.'
+  }),
+  F('Fordítási réteg (HU/EN tartalom)','Nyelv','ok',{
+    files:'0023_translations.sql · routes/translations.ts · lib/localise.ts · pages/admin.js',
+    db:'anime_translations, episode_translations, anime_missing_translations nézet',
+    how:'Ritka fedőréteg: csak az kerül bele, amit valaki lefordított. Minden lokalizált válasz visz egy <code>_lang</code> mezőt, ami megmondja, melyik mező milyen nyelven jött vissza.',
+    ok:'A magyar cím és leírás megjelenik, ahol van; ahol nincs, az angol jelenik meg <em>megjelölve</em>.',
+    fail:'Hiányzó fordításnál nem üres mező, hanem az eredeti + egy sor magyarázat.',
+    limits:'Gépi fordítás nincs bekötve (a <code>source</code> oszlop előkészítve rá).'
+  }),
+  F('Felületi i18n (HU/EN)','Nyelv','ok',{
+    files:'web/js/i18n.js · web/i18n/hu.js · lib/preferences.ts',
+    db:'user_settings (language.ui, language.titles, language.content)',
+    how:'Az angol mondat a kulcs; hiányzó fordításnál az angol marad. A nyelvváltás azonnal újrarajzol.',
+    ok:'319 sztringből 309 fordítva.',
+    fail:'Ismeretlen nyelvnél marad az aktuális.',
+    limits:'Sztringkulcsos: az angol szöveg javítása némán elveszíti a fordítást. A hiányzó 10 mind tulajdonnév vagy demószöveg.'
+  }),
+  F('Onboarding kérdőív','Nyelv','ok',{
+    files:'web/js/onboarding.js · lib/preferences.ts · routes/settings.ts',
+    db:'user_settings (onboarding.done)',
+    how:'Három lépés regisztráció után: nyelv, tartalom, lejátszás. Egyszer ment a végén, nem lépésenként.',
+    ok:'A válaszok beállításokká válnak, és a szerver is megjegyzi, hogy kész.',
+    fail:'Félbehagyva semmi nem mentődik, és legközelebb újra megjelenik.',
+    limits:'Nem ugorható át visszatérően — kijelentkezett profilnál is felugrik.'
+  }),
+  F('Könyvtár és haladás','Könyvtár','ok',{
+    files:'web/js/store.js · pages/list.js · routes/library.ts',
+    db:'library_entries, watch_progress',
+    how:'Öt státusz + kedvencek; a haladás epizódszám, a folytatás pozíció másodpercben.',
+    ok:'A „folytatás" kártya oda visz, ahol abbahagytad.',
+    fail:'Kijelentkezve is működik, csak nem szinkronizál.',
+    limits:'A kedvencek csak a böngészőben élnek (a <code>favorites</code> tábla halott).'
+  }),
+  F('Könyvtár-szinkron a szerverre','Könyvtár','part',{
+    files:'web/js/library-sync.js · routes/library.ts',
+    db:'library_entries, watch_progress, user_profiles',
+    how:'Bejelentkezéskor lehúz, utána késleltetve feltölt. Két azonosítóvilágot hidal át: AniList-id ↔ Yume-UUID.',
+    ok:'A könyvtár követi a felhasználót eszközök között.',
+    fail:'Minden hívás legjobb-szándékú: hálózati hiba nem blokkolja a UI-t.',
+    limits:'<b>Csak a könyvtár és a pozíció szinkronizál.</b> Az előzmény, a statisztika, az achievementek és a kedvencek nem — azok a böngészőben maradnak.'
+  }),
+  F('Valódi nézési idő mérése','Lejátszás','ok',{
+    files:'web/js/watch-time.js · pages/watch.js',
+    db:'— (helyi)',
+    how:'Másodperces ütem, ami csak akkor számol, ha a videó tényleg megy (nem szünet, nem tekerés, elég puffer). Epizódonként a hossz 1,2-szeresében maximálva.',
+    ok:'80% mért idő után jóváírás; a lap megnyitása önmagában semmit nem ad.',
+    fail:'Ha a videó metaadata hiányzik, becslésre vált és ezt jelzi.',
+    limits:'Az eredmény a böngészőben marad; a szerver a saját, pozíció-alapú szabályát használná — ami sosem tüzel.'
+  }),
+  F('Stream-motor (jelöltek rangsorolása)','Lejátszás','part',{
+    files:'web/js/stream-engine.js',
+    db:'—',
+    how:'A kiegészítők válaszait egy alakra hozza, típus szerint szűr (http/torrent/nzb), majd rangsorol: lejátszhatóság → sub/dub → forrás pontossága → felbontás.',
+    ok:'Az első lejátszható jelölt indul; bukás esetén magától a következőre lép.',
+    fail:'Torrentnél őszintén megmondja, hogy asztali kliens kell. Ismeretlen URL-formátumnál nem próbálkozik.',
+    limits:'<b>Nincs beépített forrás.</b> Kiegészítő nélkül csak a kézzel beillesztett URL marad.'
+  }),
+  F('Felirat- és hangsávválasztás','Lejátszás','ok',{
+    files:'stream-engine.js · pages/watch.js · extensions/opensubtitles',
+    db:'—',
+    how:'A beágyazott sávok mellé külső feliratot is csatol (SRT→VTT konverzióval), és a néző beállítása szerint választ.',
+    ok:'A kívánt nyelvű sáv aktív indításkor.',
+    fail:'Üres feliratfájl nem csatolódik — korábban üres, de „érvényes" sávként jelent meg.',
+    limits:'A felirat-kiegészítőnek magának kell letöltenie a szöveget; a motor nem tölt le semmit.'
+  }),
+  F('Sub/dub és szolgáltatóváltó','Lejátszás','ok',{
+    files:'stream-engine.js (classifyVariant) · pages/watch.js',
+    db:'user_settings (playback.variant)',
+    how:'A forrás címéből és nyelvi mezőiből következtet a változatra, és a néző preferenciáját a rangsor elejére teszi.',
+    ok:'Aki szinkront kért, szinkronnal indul, ha van.',
+    fail:'Ha nincs a kívánt változat, a másik indul — jelezve.',
+    limits:'A címből következtetés heurisztika; nincs autoritatív jelzés.'
+  }),
+  F('AniSkip (intro/outro átugrás)','Lejátszás','ok',{
+    files:'pages/watch.js (beépített) · extensions/aniskip',
+    db:'— (skip_segments tábla létezik, de nincs használva)',
+    how:'MAL-id alapján kér intervallumokat; a lejátszó ebből csinál skip gombot és automatikus ugrást.',
+    ok:'Gomb jelenik meg a főcím alatt.',
+    fail:'MAL-id nélkül egyszerűen nincs skip — nem hiba.',
+    limits:'Két megvalósítás él egymás mellett (beépített + kiegészítő), szándékosan: a beépített a tartalék.'
+  }),
+  F('HLS lejátszás','Lejátszás','unver',{
+    files:'web/js/hls-handler.js · web/js/vendor/hls.min.mjs',
+    db:'—',
+    how:'Regisztrált kezelő a StreamEngine-ben; ha a böngésző natívan nem tud HLS-t, a vendorolt hls.js veszi át.',
+    ok:'A .m3u8 forrás elindul Chromiumon és Safariban is.',
+    fail:'Ha egyik út sem járható, a motor lejátszhatatlannak jelöli és továbblép.',
+    limits:'<b>Valódi HLS-streammel nem teszteltem</b> — a kód helyes, de a bizonyíték hiányzik.'
+  }),
+  F('Kiegészítő-sandbox','Kiegészítők','ok',{
+    files:'web/js/extension-host.js · extension-worker.js',
+    db:'extension_installs, extension_permissions',
+    how:'Minden kiegészítő saját Web Workerben fut. A hálózat host-allowlisten megy át, a tárhely névtérrel és mérethatárral (64 KB), a válaszok sanitizálva, a hívások időkorlátosak.',
+    ok:'A letöltött bájtok sha256-ja egyezik a bolt által rögzítettel — a futó kód az, amit átnéztek.',
+    fail:'Beragadt worker 10 s után lecserélődik; a hibát névtelen telemetria jelenti.',
+    limits:'A hitelesítő adatokat (token) a néző adja meg; a kiegészítő nem hozhat magával sajátot.'
+  }),
+  F('Kiegészítő-áruház és telepítés','Kiegészítők','ok',{
+    files:'pages/extensions.js · routes/extensions.ts · scripts/publish-extensions.ts',
+    db:'extensions, extension_versions, extension_installs, extension_events',
+    how:'A boltban telepítés, beállítás, ki-/bekapcsolás, eltávolítás. A beállítások a telepített verzió sémája ellen validálódnak; mentés után újraindul a sandbox.',
+    ok:'A saját csomagok minden induláskor bekerülnek a boltba (idempotens).',
+    fail:'Rossz típusú vagy ismeretlen opció 422-vel elutasítva, kimondva, mi a baj.',
+    limits:'Nincs áruház-részletlap és értékelés-UI (a <code>extension_reviews</code> tábla halott).'
+  }),
+  F('Nyolc saját kiegészítő','Kiegészítők','part',{
+    files:'extensions/{yume-library,jellyfin,plex,aniskip,opensubtitles,anilist-meta,yume-themes,translation-feed}',
+    db:'—',
+    how:'3 forrás (http), 3 metaadat, 1 felirat, 1 téma. Mind manifest-validált, mind tesztelt.',
+    ok:'Telepíthetők, beállíthatók, futnak.',
+    fail:'Minden kiegészítő üres listával tér vissza hiba esetén — egy hibás kiegészítő nem viszi el a lapot.',
+    limits:'<b>Mind stub-olt válaszokkal tesztelt.</b> Valódi Jellyfin/Plex/OpenSubtitles szerver ellen nem futott egyik sem — ezért 🟡, nem 🟢.'
+  }),
+  F('Fejlesztői portál: verziófeltöltés','Kiegészítők','bad',{
+    files:'pages/developer.js:224 · routes/dev.ts:236',
+    db:'extension_versions',
+    how:'A UI a manifestből <em>kiszámol</em> egy hamis hash-t és egy fix 20480 méretet, majd elküldi. A szerver viszont megköveteli, hogy a hash egy tényleg feltöltött csomagra mutasson.',
+    ok:'—',
+    fail:'<b>Mindig 400: „No uploaded package with that hash".</b> A portálról verziót kiadni ma nem lehet.',
+    limits:'A csomag-feltöltő végpont (<code>POST /packages</code>) kész és működik — csak a UI nem hívja meg.'
+  }),
+  F('Kommentek','Közösség','ok',{
+    files:'components.js (C.commentsSection) · routes/comments.ts',
+    db:'comments, comment_likes',
+    how:'Szálas kommentek spoiler-jelöléssel és lájkkal; a részletlapon és a lejátszóban is megjelenik.',
+    ok:'Azonnal megjelenik, optimista lájk-számmal.',
+    fail:'Bejelentkezés nélkül olvasható, íráshoz be kell lépni.',
+    limits:'Nincs szerkesztés, nincs értesítés válaszra.'
+  }),
+  F('Jelentés és moderációs sor','Közösség','ok',{
+    files:'routes/reports.ts · pages/admin.js (renderReports)',
+    db:'reports, moderation_actions',
+    how:'A néző jelent, a moderátor lezárja. A jelentés tárgya validált (nem lehet tetszőleges azonosítót bejelenteni).',
+    ok:'A sor csökken, a művelet auditálva.',
+    fail:'Ismeretlen tárgytípus elutasítva.',
+    limits:'Csak kommentre és értékelésre lehet jelenteni; felhasználóra nem.'
+  }),
+  F('Közös nézés (Watch Together)','Közösség','ok',{
+    files:'pages/w2g.js · routes/w2g.ts · lib/ws.ts · lib/pubsub.ts',
+    db:'watch_together_rooms',
+    how:'Meghívókód, WebSocket-csatorna, és <b>csak a házigazda vezérel</b> — korábban bárki tekerhetett mindenki alatt.',
+    ok:'Play/pause/tekerés/epizódváltás minden résztvevőn.',
+    fail:'Zárt vagy nem létező szobára „room not found"; túl sok csatornára korlát.',
+    limits:'Nincs szoba-lista, nincs jogosultság-átadás, ha a házigazda kilép.'
+  }),
+  F('Valós idejű chat','Közösség','dead',{
+    files:'lib/ws.ts (chat csatorna) · 0004_community.sql',
+    db:'chats, chat_members, messages',
+    how:'A szerver kész: tagság-ellenőrzés, perzisztálás, broadcast, particionált üzenettábla.',
+    ok:'—',
+    fail:'—',
+    limits:'<b>Nincs kliens.</b> Egyetlen lap sem nyit chat-csatornát; a szobán belüli chat a w2g eseményfolyamot használja. Kész szerveroldal, nulla felhasználó.'
+  }),
+  F('Értesítések (szerveroldali)','Közösség','dead',{
+    files:'workers/notify.ts · graphql/schema.ts',
+    db:'notifications',
+    how:'Worker írja, GraphQL olvassa és jelöli olvasottnak.',
+    ok:'—',
+    fail:'—',
+    limits:'<b>A kliens nem használja.</b> A <code>#/notifications</code> lap a helyi könyvtárból származtat adás-emlékeztetőket, és a szerver értesítéseit meg sem kérdezi.'
+  }),
+  F('Admin: felhasználókezelés','Admin','ok',{
+    files:'routes/admin.ts · pages/admin.js (renderUsers)',
+    db:'users, audit_logs, security_logs',
+    how:'Keresés, felfüggesztés, tiltás. Minden állapotváltás auditba kerül, és emeli a token-verziót.',
+    ok:'A bannolt fiók tokenjei azonnal érvénytelenek.',
+    fail:'403, ha nincs <code>admin.users.manage</code>.',
+    limits:'Nincs tömeges művelet, nincs fióktörlés.'
+  }),
+  F('Admin: katalógusszerkesztő','Admin','ok',{
+    files:'routes/catalogue.ts · pages/admin.js (renderCatalogue)',
+    db:'anime + kapcsolódó táblák, episodes',
+    how:'Létrehozás, szerkesztés, publikálás, epizód-láthatóság, duplikátum-kereső és összevonás, mezőnkénti eredet („honnan jött ez az adat").',
+    ok:'A szerkesztés zárolja a mezőt a következő import ellen.',
+    fail:'Jogosultságonként külön ellenőrzés (view/edit/create/delete/merge).',
+    limits:'Nincs tömeges szerkesztés és nincs visszavonás.'
+  }),
+  F('Admin: fordításkezelő','Admin','ok',{
+    files:'routes/translations.ts · pages/admin.js (renderTranslations)',
+    db:'anime_translations, episode_translations, anime_missing_translations',
+    how:'Sor a lefordítatlan címekből népszerűség szerint, szerkesztő, haladásmérő.',
+    ok:'A mentett fordítás azonnal megjelenik a nyilvános lapon.',
+    fail:'403 <code>anime.edit</code> nélkül.',
+    limits:'Nincs jóváhagyási folyamat (az <code>approved</code> oszlop megvan).'
+  }),
+  F('Admin: szerepkörök és jogosultságok','Admin','part',{
+    files:'routes/roles.ts · pages/admin.js (renderRoles)',
+    db:'roles, permissions, role_permissions',
+    how:'Szerepkör-sín + csoportosított jogosultság-katalógus, csoportos ki/be, szűrő. Az admin szerep védett.',
+    ok:'A változás a cache lejárta után (30 s) hat.',
+    fail:'403 <code>roles.manage</code> nélkül.',
+    limits:'A kapcsolgatható jogosultságok többsége semmit nem véd — lásd a műszaki adósságot.'
+  }),
+  F('Admin: hibák és audit','Admin','ok',{
+    files:'routes/admin.ts · lib/errors.ts · lib/audit.ts',
+    db:'error_groups, error_logs, audit_logs',
+    how:'A hibák ujjlenyomat szerint csoportosulnak; az audit megmondja, ki mit változtatott, előtte-utána értékkel.',
+    ok:'A request-id összeköti a felhasználó által látott hibát a naplósorral.',
+    fail:'A telemetria bukása sosem cseréli le a felhasználó eredeti hibáját.',
+    limits:'Az error_logs 1 hónap után törlődik; a csoportok megmaradnak.'
+  }),
+  F('Admin: infrastruktúra-nézet','Admin','ok',{
+    files:'routes/monitoring.ts · workers/monitor.ts · pages/admin.js (renderMonitoring)',
+    db:'system_metrics, system_metrics_hourly, service_status, monitor_alerts, diagnostic_runs',
+    how:'A worker gyűjt percenként, a felület az utolsó pillanatképet olvassa. Küszöbök, függőség-térkép („mit ront el egy piros szolgáltatás"), diagnosztikai futtatás.',
+    ok:'Grafikonok és riasztás-előzmény jogosultság mögött.',
+    fail:'Ha a legfrissebb minta 3 ciklusnál régebbi, a felület elavultnak jelöli.',
+    limits:'<b>A riasztás nem megy sehova</b> — se e-mail, se push, se Discord.'
+  }),
+  F('Webhookok','Admin','ok',{
+    files:'routes/webhooks.ts · lib/webhooks.ts',
+    db:'webhooks, webhook_deliveries',
+    how:'Eseményre feliratkozás, aláírt kézbesítés, újrapróbálkozás, kézbesítési napló, tesztlövés. Discord-formátumnál embed.',
+    ok:'A kézbesítés naplózva, hibánál újrapróbál.',
+    fail:'Végleges bukás után a sor eldobja, a napló megőrzi.',
+    limits:'A cél-URL SSRF-ellenőrzésen megy át — privát hálózat nem címezhető.'
+  }),
+  F('Site config és feature flagek','Admin','part',{
+    files:'routes/config.ts · pages/admin.js (renderConfig)',
+    db:'site_settings, feature_flags',
+    how:'Nyilvános konfiguráció + admin szerkesztő; a flagek százalékos bevezetést is támogatnak a sémában.',
+    ok:'A kliens indításkor lekéri a nyilvános konfigurációt.',
+    fail:'Nem elérhető API esetén beépített alapértékek.',
+    limits:'<b>A flageket a kliens nem kérdezi meg funkció-kapcsoláshoz</b> — a mező létezik, a felhasználása nem.'
+  }),
+  F('Job-sor és workerek','Platform','ok',{
+    files:'lib/queue.ts · workers/index.ts + 7 handler',
+    db:'jobs',
+    how:'Postgres-alapú sor <code>FOR UPDATE SKIP LOCKED</code>-kal, dedupe-kulccsal, újrapróbálkozással. Nincs külső bróker.',
+    ok:'A CI külön lépésben végigfuttatja a sort (<code>worker:once</code>).',
+    fail:'Beragadt job látszik az admin sor-nézetében.',
+    limits:'Egy worker-processz; nincs prioritás-osztály.'
+  }),
+  F('Partíciók és retenció','Platform','ok',{
+    files:'workers/maintenance.ts',
+    db:'9 particionált tábla',
+    how:'Aktuális hónap + 2 előre létrehozva; a retenciós szabály hónap-alapú partíció-eldobással takarít.',
+    ok:'Az inzertek sosem futnak ki partícióból, ha a worker él.',
+    fail:'<b>Ha a worker leáll, az inzertek előbb-utóbb hibázni fognak.</b> Ez a legfontosabb ok, amiért a worker éles üzemben kötelező.',
+    limits:'A security_logs nincs a listán — végtelen ideig nő.'
+  }),
+  F('Migrációfuttató','Platform','ok',{
+    files:'lib/migrate.ts · db/migrations/*.sql',
+    db:'schema_migrations',
+    how:'Sorszámozott SQL fájlok, tranzakcióban, advisory lock alatt sorosítva.',
+    ok:'A CI külön lépésben bizonyítja, hogy az újrafuttatás nem csinál semmit.',
+    fail:'Hibás migráció visszagördül, és a futtató megáll.',
+    limits:'Nincs lefelé migráció (szándékosan).'
+  }),
+  F('Mentés és visszaállítás','Platform','ok',{
+    files:'db/backup.sh · db/restore.sh · db/backup-cron.sh',
+    db:'teljes dump',
+    how:'Napi pg_dump egyedi formátumban, majd <b>visszatöltés egy scratch adatbázisba</b> bizonyításképp. Kor szerinti takarítás.',
+    ok:'Egy soha vissza nem állított mentés csak feltételezés — ez a szkript nem hagyja annak.',
+    fail:'Ha a visszaállítás-ellenőrzés bukik, a mentés hibásnak jelölődik.',
+    limits:'A kiegészítő-csomagok fájlrendszeren élnek, <b>nincsenek a dumpban</b>. Külső másolat csak beállítás után.'
+  }),
+  F('GraphQL API','Platform','dead',{
+    files:'graphql/schema.ts (599 sor)',
+    db:'ugyanazok a táblák, mint a REST',
+    how:'5 query, 4 mutation, DataLoaderek, mélységkorlát, éles módban letiltott introspection, saját dokumentumhossz-limit.',
+    ok:'—',
+    fail:'—',
+    limits:'<b>A webkliens egyetlen hívást sem intéz hozzá.</b> Karbantartott, tesztelt, nem használt felület.'
+  }),
+  F('Oldalletöltés-mérés','Analitika','dead',{
+    files:'workers/maintenance.ts (csak a retenció)',
+    db:'page_views',
+    how:'A tábla létezik, particionált, és a retenciós lista is takarítja.',
+    ok:'—',
+    fail:'—',
+    limits:'<b>Egyetlen sor kód sem ír bele.</b> A takarító worker olyan táblát tart karban, amibe soha semmi nem kerül.'
+  }),
+  F('Nézési előzmény a szerveren','Analitika','bad',{
+    files:'routes/library.ts:163 · web/js/library-sync.js:136',
+    db:'watch_history, xp_events, watch_stats_daily, profile_stats',
+    how:'A szerver akkor ír előzményt és XP-t, ha <code>positionSec / durationSec ≥ 0,85</code>.',
+    ok:'—',
+    fail:'<b>A kliens sosem küld <code>durationSec</code>-et</b>, tehát a feltétel sosem teljesül. Az előzmény, az XP, a napi rollup és a profil-statisztika üresen marad.',
+    limits:'Egy mező hozzáadása a kliens kérésében feléleszti mind a négy táblát.'
+  }),
+  F('Achievementek és kitűzők','Analitika','part',{
+    files:'pages/achievements.js',
+    db:'achievements, badges, user_badges, profile_achievements — <b>mind halott</b>',
+    how:'A kliens a helyi előzményből és könyvtárból számol kitűzőket, a valódi mért nézési idővel.',
+    ok:'A lap működik és értelmes számokat mutat.',
+    fail:'—',
+    limits:'Böngészőfüggő: másik gépen nulláról kezd. A négy megtervezett tábla üres.'
+  }),
+  F('Profil-statisztika','Analitika','part',{
+    files:'pages/profile.js · pages/analytics.js · pages/dashboard.js',
+    db:'profile_stats (szerveroldalon, de üres)',
+    how:'Helyi előzményből számolt megnézett percek, műfaj-eloszlás, aktivitás.',
+    ok:'A számok most már valódi mérésen alapulnak, nem becslésen.',
+    fail:'—',
+    limits:'Csak helyi. A szerveroldali <code>profile_stats</code> a worker miatt létezik, de üres marad (lásd fent).'
+  }),
+  F('Kedvencek','Könyvtár','part',{
+    files:'web/js/store.js',
+    db:'favorites — <b>halott</b>',
+    how:'localStorage-ban tárolt lista, profilonként.',
+    ok:'Működik és megjelenik a könyvtárban.',
+    fail:'—',
+    limits:'Nem szinkronizál; a tábla létezik és üres.'
+  }),
+  F('Egyéni listák és gyűjtemények','Könyvtár','plan',{
+    files:'—',
+    db:'custom_lists, custom_list_items, collections, collection_lists',
+    how:'Táblák és indexek megvannak.',
+    ok:'—', fail:'—',
+    limits:'Nulla kód, nulla UI. Megtervezett, meg nem valósított.'
+  }),
+  F('Klubok és fórumok','Közösség','plan',{
+    files:'—',
+    db:'clubs, club_members, forums, topics, posts',
+    how:'Táblák megvannak; a <code>posts</code> csak a moderációs sorban szerepel hivatkozásként.',
+    ok:'—', fail:'—',
+    limits:'Nulla kliens, nulla végpont.'
+  }),
+  F('Barátok és követés','Közösség','plan',{
+    files:'—',
+    db:'friendships, follows',
+    how:'Táblák megvannak.',
+    ok:'—', fail:'—',
+    limits:'Nulla kód.'
+  }),
+  F('OAuth és külső haladás-szinkron','Fiók','plan',{
+    files:'—',
+    db:'oauth_identities',
+    how:'A <code>users.password_hash</code> szándékosan nullázható, hogy csak-OAuth fiók létezhessen.',
+    ok:'—', fail:'—',
+    limits:'Nincs OAuth-folyamat. Enélkül nincs AniList/MAL-szinkron sem.'
+  }),
+  F('Discord-bot','Integráció','plan',{
+    files:'docs/discord-bot.md (499 sor dokumentáció)',
+    db:'—',
+    how:'A dokumentáció részletes tervet ad.',
+    ok:'—', fail:'—',
+    limits:'<b>Nulla sor kód.</b> Ami létezik: kimenő webhook Discord-embed formátumban.'
+  }),
+  F('Saját videóforrás-tárolás','Lejátszás','plan',{
+    files:'—',
+    db:'video_sources, source_mirrors, subtitle_tracks, audio_tracks — mind halott',
+    how:'A séma teljes: forrás, tükör, felirat- és hangsáv epizódonként.',
+    ok:'—', fail:'—',
+    limits:'<b>Nulla kód.</b> Ez az a hiányzó darab, ami miatt a Yume önmagában nem tud lejátszani semmit.'
+  }),
+  F('Kiegészítők ütemezett futtatása','Kiegészítők','plan',{
+    files:'—',
+    db:'—',
+    how:'A kiegészítők ma csak kérésre futnak (lapmegnyitás, lejátszás).',
+    ok:'—', fail:'—',
+    limits:'Nincs háttérhurok, ezért forrás-egészség-ellenőrző vagy periodikus frissítő ma <b>nem építhető meg</b> kiegészítőként.'
+  }),
+  F('E2E / böngésző-tesztek','Minőség','plan',{
+    files:'— (a CI csak szintaxist és lintet futtat a kliensen)',
+    db:'—',
+    how:'A kliens logikai része (motor, i18n, watch-time, kiegészítők) egységtesztelt DOM-stubbal.',
+    ok:'—', fail:'—',
+    limits:'A lejátszó, a router, a bejelentkezés és az admin felület <b>egyetlen automatikus böngésző-tesztet</b> sem lát.'
+  }),
+  F('Kliens-oldali típusellenőrzés','Minőség','plan',{
+    files:'—',
+    db:'—',
+    how:'12 000 sor JS globálisokkal; a CI szintaxist és stílust ellenőriz.',
+    ok:'—', fail:'—',
+    limits:'Elgépelt mezőnév csak futásidőben derül ki.'
+  })
+]
+
+/* ---- API végpontok ----------------------------------------------------- */
+const E = (m, path, purpose, auth, client, st) => ({ m, path, purpose, auth, client, st })
+const ENDPOINTS = [
+  E('GET','/v1/health','Liveness — nulla függőség','nyilvános','Docker healthcheck','ok'),
+  E('GET','/v1/health/ready','Readiness: függőség-szondák összesítve, 503 ha UNHEALTHY','nyilvános','YumeAPI.readiness','ok'),
+  E('POST','/graphql','GraphQL — 5 query, 4 mutation','opcionális Bearer','<b>senki</b>','dead'),
+  E('GET','/ws','WebSocket: w2g és chat csatornák','ws-ticket','pages/w2g.js','ok'),
+
+  E('POST','/v1/auth/register','Fiók létrehozása; első fiók adminná válik','nyilvános · 10/15p','C.authCard','ok'),
+  E('POST','/v1/auth/login','Bejelentkezés','nyilvános · 10/15p','C.authCard','ok'),
+  E('POST','/v1/auth/refresh','Refresh token forgatása','nyilvános · 60/15p','YumeAPI._refresh','ok'),
+  E('GET','/v1/auth/permissions','A saját jogosultsághalmaz','bejelentkezve','pages/admin.js','ok'),
+  E('POST','/v1/auth/logout','Egy eszköz kijelentkeztetése','bejelentkezve','YumeAPI.logout','ok'),
+  E('POST','/v1/auth/logout-all','Minden eszköz','bejelentkezve','pages/settings.js','ok'),
+  E('POST','/v1/auth/password','Jelszóváltás (minden más session megszűnik)','bejelentkezve','pages/settings.js','ok'),
+  E('POST','/v1/auth/forgot','Helyreállítás kérése — semleges válasz','nyilvános · 10/15p','pages/settings.js','part'),
+  E('POST','/v1/auth/reset','Jelszó beállítása tokennel','nyilvános · 10/15p','pages/settings.js','part'),
+  E('POST','/v1/auth/ws-ticket','Egyszer használatos WebSocket-jegy','bejelentkezve','YumeAPI.openSocket','ok'),
+
+  E('GET','/v1/anime/','Katalógus-böngészés szűrőkkel','nyilvános','Catalogue.browse','ok'),
+  E('GET','/v1/anime/schedule','Adásnaptár időablakra','nyilvános','Catalogue.scheduleOrAniList','ok'),
+  E('GET','/v1/anime/search','Rétegzett keresés (tsvector + trigram)','nyilvános','Catalogue.searchOrAniList','ok'),
+  E('GET','/v1/anime/suggest','Gyors kiegészítés gépelés közben','nyilvános','YumeAPI.suggest','ok'),
+  E('GET','/v1/anime/by-anilist','Tömeges feloldás AniList-id listából','nyilvános','Catalogue.byAniListIds','ok'),
+  E('GET','/v1/anime/by-anilist/:id','Egy cím AniList-id alapján','nyilvános','LibrarySync','ok'),
+  E('POST','/v1/anime/resolve','Csonk létrehozása AniList-adatból, ha nincs saját sor','bejelentkezve','LibrarySync','ok'),
+  E('GET','/v1/anime/:id','Teljes részletek (UUID vagy AniList-id)','nyilvános','Catalogue.media','ok'),
+  E('GET','/v1/anime/:id/episodes','Epizódlista','nyilvános','Catalogue.episodes','ok'),
+  E('GET','/v1/anime/:id/relations','Kapcsolatgráf','nyilvános','pages/anime.js','ok'),
+
+  E('GET','/v1/me/library','A profil könyvtára','bejelentkezve','LibrarySync','ok'),
+  E('PUT','/v1/me/library/:animeId','Státusz/haladás/pontszám mentése','bejelentkezve','LibrarySync','ok'),
+  E('DELETE','/v1/me/library/:animeId','Törlés a könyvtárból','bejelentkezve','LibrarySync','ok'),
+  E('GET','/v1/me/continue-watching','Folytatás-sor','bejelentkezve','<b>senki</b>','dead'),
+  E('PATCH','/v1/me/progress/:episodeId','Lejátszási pozíció mentése','bejelentkezve','LibrarySync','part'),
+  E('GET','/v1/me/settings','Beállítások + onboarding állapot + séma','bejelentkezve','Prefs.pull','ok'),
+  E('PATCH','/v1/me/settings','Beállítás mentése (validált)','bejelentkezve','Prefs.push','ok'),
+  E('DELETE','/v1/me/settings','Beállítások visszaállítása','bejelentkezve','pages/settings.js','ok'),
+
+  E('GET','/v1/profiles/','Fiókhoz tartozó profilok','bejelentkezve','LibrarySync','ok'),
+  E('POST','/v1/profiles/','Profil létrehozása','bejelentkezve','LibrarySync','ok'),
+  E('PATCH','/v1/profiles/:id','Átnevezés / avatar','bejelentkezve','pages/profiles.js','ok'),
+  E('DELETE','/v1/profiles/:id','Profil törlése','bejelentkezve','pages/profiles.js','ok'),
+
+  E('GET','/v1/extensions/','Áruház-lista típus és rendezés szerint','nyilvános','pages/extensions.js','ok'),
+  E('GET','/v1/extensions/installed','Telepítettek + jogosultságok + opció-séma','bejelentkezve','ExtensionHost.bootstrap','ok'),
+  E('GET','/v1/extensions/:slug','Egy kiegészítő részletei','nyilvános','YumeAPI.extension','part'),
+  E('GET','/v1/extensions/:slug/versions/:v/package','A csomag bájtjai, hash-ellenőrzéssel','nyilvános','ExtensionHost','ok'),
+  E('POST','/v1/extensions/:slug/install','Telepítés, manifest-alapértékekkel','bejelentkezve','pages/extensions.js','part'),
+  E('PATCH','/v1/extensions/:slug/install','Opciók cseréje / ki-be kapcsolás','bejelentkezve · 30/5p','pages/extensions.js','ok'),
+  E('DELETE','/v1/extensions/:slug/install','Eltávolítás','bejelentkezve','pages/extensions.js','ok'),
+  E('POST','/v1/extensions/:slug/events','Névtelen hibatelemetria','bejelentkezve · 30/5p','ExtensionHost','ok'),
+
+  E('GET','/v1/dev/me','Fejlesztői profil','bejelentkezve','pages/developer.js','ok'),
+  E('POST','/v1/dev/register','Fejlesztővé válás','bejelentkezve','pages/developer.js','ok'),
+  E('GET','/v1/dev/extensions','Saját kiegészítők','extensions.publish','pages/developer.js','ok'),
+  E('POST','/v1/dev/extensions','Új kiegészítő','extensions.publish','pages/developer.js','ok'),
+  E('POST','/v1/dev/extensions/:slug/packages','Nyers forrás feltöltése, szerver számol hash-t','extensions.publish','<b>senki</b>','dead'),
+  E('POST','/v1/dev/extensions/:slug/versions','Verzió kiadása feltöltött csomagra','extensions.publish','pages/developer.js','bad'),
+  E('GET','/v1/dev/extensions/:slug/analytics','Telepítések, hibák, verziók','extensions.publish','pages/developer.js','ok'),
+
+  E('GET','/v1/comments/','Kommentek egy tárgyhoz','nyilvános','C.commentsSection','ok'),
+  E('GET','/v1/comments/recent','Közösségi feed','nyilvános','pages/community.js','ok'),
+  E('POST','/v1/comments/','Komment küldése','bejelentkezve · 30/5p','C.commentsSection','ok'),
+  E('POST','/v1/comments/:id/like','Lájk váltása','bejelentkezve','C.commentsSection','ok'),
+  E('POST','/v1/reports/','Jelentés (validált tárgytípus)','bejelentkezve · 30/5p','C.commentsSection','ok'),
+
+  E('POST','/v1/w2g/','Szoba nyitása (ütközésbiztos kód)','bejelentkezve','pages/w2g.js','ok'),
+  E('GET','/v1/w2g/:code','Szoba olvasása kóddal','nyilvános','pages/w2g.js','ok'),
+  E('DELETE','/v1/w2g/:code','Szoba zárása','bejelentkezve','pages/w2g.js','ok'),
+
+  E('GET','/v1/config/','Nyilvános konfiguráció és flagek','nyilvános','YumeAPI.config','part'),
+  E('GET','/v1/admin/config/','Teljes konfiguráció','settings.system','pages/admin.js','ok'),
+  E('PATCH','/v1/admin/config/flags/:key','Feature flag állítása','settings.system','pages/admin.js','part'),
+  E('PATCH','/v1/admin/config/settings/:key','Site beállítás','settings.system','pages/admin.js','ok'),
+
+  E('GET','/v1/admin/users','Felhasználó-keresés','admin.users.manage','pages/admin.js','ok'),
+  E('POST','/v1/admin/users/:id/status','Felfüggesztés / tiltás (auditált)','admin.users.manage','pages/admin.js','ok'),
+  E('GET','/v1/admin/reports','Moderációs sor','community.moderate','pages/admin.js','ok'),
+  E('POST','/v1/admin/reports/:id/resolve','Jelentés lezárása','community.moderate','pages/admin.js','ok'),
+  E('GET','/v1/admin/analytics/overview','Platform-összefoglaló','admin.analytics.view','pages/admin.js','ok'),
+  E('GET','/v1/admin/errors','Hibacsoportok','admin.analytics.view','pages/admin.js','ok'),
+  E('GET','/v1/admin/errors/:id','Egy csoport példányai','admin.analytics.view','pages/admin.js','ok'),
+  E('PATCH','/v1/admin/errors/:id','Megoldottnak jelölés','admin.analytics.view','pages/admin.js','ok'),
+  E('GET','/v1/admin/audit','Audit napló','admin.users.manage','pages/admin.js','ok'),
+
+  E('GET','/v1/admin/catalogue','Katalógus-lista szerkesztéshez','anime.view','pages/admin.js','ok'),
+  E('GET','/v1/admin/catalogue/:id','Teljes rekord eredettel','anime.view','pages/admin.js','ok'),
+  E('POST','/v1/admin/catalogue','Új anime','anime.create','pages/admin.js','ok'),
+  E('PATCH','/v1/admin/catalogue/:id','Szerkesztés (mezőt zárol)','anime.edit','pages/admin.js','ok'),
+  E('DELETE','/v1/admin/catalogue/:id','Törlés','anime.delete','pages/admin.js','ok'),
+  E('GET','/v1/admin/catalogue/:id/episodes','Epizódok','anime.view','pages/admin.js','ok'),
+  E('POST','/v1/admin/catalogue/:id/episodes','Epizód hozzáadása','episode.create','pages/admin.js','ok'),
+  E('PATCH','/v1/admin/catalogue/episodes/:eid','Epizód szerkesztése','episode.edit','pages/admin.js','ok'),
+  E('POST','/v1/admin/catalogue/:id/episodes/visibility','Tömeges publikálás','episode.edit','pages/admin.js','ok'),
+  E('DELETE','/v1/admin/catalogue/episodes/:eid','Epizód törlése','episode.delete','pages/admin.js','ok'),
+  E('POST','/v1/admin/catalogue/:id/unlock','Mezőzár feloldása','anime.edit','pages/admin.js','ok'),
+  E('GET','/v1/admin/catalogue/duplicates','Duplikátum-jelöltek','anime.view','pages/admin.js','ok'),
+  E('POST','/v1/admin/catalogue/:id/merge','Összevonás','anime.merge','pages/admin.js','ok'),
+
+  E('GET','/v1/admin/translations/queue','Fordítási sor népszerűség szerint','anime.edit','pages/admin.js','ok'),
+  E('GET','/v1/admin/translations/progress','Fordítási haladás','anime.edit','pages/admin.js','ok'),
+  E('GET','/v1/admin/translations/anime/:id','Egy cím fordításai','anime.edit','pages/admin.js','ok'),
+  E('PUT','/v1/admin/translations/anime/:id/:lang','Fordítás mentése','anime.edit','pages/admin.js','ok'),
+  E('DELETE','/v1/admin/translations/anime/:id/:lang','Fordítás törlése','anime.edit','pages/admin.js','ok'),
+  E('PUT','/v1/admin/translations/episode/:id/:lang','Epizódcím fordítása','anime.edit','pages/admin.js','ok'),
+
+  E('GET','/v1/admin/roles/','Szerepkörök','roles.manage','pages/admin.js','ok'),
+  E('GET','/v1/admin/roles/permissions','Jogosultság-katalógus','roles.manage','pages/admin.js','part'),
+  E('POST','/v1/admin/roles/:id/permissions','Jogosultság adása/elvétele','roles.manage','pages/admin.js','ok'),
+
+  E('GET','/v1/admin/webhooks/events','Elérhető események','admin.webhooks.manage','pages/admin.js','ok'),
+  E('GET','/v1/admin/webhooks/','Webhookok','admin.webhooks.manage','pages/admin.js','ok'),
+  E('GET','/v1/admin/webhooks/:id/deliveries','Kézbesítési napló','admin.webhooks.manage','pages/admin.js','ok'),
+  E('POST','/v1/admin/webhooks/','Létrehozás (SSRF-ellenőrzött cél)','admin.webhooks.manage','pages/admin.js','ok'),
+  E('PATCH','/v1/admin/webhooks/:id','Módosítás','admin.webhooks.manage','pages/admin.js','ok'),
+  E('DELETE','/v1/admin/webhooks/:id','Törlés','admin.webhooks.manage','pages/admin.js','ok'),
+  E('POST','/v1/admin/webhooks/:id/test','Tesztlövés','admin.webhooks.manage','pages/admin.js','ok'),
+
+  E('GET','/v1/admin/monitoring/current','Aktuális VPS-pillanatkép','system.metrics.view','pages/admin.js','ok'),
+  E('GET','/v1/admin/monitoring/history','Órás előzmény','system.metrics.view','pages/admin.js','ok'),
+  E('GET','/v1/admin/monitoring/thresholds','Küszöbök','system.metrics.view','pages/admin.js','ok'),
+  E('GET','/v1/admin/monitoring/alerts','Riasztások','system.metrics.view','pages/admin.js','part'),
+  E('POST','/v1/admin/monitoring/diagnostics','Diagnosztika indítása','system.diagnostics.run','pages/admin.js','ok'),
+  E('GET','/v1/admin/monitoring/diagnostics','Futtatások','system.diagnostics.run','pages/admin.js','ok'),
+  E('GET','/v1/admin/monitoring/diagnostics/:id','Egy futtatás','system.diagnostics.run','pages/admin.js','ok'),
+  E('GET','/v1/admin/monitoring/queues','Job-sor állapota','system.metrics.view','pages/admin.js','ok')
+]
+
+/* ---- táblák ------------------------------------------------------------ */
+const T = (name, purpose, user, st) => ({ name, purpose, user, st })
+const TABLES = [
+  T('users','Fiókok','routes/auth.ts, admin.ts','ok'),
+  T('sessions','Refresh tokenek eszközönként','routes/auth.ts','ok'),
+  T('ws_tickets','Egyszer használatos WebSocket-jegyek','routes/auth.ts, lib/ws.ts','ok'),
+  T('password_resets','Jelszó-helyreállító tokenek','routes/auth.ts','part'),
+  T('security_logs','Bejelentkezés, hibás jelszó, bannolás','routes/auth.ts','part'),
+  T('audit_logs','Ki mit változtatott (particionált)','lib/audit.ts','ok'),
+  T('roles / permissions / role_permissions / user_roles','RBAC','plugins/auth.ts, routes/roles.ts','part'),
+  T('user_profiles','Nézők egy fiókon belül','routes/profiles.ts','ok'),
+  T('user_settings','Nyelv, lejátszás, onboarding','routes/settings.ts, lib/preferences.ts','ok'),
+  T('devices','Eszközregisztráció','routes/auth.ts','part'),
+  T('oauth_identities','Külső bejelentkezés','—','dead'),
+  T('api_keys','Gépi hozzáférés','—','dead'),
+
+  T('anime','Katalógus törzs','routes/anime.ts, catalogue.ts, lib/metadata.ts','ok'),
+  T('anime_titles','Címek nyelvenként','lib/metadata.ts','ok'),
+  T('anime_synonyms','Alternatív címek a kereséshez','lib/search.ts','ok'),
+  T('anime_translations','Magyar cím és leírás','routes/translations.ts','ok'),
+  T('episode_translations','Magyar epizódcímek','routes/translations.ts','ok'),
+  T('anime_images','Borítók, bannerek','lib/metadata.ts','ok'),
+  T('anime_mappings','Külső azonosítók','workers/importer.ts','ok'),
+  T('anime_relations','Kapcsolatgráf','routes/anime.ts','ok'),
+  T('anime_genres / genres','Műfajok','routes/anime.ts','ok'),
+  T('anime_tags / tags','Rangsorolt címkék','routes/anime.ts','ok'),
+  T('anime_companies / companies','Stúdiók','lib/metadata.ts','part'),
+  T('anime_videos','Előzetesek','lib/metadata.ts','part'),
+  T('episodes','Epizódok','routes/anime.ts, library.ts','ok'),
+  T('people / characters','Személyek, karakterek','lib/metadata.ts (csak említés)','part'),
+  T('anime_characters / anime_staff / character_voices','Szereplőgárda','—','dead'),
+  T('anime_recommendations','Ajánlások','—','dead'),
+
+  T('video_sources / source_mirrors','Videóforrások és tükrök','—','dead'),
+  T('subtitle_tracks / audio_tracks','Felirat- és hangsávok','—','dead'),
+  T('skip_segments','Intro/outro szakaszok','—','dead'),
+
+  T('library_entries','Könyvtár státusszal','routes/library.ts','ok'),
+  T('watch_progress','Lejátszási pozíció','routes/library.ts','ok'),
+  T('watch_history','Befejezett epizódok (particionált)','workers/stats.ts olvassa','bad'),
+  T('watch_stats_daily','Napi összesítő','workers/stats.ts','part'),
+  T('profile_stats','Profil-összesítők','workers/stats.ts','part'),
+  T('xp_events','XP-események','routes/library.ts','bad'),
+  T('achievements / profile_achievements','Achievement-modell','—','dead'),
+  T('badges / user_badges','Kitűzők','—','dead'),
+  T('favorites','Kedvencek','—','dead'),
+  T('bookmarks','Könyvjelzők','—','dead'),
+  T('custom_lists / custom_list_items','Egyéni listák','—','dead'),
+  T('collections / collection_lists','Gyűjtemények','—','dead'),
+
+  T('comments / comment_likes','Kommentek','routes/comments.ts','ok'),
+  T('reviews / review_votes','Értékelések','admin.ts (csak moderáció)','part'),
+  T('reports','Jelentések','routes/reports.ts, admin.ts','ok'),
+  T('moderation_actions','Moderációs műveletek','routes/admin.ts','ok'),
+  T('notifications','Szerveroldali értesítések','workers/notify.ts, graphql','dead'),
+  T('chats / chat_members / messages','Chat','lib/ws.ts (kliens nélkül)','dead'),
+  T('clubs / club_members / forums / topics / posts','Klubok és fórumok','—','dead'),
+  T('friendships / follows','Kapcsolatok','—','dead'),
+  T('watch_together_rooms','Közös nézés szobák','routes/w2g.ts','ok'),
+
+  T('extensions / extension_versions / extension_permissions','Áruház','routes/extensions.ts, dev.ts','ok'),
+  T('extension_developers','Kiadók','routes/dev.ts','ok'),
+  T('extension_installs','Telepítések és opciók','routes/extensions.ts','ok'),
+  T('extension_events','Hibatelemetria (particionált)','routes/extensions.ts','ok'),
+  T('extension_reviews','Áruház-értékelések','—','dead'),
+
+  T('jobs','Job-sor','lib/queue.ts','ok'),
+  T('webhooks / webhook_deliveries','Kimenő integrációk','lib/webhooks.ts','ok'),
+  T('site_settings / feature_flags','Konfiguráció','routes/config.ts','part'),
+  T('error_groups / error_logs','Hibacsoportok (particionált)','lib/errors.ts','ok'),
+  T('performance_metrics','API-válaszidő (particionált)','app.ts','ok'),
+  T('search_stats','Keresési statisztika (particionált)','lib/search.ts','ok'),
+  T('page_views','Oldalletöltés (particionált)','csak a retenció','dead'),
+  T('system_metrics / system_metrics_hourly','VPS-metrikák','workers/monitor.ts','ok'),
+  T('service_status','Függőség-állapotok','lib/probes.ts','ok'),
+  T('monitor_alerts','Küszöb-riasztások','lib/alerts.ts','part'),
+  T('diagnostic_runs','Diagnosztikai futtatások','lib/diagnostics.ts','ok'),
+  T('schema_migrations','Alkalmazott migrációk','lib/migrate.ts','ok')
+]
+
+/* ---- hibák ------------------------------------------------------------- */
+const B = (sev, title, o) => Object.assign({ sev, title }, o)
+const BUGS = [
+  B('crit','A fejlesztői portál verziófeltöltése garantáltan hibára fut',{
+    files:'web/js/pages/developer.js:224–240 · server/src/routes/dev.ts:236',
+    ev:'A UI <code>sha256Hex(JSON.stringify(manifest) + version)</code>-ből gyárt hash-t és fix <code>packageSize: 20480</code>-at küld, csomagbájtok feltöltése nélkül. A szerver <code>statBlob(body.packageHash)</code>-kal ellenőriz, és hiányzó blobra 400-at ad: „No uploaded package with that hash".',
+    impact:'Egy fejlesztő nem tud verziót kiadni a portálról. A funkció úgy néz ki, mintha működne — a modal bezárul, aztán hibaüzenet.',
+    fix:'A modal küldje el a forrást <code>POST /packages</code>-re, és a visszakapott hash-t használja. A végpont kész és működik.'
+  }),
+  B('crit','A szerveroldali nézési előzmény sosem íródik',{
+    files:'server/src/routes/library.ts:147 · web/js/library-sync.js:136',
+    ev:'A szerver így számol: <code>durationSec != null &amp;&amp; durationSec > 0 &amp;&amp; positionSec/durationSec >= 0.85</code>. A kliens teste viszont csak <code>{ positionSec }</code> — <code>durationSec</code> soha nincs benne.',
+    impact:'A <code>watch_history</code>, az <code>xp_events</code>, a <code>watch_stats_daily</code> és a <code>profile_stats</code> üresen marad. A napi rollup nullát összesít, az admin „megnézett percek" mutatója mindig 0.',
+    fix:'A kliens küldje a <code>durationSec</code>-et is. Érdemesebb viszont a mért befejezettséget küldeni: a kliens már tudja (WatchTime), a szerver pozícióból tippel.'
+  }),
+  B('high','A telepítésszámláló minden újratelepítésnél nő',{
+    files:'server/src/routes/extensions.ts:238–250',
+    ev:'Az <code>INSERT … ON CONFLICT DO UPDATE</code> után az <code>UPDATE extensions SET install_count = install_count + 1</code> feltétel nélkül fut, akkor is, ha a sor már létezett.',
+    impact:'Az áruház rangsora (alapból telepítésszám szerint) hamis. Az eltávolítás–újratelepítés ciklus tetszőlegesen felpumpálja.',
+    fix:'Csak akkor növelni, ha az insert tényleg új sort hozott létre (<code>xmax = 0</code>) — a publish-szkript már ezt a mintát használja.'
+  }),
+  B('high','A jelszó-helyreállító levél nem megy sehova',{
+    files:'server/src/lib/reset-delivery.ts',
+    ev:'A modul kész, de nincs mögötte kézbesítési csatorna (SMTP vagy más) bekötve, és nincs is konfigurációs változó rá.',
+    impact:'Aki elfelejti a jelszavát, nem tud visszajutni. A folyamat végigmegy, csak a levél nem érkezik meg.',
+    fix:'Kézbesítő bekötése, vagy a UI mondja meg, hogy ez a funkció még nem elérhető.'
+  }),
+  B('high','A monitoring riasztás nem értesít senkit',{
+    files:'server/src/lib/alerts.ts · workers/monitor.ts',
+    ev:'A küszöb-átlépés a <code>monitor_alerts</code> táblába íródik és az admin felületen látszik. Kimenő csatorna sehol.',
+    impact:'Egy éjszakai lemez-megtelés reggelig senkinek nem tűnik fel. A monitoring csak akkor ér valamit, ha valaki épp nézi.',
+    fix:'A meglévő webhook-infrastruktúrára rákötni — a Discord-formázás is kész.'
+  }),
+  B('high','A security_logs korlátlanul nő, IP-címekkel',{
+    files:'server/src/workers/maintenance.ts:11–22',
+    ev:'A retenciós lista 9 táblát tartalmaz; a <code>security_logs</code> nincs köztük, és nem is particionált.',
+    impact:'IP-cím és user-agent minden bejelentkezésről, örökre. Adatvédelmi kockázat és lassan növő tábla.',
+    fix:'Retenció (pl. 90 nap) vagy particionálás, ahogy az <code>audit_logs</code>-nál.'
+  }),
+  B('med','Nincs fióktörlés',{
+    files:'server/src/routes/auth.ts · 0001_users_auth.sql (users.deleted_at)',
+    ev:'A séma számol a lágy törléssel (<code>deleted_at</code>, és a komment említi a névátírást), de nincs végpont, ami elindítaná.',
+    impact:'Törlési kérést ma csak kézi SQL-lel lehet teljesíteni.',
+    fix:'<code>DELETE /v1/me</code> lágy törléssel, e-mail/név anonimizálásával és session-visszavonással.'
+  }),
+  B('med','Két, egymásnak ellentmondó befejezettség-szabály',{
+    files:'web/js/watch-time.js (mért idő ≥ 80%) · server/src/routes/library.ts (pozíció ≥ 85%)',
+    ev:'A kliens szándékosan elhagyta a pozíció-alapú számítást (az adta a hamis 24 percet); a szerver megtartotta.',
+    impact:'Ha a kliens elkezdene <code>durationSec</code>-et küldeni, a két szabály eltérő epizódokat írna jóvá.',
+    fix:'A mért befejezettség legyen a szerződés: a kliens küldje, a szerver fogadja el.'
+  }),
+  B('med','A feature flagek semmit nem kapcsolnak',{
+    files:'server/src/routes/config.ts · web/js/yume-api.js (config)',
+    ev:'A <code>feature_flags</code> tábla, az admin UI és a nyilvános konfigurációs végpont kész. A kliens lekéri a konfigurációt, de <b>egyetlen funkciót sem kapcsol vele</b>.',
+    impact:'Aki kikapcsol egy flaget az adminban, azt hiszi, kikapcsolt valamit.',
+    fix:'Vagy bekötni legalább egy valódi kapcsolót, vagy a UI-ban jelezni, hogy a flag még nincs használatban.'
+  }),
+  B('med','A GET /v1/me/continue-watching végpontot senki nem hívja',{
+    files:'server/src/routes/library.ts:95 · web/js',
+    ev:'A kliens a folytatás-sort a localStorage-ból építi (<code>Store.continueIds</code>).',
+    impact:'Karbantartott, tesztelt, nem használt kód; és a felhasználó folytatás-sora nem követi eszközök között.',
+    fix:'Vagy a kliens álljon rá, vagy tudatosan legyen jelölve külső fogyasztóknak.'
+  }),
+  B('med','A design-tokenek két helyen élnek, és már el is tértek',{
+    files:'web/css/tokens.css (87 token) · packages/design-tokens/tokens.css (80)',
+    ev:'A közös tokenek közül egy értéke már különbözik (<code>--card-w</code>), és a csomagra semmilyen kód nem hivatkozik — csak a README és a docs.',
+    impact:'A „megosztott" tokenek nem megosztottak. Egy natív felület ma rossz értékeket kapna.',
+    fix:'Egy forrás legyen, a másik generált — vagy a csomag törlése, amíg nincs fogyasztója.'
+  }),
+  B('med','Nincs böngésző-teszt a lejátszóra és a bejelentkezésre',{
+    files:'.github/workflows/check.yml',
+    ev:'A kliens-lépések: <code>node --check</code> minden fájlra, <code>standard</code> lint, és a 377 egységteszt DOM-stubbal. Böngésző sehol.',
+    impact:'A lejátszó vezérlői, a router, a bejelentkezési modal és az admin felület csak kézi próbán bukik meg.',
+    fix:'Playwright-alapú füst-teszt: bejelentkezés, keresés, részletlap, lejátszó megnyitása.'
+  }),
+  B('low','A rate limit példányonként ketyeg',{
+    files:'server/src/plugins/security.ts',
+    ev:'A @fastify/rate-limit alapértelmezett memóriatárolóját használja, megosztott tároló nélkül.',
+    impact:'Ma nincs hatása (egy példány fut). Két példánynál a limit effektíven duplázódik.',
+    fix:'Redis-tároló, amikor a második példány megjelenik — a docs/redis.md ezt már előrevetíti.'
+  }),
+  B('low','A jogosultság-cache 30 s-ig elavult lehet',{
+    files:'server/src/plugins/auth.ts',
+    ev:'Tudatos, dokumentált kompromisszum; a kijelentkezés viszont azonnal hat (a session-halmaz külön ellenőrzött).',
+    impact:'Egy elvett szerepkör legfeljebb fél percig még érvényes.',
+    fix:'Elfogadható. Ha nem az: a cache kulcsának invalidálása a szerepkör-írásnál.'
+  }),
+  B('low','Az admin lapfájl 1 648 sor',{
+    files:'web/js/pages/admin.js',
+    ev:'11 szekció renderelője egyetlen objektumban; a következő legnagyobb lap 1 074 sor (watch.js), a többi 150–300.',
+    impact:'Nehéz navigálni, könnyű véletlen ütközést okozni benne.',
+    fix:'Szekciónkénti fájlok, ugyanazzal a betöltési mintával, mint a többi lap.'
+  }),
+  B('low','Akadálymentességi hiányok',{
+    files:'web/js/components.js · app.js',
+    ev:'13 <code>aria-label</code> és 5 <code>aria-pressed</code> az egész kliensben; a modálok viszont rendes fókuszcsapdát kapnak.',
+    impact:'Az ikongombok többsége képernyőolvasóval megnevezhetetlen; nincs „ugrás a tartalomra" link.',
+    fix:'Címke minden ikongombra, skip-link a fejlécbe, és egy végigjárás billentyűzettel.'
+  }),
+  B('low','Elavult állítások a dokumentációban',{
+    files:'docs/allapot.md · docs/extensions.md',
+    ev:'„107 tábla" (valójában 99 + 17 partíció), „387 jogosultság" (295 sor a migrációkban), „Package upload ⏳ nincs kész" (kész és tesztelt).',
+    impact:'Aki a dokumentációból tájékozódik, rossz képet kap az állapotról.',
+    fix:'A számokat generálni, ne kézzel írni.'
+  })
+]
+const FILES = [[".dockerignore", "—", "Egyéb", "alacsony"], [".env.example", "—", "Változónevek értékek nélkül", "közepes"], [".github/FUNDING.yml", "YAML", "Egyéb", "alacsony"], [".github/ISSUE_TEMPLATE/bug_report.yml", "YAML", "Egyéb", "alacsony"], [".github/ISSUE_TEMPLATE/config.yml", "YAML", "Egyéb", "alacsony"], [".github/ISSUE_TEMPLATE/feature_request.yml", "YAML", "Egyéb", "alacsony"], [".github/workflows/check.yml", "YAML", "CI: típus, teszt, migráció, integráció, adverzariális, lint", "kritikus"], [".gitignore", "—", "Egyéb", "alacsony"], [".npmrc", "—", "Konfiguráció", "alacsony"], [".vscode/extensions.json", "JSON", "Konfiguráció", "alacsony"], [".vscode/launch.json", "JSON", "Konfiguráció", "alacsony"], [".vscode/settings.json", "JSON", "Konfiguráció", "alacsony"], ["CONTRIBUTING.md", "Markdown", "Dokumentáció", "alacsony"], ["Caddyfile", "—", "TLS és fordított proxy", "magas"], ["Dockerfile", "—", "Egyfázisú kép; boot: migrate → kiegészítők → start", "kritikus"], ["LICENSE", "—", "Egyéb", "alacsony"], ["README.md", "Markdown", "Projekt-áttekintés (28 KB)", "közepes"], ["SECURITY.md", "Markdown", "Dokumentáció", "alacsony"], ["SUPPORT.md", "Markdown", "Dokumentáció", "alacsony"], ["db/backup-cron.sh", "shell", "Napi ütemezés", "közepes"], ["db/backup.sh", "shell", "pg_dump + visszaállítás-ellenőrzés", "magas"], ["db/migrations/0001_users_auth.sql", "SQL", "Migráció 0001", "magas"], ["db/migrations/0002_anime.sql", "SQL", "Migráció 0002", "magas"], ["db/migrations/0003_streaming.sql", "SQL", "Migráció 0003", "magas"], ["db/migrations/0004_community.sql", "SQL", "Migráció 0004", "magas"], ["db/migrations/0005_profile.sql", "SQL", "Migráció 0005", "magas"], ["db/migrations/0006_extensions.sql", "SQL", "Migráció 0006", "magas"], ["db/migrations/0007_analytics.sql", "SQL", "Migráció 0007", "magas"], ["db/migrations/0008_jobs.sql", "SQL", "Migráció 0008", "magas"], ["db/migrations/0009_webhooks.sql", "SQL", "Migráció 0009", "magas"], ["db/migrations/0010_profiles_permissions.sql", "SQL", "Migráció 0010", "magas"], ["db/migrations/0011_site_config.sql", "SQL", "Migráció 0011", "magas"], ["db/migrations/0012_permissions_expansion.sql", "SQL", "Migráció 0012", "magas"], ["db/migrations/0013_catalogue_visibility.sql", "SQL", "Migráció 0013", "magas"], ["db/migrations/0014_permission_status.sql", "SQL", "Migráció 0014", "magas"], ["db/migrations/0015_monitoring.sql", "SQL", "Migráció 0015", "magas"], ["db/migrations/0016_alerts_diagnostics.sql", "SQL", "Migráció 0016", "magas"], ["db/migrations/0017_metadata_search.sql", "SQL", "Migráció 0017", "magas"], ["db/migrations/0018_token_revocation.sql", "SQL", "Migráció 0018", "magas"], ["db/migrations/0019_password_recovery.sql", "SQL", "Migráció 0019", "magas"], ["db/migrations/0020_editorial_publishing.sql", "SQL", "Migráció 0020", "magas"], ["db/migrations/0021_admin_bootstrap.sql", "SQL", "Migráció 0021", "magas"], ["db/migrations/0022_hungarian_text.sql", "SQL", "Migráció 0022", "magas"], ["db/migrations/0023_translations.sql", "SQL", "Migráció 0023", "magas"], ["db/restore.sh", "shell", "Visszaállítás", "magas"], ["docker-compose.yml", "YAML", "9 szolgáltatás, 3 egyszeri profil", "kritikus"], ["docs/allapot.md", "Markdown", "Dokumentáció", "közepes"], ["docs/api.md", "Markdown", "Dokumentáció", "közepes"], ["docs/architecture.md", "Markdown", "Dokumentáció", "közepes"], ["docs/attekintes.md", "Markdown", "Dokumentáció", "közepes"], ["docs/backup.md", "Markdown", "Dokumentáció", "közepes"], ["docs/database.md", "Markdown", "Dokumentáció", "közepes"], ["docs/discord-bot.md", "Markdown", "Dokumentáció", "közepes"], ["docs/extensions.md", "Markdown", "Dokumentáció", "közepes"], ["docs/monitoring.md", "Markdown", "Dokumentáció", "közepes"], ["docs/redis.md", "Markdown", "Dokumentáció", "közepes"], ["docs/search.md", "Markdown", "Dokumentáció", "közepes"], ["docs/security.md", "Markdown", "Dokumentáció", "közepes"], ["docs/streaming.md", "Markdown", "Dokumentáció", "közepes"], ["extensions/anilist-meta/README.md", "Markdown", "Kiegészítő-dokumentáció", "alacsony"], ["extensions/anilist-meta/index.js", "JavaScript", "Kiegészítő-implementáció", "közepes"], ["extensions/anilist-meta/manifest.json", "JSON", "Kiegészítő-manifest", "közepes"], ["extensions/aniskip/README.md", "Markdown", "Kiegészítő-dokumentáció", "alacsony"], ["extensions/aniskip/index.js", "JavaScript", "Kiegészítő-implementáció", "közepes"], ["extensions/aniskip/manifest.json", "JSON", "Kiegészítő-manifest", "közepes"], ["extensions/jellyfin/README.md", "Markdown", "Kiegészítő-dokumentáció", "alacsony"], ["extensions/jellyfin/index.js", "JavaScript", "Kiegészítő-implementáció", "közepes"], ["extensions/jellyfin/manifest.json", "JSON", "Kiegészítő-manifest", "közepes"], ["extensions/opensubtitles/README.md", "Markdown", "Kiegészítő-dokumentáció", "alacsony"], ["extensions/opensubtitles/index.js", "JavaScript", "Kiegészítő-implementáció", "közepes"], ["extensions/opensubtitles/manifest.json", "JSON", "Kiegészítő-manifest", "közepes"], ["extensions/plex/README.md", "Markdown", "Kiegészítő-dokumentáció", "alacsony"], ["extensions/plex/index.js", "JavaScript", "Kiegészítő-implementáció", "közepes"], ["extensions/plex/manifest.json", "JSON", "Kiegészítő-manifest", "közepes"], ["extensions/translation-feed/README.md", "Markdown", "Kiegészítő-dokumentáció", "alacsony"], ["extensions/translation-feed/index.js", "JavaScript", "Kiegészítő-implementáció", "közepes"], ["extensions/translation-feed/manifest.json", "JSON", "Kiegészítő-manifest", "közepes"], ["extensions/yume-library/README.md", "Markdown", "Kiegészítő-dokumentáció", "alacsony"], ["extensions/yume-library/index.js", "JavaScript", "Kiegészítő-implementáció", "közepes"], ["extensions/yume-library/manifest.json", "JSON", "Kiegészítő-manifest", "közepes"], ["extensions/yume-themes/README.md", "Markdown", "Kiegészítő-dokumentáció", "alacsony"], ["extensions/yume-themes/index.js", "JavaScript", "Kiegészítő-implementáció", "közepes"], ["extensions/yume-themes/manifest.json", "JSON", "Kiegészítő-manifest", "közepes"], ["packages/design-tokens/tokens.css", "CSS", "Megosztott tokenek — nincs fogyasztója", "alacsony"], ["packages/design-tokens/tokens.json", "JSON", "Megosztott tokenek — nincs fogyasztója", "alacsony"], ["server/.env.example", "—", "Egyéb", "alacsony"], ["server/.gitignore", "—", "Egyéb", "alacsony"], ["server/package.json", "JSON", "Konfiguráció", "alacsony"], ["server/scripts/import-anilist.ts", "TypeScript", "AniList-gazdagítás", "közepes"], ["server/scripts/publish-extensions.ts", "TypeScript", "Saját kiegészítők publikálása a boltba", "magas"], ["server/scripts/seed.ts", "TypeScript", "Katalógus-seed 25k animével", "magas"], ["server/src/app.ts", "TypeScript", "Fastify összeszerelés: pluginek, GraphQL, hibakezelő, route-regisztráció", "kritikus"], ["server/src/config.ts", "TypeScript", "Környezeti konfiguráció + éles módú titok-validáció", "kritikus"], ["server/src/db.ts", "TypeScript", "pg pool, query/queryOne/transaction segédek", "kritikus"], ["server/src/graphql/schema.ts", "TypeScript", "GraphQL séma és resolverek — a kliens nem használja", "alacsony"], ["server/src/index.ts", "TypeScript", "Belépési pont", "magas"], ["server/src/lib/alerts.ts", "TypeScript", "Küszöb-riasztások — kézbesítés nélkül", "közepes"], ["server/src/lib/audit.ts", "TypeScript", "Audit napló írása", "magas"], ["server/src/lib/db-encoding.ts", "TypeScript", "Kódolás-ellenőrzés indításkor", "magas"], ["server/src/lib/db-errors.ts", "TypeScript", "Postgres hibakódok fordítása", "közepes"], ["server/src/lib/diagnostics.ts", "TypeScript", "Diagnosztikai futtatások", "közepes"], ["server/src/lib/errors.ts", "TypeScript", "Hibacsoportosítás ujjlenyomat alapján", "magas"], ["server/src/lib/extension-manifest.ts", "TypeScript", "Manifest- és opció-validáció — a publikálás kapuja", "kritikus"], ["server/src/lib/localise.ts", "TypeScript", "Mezőnkénti nyelvfeloldás és _lang jelölés", "magas"], ["server/src/lib/metadata.ts", "TypeScript", "Katalógus-rekord összeállítása", "magas"], ["server/src/lib/metrics.ts", "TypeScript", "VPS-metrikák olvasása /proc-ból", "közepes"], ["server/src/lib/migrate.ts", "TypeScript", "Migrációfuttató advisory lockkal", "kritikus"], ["server/src/lib/package-store.ts", "TypeScript", "Tartalom-címzett csomagtár sha256-tal", "kritikus"], ["server/src/lib/password.ts", "TypeScript", "scrypt hash és ellenőrzés", "kritikus"], ["server/src/lib/preferences.ts", "TypeScript", "Beállítás-séma: coerce, resolve, negotiate", "magas"], ["server/src/lib/probes.ts", "TypeScript", "Függőség-szondák (6 szolgáltatás)", "magas"], ["server/src/lib/pubsub.ts", "TypeScript", "LISTEN/NOTIFY példányok közti üzenetszórás", "közepes"], ["server/src/lib/queue.ts", "TypeScript", "Postgres job-sor SKIP LOCKED-kal", "magas"], ["server/src/lib/reset-delivery.ts", "TypeScript", "Jelszó-helyreállítás kézbesítése — nincs csatorna", "magas"], ["server/src/lib/search.ts", "TypeScript", "Rétegzett keresés tsvector + trigram", "magas"], ["server/src/lib/ssrf.ts", "TypeScript", "Kimenő URL-ek ellenőrzése privát hálózat ellen", "kritikus"], ["server/src/lib/thresholds.ts", "TypeScript", "Metrika-küszöbök", "közepes"], ["server/src/lib/webhooks.ts", "TypeScript", "Kimenő kézbesítés, Discord embed, újrapróbálkozás", "közepes"], ["server/src/lib/ws.ts", "TypeScript", "WebSocket csatornák, w2g és chat", "magas"], ["server/src/plugins/auth.ts", "TypeScript", "JWT + RBAC preHandler, jogosultság- és token-verzió cache", "kritikus"], ["server/src/plugins/security.ts", "TypeScript", "CSP, biztonsági fejlécek, rate limit szintek", "kritikus"], ["server/src/routes/admin.ts", "TypeScript", "REST route-modul", "magas"], ["server/src/routes/anime.ts", "TypeScript", "REST route-modul", "magas"], ["server/src/routes/auth.ts", "TypeScript", "REST route-modul", "magas"], ["server/src/routes/catalogue.ts", "TypeScript", "REST route-modul", "magas"], ["server/src/routes/comments.ts", "TypeScript", "REST route-modul", "magas"], ["server/src/routes/config.ts", "TypeScript", "REST route-modul", "magas"], ["server/src/routes/dev.ts", "TypeScript", "REST route-modul", "magas"], ["server/src/routes/extensions.ts", "TypeScript", "REST route-modul", "magas"], ["server/src/routes/library.ts", "TypeScript", "REST route-modul", "magas"], ["server/src/routes/monitoring.ts", "TypeScript", "REST route-modul", "magas"], ["server/src/routes/profiles.ts", "TypeScript", "REST route-modul", "magas"], ["server/src/routes/reports.ts", "TypeScript", "REST route-modul", "magas"], ["server/src/routes/roles.ts", "TypeScript", "REST route-modul", "magas"], ["server/src/routes/settings.ts", "TypeScript", "REST route-modul", "magas"], ["server/src/routes/translations.ts", "TypeScript", "REST route-modul", "magas"], ["server/src/routes/w2g.ts", "TypeScript", "REST route-modul", "magas"], ["server/src/routes/webhooks.ts", "TypeScript", "REST route-modul", "magas"], ["server/src/workers/anilist.ts", "TypeScript", "Háttérmunkás", "magas"], ["server/src/workers/importer.ts", "TypeScript", "Háttérmunkás", "magas"], ["server/src/workers/index.ts", "TypeScript", "Háttérmunkás", "magas"], ["server/src/workers/maintenance.ts", "TypeScript", "Háttérmunkás", "magas"], ["server/src/workers/monitor.ts", "TypeScript", "Háttérmunkás", "magas"], ["server/src/workers/notify.ts", "TypeScript", "Háttérmunkás", "magas"], ["server/src/workers/review.ts", "TypeScript", "Háttérmunkás", "magas"], ["server/src/workers/stats.ts", "TypeScript", "Háttérmunkás", "magas"], ["server/test/adversarial.test.ts", "TypeScript", "Szerver teszt-suite", "magas"], ["server/test/alerts.test.ts", "TypeScript", "Szerver teszt-suite", "magas"], ["server/test/client-queries.test.ts", "TypeScript", "Szerver teszt-suite", "magas"], ["server/test/db-errors.test.ts", "TypeScript", "Szerver teszt-suite", "magas"], ["server/test/errors.test.ts", "TypeScript", "Szerver teszt-suite", "magas"], ["server/test/extension-options.test.ts", "TypeScript", "Szerver teszt-suite", "magas"], ["server/test/extensions.test.ts", "TypeScript", "Szerver teszt-suite", "magas"], ["server/test/hungarian-text.test.ts", "TypeScript", "Szerver teszt-suite", "magas"], ["server/test/integration.test.ts", "TypeScript", "Szerver teszt-suite", "magas"], ["server/test/localise.test.ts", "TypeScript", "Szerver teszt-suite", "magas"], ["server/test/metadata.test.ts", "TypeScript", "Szerver teszt-suite", "magas"], ["server/test/monitoring.test.ts", "TypeScript", "Szerver teszt-suite", "magas"], ["server/test/package-store.test.ts", "TypeScript", "Szerver teszt-suite", "magas"], ["server/test/preferences.test.ts", "TypeScript", "Szerver teszt-suite", "magas"], ["server/test/queue-guards.test.ts", "TypeScript", "Szerver teszt-suite", "magas"], ["server/test/search.test.ts", "TypeScript", "Szerver teszt-suite", "magas"], ["server/test/security.test.ts", "TypeScript", "Szerver teszt-suite", "magas"], ["server/test/ssrf.test.ts", "TypeScript", "Szerver teszt-suite", "magas"], ["server/tsconfig.json", "JSON", "Konfiguráció", "alacsony"], ["web/copy.js", "JavaScript", "Angol szövegkatalógus pontozott kulcsokkal", "közepes"], ["web/css/style.css", "CSS", "Teljes stíluslap, 18 media query", "kritikus"], ["web/css/tokens.css", "CSS", "Design tokenek — az igazságforrás", "kritikus"], ["web/i18n/hu.js", "JavaScript", "Magyar szótár (355 bejegyzés)", "magas"], ["web/index.html", "HTML", "A kliens váza — 38 script tag, nincs bundler", "kritikus"], ["web/js/api.js", "JavaScript", "Közvetlen AniList/Jikan/ani.zip kliens cache-sel", "magas"], ["web/js/app.js", "JavaScript", "Hash-router, layout, navigáció", "kritikus"], ["web/js/catalogue.js", "JavaScript", "Katalógus-előbb, AniList-tartalék feloldás", "kritikus"], ["web/js/charts.js", "JavaScript", "SVG grafikonok könyvtár nélkül", "közepes"], ["web/js/components.js", "JavaScript", "Újrafelhasználható komponensek: kártya, modal, kommentek", "kritikus"], ["web/js/extension-host.js", "JavaScript", "Sandbox-gazda: betöltés, jogosultság, proxy-fetch", "kritikus"], ["web/js/extension-worker.js", "JavaScript", "A sandbox belseje, eredmény-sanitizálás", "kritikus"], ["web/js/hls-handler.js", "JavaScript", "HLS kezelő regisztráció", "közepes"], ["web/js/i18n.js", "JavaScript", "Fordítási réteg, T() feloldás", "magas"], ["web/js/library-sync.js", "JavaScript", "Könyvtár tükrözése a szerverre", "magas"], ["web/js/onboarding.js", "JavaScript", "Regisztráció utáni kérdőív", "közepes"], ["web/js/pages/achievements.js", "JavaScript", "Lap-renderelő", "magas"], ["web/js/pages/admin.js", "JavaScript", "Lap-renderelő", "magas"], ["web/js/pages/analytics.js", "JavaScript", "Lap-renderelő", "magas"], ["web/js/pages/anime.js", "JavaScript", "Lap-renderelő", "magas"], ["web/js/pages/community.js", "JavaScript", "Lap-renderelő", "magas"], ["web/js/pages/dashboard.js", "JavaScript", "Lap-renderelő", "magas"], ["web/js/pages/developer.js", "JavaScript", "Lap-renderelő", "magas"], ["web/js/pages/extensions.js", "JavaScript", "Lap-renderelő", "magas"], ["web/js/pages/history.js", "JavaScript", "Lap-renderelő", "magas"], ["web/js/pages/home.js", "JavaScript", "Lap-renderelő", "magas"], ["web/js/pages/list.js", "JavaScript", "Lap-renderelő", "magas"], ["web/js/pages/notifications.js", "JavaScript", "Lap-renderelő", "magas"], ["web/js/pages/profile.js", "JavaScript", "Lap-renderelő", "magas"], ["web/js/pages/profiles.js", "JavaScript", "Lap-renderelő", "magas"], ["web/js/pages/schedule.js", "JavaScript", "Lap-renderelő", "magas"], ["web/js/pages/search.js", "JavaScript", "Lap-renderelő", "magas"], ["web/js/pages/settings.js", "JavaScript", "Lap-renderelő", "magas"], ["web/js/pages/themes.js", "JavaScript", "Lap-renderelő", "magas"], ["web/js/pages/w2g.js", "JavaScript", "Lap-renderelő", "magas"], ["web/js/pages/watch.js", "JavaScript", "Lap-renderelő", "magas"], ["web/js/prefs.js", "JavaScript", "Beállítások profilonként + szerver-szinkron", "magas"], ["web/js/store.js", "JavaScript", "localStorage állapot: könyvtár, előzmény, profilok", "kritikus"], ["web/js/stream-engine.js", "JavaScript", "Jelöltek normalizálása és rangsorolása", "kritikus"], ["web/js/util.js", "JavaScript", "U.el DOM-helper — minden lap ezt használja", "kritikus"], ["web/js/watch-time.js", "JavaScript", "Valódi nézési idő mérése", "magas"], ["web/js/yume-api.js", "JavaScript", "Yume API adapter, token-kezelés", "kritikus"], ["web/test/catalogue.test.mjs", "teszt (ESM)", "Kliens teszt-suite", "magas"], ["web/test/css-order.test.mjs", "teszt (ESM)", "Kliens teszt-suite", "magas"], ["web/test/extension-anilist-meta.test.mjs", "teszt (ESM)", "Kliens teszt-suite", "magas"], ["web/test/extension-aniskip.test.mjs", "teszt (ESM)", "Kliens teszt-suite", "magas"], ["web/test/extension-dispatch.test.mjs", "teszt (ESM)", "Kliens teszt-suite", "magas"], ["web/test/extension-jellyfin.test.mjs", "teszt (ESM)", "Kliens teszt-suite", "magas"], ["web/test/extension-library.test.mjs", "teszt (ESM)", "Kliens teszt-suite", "magas"], ["web/test/extension-opensubtitles.test.mjs", "teszt (ESM)", "Kliens teszt-suite", "magas"], ["web/test/extension-plex.test.mjs", "teszt (ESM)", "Kliens teszt-suite", "magas"], ["web/test/extension-store.test.mjs", "teszt (ESM)", "Kliens teszt-suite", "magas"], ["web/test/extension-themes.test.mjs", "teszt (ESM)", "Kliens teszt-suite", "magas"], ["web/test/extension-translation-feed.test.mjs", "teszt (ESM)", "Kliens teszt-suite", "magas"], ["web/test/i18n.test.mjs", "teszt (ESM)", "Kliens teszt-suite", "magas"], ["web/test/prefs.test.mjs", "teszt (ESM)", "Kliens teszt-suite", "magas"], ["web/test/stream-engine.test.mjs", "teszt (ESM)", "Kliens teszt-suite", "magas"], ["web/test/util.test.mjs", "teszt (ESM)", "Kliens teszt-suite", "magas"], ["web/test/variant.test.mjs", "teszt (ESM)", "Kliens teszt-suite", "magas"], ["web/test/watch-time.test.mjs", "teszt (ESM)", "Kliens teszt-suite", "magas"]]
+
+/* ---- minőségi pontszám ------------------------------------------------- */
+const SCORES = [
+  ['Architektúra', 10, 8.0, 'Tiszta rétegzés, egy dolog egy helyen, nincs build lépés, 10 futásidejű függőség. Levonás: a kliens localStorage-elsődlegessége megkettőzi a felhasználói adatot.'],
+  ['Backend teljesség', 15, 8.0, '107 végpont, 17 route-modul, 7 job-típus, saját job-sor, particionálás, retenció. Levonás: a GraphQL és több végpont fogyasztó nélkül áll.'],
+  ['Frontend teljesség', 15, 6.5, 'Mind a 20 lap renderel, egységes töltő/üres állapotokkal és mobil elrendezéssel. Levonás: az előzmény, a statisztika és az achievement csak a böngészőben él; a hibakezelés nem egységes.'],
+  ['Adatbázis', 10, 6.0, '99 tábla, átgondolt indexek, particionálás, idempotens migrációk. Levonás: <b>28 tábla (28%) halott</b>, és több „élő" tábla is csak érintőlegesen használt.'],
+  ['Biztonság', 12, 8.5, 'scrypt, forgó és visszavonható tokenek, RBAC, szigorú CSP, SSRF-védelem, 53 adverzariális teszt a CI-ban. Levonás: 295 jogosultságból 18 érvényesített; nincs MFA.'],
+  ['Tesztelés', 10, 7.0, '645 teszt, valódi Postgres a CI-ban, integrációs és adverzariális suite, worker end-to-end. Levonás: nulla böngészőteszt — a lejátszó és a bejelentkezés UI-ja nincs lefedve.'],
+  ['Megfigyelhetőség', 8, 7.5, 'Metrikák, szondák, küszöbök, hibacsoportok, audit, diagnosztika. Levonás: a riasztás nem megy sehova, nincs külső uptime-mérés, nincs trace.'],
+  ['Tartalom-út (a termék magja)', 10, 3.0, '<b>Ez a leggyengébb pont.</b> A katalógus és a lejátszó-váz kész, de nincs beépített forrás: a 4 forrás-tábla halott, a torrent böngészőben nem játszható, minden stream kézi URL-ből vagy önkiszolgáló kiegészítőből jön.'],
+  ['Dokumentáció', 5, 8.0, '3 364 sor, 13 dokumentum, többnyire pontos és indoklással. Levonás: több elavult szám és egy 499 soros terv olyan funkcióról, aminek nincs kódja.'],
+  ['Üzemeltethetőség', 5, 6.5, 'Docker, Caddy TLS, healthcheckek, ellenőrzött mentés, nem-root futás. Levonás: egy példány, nincs deploy-pipeline, nincs staging.']
+]
+
+/* ===========================================================================
+   Renderelés. Nincs függőség — ugyanaz a stílus, mint a projekt kliensében.
+   ======================================================================== */
+const el = (tag, attrs = {}, kids = []) => {
+  const n = document.createElement(tag)
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null) continue
+    if (k === 'class') n.className = v
+    else if (k === 'html') n.innerHTML = v
+    else if (k === 'text') n.textContent = v
+    else if (k.startsWith('on')) n.addEventListener(k.slice(2), v)
+    else n.setAttribute(k, v)
+  }
+  for (const kid of [].concat(kids)) if (kid != null) n.append(kid)
+  return n
+}
+const pill = st => el('span', { class: 'pill p-' + ST[st].cls, text: ST[st].label })
+const norm = s => (s || '').toString().toLowerCase()
+  .normalize('NFD').replace(/[̀-ͯ]/g, '')
+
+/* ---- navigáció + scrollspy -------------------------------------------- */
+const nav = document.getElementById('nav')
+nav.append(el('div', { class: 'rail-sec', text: 'Szakaszok' }))
+for (const [id, label, n] of NAV) {
+  nav.append(el('a', { href: '#' + id, 'data-nav': id }, [
+    el('span', { text: label }), el('i', { text: n })
+  ]))
+}
+const spy = new IntersectionObserver(entries => {
+  for (const e of entries) {
+    if (!e.isIntersecting) continue
+    for (const a of nav.querySelectorAll('a')) a.classList.toggle('on', a.dataset.nav === e.target.id)
+  }
+}, { rootMargin: '-10% 0px -80% 0px' })
+for (const [id] of NAV) { const s = document.getElementById(id); if (s) spy.observe(s) }
+
+/* ---- általános szűrő-építő -------------------------------------------- */
+function statusChips (host, rows, key, onChange) {
+  const counts = {}
+  for (const r of rows) counts[r[key] ?? r.st] = (counts[r[key] ?? r.st] ?? 0) + 1
+  const active = new Set()
+  const draw = () => {
+    host.replaceChildren()
+    host.append(el('button', {
+      class: 'chip', 'aria-pressed': String(active.size === 0),
+      onclick: () => { active.clear(); draw(); onChange(active) }
+    }, [document.createTextNode('mind (' + rows.length + ')')]))
+    for (const st of ['ok', 'part', 'unver', 'plan', 'bad', 'dead']) {
+      if (!counts[st]) continue
+      host.append(el('button', {
+        class: 'chip', 'aria-pressed': String(active.has(st)),
+        onclick: () => { active.has(st) ? active.delete(st) : active.add(st); draw(); onChange(active) }
+      }, [document.createTextNode(ST[st].label + ' (' + counts[st] + ')')]))
+    }
+  }
+  draw()
+  return active
+}
+
+/* ---- oldalak ----------------------------------------------------------- */
+{
+  const body = document.querySelector('#pageTable tbody')
+  const count = document.getElementById('pageCount')
+  const rows = PAGES.map(p => ({ p, st: p[5] }))
+  let active = new Set()
+  const draw = () => {
+    body.replaceChildren()
+    let shown = 0
+    for (const { p, st } of rows) {
+      if (active.size && !active.has(st)) continue
+      shown++
+      body.append(el('tr', { class: 'stripe-' + ST[st].cls }, [
+        el('td', { class: 'mono', text: p[0] }),
+        el('td', { html: '<b>' + p[1] + '</b>' }),
+        el('td', { text: p[2] }),
+        el('td', { text: p[3] }),
+        el('td', { html: p[4] }),
+        el('td', {}, [pill(st)])
+      ]))
+    }
+    count.textContent = shown + ' / ' + rows.length + ' oldal'
+  }
+  active = statusChips(document.getElementById('pageChips'), rows, 'st', () => draw())
+  draw()
+}
+
+/* ---- funkciók ---------------------------------------------------------- */
+{
+  const host = document.getElementById('featList')
+  const count = document.getElementById('featCount')
+  let active = new Set()
+  let term = ''
+  const draw = () => {
+    host.replaceChildren()
+    let shown = 0
+    for (const f of FEATURES) {
+      if (active.size && !active.has(f.st)) continue
+      const hay = norm([f.name, f.cat, f.files, f.db, f.how, f.limits].join(' '))
+      if (term && !hay.includes(term)) continue
+      shown++
+      const d = el('details', { class: 'feat stripe-' + ST[f.st].cls })
+      d.append(el('summary', {}, [
+        pill(f.st),
+        el('span', { class: 'feat-name', text: f.name }),
+        el('span', { class: 'feat-cat', text: f.cat })
+      ]))
+      const dl = el('dl')
+      const add = (k, v, cls) => { dl.append(el('dt', { text: k })); dl.append(el('dd', { class: cls, html: v })) }
+      add('Fájlok', f.files, 'paths')
+      add('Adatbázis', f.db, 'paths')
+      add('Hogyan működik', f.how)
+      if (f.ok && f.ok !== '—') add('Ha sikerül', f.ok)
+      if (f.fail && f.fail !== '—') add('Ha elbukik', f.fail)
+      add('Korlátok', f.limits)
+      d.append(el('div', { class: 'feat-body' }, [dl]))
+      host.append(d)
+    }
+    count.textContent = shown + ' / ' + FEATURES.length
+  }
+  active = statusChips(document.getElementById('featChips'), FEATURES, 'st', () => draw())
+  draw()
+  window.__featFilter = t => { term = t; draw() }
+}
+
+/* ---- API --------------------------------------------------------------- */
+{
+  const body = document.querySelector('#apiTable tbody')
+  const count = document.getElementById('apiCount')
+  const chips = document.getElementById('apiChips')
+  const groups = ['mind', '/v1/auth', '/v1/anime', '/v1/me', '/v1/extensions', '/v1/dev', '/v1/admin', 'egyéb']
+  let group = 'mind'
+  let term = ''
+  const inGroup = e => {
+    if (group === 'mind') return true
+    if (group === 'egyéb') return !groups.slice(1, -1).some(g => e.path.startsWith(g))
+    return e.path.startsWith(group)
+  }
+  const draw = () => {
+    body.replaceChildren()
+    let shown = 0
+    for (const e of ENDPOINTS) {
+      if (!inGroup(e)) continue
+      const hay = norm([e.m, e.path, e.purpose, e.auth, e.client].join(' '))
+      if (term && !hay.includes(term)) continue
+      shown++
+      body.append(el('tr', { class: 'stripe-' + ST[e.st].cls }, [
+        el('td', { class: 'mono', html: '<b>' + e.m + '</b>' }),
+        el('td', { class: 'mono', text: e.path }),
+        el('td', { text: e.purpose }),
+        el('td', { class: 'mono', text: e.auth }),
+        el('td', { html: e.client }),
+        el('td', {}, [pill(e.st)])
+      ]))
+    }
+    // 109 bejegyzés = 107 REST + a GraphQL endpoint + a WebSocket
+    count.textContent = shown + ' / ' + ENDPOINTS.length + ' bejegyzés'
+  }
+  for (const g of groups) {
+    chips.append(el('button', {
+      class: 'chip', 'aria-pressed': String(g === group),
+      onclick: () => {
+        group = g
+        for (const c of chips.children) c.setAttribute('aria-pressed', String(c.textContent === g))
+        draw()
+      }
+    }, [document.createTextNode(g)]))
+  }
+  draw()
+  window.__apiFilter = t => { term = t; draw() }
+}
+
+/* ---- táblák ------------------------------------------------------------ */
+{
+  const body = document.querySelector('#dbTable tbody')
+  const count = document.getElementById('dbCount')
+  let active = new Set()
+  let term = ''
+  const draw = () => {
+    body.replaceChildren()
+    let shown = 0
+    for (const t of TABLES) {
+      if (active.size && !active.has(t.st)) continue
+      const hay = norm([t.name, t.purpose, t.user].join(' '))
+      if (term && !hay.includes(term)) continue
+      shown++
+      body.append(el('tr', { class: 'stripe-' + ST[t.st].cls }, [
+        el('td', { class: 'mono', text: t.name }),
+        el('td', { text: t.purpose }),
+        el('td', { class: 'mono', text: t.user }),
+        el('td', {}, [pill(t.st)])
+      ]))
+    }
+    count.textContent = shown + ' / ' + TABLES.length + ' tábla-csoport (99 alap tábla)'
+  }
+  active = statusChips(document.getElementById('dbChips'), TABLES, 'st', () => draw())
+  draw()
+  window.__dbFilter = t => { term = t; draw() }
+}
+
+/* ---- hibák ------------------------------------------------------------- */
+{
+  const SEV = {
+    crit: ['🔴 KRITIKUS', 'bad'], high: ['🟠 MAGAS', 'plan'],
+    med: ['🟡 KÖZEPES', 'part'], low: ['🔵 ALACSONY', 'unver']
+  }
+  const host = document.getElementById('bugList')
+  const chips = document.getElementById('bugChips')
+  const count = document.getElementById('bugCount')
+  const order = ['crit', 'high', 'med', 'low']
+  let active = new Set()
+  let term = ''
+  const draw = () => {
+    host.replaceChildren()
+    let shown = 0
+    for (const sev of order) {
+      for (const b of BUGS.filter(x => x.sev === sev)) {
+        if (active.size && !active.has(sev)) continue
+        const hay = norm([b.title, b.files, b.ev, b.impact, b.fix].join(' '))
+        if (term && !hay.includes(term)) continue
+        shown++
+        const d = el('details', { class: 'feat stripe-' + SEV[sev][1] })
+        d.append(el('summary', {}, [
+          el('span', { class: 'pill p-' + SEV[sev][1], text: SEV[sev][0] }),
+          el('span', { class: 'feat-name', text: b.title })
+        ]))
+        const dl = el('dl')
+        const add = (k, v, cls) => { dl.append(el('dt', { text: k })); dl.append(el('dd', { class: cls, html: v })) }
+        add('Fájlok', b.files, 'paths')
+        add('Bizonyíték', b.ev)
+        add('Hatás', b.impact)
+        add('Javaslat', b.fix)
+        d.append(el('div', { class: 'feat-body' }, [dl]))
+        host.append(d)
+      }
+    }
+    count.textContent = shown + ' / ' + BUGS.length
+  }
+  const counts = {}
+  for (const b of BUGS) counts[b.sev] = (counts[b.sev] ?? 0) + 1
+  const redraw = () => {
+    chips.replaceChildren()
+    chips.append(el('button', {
+      class: 'chip', 'aria-pressed': String(active.size === 0),
+      onclick: () => { active.clear(); redraw(); draw() }
+    }, [document.createTextNode('mind (' + BUGS.length + ')')]))
+    for (const sev of order) {
+      if (!counts[sev]) continue
+      chips.append(el('button', {
+        class: 'chip', 'aria-pressed': String(active.has(sev)),
+        onclick: () => { active.has(sev) ? active.delete(sev) : active.add(sev); redraw(); draw() }
+      }, [document.createTextNode(SEV[sev][0] + ' (' + counts[sev] + ')')]))
+    }
+  }
+  redraw()
+  draw()
+  window.__bugFilter = t => { term = t; draw() }
+}
+
+/* ---- pontszámok -------------------------------------------------------- */
+{
+  const host = document.getElementById('scores')
+  let total = 0
+  for (const [name, weight, score, why] of SCORES) {
+    total += weight * score / 100
+    host.append(el('div', { class: 'score-row' }, [
+      el('div', { html: '<b>' + name + '</b>' }),
+      el('div', { class: 'num', text: weight + '%' }),
+      el('div', { class: 'bar' }, [el('i', { style: 'width:' + (score * 10) + '%' })]),
+      el('div', { class: 'num', text: score.toFixed(1) }),
+      el('div', { class: 'score-why', html: why })
+    ]))
+  }
+  console.info('[status] súlyozott összpontszám:', total.toFixed(2))
+}
+
+/* ---- fájlok ------------------------------------------------------------ */
+{
+  const body = document.querySelector('#fileTable tbody')
+  const count = document.getElementById('fileCount')
+  const W = { kritikus: 'bad', magas: 'plan', közepes: 'part', alacsony: 'unver' }
+  let term = ''
+  const draw = () => {
+    body.replaceChildren()
+    let shown = 0
+    for (const [path, type, purpose, weight] of FILES) {
+      const hay = norm([path, type, purpose, weight].join(' '))
+      if (term && !hay.includes(term)) continue
+      shown++
+      if (shown > 400) break
+      body.append(el('tr', {}, [
+        el('td', { class: 'mono', text: path }),
+        el('td', { class: 'mono', text: type }),
+        el('td', { text: purpose }),
+        el('td', {}, [el('span', { class: 'pill p-' + W[weight], text: weight })])
+      ]))
+    }
+    count.textContent = shown + ' / ' + FILES.length + ' fájl'
+  }
+  draw()
+  document.getElementById('fileSearch').addEventListener('input', e => { term = norm(e.target.value); draw() })
+  window.__fileFilter = t => { term = t; draw(); document.getElementById('fileSearch').value = t }
+}
+
+/* ---- globális kereső: minden szűrhető listát egyszerre szűr ------------ */
+document.getElementById('globalSearch').addEventListener('input', e => {
+  const t = norm(e.target.value)
+  window.__featFilter(t)
+  window.__apiFilter(t)
+  window.__dbFilter(t)
+  window.__bugFilter(t)
+  window.__fileFilter(t)
+})
+</script>
+</body>
+</html>
