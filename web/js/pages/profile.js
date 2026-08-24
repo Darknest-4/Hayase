@@ -62,7 +62,13 @@ const PageProfile = {
 
     const completed = entries.filter(e => e.status === 'COMPLETED')
     const episodesWatched = entries.reduce((sum, e) => sum + (e.progress ?? 0), 0)
-    const minutesWatched = entries.reduce((s, e) => s + (e.progress ?? 0) * (e.media?.duration || 24), 0)
+    // Measured, not estimated. This used to be `progress * nominal runtime`,
+    // which credited a flat 24 minutes the instant an episode was marked —
+    // so the number grew by watching nothing. WatchTime.minutesFor() uses
+    // real playback seconds and only falls back to the old estimate for
+    // episodes credited before the meter existed.
+    const watch = window.WatchTime.minutesFor(entries)
+    const minutesWatched = watch.totalMinutes
     const scored = entries.filter(e => e.score > 0)
     const meanScore = scored.length ? (scored.reduce((sum, e) => sum + e.score, 0) / scored.length).toFixed(1) : null
 

@@ -573,6 +573,55 @@ Migration 0022 adds accent-folding (`tamadas` finds `támadás`), Hungarian
 stemming for translated text, and the `hu-HU-x-icu` collation for alphabetical
 order — the default sorts `Zebra` before `Álom`.
 
+## Watch time is measured, not estimated
+
+Watch time used to be computed the same way on five screens:
+
+```js
+entries.reduce((s, e) => s + (e.progress ?? 0) * (e.media?.duration || 24), 0)
+```
+
+Episodes credited, times a nominal runtime, with **24 minutes** as the fallback
+when the catalogue does not know the real one. That is an estimate presented as
+a measurement, and it had two consequences a viewer notices: the profile gained
+a flat 24 minutes the instant an episode was credited, whether it was watched
+or skipped; and achievements built on it rewarded *marking* rather than
+watching.
+
+`web/js/watch-time.js` measures instead. A meter ticks only while the video is
+genuinely playing — not paused, not seeking, not stalled mid-buffer — and every
+tick is bounded, because a throttled background tab or a sleeping laptop
+produces one tick with an hour of wall clock behind it.
+
+Crediting an episode is written against that number rather than the playhead:
+
+| | rule |
+|---|---|
+| before | `currentTime / duration >= 0.85` — dragging the scrubber to the end counted |
+| now | **80% of the runtime actually watched** |
+| when the video ends | **50%**, so skipping the intro, a recap and the ending still counts |
+
+Existing profiles keep their history: episodes credited before the meter
+existed still fall back to the old nominal estimate, and `minutesFor()` returns
+the measured and estimated halves separately so a screen can say which is
+which. Nothing new is ever estimated.
+
+### Subtitle and audio tracks
+
+The engine always attached a `<track>` for every subtitle a source supplied —
+and never enabled one, so they were all present in the DOM and invisible on
+screen. `playback.subtitles` now decides which is showing, matched by language
+code rather than by label (labels are whatever a source felt like writing:
+`HU`, `Magyar felirat`, `hun-full`). A picker sits in the same bar as the
+sub/dub and provider switches, and changing it stores the *language*, not the
+track index — the next episode is a different stream whose track order is
+nobody's to predict.
+
+`video.audioTracks` is not implemented in every browser (Chrome does not expose
+it), so audio-track selection is best-effort by design. The sub/dub preference
+does not depend on it: that is decided when ranking candidates, where a dub is
+a different stream rather than a track inside one.
+
 ## Status & roadmap
 
 The catalogue is the source of truth for anime data; AniList, ani.zip and

@@ -4,7 +4,7 @@
 
 const PageSchedule = {
   async render (root) {
-    root.append(window.C.spotlight(T('schedule.title'), { subtitle: 'What drops this week, day by day' }))
+    root.append(window.C.spotlight(T('schedule.title'), { subtitle: T('What drops this week, day by day') }))
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
 

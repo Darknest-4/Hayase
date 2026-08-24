@@ -55,13 +55,13 @@ const Onboarding = {
   /** Human labels for enum values. The spec carries keys, not prose. */
   CHOICES: {
     'language.ui': [
-      { value: 'hu', label: 'Magyar', hint: 'Magyar felület' },
+      { value: 'hu', label: 'Magyar', hint: 'Hungarian interface' },
       { value: 'en', label: 'English', hint: 'English interface' }
     ],
     'language.titles': [
       { value: 'romaji', label: 'Romaji', hint: 'Shingeki no Kyojin' },
       { value: 'english', label: 'English', hint: 'Attack on Titan' },
-      { value: 'hungarian', label: 'Magyar', hint: 'A címek, ahol van magyar' },
+      { value: 'hungarian', label: 'Magyar', hint: 'Titles where a Hungarian one exists' },
       { value: 'native', label: '日本語', hint: '進撃の巨人' }
     ],
     'playback.variant': [

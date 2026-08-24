@@ -1,4 +1,4 @@
-/* global C, Catalogue, MutationObserver, PageW2G, Store, U, YumeAPI, document, location, window, T */
+/* global C, Catalogue, MutationObserver, PageW2G, Store, U, YumeAPI, document, location, window, T, I18n */
 // Watch page — modern embedded player. Progress is tracked automatically:
 // the exact second you reached is saved per profile and resumed next time,
 // history is logged the moment you start, and the episode is marked watched
@@ -265,7 +265,11 @@ const PageWatch = {
     // One provider offering one variant is not a choice; showing a switch with
     // a single option makes the player look busier without giving the viewer
     // anything to do.
-    if (variants.length < 2 && providers.length < 2) { host.replaceChildren(); return }
+    const subtitleCount = window.StreamEngine?.subtitleTracks(this._video)?.length ?? 0
+    if (variants.length < 2 && providers.length < 2 && subtitleCount === 0) {
+      host.replaceChildren()
+      return
+    }
 
     const active = this._activeCandidate
     const wanted = window.Prefs?.get('playback.variant') ?? 'any'
@@ -282,6 +286,55 @@ const PageWatch = {
             title: T(this.VARIANT_LABELS[variant])
           }, [document.createTextNode(T(this.VARIANT_LABELS[variant]))])
           btn.addEventListener('click', () => this.switchTo({ variant }, media, episode))
+          return btn
+        }))
+      ]))
+    }
+
+    // Subtitle tracks, when the playing stream carries more than one — or one
+    // that can be turned off. This is the third thing a viewer reaches for
+    // mid-episode, after "wrong version" and "this source is stuttering", so
+    // it belongs in the same row rather than behind a settings screen.
+    const subtitleTracks = window.StreamEngine?.subtitleTracks(this._video) ?? []
+    if (subtitleTracks.length) {
+      const showing = subtitleTracks.find(t => t.showing)
+      const chips = [
+        { key: 'off', label: T('Off'), on: !showing },
+        ...subtitleTracks.map(track => ({
+          key: String(track.index),
+          label: track.label,
+          on: track.showing,
+          index: track.index
+        }))
+      ]
+      row.push(U.el('div', { class: 'vbar-group' }, [
+        U.el('span', { class: 'vbar-label', text: T('Subtitles') }),
+        U.el('div', { class: 'vbar-chips' }, chips.map(chip => {
+          const btn = U.el('button', {
+            class: 'vbar-chip' + (chip.on ? ' active' : ''),
+            'aria-pressed': chip.on ? 'true' : 'false',
+            title: chip.label
+          }, [document.createTextNode(chip.label)])
+          btn.addEventListener('click', () => {
+            const tracks = this._video?.textTracks
+            if (!tracks) return
+            for (const track of tracks) {
+              if (track.kind === 'subtitles' || track.kind === 'captions') track.mode = 'disabled'
+            }
+            if (chip.key !== 'off') {
+              const track = tracks[chip.index]
+              if (track) track.mode = 'showing'
+              // Remember the language, not the index: the next episode is a
+              // different stream whose track order is nobody's to predict.
+              if (track?.language) {
+                const code = window.StreamEngine.languageCode(track.language)
+                if (code) window.Prefs?.set({ 'playback.subtitles': code })
+              }
+            } else {
+              window.Prefs?.set({ 'playback.subtitles': 'off' })
+            }
+            this.mountVariantBar(media, episode)
+          })
           return btn
         }))
       ]))
@@ -571,10 +624,32 @@ const PageWatch = {
       }
     }, { once: true })
 
-    // --- automatic tracking: history on first play, watched at 85% ---
+    // --- automatic tracking ---
+    //
+    // Crediting used to be positional: `currentTime / duration >= 0.85`. That
+    // makes dragging the scrubber to the end indistinguishable from watching,
+    // and it is why opening an episode and poking at it credited a full
+    // episode — and, through `progress * nominal runtime`, a flat 24 minutes
+    // of "watch time" that nobody had spent.
+    //
+    // WatchTime measures the seconds the video was genuinely playing and
+    // fires when *that* clears the bar. See web/js/watch-time.js.
     let historyLogged = false
     let completedFired = false
     const save = () => { if (video.currentTime > 5) Store.setResume(media.id, episode, video.currentTime) }
+
+    const creditEpisode = () => {
+      if (completedFired) return
+      completedFired = true
+      Store.setProgress(media, episode)
+      U.toast(I18n.f('Episode {n} marked as watched', { n: episode }))
+    }
+
+    const detachMeter = window.WatchTime?.attach(video, {
+      animeId: media.id,
+      episode,
+      onComplete: creditEpisode
+    }) ?? (() => {})
 
     video.addEventListener('timeupdate', () => {
       const { currentTime, duration } = video
@@ -583,14 +658,11 @@ const PageWatch = {
       if (video.buffered.length && duration) {
         seekBuffer.style.width = (video.buffered.end(video.buffered.length - 1) / duration * 100) + '%'
       }
-      if (!historyLogged && currentTime > 3) {
+      // History records "this was opened and played", which is what the
+      // history screen is for. It deliberately does not credit progress.
+      if (!historyLogged && currentTime > 3 && !video.paused) {
         historyLogged = true
         Store.recordHistory(media, episode)
-      }
-      if (!completedFired && duration && currentTime / duration >= 0.85) {
-        completedFired = true
-        Store.setProgress(media, episode)
-        U.toast(`Episode ${episode} marked as watched`)
       }
       this._updateSkip(skipBtn, video)
       this._updateContinueCard(currentTime, duration)
@@ -600,15 +672,22 @@ const PageWatch = {
     // finished → clear resume, show the up-next end card
     video.addEventListener('ended', () => {
       Store.clearResume(media.id, episode)
-      if (!completedFired) { Store.setProgress(media, episode); completedFired = true }
+      // No unconditional credit here: reaching the end by dragging the
+      // scrubber is not watching. WatchTime applies a lower bar once the
+      // video has actually ended, which covers somebody who skipped the
+      // intro, a recap and the ending — and still requires real playback.
       if (episode < total) this._showUpNext(shell, media, episode, total)
     })
 
     // persist position periodically; teardown when the node leaves the DOM
     const saveTimer = setInterval(() => { if (!video.paused) save() }, 5000)
+    // The meter holds a timer and document-level listeners; it has to come
+    // down with the player or it keeps counting against a detached element.
+    const stopMeter = detachMeter
     const observer = new MutationObserver(() => {
       if (!document.body.contains(shell)) {
         save()
+        stopMeter()
         clearInterval(saveTimer)
         observer.disconnect()
         document.removeEventListener('keydown', keys)

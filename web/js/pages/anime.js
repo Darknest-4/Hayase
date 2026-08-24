@@ -366,7 +366,7 @@ const PageAnime = {
         window.App.navigate()
       }
     }, [
-      U.el('option', { value: '', text: entry ? '✕ Remove from list' : '＋ Add to List' }),
+      U.el('option', { value: '', text: entry ? T('✕ Remove from list') : T('＋ Add to List') }),
       ...Object.entries(U.listStatusMap).map(([value, label]) =>
         U.el('option', { value, text: label, ...(entry?.status === value ? { selected: '' } : {}) }))
     ])
