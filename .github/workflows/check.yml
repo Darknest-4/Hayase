@@ -123,10 +123,14 @@ jobs:
       # passing one made ESLint fail with "No files matching" — so this step
       # was erroring out rather than linting anything.
       - name: Lint the client
-        run: npx --yes standard --ignore "web/js/vendor/**" "web/**/*.js" "web/test/*.mjs"
+        run: npx --yes standard --ignore "web/js/vendor/**" "web/**/*.js" "web/test/*.mjs" "extensions/**/*.js"
 
       # The engine is the one piece of client code with real logic in it —
       # everything else is rendering. It loads against a small DOM stub, so it
       # needs no browser and no server.
-      - name: Streaming engine tests
-        run: node --test web/test/*.test.mjs
+      # --experimental-strip-types because the extension suite validates its
+      # manifest with the server's own TypeScript validator rather than a copy
+      # of the rules, so a manifest that would be rejected at publish time
+      # fails here instead.
+      - name: Client tests
+        run: node --experimental-strip-types --test web/test/*.test.mjs

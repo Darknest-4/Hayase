@@ -388,6 +388,9 @@ I18n.register('hu', {
   'Could not load the language options — check your connection and reload.':
     'A nyelvi beállítások nem töltődtek be — ellenőrizd a kapcsolatot és tölts újra.',
   'English interface': 'Angol felület',
+  Staff: 'Stáb',
+  'From extensions': 'Kiegészítőkből',
+  'Skip outro': 'Végefőcím átugrása',
   Subtitles: 'Feliratok',
   'Episode {n} marked as watched': '{n}. rész megnézettnek jelölve',
   'Hungarian interface':

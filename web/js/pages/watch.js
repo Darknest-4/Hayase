@@ -444,8 +444,17 @@ const PageWatch = {
     this._playContext = { video, media, episode, giveUp }
     this.mountVariantBar(media, episode)
 
+    // Subtitle extensions contribute tracks to whatever stream ends up
+    // playing rather than competing as sources. Fetched alongside the
+    // candidates, not before them: a slow subtitle provider must not delay
+    // the video starting, and an absent one costs nothing.
+    const externalSubs = await engine.externalSubtitles(media, episode).catch(() => [])
+    const enriched = externalSubs.length
+      ? results.map(candidate => engine.withExternalSubtitles(candidate, externalSubs))
+      : results
+
     try {
-      const { candidate } = await engine.play(video, results, {
+      const { candidate } = await engine.play(video, enriched, {
         onFallback: (failed, reason) => {
           console.warn('[stream] falling back from', failed.source.slug, '—', reason)
           U.toast(`${T('Source failed')} (${failed.source.name}) — ${T('trying the next one')}`, 'error')
@@ -996,21 +1005,49 @@ const PageWatch = {
   _skips: null,
   _lastAutoSkip: 0,
 
+  /**
+   * Opening and ending intervals for this episode.
+   *
+   * Metadata extensions are asked first, so a viewer can install a different
+   * skip provider, turn one off, or see its failures in the developer portal.
+   *
+   * The built-in AniSkip call is kept as the fallback when no extension
+   * answers. Moving it out entirely would have been cleaner to read and worse
+   * to use: the skip button would silently disappear for everyone who has not
+   * installed an extension, which is a regression dressed as a refactor.
+   */
   async _loadSkips (media, episode, video, skipBtn) {
     this._skips = null
-    if (!media.idMal) return
-    try {
-      const res = await fetch(`https://api.aniskip.com/v2/skip-times/${media.idMal}/${episode}?types[]=op&types[]=ed&episodeLength=0`)
-      const json = await res.json()
-      if (json.found) {
-        this._skips = json.results.map(r => ({ kind: r.skipType === 'op' ? 'Skip intro' : 'Skip outro', start: r.interval.startTime, end: r.interval.endTime }))
-      }
-    } catch (e) { /* aniskip unavailable — feature simply absent */ }
 
     skipBtn.addEventListener('click', () => {
       const active = this._activeSkip(video.currentTime)
       if (active) video.currentTime = active.end
     })
+
+    const label = type => (type === 'ed' ? T('Skip outro') : T('Skip intro'))
+
+    // ---- extensions first ----
+    const host = window.ExtensionHost
+    if (host?.collect) {
+      try {
+        const query = window.StreamEngine?.buildQuery(media, episode) ?? { episode, malId: media.idMal }
+        const { results } = await host.collect('metadata', query, { types: ['metadata'] })
+        const skips = (results ?? [])
+          .filter(row => row?.kind === 'skip' && Number.isFinite(row.start) && Number.isFinite(row.end))
+          .map(row => ({ kind: label(row.skipType), start: row.start, end: row.end }))
+        if (skips.length) { this._skips = skips; return }
+      } catch (e) { /* fall through to the built-in provider */ }
+    }
+
+    // ---- built-in fallback ----
+    if (!media.idMal) return
+    try {
+      const res = await fetch(`https://api.aniskip.com/v2/skip-times/${media.idMal}/${episode}?types[]=op&types[]=ed&episodeLength=0`)
+      const json = await res.json()
+      if (json.found) {
+        this._skips = json.results.map(r => ({ kind: label(r.skipType), start: r.interval.startTime, end: r.interval.endTime }))
+      }
+    } catch (e) { /* aniskip unavailable — feature simply absent */ }
   },
 
   _activeSkip (time) {

@@ -14,6 +14,17 @@
 // reported honestly rather than pretended away.
 
 const StreamEngine = {
+  /**
+   * Extension types that can answer with a playable source.
+   *
+   * The engine used to ask *every* loaded extension for `single()`, whatever
+   * it declared itself to be. A `subtitle` extension therefore returned .vtt
+   * URLs into the stream candidate list and the player tried to play them as
+   * video; a `metadata` extension polluted the list the same way. The declared
+   * type is the answer to "who can I ask this", and it was being ignored.
+   */
+  SOURCE_TYPES: ['http', 'torrent', 'nzb'],
+
   /** How long a stream gets to produce data before it counts as failed. */
   START_TIMEOUT_MS: 12_000,
 
@@ -293,7 +304,14 @@ const StreamEngine = {
 
     const host = window.ExtensionHost
     if (host) {
-      const settled = await Promise.allSettled(extensions.map(async ext => {
+      // Only the types that can produce a source. Anything else declared
+      // itself to be something other than a stream provider, and asking it
+      // for one puts its answer in the wrong list.
+      const askable = extensions.filter(ext => {
+        const type = host.typeOf?.(ext.slug) ?? null
+        return type === null || this.SOURCE_TYPES.includes(type)
+      })
+      const settled = await Promise.allSettled(askable.map(async ext => {
         const items = await host.call(ext.slug, 'single', query)
         return { ext, items }
       }))
@@ -499,6 +517,104 @@ const StreamEngine = {
       })
     }
     return out
+  },
+
+  /**
+   * SubRip to WebVTT.
+   *
+   * Browsers render only WebVTT in a <track>, and most subtitles in the world
+   * are SubRip. The two differ in almost nothing: a header line, and a comma
+   * where WebVTT wants a dot in the timestamps. Converting is a handful of
+   * lines and the alternative is refusing most of the subtitles that exist.
+   */
+  srtToVtt (text) {
+    const body = String(text ?? '')
+      .replace(/\r\n?/g, '\n')
+      // 00:00:12,500 --> 00:00:14,000   becomes   00:00:12.500 --> 00:00:14.000
+      .replace(/(\d{2}:\d{2}:\d{2}),(\d{1,3})/g, '$1.$2')
+    return body.startsWith('WEBVTT') ? body : 'WEBVTT\n\n' + body
+  },
+
+  /**
+   * Turn subtitle text into something a <track> can load.
+   *
+   * A blob URL, because the alternative is asking the browser to fetch the
+   * file itself — which needs the service to send CORS headers for track
+   * elements, and most do not.
+   *
+   * Returns null rather than throwing: a subtitle that cannot be prepared is a
+   * missing subtitle, not a broken player.
+   */
+  subtitleObjectUrl (content, format) {
+    try {
+      // The *source* is checked, not the converted text: srtToVtt() prepends a
+      // WEBVTT header, so empty input converts to a non-empty string and an
+      // empty subtitle would be attached as a valid track with no cues.
+      if (!String(content ?? '').trim()) return null
+      // ASS/SSA is not WebVTT and is not converted here; handing it over
+      // unchanged would render a screenful of style directives.
+      if (format === 'ass' || format === 'ssa') return null
+      const text = format === 'srt' ? this.srtToVtt(content) : String(content)
+      return URL.createObjectURL(new Blob([text], { type: 'text/vtt' }))
+    } catch (e) {
+      return null
+    }
+  },
+
+  /**
+   * Subtitle tracks contributed by `subtitle` extensions.
+   *
+   * These are not sources and never enter the candidate list; they are extra
+   * tracks for whatever stream ends up playing. That distinction is the whole
+   * reason the type exists, and until the host learned to dispatch by type
+   * there was no way to express it.
+   *
+   * Failure is silent by design: a missing subtitle is a smaller problem than
+   * a player that refuses to start because a subtitle provider was down.
+   */
+  async externalSubtitles (media, episode) {
+    const host = window.ExtensionHost
+    if (!host?.collect) return []
+    try {
+      const { results } = await host.collect('subtitles', this.buildQuery(media, episode), {
+        types: ['subtitle']
+      })
+      return results
+        .slice(0, 40)
+        .map(track => {
+          // Content wins over a URL when both are present: the extension has
+          // already fetched it through the proxy, so it is known-readable,
+          // while the URL may not be CORS-readable from a <track> at all.
+          const url = track?.content
+            ? this.subtitleObjectUrl(track.content, track.format)
+            : track?.url
+          if (!url) return null
+          return {
+            url,
+            lang: this.languageCode(track.lang),
+            // The provider is named in the label because two extensions
+            // offering "Magyar" are otherwise indistinguishable in the picker.
+            label: track._source ? `${track.label} · ${track._source}` : track.label
+          }
+        })
+        .filter(Boolean)
+    } catch (e) {
+      return []
+    }
+  },
+
+  /**
+   * Merge external subtitle tracks into a candidate before it is attached.
+   *
+   * De-duplicated on URL: the same file offered by two providers is one track,
+   * and a picker listing it twice looks broken.
+   */
+  withExternalSubtitles (candidate, tracks) {
+    if (!tracks?.length) return candidate
+    const seen = new Set((candidate.subtitles ?? []).map(s => s.url))
+    const extra = tracks.filter(track => track.url && !seen.has(track.url))
+    if (!extra.length) return candidate
+    return { ...candidate, subtitles: [...(candidate.subtitles ?? []), ...extra] }
   },
 
   /** A failed stream is a data point about its source. */
