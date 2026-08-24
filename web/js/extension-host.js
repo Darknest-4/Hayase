@@ -84,6 +84,12 @@ const ExtensionHost = {
     const worker = new Worker('/js/extension-worker.js', { type: 'module' })
     const instance = {
       slug: ext.slug,
+      // The declared type decides who is allowed to ask this extension for
+      // what. Without it every loaded extension was asked for stream
+      // candidates, so a subtitle extension's .vtt arrived as a video source.
+      // The install record has carried `type` all along; only this line was
+      // missing.
+      type: ext.type ?? 'http',
       worker,
       permissions,
       pending: new Map(),
@@ -129,8 +135,49 @@ const ExtensionHost = {
     for (const slug of [...this._instances.keys()]) this.unload(slug)
   },
 
-  loaded () {
-    return [...this._instances.keys()]
+  /**
+   * Loaded extension slugs.
+   *
+   * `loaded()` keeps returning slugs so existing callers are unaffected.
+   * `loaded({ types })` narrows to the declared types, which is how each
+   * consumer asks only the extensions that can answer it.
+   */
+  loaded (filter) {
+    const types = filter?.types
+    const entries = [...this._instances.values()]
+    const wanted = types ? entries.filter(i => types.includes(i.type)) : entries
+    return wanted.map(i => i.slug)
+  },
+
+  /** The declared type of one loaded extension, or null. */
+  typeOf (slug) {
+    return this._instances.get(slug)?.type ?? null
+  },
+
+  /**
+   * Ask every extension of the given types for `method`, tolerating failure.
+   *
+   * One extension being broken must never deny the others, so each is settled
+   * independently and its error recorded rather than thrown — the same rule
+   * the streaming engine already applied to sources, now available to every
+   * consumer instead of reimplemented per caller.
+   */
+  async collect (method, query, { types } = {}) {
+    const slugs = this.loaded(types ? { types } : undefined)
+    const results = []
+    const errors = []
+    const settled = await Promise.allSettled(slugs.map(async slug => ({
+      slug,
+      items: await this.call(slug, method, query)
+    })))
+    for (const outcome of settled) {
+      if (outcome.status === 'rejected') {
+        errors.push(String(outcome.reason?.message ?? outcome.reason))
+        continue
+      }
+      for (const item of outcome.value.items ?? []) results.push({ ...item, _source: outcome.value.slug })
+    }
+    return { results, errors }
   },
 
   // ---------------------------------------------------------------- calling
@@ -353,6 +400,7 @@ const ExtensionHost = {
         const source = await window.YumeAPI.extensionPackage(ext.slug, ext.version)
         await this.load({
           slug: ext.slug,
+          type: ext.type,
           status: ext.status,
           version: ext.version,
           versionId: ext.version_id,

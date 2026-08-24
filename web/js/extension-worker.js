@@ -191,9 +191,90 @@ function sanitiseResult (item) {
   }
 }
 
+/**
+ * A subtitle track, from a `subtitle` extension.
+ *
+ * Shaped differently from a stream result on purpose. Until this existed the
+ * worker ran every array through sanitiseResult(), so a subtitle extension's
+ * output arrived looking like a playable stream — and the engine dutifully
+ * offered a .vtt file to the player as a video. A subtitle is not a source.
+ */
+function sanitiseSubtitle (item) {
+  if (typeof item !== 'object' || item === null) return null
+  const url = safeUrl(item.url)
+  if (!url) return null
+  return {
+    url,
+    lang: str(item.lang, 12),
+    label: str(item.label, 60) || str(item.lang, 12) || 'Subtitles',
+    format: /^(vtt|srt|ass|ssa)$/i.test(String(item.format ?? '')) ? String(item.format).toLowerCase() : 'vtt',
+    // A hint the player uses to pick a default when nothing else decides.
+    forced: item.forced === true
+  }
+}
+
+/** Keys whose string value is treated as a URL and must survive safeUrl. */
+const URL_KEYS = /(^|_)(url|image|icon|thumbnail|banner)$/i
+
+/**
+ * A metadata record, from a `metadata` extension.
+ *
+ * Deliberately a flat, bounded bag rather than a per-feature schema: skip
+ * segments, characters, staff and recommendations are all metadata, and a
+ * schema per kind here would mean editing the sandbox every time a new one is
+ * wanted. `kind` says what it is; the consumer validates the fields it needs.
+ *
+ * Only primitives cross, one level deep — a nested object is an easy route to
+ * a prototype-pollution bug on the other side of the boundary, and nothing
+ * needs one.
+ */
+function sanitiseMetadata (item) {
+  if (typeof item !== 'object' || item === null) return null
+  const kind = str(item.kind, 40)
+  if (!kind) return null
+
+  const out = { kind }
+  let fields = 0
+  for (const [rawKey, value] of Object.entries(item)) {
+    if (rawKey === 'kind' || rawKey === '__proto__' || rawKey === 'constructor') continue
+    if (fields >= 24) break
+    const key = str(rawKey, 40)
+    if (!key) continue
+
+    if (typeof value === 'number' && Number.isFinite(value)) { out[key] = value; fields++ } else if (typeof value === 'boolean') { out[key] = value; fields++ } else if (typeof value === 'string') {
+      if (URL_KEYS.test(key)) {
+        const url = safeUrl(value)
+        if (url) { out[key] = url; fields++ }
+      } else {
+        out[key] = value.slice(0, 1000)
+        fields++
+      }
+    }
+  }
+  return out
+}
+
 const MAX_RESULTS = 200
 
 // ---------------------------------------------------------------- lifecycle
+
+/**
+ * Every method an extension may implement, and how its result is sanitised.
+ *
+ * The three added here are what makes the non-stream extension types mean
+ * anything: `subtitle`, `metadata` and `theme` were valid in the manifest
+ * validator but nothing ever called them, and anything they returned was
+ * sanitised as a stream.
+ */
+const SANITISERS = {
+  single: sanitiseResult,
+  batch: sanitiseResult,
+  movie: sanitiseResult,
+  subtitles: sanitiseSubtitle,
+  metadata: sanitiseMetadata,
+  theme: sanitiseMetadata
+}
+const METHODS = ['test', ...Object.keys(SANITISERS)]
 
 let impl = null
 let options = {}
@@ -226,7 +307,7 @@ self.onmessage = async event => {
         URL.revokeObjectURL(url)
       }
       if (!impl || typeof impl !== 'object') throw new Error('extension must default-export an object')
-      self.postMessage({ kind: 'ready', methods: ['test', 'single', 'batch', 'movie'].filter(m => typeof impl[m] === 'function') })
+      self.postMessage({ kind: 'ready', methods: METHODS.filter(m => typeof impl[m] === 'function') })
     } catch (error) {
       self.postMessage({ kind: 'init-failed', error: String(error?.message ?? error).slice(0, 500) })
     }
@@ -244,7 +325,11 @@ self.onmessage = async event => {
       if (method === 'test') {
         payload = result === true
       } else if (Array.isArray(result)) {
-        payload = result.slice(0, MAX_RESULTS).map(sanitiseResult).filter(Boolean)
+        // Per method, not one shape for everything: a subtitle track and a
+        // stream have nothing in common, and running both through the stream
+        // sanitiser is what made the non-stream types unusable.
+        const sanitise = SANITISERS[method] ?? sanitiseResult
+        payload = result.slice(0, MAX_RESULTS).map(sanitise).filter(Boolean)
       } else {
         payload = []
       }

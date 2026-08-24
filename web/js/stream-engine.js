@@ -14,6 +14,17 @@
 // reported honestly rather than pretended away.
 
 const StreamEngine = {
+  /**
+   * Extension types that can answer with a playable source.
+   *
+   * The engine used to ask *every* loaded extension for `single()`, whatever
+   * it declared itself to be. A `subtitle` extension therefore returned .vtt
+   * URLs into the stream candidate list and the player tried to play them as
+   * video; a `metadata` extension polluted the list the same way. The declared
+   * type is the answer to "who can I ask this", and it was being ignored.
+   */
+  SOURCE_TYPES: ['http', 'torrent', 'nzb'],
+
   /** How long a stream gets to produce data before it counts as failed. */
   START_TIMEOUT_MS: 12_000,
 
@@ -293,7 +304,14 @@ const StreamEngine = {
 
     const host = window.ExtensionHost
     if (host) {
-      const settled = await Promise.allSettled(extensions.map(async ext => {
+      // Only the types that can produce a source. Anything else declared
+      // itself to be something other than a stream provider, and asking it
+      // for one puts its answer in the wrong list.
+      const askable = extensions.filter(ext => {
+        const type = host.typeOf?.(ext.slug) ?? null
+        return type === null || this.SOURCE_TYPES.includes(type)
+      })
+      const settled = await Promise.allSettled(askable.map(async ext => {
         const items = await host.call(ext.slug, 'single', query)
         return { ext, items }
       }))
@@ -499,6 +517,53 @@ const StreamEngine = {
       })
     }
     return out
+  },
+
+  /**
+   * Subtitle tracks contributed by `subtitle` extensions.
+   *
+   * These are not sources and never enter the candidate list; they are extra
+   * tracks for whatever stream ends up playing. That distinction is the whole
+   * reason the type exists, and until the host learned to dispatch by type
+   * there was no way to express it.
+   *
+   * Failure is silent by design: a missing subtitle is a smaller problem than
+   * a player that refuses to start because a subtitle provider was down.
+   */
+  async externalSubtitles (media, episode) {
+    const host = window.ExtensionHost
+    if (!host?.collect) return []
+    try {
+      const { results } = await host.collect('subtitles', this.buildQuery(media, episode), {
+        types: ['subtitle']
+      })
+      return results
+        .filter(track => track?.url)
+        .slice(0, 40)
+        .map(track => ({
+          url: track.url,
+          lang: this.languageCode(track.lang),
+          // The provider is named in the label because two extensions
+          // offering "Magyar" are otherwise indistinguishable in the picker.
+          label: track._source ? `${track.label} · ${track._source}` : track.label
+        }))
+    } catch (e) {
+      return []
+    }
+  },
+
+  /**
+   * Merge external subtitle tracks into a candidate before it is attached.
+   *
+   * De-duplicated on URL: the same file offered by two providers is one track,
+   * and a picker listing it twice looks broken.
+   */
+  withExternalSubtitles (candidate, tracks) {
+    if (!tracks?.length) return candidate
+    const seen = new Set((candidate.subtitles ?? []).map(s => s.url))
+    const extra = tracks.filter(track => track.url && !seen.has(track.url))
+    if (!extra.length) return candidate
+    return { ...candidate, subtitles: [...(candidate.subtitles ?? []), ...extra] }
   },
 
   /** A failed stream is a data point about its source. */

@@ -444,8 +444,17 @@ const PageWatch = {
     this._playContext = { video, media, episode, giveUp }
     this.mountVariantBar(media, episode)
 
+    // Subtitle extensions contribute tracks to whatever stream ends up
+    // playing rather than competing as sources. Fetched alongside the
+    // candidates, not before them: a slow subtitle provider must not delay
+    // the video starting, and an absent one costs nothing.
+    const externalSubs = await engine.externalSubtitles(media, episode).catch(() => [])
+    const enriched = externalSubs.length
+      ? results.map(candidate => engine.withExternalSubtitles(candidate, externalSubs))
+      : results
+
     try {
-      const { candidate } = await engine.play(video, results, {
+      const { candidate } = await engine.play(video, enriched, {
         onFallback: (failed, reason) => {
           console.warn('[stream] falling back from', failed.source.slug, '—', reason)
           U.toast(`${T('Source failed')} (${failed.source.name}) — ${T('trying the next one')}`, 'error')
