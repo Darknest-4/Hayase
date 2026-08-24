@@ -4,6 +4,46 @@
 // accent. Applied live via CSS custom-property overrides (Store.applyTheme).
 
 const PageThemes = {
+  /**
+   * Ask theme extensions what they offer, and draw them under their own
+   * heading.
+   *
+   * Asynchronous and best-effort: the built-in themes are already on screen by
+   * the time this runs, so a slow or broken extension delays nothing and
+   * removes nothing. A theme is cosmetic — it is never worth an error state.
+   */
+  async _appendExtensionThemes (pad, currentAccent, currentBase, swatch) {
+    const host = window.ExtensionHost
+    if (!host?.collect) return
+
+    let results = []
+    try {
+      ({ results } = await host.collect('theme', undefined, { types: ['theme'] }))
+    } catch (e) {
+      return
+    }
+
+    const themes = (results ?? []).filter(row =>
+      row?.kind === 'theme' &&
+      typeof row.accent === 'string' &&
+      // Only the two bases the engine implements. Anything else would set a
+      // data-theme the stylesheet has no rules for and render an unstyled page.
+      (row.base === 'dark' || row.base === 'light')
+    )
+    if (!themes.length) return
+
+    pad.append(U.el('h2', { class: 'settings-group-title', text: T('From extensions') }))
+    const grid = U.el('div', { class: 'theme-swatch-grid' })
+    for (const theme of themes) {
+      grid.append(swatch({
+        name: theme.name || theme.slug || 'Theme',
+        base: theme.base,
+        accent: theme.accent
+      }, theme._source))
+    }
+    pad.append(grid)
+  },
+
   PRESETS: [
     { slug: 'rose', name: 'Rose', base: 'dark', accent: 'hsl(346.6 79% 51%)' },
     { slug: 'sakura', name: 'Sakura', base: 'light', accent: 'hsl(340 82% 62%)' },
@@ -44,18 +84,32 @@ const PageThemes = {
     // ---- accent presets ----
     pad.append(U.el('h2', { class: 'detail-section-title', text: T('Accent') }))
     const grid = U.el('div', { class: 'theme-grid' })
-    for (const p of this.PRESETS) {
-      const active = currentAccent === p.accent && currentBase === p.base
-      grid.append(U.el('button', {
+    const swatch = (preset, from) => {
+      const active = currentAccent === preset.accent && currentBase === preset.base
+      return U.el('button', {
         class: 'theme-swatch-card' + (active ? ' active' : ''),
-        onclick: () => { Store.setTheme({ base: p.base, accent: p.accent }); window.App.navigate() }
+        title: from ? `${preset.name} · ${from}` : preset.name,
+        onclick: () => { Store.setTheme({ base: preset.base, accent: preset.accent }); window.App.navigate() }
       }, [
-        U.el('span', { class: 'theme-swatch', style: `background:${p.accent};` }),
-        U.el('span', { class: 'theme-swatch-name', text: p.name }),
-        U.el('span', { class: 'theme-swatch-base', text: p.base })
-      ]))
+        U.el('span', { class: 'theme-swatch', style: `background:${preset.accent};` }),
+        U.el('span', { class: 'theme-swatch-name', text: preset.name }),
+        U.el('span', { class: 'theme-swatch-base', text: preset.base })
+      ])
     }
+
+    for (const p of this.PRESETS) grid.append(swatch(p))
     pad.append(grid)
+
+    // Themes contributed by `theme` extensions.
+    //
+    // The type has been valid in the manifest validator since the store
+    // existed and nothing ever consumed it, so a theme pack could be published
+    // and installed and would then do nothing at all. This is the consumer.
+    //
+    // Appended after the built-ins rather than merged into them: a viewer
+    // should be able to tell which themes came from where, and an extension
+    // should not be able to shadow a built-in by reusing its slug.
+    this._appendExtensionThemes(pad, currentAccent, currentBase, swatch)
 
     // ---- custom colour ----
     pad.append(U.el('h2', { class: 'detail-section-title', text: T('Custom accent') }))

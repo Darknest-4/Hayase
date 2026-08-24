@@ -1,0 +1,17 @@
+{
+  "manifestVersion": 3,
+  "id": "yume-themes",
+  "name": "Yume Theme Pack",
+  "version": "1.0.0",
+  "type": "theme",
+  "summary": "Extra colour themes for the Theme Engine.",
+  "description": "Adds accent and base combinations to the ones built into Settings → Appearance. A theme is pure data — a base, an accent colour and a name — so this extension declares no permissions at all: it reaches no network, reads no ids and stores nothing. It is the smallest useful thing an extension can be, and a working reference for anyone writing their own pack.",
+  "icon": "🎨",
+  "options": {
+    "include_light": {
+      "type": "boolean",
+      "default": true,
+      "description": "Offer the light-base themes as well as the dark ones."
+    }
+  }
+}
