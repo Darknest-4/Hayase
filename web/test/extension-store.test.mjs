@@ -96,10 +96,10 @@ describe('the icon', () => {
   })
 
   it('still draws a real image when the icon is a URL or a path', () => {
-    for (const icon_key of ['https://cdn.example.com/i.png', '/icons/i.png']) {
-      const node = Page._icon({ name: 'X', icon_key })
+    for (const icon of ['https://cdn.example.com/i.png', '/icons/i.png']) {
+      const node = Page._icon({ name: 'X', icon_key: icon })
       assert.equal(node.tagName, 'IMG')
-      assert.equal(node.getAttribute('src'), icon_key)
+      assert.equal(node.getAttribute('src'), icon)
     }
   })
 
