@@ -199,12 +199,29 @@ function sanitiseResult (item) {
  * output arrived looking like a playable stream — and the engine dutifully
  * offered a .vtt file to the player as a video. A subtitle is not a source.
  */
+/** A subtitle file is text; 512 KB is far past any real one. */
+const MAX_SUBTITLE_BYTES = 512 * 1024
+
 function sanitiseSubtitle (item) {
   if (typeof item !== 'object' || item === null) return null
+
+  // A track arrives either as a URL the player can hand to a <track>, or as
+  // the text itself.
+  //
+  // Content matters more than it looks. A <track> element fetches its src
+  // itself, which means the file has to be CORS-readable from the page — most
+  // subtitle services are not — and browsers render only WebVTT there, while
+  // most of the world ships SubRip. An extension that has already fetched the
+  // file through the host proxy can hand over the text and sidestep both.
   const url = safeUrl(item.url)
-  if (!url) return null
+  const content = typeof item.content === 'string' && item.content.trim()
+    ? item.content.slice(0, MAX_SUBTITLE_BYTES)
+    : null
+  if (!url && !content) return null
+
   return {
     url,
+    content,
     lang: str(item.lang, 12),
     label: str(item.label, 60) || str(item.lang, 12) || 'Subtitles',
     format: /^(vtt|srt|ass|ssa)$/i.test(String(item.format ?? '')) ? String(item.format).toLowerCase() : 'vtt',
