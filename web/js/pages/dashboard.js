@@ -1,4 +1,4 @@
-/* global window, document, U, C, Store */
+/* global window, document, U, C, Store, T, I18n */
 // Dashboard — a personal landing overview assembled from local data. Widgets
 // can be reordered and toggled (Edit layout); the layout persists per profile
 // in settings.dashboard. Everything renders from Store snapshots, so the
@@ -7,6 +7,10 @@
 const PageDashboard = {
   // registry: order here is the default order
   WIDGETS: [
+  // Labels are stored in English and translated where they are rendered, not
+  // here: this literal is evaluated once when the script loads, so a T() call
+  // in it would freeze the label in whatever language was active at boot and
+  // never follow a language switch.
     { key: 'continue', label: 'Continue watching' },
     { key: 'airing', label: 'Airing soon' },
     { key: 'stats', label: 'Quick stats' },
@@ -39,7 +43,7 @@ const PageDashboard = {
 
     const enabled = layout.filter(w => w.enabled)
     if (!enabled.length) {
-      pad.append(U.el('div', { class: 'empty-state', text: 'No widgets enabled. Use “Edit layout” to add some.' }))
+      pad.append(U.el('div', { class: 'empty-state', text: T('No widgets enabled. Use “Edit layout” to add some.') }))
       return
     }
 
@@ -49,7 +53,7 @@ const PageDashboard = {
       if (node) { pad.append(node); rendered++ }
     }
     if (!rendered) {
-      pad.append(U.el('div', { class: 'empty-state', text: 'Nothing to show yet — add anime to your library and your dashboard fills in automatically.' }))
+      pad.append(U.el('div', { class: 'empty-state', text: T('Nothing to show yet — add anime to your library and your dashboard fills in automatically.') }))
     }
   },
 
@@ -75,10 +79,10 @@ const PageDashboard = {
 
     layout.forEach((w, i) => {
       wrap.append(U.el('div', { class: 'dash-editor-row' }, [
-        U.el('div', { class: 'dash-editor-name', text: meta.get(w.key)?.label ?? w.key }),
+        U.el('div', { class: 'dash-editor-name', text: meta.get(w.key) ? T(meta.get(w.key).label) : w.key }),
         U.el('div', { class: 'dash-editor-actions' }, [
-          U.el('button', { class: 'btn btn-ghost btn-sm', disabled: i === 0 ? '' : null, title: 'Move up', onclick: () => { [layout[i - 1], layout[i]] = [layout[i], layout[i - 1]]; rerender() } }, [document.createTextNode('↑')]),
-          U.el('button', { class: 'btn btn-ghost btn-sm', disabled: i === layout.length - 1 ? '' : null, title: 'Move down', onclick: () => { [layout[i + 1], layout[i]] = [layout[i], layout[i + 1]]; rerender() } }, [document.createTextNode('↓')]),
+          U.el('button', { class: 'btn btn-ghost btn-sm', disabled: i === 0 ? '' : null, title: T('Move up'), onclick: () => { [layout[i - 1], layout[i]] = [layout[i], layout[i - 1]]; rerender() } }, [document.createTextNode('↑')]),
+          U.el('button', { class: 'btn btn-ghost btn-sm', disabled: i === layout.length - 1 ? '' : null, title: T('Move down'), onclick: () => { [layout[i + 1], layout[i]] = [layout[i], layout[i + 1]]; rerender() } }, [document.createTextNode('↓')]),
           U.el('label', { class: 'switch' }, [
             U.el('input', { type: 'checkbox', ...(w.enabled ? { checked: '' } : {}), onchange: e => { w.enabled = e.target.checked; rerender() } }),
             U.el('span', { class: 'slider' })
@@ -140,9 +144,9 @@ const PageDashboard = {
     const hours = Math.floor(minutes / 60)
     const cards = U.el('div', { class: 'stat-cards', style: 'margin:0;' }, [
       [entries.length, 'In library'],
-      [entries.filter(e => e.status === 'COMPLETED').length, 'Completed'],
-      [episodes.toLocaleString(), 'Episodes'],
-      [hours >= 24 ? `${Math.floor(hours / 24)}d ${hours % 24}h` : `${hours}h`, 'Watch time']
+      [entries.filter(e => e.status === 'COMPLETED').length, T('Completed')],
+      [episodes.toLocaleString(I18n.locale()), T('Episodes')],
+      [hours >= 24 ? `${Math.floor(hours / 24)}d ${hours % 24}h` : `${hours}h`, T('Watch time')]
     ].map(([v, l]) => U.el('div', { class: 'stat-card' }, [U.el('b', { text: String(v) }), U.el('span', { text: l })])))
     return this._section('Quick stats', cards, { link: '#/profile?tab=analytics', linkText: 'Analytics →' })
   },

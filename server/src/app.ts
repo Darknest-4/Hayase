@@ -36,6 +36,8 @@ import { publicReadiness, adminMonitoring } from './routes/monitoring.ts'
 import reportRoutes from './routes/reports.ts'
 import extensionRoutes from './routes/extensions.ts'
 import libraryRoutes from './routes/library.ts'
+import settingsRoutes from './routes/settings.ts'
+import translationRoutes from './routes/translations.ts'
 
 import type { FastifyError, FastifyInstance } from 'fastify'
 
@@ -202,12 +204,14 @@ export async function buildApp (): Promise<FastifyInstance> {
   await app.register(authRoutes, { prefix: '/v1/auth' })
   await app.register(animeRoutes, { prefix: '/v1/anime' })
   await app.register(libraryRoutes, { prefix: '/v1/me' })
+  await app.register(settingsRoutes, { prefix: '/v1/me' })
   await app.register(profileRoutes, { prefix: '/v1/profiles' })
   await app.register(extensionRoutes, { prefix: '/v1/extensions' })
   await app.register(commentRoutes, { prefix: '/v1/comments' })
   await app.register(w2gRoutes, { prefix: '/v1/w2g' })
   await app.register(reportRoutes, { prefix: '/v1/reports' })
   await app.register(adminRoutes, { prefix: '/v1/admin' })
+  await app.register(translationRoutes, { prefix: '/v1/admin/translations' })
   await app.register(devRoutes, { prefix: '/v1/dev' })
   await app.register(webhookRoutes, { prefix: '/v1/admin/webhooks' })
   await app.register(roleRoutes, { prefix: '/v1/admin/roles' })

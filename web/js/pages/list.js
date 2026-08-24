@@ -1,11 +1,11 @@
-/* global C, Catalogue, Store, U, document, window */
+/* global C, Catalogue, Store, U, document, window, T */
 // My List page — the locally stored anime list with status tabs,
 // inline progress controls and favourites.
 
 const PageList = {
   render (root, params) {
     const total = Object.keys(Store.list()).length
-    root.append(C.spotlight('Library', { subtitle: total ? `${total} ${total === 1 ? 'title' : 'titles'} tracked` : 'Your anime, tracked' }))
+    root.append(C.spotlight(T('Library'), { subtitle: total ? `${total} ${total === 1 ? 'title' : 'titles'} tracked` : 'Your anime, tracked' }))
 
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
@@ -41,7 +41,7 @@ const PageList = {
       if (state.tab === 'FAVOURITES') {
         const favs = Store.favourites()
         if (!favs.length) {
-          content.append(U.el('div', { class: 'empty-state', text: 'No favourites yet.' }))
+          content.append(U.el('div', { class: 'empty-state', text: T('No favourites yet.') }))
           return
         }
         content.append(U.el('div', { class: 'spinner' }))
@@ -49,7 +49,7 @@ const PageList = {
           const page = await Catalogue.searchOrAniList({ ids: favs.slice(0, 50), perPage: 50 })
           content.replaceChildren(C.grid(page.media ?? []))
         } catch (e) {
-          content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load favourites.' }))
+          content.replaceChildren(U.el('div', { class: 'error-state', text: T('Failed to load favourites.') }))
         }
         return
       }
@@ -59,7 +59,7 @@ const PageList = {
         .sort((a, b) => b.updatedAt - a.updatedAt)
 
       if (!entries.length) {
-        content.append(U.el('div', { class: 'empty-state', text: 'Nothing here yet. Add anime from their detail page.' }))
+        content.append(U.el('div', { class: 'empty-state', text: T('Nothing here yet. Add anime from their detail page.') }))
         return
       }
 
@@ -81,23 +81,23 @@ const PageList = {
           controls.append(
             U.el('button', {
               class: 'icon-btn',
-              title: '-1 episode',
+              title: T('-1 episode'),
               onclick: () => { Store.setProgress(media, (Store.entry(media.id)?.progress ?? 0) - 1); renderTabs(); renderContent() }
             }, [U.svg(C.MINUS, 13)]),
             U.el('span', { style: 'font-weight:800;font-size:.85rem;min-width:4.5rem;text-align:center;', text: `${entry.progress ?? 0}${total} ep` }),
             U.el('button', {
               class: 'icon-btn',
-              title: '+1 episode',
+              title: T('+1 episode'),
               onclick: () => { Store.setProgress(media, (Store.entry(media.id)?.progress ?? 0) + 1); renderTabs(); renderContent() }
             }, [U.svg(C.PLUS, 13)])
           )
         }
         controls.append(U.el('button', {
           class: 'icon-btn',
-          title: 'Remove from list',
+          title: T('Remove from list'),
           onclick: () => {
             Store.removeEntry(media.id)
-            U.toast('Removed from list')
+            U.toast(T('Removed from list'))
             renderTabs()
             renderContent()
           }

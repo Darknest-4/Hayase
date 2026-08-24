@@ -1,4 +1,4 @@
-/* global C, Catalogue, T, U, window */
+/* global C, Catalogue, T, U, window, I18n */
 // Schedule page — airing calendar for the coming week, grouped by day,
 // like the original app/schedule route.
 
@@ -44,20 +44,20 @@ const PageSchedule = {
 
     for (const [key, items] of byDay) {
       const date = new Date(key)
-      let label = date.toLocaleDateString(undefined, { weekday: 'long' })
+      let label = date.toLocaleDateString(I18n.locale(), { weekday: 'long' })
       if (key === todayKey) label = T('schedule.today')
       else if (key === tomorrowKey) label = T('schedule.tomorrow')
 
       const group = U.el('div', { class: 'day-group' }, [
         U.el('h2', { class: 'day-title', style: 'padding-left:0;', html: '' }, [
           document.createTextNode(label),
-          U.el('span', { text: date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) })
+          U.el('span', { text: date.toLocaleDateString(I18n.locale(), { month: 'short', day: 'numeric' }) })
         ])
       ])
 
       const row = U.el('div', { class: 'hscroll', style: 'padding-left:0;padding-right:0;' })
       for (const item of items) {
-        const time = new Date(item.airingAt * 1000).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+        const time = new Date(item.airingAt * 1000).toLocaleTimeString(I18n.locale(), { hour: '2-digit', minute: '2-digit' })
         row.append(C.card(item.media, {
           subline: null
           // custom subline via wrapper below

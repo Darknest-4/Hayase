@@ -165,6 +165,13 @@ services:
       # in this file is not a password. Put it in .env next to JWT_SECRET.
       POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env — generate one with `openssl rand -base64 32`}'
       POSTGRES_DB: yume
+      # Pinned, not inherited. Without this the encoding depends on whichever
+      # host ran initdb, and a database that comes up as SQL_ASCII cannot fold
+      # accented letters — lower('Á') stays 'Á', so Hungarian search misses.
+      # Encoding cannot be changed after initdb, only by dump and restore, so
+      # it has to be right the first time. server/src/lib/db-encoding.ts
+      # refuses to create a schema on a database that got this wrong.
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C.UTF-8'
     # NOT published to the host: every service reaches Postgres over the compose
     # network as `postgres:5432`. Publishing it would expose the database on the
     # VPS's public interface. For local psql access use:

@@ -1,4 +1,4 @@
-/* global window, document, U, YumeAPI */
+/* global window, document, U, YumeAPI, T, I18n */
 // Extension Store — browses the Yume API's extension registry.
 // Shows a clear connect state when no backend is reachable instead of
 // pretending: the store is a platform feature, not a client-side mock.
@@ -10,9 +10,9 @@ const PageExtensions = {
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
 
-    root.prepend(window.C.spotlight('Extension Store', {
+    root.prepend(window.C.spotlight(T('Extension Store'), {
       subtitle: 'Sources, trackers and tools — sandboxed and permission-scoped',
-      actions: U.el('a', { class: 'btn btn-secondary btn-sm', style: 'margin-top:.8rem;', href: '#/developer' }, [document.createTextNode('Developer Portal →')])
+      actions: U.el('a', { class: 'btn btn-secondary btn-sm', style: 'margin-top:.8rem;', href: '#/developer' }, [document.createTextNode(T('Developer Portal →'))])
     }))
 
     const state = { type: params.get('type') ?? '', sort: 'installs' }
@@ -26,7 +26,7 @@ const PageExtensions = {
         U.el('button', {
           class: 'tab' + (state.type === '' ? ' active' : ''),
           onclick: () => { state.type = ''; renderTabs(); load() }
-        }, [document.createTextNode('All')]),
+        }, [document.createTextNode(T('All'))]),
         ...this.TYPES.map(type => U.el('button', {
           class: 'tab' + (state.type === type ? ' active' : ''),
           onclick: () => { state.type = type; renderTabs(); load() }
@@ -58,7 +58,7 @@ const PageExtensions = {
       try {
         const { data } = await YumeAPI.extensions(state.type || undefined, state.sort)
         if (!data.length) {
-          content.replaceChildren(U.el('div', { class: 'empty-state', text: 'No published extensions in this category yet.' }))
+          content.replaceChildren(U.el('div', { class: 'empty-state', text: T('No published extensions in this category yet.') }))
           return
         }
 
@@ -82,7 +82,7 @@ const PageExtensions = {
             U.el('div', { class: 'ext-summary', text: ext.summary }),
             U.el('div', { class: 'ext-meta' }, [
               U.el('span', { class: 'ext-type-chip', text: ext.type }),
-              U.el('span', { text: `${(ext.install_count ?? 0).toLocaleString()} installs` }),
+              U.el('span', { text: `${(ext.install_count ?? 0).toLocaleString(I18n.locale())} installs` }),
               ext.rating_avg ? U.el('span', { text: `★ ${Number(ext.rating_avg).toFixed(1)} (${ext.rating_count})` }) : null,
               ext.latest_version ? U.el('span', { text: 'v' + ext.latest_version }) : null
             ])
@@ -90,7 +90,7 @@ const PageExtensions = {
         }
         content.replaceChildren(grid)
       } catch (e) {
-        content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load the store: ' + e.message }))
+        content.replaceChildren(U.el('div', { class: 'error-state', text: T('Failed to load the store: ') + e.message }))
       }
     }
 

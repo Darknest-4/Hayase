@@ -111,6 +111,10 @@ const Catalogue = {
       averageScore: row.average_score ?? null,
       isAdult: row.is_adult ?? false,
       description: row.synopsis ?? null,
+      // Which language each field actually resolved to, straight from the
+      // server. The UI uses it to say so rather than silently showing English
+      // to somebody who asked for Hungarian — see PageAnime.
+      _lang: row._lang ?? null,
       countryOfOrigin: row.country ?? null,
       source: row.source_material ?? null,
 

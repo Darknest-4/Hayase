@@ -82,7 +82,9 @@ if [ "$VERIFY" -eq 1 ]; then
   ADMIN_URL=$(with_db "$DATABASE_URL" postgres)
 
   psql "$ADMIN_URL" -qc "DROP DATABASE IF EXISTS $VERIFY_DB" >/dev/null
-  psql "$ADMIN_URL" -qc "CREATE DATABASE $VERIFY_DB" >/dev/null
+  # Same encoding as a real restore, or the verification would be testing a
+  # database shaped differently from the one it is standing in for.
+  psql "$ADMIN_URL" -qc "CREATE DATABASE $VERIFY_DB ENCODING 'UTF8' LOCALE 'C.UTF-8' TEMPLATE template0" >/dev/null
   VERIFY_URL=$(with_db "$DATABASE_URL" "$VERIFY_DB")
 
   if ! pg_restore --dbname="$VERIFY_URL" --no-owner --no-privileges "$DUMP" >/dev/null 2>&1; then

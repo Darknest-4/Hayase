@@ -1,4 +1,4 @@
-/* global C, Catalogue, PageAdmin, PageAnime, PageCommunity, PageDashboard, PageDeveloper, PageExtensions, PageHome, PageList, PageNotifications, PageProfile, PageProfiles, PageSchedule, PageSearch, PageSettings, PageW2G, PageWatch, Store, T, U, YumeAPI, document, requestAnimationFrame, window */
+/* global C, Catalogue, PageAdmin, PageAnime, PageCommunity, PageDashboard, PageDeveloper, PageExtensions, PageHome, PageList, PageNotifications, PageProfile, PageProfiles, PageSchedule, PageSearch, PageSettings, PageW2G, PageWatch, Store, T, U, YumeAPI, I18n, document, requestAnimationFrame, window */
 // App bootstrap: hash router (same #/route scheme as the original SvelteKit
 // build), sidebar active state and the quick-search modal (Ctrl+K / S).
 
@@ -73,7 +73,7 @@ const App = {
     try {
       await handler(page, params, arg) // async pages (e.g. admin) finish before the footer lands
     } catch (e) {
-      page.replaceChildren(U.el('div', { class: 'error-state', text: 'Something went wrong: ' + e.message }))
+      page.replaceChildren(U.el('div', { class: 'error-state', text: T('Something went wrong: ') + e.message }))
     }
 
     // a newer navigation superseded us while an async handler was in flight
@@ -131,29 +131,29 @@ const App = {
       wrap.append(
         U.el('div', { class: 'gate-icon', text: '🔒' }),
         U.el('h1', { class: 'gate-title', text: `${siteName} is private` }),
-        U.el('p', { class: 'gate-sub', text: 'Sign in to your account to continue.' }),
+        U.el('p', { class: 'gate-sub', text: T('Sign in to your account to continue.') }),
         C.authCard(() => { this.afterAuth() })
       )
     } else if (gate.kind === 'auth') {
       wrap.append(
         U.el('div', { class: 'gate-icon', text: '🔑' }),
         U.el('h1', { class: 'gate-title', text: `Sign in for ${gate.flag.label}` }),
-        U.el('p', { class: 'gate-sub', text: 'This section needs a signed-in account.' }),
+        U.el('p', { class: 'gate-sub', text: T('This section needs a signed-in account.') }),
         C.authCard(() => { this.afterAuth() })
       )
     } else if (gate.kind === 'permission') {
       wrap.append(
         U.el('div', { class: 'gate-icon', text: '⛔' }),
-        U.el('h1', { class: 'gate-title', text: 'No access' }),
+        U.el('h1', { class: 'gate-title', text: T('No access') }),
         U.el('p', { class: 'gate-sub', text: `${gate.flag.label} requires the “${gate.flag.permission}” permission.` }),
-        U.el('a', { class: 'btn btn-secondary', href: '#/home' }, [document.createTextNode('Back home')])
+        U.el('a', { class: 'btn btn-secondary', href: '#/home' }, [document.createTextNode(T('Back home'))])
       )
     } else { // disabled
       wrap.append(
         U.el('div', { class: 'gate-icon', text: '🚧' }),
         U.el('h1', { class: 'gate-title', text: `${gate.flag?.label ?? 'This section'} is turned off` }),
-        U.el('p', { class: 'gate-sub', text: 'An administrator has disabled this part of the site.' }),
-        U.el('a', { class: 'btn btn-secondary', href: '#/home' }, [document.createTextNode('Back home')])
+        U.el('p', { class: 'gate-sub', text: T('An administrator has disabled this part of the site.') }),
+        U.el('a', { class: 'btn btn-secondary', href: '#/home' }, [document.createTextNode(T('Back home'))])
       )
     }
     page.append(wrap)
@@ -355,11 +355,11 @@ const App = {
           p.id === active ? U.el('span', { style: 'margin-left:auto;color:var(--accent);', text: '✓' }) : null
         ])),
         U.el('div', { class: 'profile-menu-sep' }),
-        U.el('a', { class: 'profile-menu-item', href: '#/profile', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '📊' }), document.createTextNode('Profile & stats')]),
-        U.el('a', { class: 'profile-menu-item', href: '#/profile?tab=analytics', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '📈' }), document.createTextNode('Analytics')]),
-        U.el('a', { class: 'profile-menu-item', href: '#/profile?tab=achievements', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '🏆' }), document.createTextNode('Achievements')]),
-        U.el('a', { class: 'profile-menu-item', href: '#/profiles?manage=1', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '⚙' }), document.createTextNode('Manage profiles')]),
-        U.el('a', { class: 'profile-menu-item', href: '#/profiles', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '🔄' }), document.createTextNode('Switch profile')])
+        U.el('a', { class: 'profile-menu-item', href: '#/profile', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '📊' }), document.createTextNode(T('Profile & stats'))]),
+        U.el('a', { class: 'profile-menu-item', href: '#/profile?tab=analytics', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '📈' }), document.createTextNode(T('Analytics'))]),
+        U.el('a', { class: 'profile-menu-item', href: '#/profile?tab=achievements', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '🏆' }), document.createTextNode(T('Achievements'))]),
+        U.el('a', { class: 'profile-menu-item', href: '#/profiles?manage=1', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '⚙' }), document.createTextNode(T('Manage profiles'))]),
+        U.el('a', { class: 'profile-menu-item', href: '#/profiles', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '🔄' }), document.createTextNode(T('Switch profile'))])
       ])
       document.body.append(menu)
       const rect = btn.getBoundingClientRect()
@@ -375,15 +375,15 @@ const App = {
   // every destination that isn't a primary bottom-bar tab. Icons are inline
   // SVG paths (drawn via U.svg) so the sheet stays self-contained.
   MORE_ITEMS: [
-    { route: 'dashboard', label: 'Dashboard', icon: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>' },
-    { route: 'schedule', label: 'Schedule', icon: '<rect width="18" height="18" x="3" y="4" rx="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>' },
-    { route: 'w2g', label: 'Together', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
-    { route: 'community', label: 'Community', icon: '<path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4c0-1.1.9-2 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/>' },
-    { route: 'profile', label: 'Profile', icon: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>' },
-    { route: 'profile', href: '#/profile?tab=analytics', label: 'Analytics', icon: '<path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7"/><rect x="12" y="7" width="3" height="11"/><rect x="17" y="4" width="3" height="14"/>' },
-    { route: 'profile', href: '#/profile?tab=achievements', label: 'Awards', icon: '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>' },
-    { route: 'extensions', label: 'Extensions', icon: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M17.5 13v8M13.5 17h8"/>' },
-    { route: 'settings', label: 'Settings', icon: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>' }
+    { route: 'dashboard', label: T('Dashboard'), icon: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>' },
+    { route: 'schedule', label: T('Schedule'), icon: '<rect width="18" height="18" x="3" y="4" rx="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>' },
+    { route: 'w2g', label: T('Together'), icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
+    { route: 'community', label: T('Community'), icon: '<path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4c0-1.1.9-2 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/>' },
+    { route: 'profile', label: T('Profile'), icon: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>' },
+    { route: 'profile', href: '#/profile?tab=analytics', label: T('Analytics'), icon: '<path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7"/><rect x="12" y="7" width="3" height="11"/><rect x="17" y="4" width="3" height="14"/>' },
+    { route: 'profile', href: '#/profile?tab=achievements', label: T('Awards'), icon: '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>' },
+    { route: 'extensions', label: T('Extensions'), icon: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M17.5 13v8M13.5 17h8"/>' },
+    { route: 'settings', label: T('Settings'), icon: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>' }
   ],
 
   initMobileMore () {
@@ -407,16 +407,16 @@ const App = {
       U.el('div', { class: 'more-profile-avatar', text: p?.avatar ?? (p?.name?.slice(0, 1).toUpperCase() ?? '🦊') }),
       U.el('div', { style: 'min-width:0;' }, [
         U.el('div', { class: 'more-profile-name', text: p?.name ?? 'Profile' }),
-        U.el('div', { class: 'more-profile-sub', text: 'Watch profile' })
+        U.el('div', { class: 'more-profile-sub', text: T('Watch profile') })
       ]),
-      U.el('a', { class: 'btn btn-secondary btn-sm', href: '#/profiles', onclick: () => this.closeMoreSheet() }, [document.createTextNode('Switch')])
+      U.el('a', { class: 'btn btn-secondary btn-sm', href: '#/profiles', onclick: () => this.closeMoreSheet() }, [document.createTextNode(T('Switch'))])
     ]))
 
     // build the destination grid, appending Admin only when it's available
     const items = [...this.MORE_ITEMS]
     const adminNav = document.getElementById('nav-admin')
     if (adminNav && !adminNav.classList.contains('hidden')) {
-      items.splice(items.length - 1, 0, { route: 'admin', label: 'Admin', icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>' })
+      items.splice(items.length - 1, 0, { route: 'admin', label: T('Admin'), icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>' })
     }
 
     const grid = U.el('div', { class: 'more-grid' })
@@ -446,21 +446,38 @@ const App = {
     if (backdrop) { backdrop.classList.remove('open'); setTimeout(() => backdrop.remove(), 300) }
   },
 
-  async init () {
-    Store.ensureProfiles()
-    Store.applyTheme()
-    this.refreshProfileAvatar()
-    this.refreshNotifBadge()
-    this.initProfileSwitcher()
-    // nav labels come from the central copy catalog (web/copy.js); hidden
-    // labels on the icon rail also become native tooltips
+  /**
+   * Nav labels from the central copy catalog, translated.
+   *
+   * Its own method because a language switch has to re-run it — as one call
+   * inside init() the sidebar kept its old language until a full reload.
+   */
+  applyNavLabels () {
     document.querySelectorAll('.sidebar-btn').forEach(btn => {
       const span = btn.querySelector('span')
       const key = btn.id === 'nav-more' ? 'more' : btn.dataset.route
-      if (span && key && window.Copy?.nav?.[key]) span.textContent = window.Copy.nav[key]
+      if (span && key && window.Copy?.nav?.[key]) span.textContent = T('nav.' + key)
       const label = span?.textContent
       if (label) btn.title = label
     })
+  },
+
+  async init () {
+    Store.ensureProfiles()
+    Store.applyTheme()
+
+    // Language before anything renders, so the first paint is already in the
+    // viewer's language rather than flashing English and correcting itself.
+    // Switching re-renders in place: a language change that demanded a reload
+    // would throw away scroll position and any open panel.
+    I18n.init(() => {
+      this.applyNavLabels()
+      this.navigate()
+    })
+    this.refreshProfileAvatar()
+    this.refreshNotifBadge()
+    this.initProfileSwitcher()
+    this.applyNavLabels()
     this.initSearchModal()
     this.initMobileMore()
     window.addEventListener('hashchange', () => { this.closeMoreSheet(); this.navigate() })
@@ -480,6 +497,16 @@ const App = {
 
     // sign-in library sync (best-effort, off the critical path)
     if (window.YumeAPI.user()) window.LibrarySync?.init()
+
+    // Preferences the viewer may have set on another device win over whatever
+    // this browser happens to hold, then the wizard runs if this profile has
+    // never answered. Both are off the critical path: the page is already
+    // rendered by now, so neither can delay the first paint.
+    if (window.YumeAPI.user()) {
+      window.Prefs?.pull().then(() => window.Onboarding?.maybeOpen())
+    } else {
+      window.Onboarding?.maybeOpen()
+    }
     window.addEventListener('library-synced', () => {
       if (['home', 'list', 'dashboard'].includes(this.parseHash().route)) this.navigate()
     })

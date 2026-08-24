@@ -1,4 +1,4 @@
-/* global Catalogue, Store, T, U, document, requestAnimationFrame, window */
+/* global Catalogue, HTMLElement, Store, T, U, document, getComputedStyle, requestAnimationFrame, window */
 // Reusable render helpers: cards, horizontal sections, skeletons, modals.
 
 const C = {
@@ -99,7 +99,7 @@ const C = {
         U.el('div', { class: 'footer-brand' }, [
           U.el('div', { class: 'footer-logo' }, [
             U.svg('<path d="M18 3.5A10 10 0 1 0 21 16 8 8 0 0 1 18 3.5Z" fill="currentColor" stroke="none"/>', 22),
-            U.el('span', { text: 'yume' })
+            U.el('span', { text: T('yume') })
           ]),
           U.el('p', { class: 'footer-tagline', text: T('footer.tagline') })
         ]),
@@ -156,7 +156,7 @@ const C = {
         class: 'preview-trailer',
         src: `https://www.youtube-nocookie.com/embed/${media.trailer.id}?autoplay=1&mute=1&controls=0&rel=0&playsinline=1&loop=1&playlist=${media.trailer.id}`,
         allow: 'autoplay',
-        title: 'trailer preview'
+        title: T('trailer preview')
       })
       frame.addEventListener('load', () => frame.classList.add('loaded'))
       head.append(frame)
@@ -181,7 +181,7 @@ const C = {
     if (Store.isFavourite(media.id)) heart.style.fill = 'currentColor'
     const favBtn = U.el('button', {
       class: 'preview-icon-btn' + (Store.isFavourite(media.id) ? ' active' : ''),
-      title: 'Favourite',
+      title: T('Favourite'),
       onclick: e => {
         const now = Store.toggleFavourite(media.id)
         heart.style.fill = now ? 'currentColor' : 'none'
@@ -194,11 +194,11 @@ const C = {
       ? U.el('span', { class: 'badge badge-theme', style: 'align-self:center;', text: U.listStatusMap[entry.status] })
       : U.el('button', {
         class: 'preview-icon-btn',
-        title: 'Add to Planning',
+        title: T('Add to Planning'),
         onclick: e => {
           Store.saveEntry(media, { status: 'PLANNING' })
-          U.toast('Added to Planning')
-          e.currentTarget.replaceWith(U.el('span', { class: 'badge badge-theme', style: 'align-self:center;', text: 'Planning' }))
+          U.toast(T('Added to Planning'))
+          e.currentTarget.replaceWith(U.el('span', { class: 'badge badge-theme', style: 'align-self:center;', text: T('Planning') }))
         }
       }, [U.svg(this.PLUS, 14)])
 
@@ -216,7 +216,7 @@ const C = {
             [U.svg(this.PLAY, 12), document.createTextNode(entry?.progress ? ` Continue Ep ${next}` : ' Watch now')]),
           listBtn,
           favBtn,
-          U.el('a', { class: 'preview-icon-btn', title: 'Details', href: `#/anime/${media.id}`, onclick: () => this._closePreview() },
+          U.el('a', { class: 'preview-icon-btn', title: T('Details'), href: `#/anime/${media.id}`, onclick: () => this._closePreview() },
             [U.svg('<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>', 14)])
         ])
       ])
@@ -249,7 +249,7 @@ const C = {
     const head = U.el('div', { class: 'section-head' }, [
       U.el('h2', { class: 'section-title', text: title })
     ])
-    if (moreHref) head.append(U.el('a', { class: 'section-more', href: moreHref, text: 'View more' }))
+    if (moreHref) head.append(U.el('a', { class: 'section-more', href: moreHref, text: T('View more') }))
 
     const section = U.el('section', { class: 'section' }, [head, row])
 
@@ -261,7 +261,7 @@ const C = {
       }
       for (const media of mediaList) row.append(this.card(media, cardOptions(media)))
     }).catch(() => {
-      row.replaceChildren(U.el('div', { class: 'empty-state', text: 'Failed to load.' }))
+      row.replaceChildren(U.el('div', { class: 'empty-state', text: T('Failed to load.') }))
     })
 
     return section
@@ -284,7 +284,7 @@ const C = {
         onchange: e => {
           if (e.target.value === '') {
             Store.removeEntry(media.id)
-            U.toast('Removed from list')
+            U.toast(T('Removed from list'))
           } else {
             Store.saveEntry(media, { status: e.target.value })
             U.toast(`Set to ${U.listStatusMap[e.target.value]}`)
@@ -304,13 +304,13 @@ const C = {
         wrap.append(
           U.el('button', {
             class: 'icon-btn',
-            title: 'Decrease progress',
+            title: T('Decrease progress'),
             onclick: () => { Store.setProgress(media, (Store.entry(media.id)?.progress ?? 0) - 1); render(); onChange() }
           }, [U.svg(this.MINUS, 14)]),
           U.el('span', { style: 'font-weight:800;font-size:.9rem;', text: `${entry.progress ?? 0}${total} ep` }),
           U.el('button', {
             class: 'icon-btn',
-            title: 'Increase progress',
+            title: T('Increase progress'),
             onclick: () => { Store.setProgress(media, (Store.entry(media.id)?.progress ?? 0) + 1); render(); onChange() }
           }, [U.svg(this.PLUS, 14)])
         )
@@ -342,21 +342,21 @@ const C = {
 
       if (user) {
         wrap.append(
-          U.el('h3', { text: 'Yume account' }),
+          U.el('h3', { text: T('Yume account') }),
           U.el('p', { text: `Signed in as ${user.username}.` }),
           U.el('button', {
             class: 'btn btn-secondary btn-sm',
             onclick: async () => { await YumeAPI.logout(); render(); onAuthed() }
-          }, [document.createTextNode('Sign out')])
+          }, [document.createTextNode(T('Sign out'))])
         )
         return
       }
 
       let mode = 'login'
-      const email = U.el('input', { class: 'input', type: 'email', placeholder: 'Email', autocomplete: 'email' })
-      const identifier = U.el('input', { class: 'input', type: 'text', placeholder: 'Email or username', autocomplete: 'username' })
-      const username = U.el('input', { class: 'input', type: 'text', placeholder: 'Username', autocomplete: 'username' })
-      const password = U.el('input', { class: 'input', type: 'password', placeholder: 'Password (min 8 chars)', autocomplete: 'current-password' })
+      const email = U.el('input', { class: 'input', type: 'email', placeholder: T('Email'), autocomplete: 'email' })
+      const identifier = U.el('input', { class: 'input', type: 'text', placeholder: T('Email or username'), autocomplete: 'username' })
+      const username = U.el('input', { class: 'input', type: 'text', placeholder: T('Username'), autocomplete: 'username' })
+      const password = U.el('input', { class: 'input', type: 'password', placeholder: T('Password (min 8 chars)'), autocomplete: 'current-password' })
       const fields = U.el('div', { style: 'display:flex;flex-direction:column;gap:.6rem;max-width:22rem;' })
       const switchBtn = U.el('button', { class: 'btn btn-ghost btn-sm' })
       const submitBtn = U.el('button', { class: 'btn btn-primary btn-sm' })
@@ -386,8 +386,8 @@ const C = {
 
       renderMode()
       wrap.append(
-        U.el('h3', { text: 'Yume account' }),
-        U.el('p', { text: 'Sign in to join the discussion and sync with the platform.' }),
+        U.el('h3', { text: T('Yume account') }),
+        U.el('p', { text: T('Sign in to join the discussion and sync with the platform.') }),
         fields,
         U.el('div', { style: 'display:flex;gap:.6rem;margin-top:.75rem;' }, [submitBtn, switchBtn])
       )
@@ -403,7 +403,7 @@ const C = {
     if (!comment.spoiler) return body
     const shield = U.el('div', {
       class: 'comment-spoiler',
-      text: 'Spoiler — click to reveal',
+      text: T('Spoiler — click to reveal'),
       onclick: e => { e.stopPropagation(); shield.replaceWith(body) }
     })
     return shield
@@ -413,7 +413,7 @@ const C = {
   commentsSection (media) {
     const wrap = U.el('div')
     if (window.App && !window.App.featureOn('comments')) {
-      return U.el('div', { class: 'empty-state', style: 'max-width:none;', text: 'Comments are turned off.' })
+      return U.el('div', { class: 'empty-state', style: 'max-width:none;', text: T('Comments are turned off.') })
     }
     const list = U.el('div', {}, [U.el('div', { class: 'spinner' })])
 
@@ -425,7 +425,7 @@ const C = {
         try {
           const { data } = await YumeAPI.comments('anime', yumeId)
           if (!data.length) {
-            list.append(U.el('div', { class: 'empty-state', style: 'padding:1.5rem;', text: 'No comments yet.' }))
+            list.append(U.el('div', { class: 'empty-state', style: 'padding:1.5rem;', text: T('No comments yet.') }))
           }
           const byParent = new Map()
           for (const c of data) {
@@ -454,7 +454,7 @@ const C = {
                 }),
                 U.el('button', {
                   class: 'comment-action',
-                  text: 'Reply',
+                  text: T('Reply'),
                   onclick: () => {
                     if (node.querySelector('.comment-form')) return
                     node.append(form(comment.id, () => load()))
@@ -462,13 +462,13 @@ const C = {
                 }),
                 U.el('button', {
                   class: 'comment-action',
-                  text: 'Report',
+                  text: T('Report'),
                   onclick: async () => {
                     const reason = window.prompt('Reason (spam / harassment / nsfw / spoiler / illegal / other):', 'spam')
                     if (!reason) return
                     try {
                       await YumeAPI.report('comment', comment.id, ['spam', 'harassment', 'nsfw', 'spoiler', 'illegal'].includes(reason) ? reason : 'other', reason)
-                      U.toast('Report submitted — thank you')
+                      U.toast(T('Report submitted — thank you'))
                     } catch (err) { U.toast(err.message, 'error') }
                   }
                 })
@@ -479,10 +479,10 @@ const C = {
           }
           for (const comment of byParent.get('root') ?? []) renderThread(comment, 0)
         } catch (e) {
-          list.append(U.el('div', { class: 'error-state', text: 'Failed to load comments: ' + e.message }))
+          list.append(U.el('div', { class: 'error-state', text: T('Failed to load comments: ') + e.message }))
         }
       } else {
-        list.append(U.el('div', { class: 'empty-state', style: 'padding:1.5rem;', text: 'No comments yet.' }))
+        list.append(U.el('div', { class: 'empty-state', style: 'padding:1.5rem;', text: T('No comments yet.') }))
       }
 
       // composer / auth prompt
@@ -496,7 +496,7 @@ const C = {
     const form = (parentId, done, root = false) => {
       const textarea = U.el('textarea', { class: 'input comment-input', rows: '3', placeholder: parentId ? 'Write a reply…' : 'Share your thoughts… (no spoilers unmarked!)' })
       const spoiler = U.el('input', { type: 'checkbox' })
-      const submit = U.el('button', { class: 'btn btn-primary btn-sm', text: 'Post' })
+      const submit = U.el('button', { class: 'btn btn-primary btn-sm', text: T('Post') })
       submit.addEventListener('click', async () => {
         const body = textarea.value.trim()
         if (!body) return
@@ -504,7 +504,7 @@ const C = {
           submit.disabled = true
           const yumeId = await YumeAPI.yumeAnimeId(media, { create: true })
           await YumeAPI.postComment('anime', yumeId, body, { parentId, spoiler: spoiler.checked })
-          U.toast('Comment posted')
+          U.toast(T('Comment posted'))
           done()
         } catch (e) {
           U.toast(e.message, 'error')
@@ -516,7 +516,7 @@ const C = {
         textarea,
         U.el('div', { style: 'display:flex;gap:.75rem;align-items:center;margin-top:.5rem;' }, [
           submit,
-          U.el('label', { style: 'display:flex;gap:.4rem;align-items:center;font-size:.78rem;color:var(--fg-faint);cursor:pointer;' }, [spoiler, document.createTextNode('Spoiler')])
+          U.el('label', { style: 'display:flex;gap:.4rem;align-items:center;font-size:.78rem;color:var(--fg-faint);cursor:pointer;' }, [spoiler, document.createTextNode(T('Spoiler'))])
         ])
       ])
     }
@@ -526,33 +526,92 @@ const C = {
         wrap.remove() // no backend → no comment section at all, no dead UI
         return
       }
-      wrap.append(U.el('h2', { class: 'detail-section-title', text: 'Comments' }), list)
+      wrap.append(U.el('h2', { class: 'detail-section-title', text: T('Comments') }), list)
       load()
     })
 
     return wrap
   },
 
+  /**
+   * Keyboard and focus behaviour every modal on the site should have had.
+   *
+   * modalShell had neither Escape nor focus management, while trailerModal
+   * had Escape only — the two drifted apart. This is the shared piece, so
+   * fixing it once fixes the developer portal, the admin webhook forms and
+   * anything built on them later.
+   *
+   * Returns a close function; call it instead of removing the node, so the
+   * document-level listener is removed with it.
+   */
+  trapModal (backdrop, { onClose = () => {} } = {}) {
+    const previouslyFocused = document.activeElement
+    const focusable = () => [...backdrop.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )].filter(el => el.offsetParent !== null && getComputedStyle(el).visibility !== 'hidden')
+
+    const close = () => {
+      document.removeEventListener('keydown', onKey, true)
+      backdrop.remove()
+      // Returning focus is what makes a modal usable by keyboard at all:
+      // without it focus falls back to <body> and the next Tab starts over
+      // from the top of the page.
+      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus()
+      onClose()
+    }
+
+    function onKey (e) {
+      if (e.key === 'Escape') { e.preventDefault(); close(); return }
+      if (e.key !== 'Tab') return
+      const items = focusable()
+      if (!items.length) return
+      const first = items[0]
+      const last = items[items.length - 1]
+      // Wrap at both ends, so Tab cannot walk out of the dialog into the page
+      // behind it while that page is inert to the eye but not to the keyboard.
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', onKey, true)
+    focusable()[0]?.focus()
+    return close
+  },
+
   // generic form modal (shared by developer portal and admin webhooks)
   modalShell (title, fields, onSubmit) {
-    const submit = U.el('button', { class: 'btn btn-primary btn-sm', onclick: onSubmit }, [document.createTextNode('Save')])
-    const backdrop = U.el('div', { class: 'modal-backdrop', onclick: e => { if (e.target === backdrop) backdrop.remove() } }, [
+    const submit = U.el('button', { class: 'btn btn-primary btn-sm', onclick: onSubmit }, [document.createTextNode(T('Save'))])
+    const backdrop = U.el('div', {
+      class: 'modal-backdrop',
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-label': title,
+      onclick: e => { if (e.target === backdrop) backdrop.close() }
+    }, [
       U.el('div', { class: 'search-modal', style: 'padding:1.25rem;max-width:40rem;width:min(40rem,calc(100vw - 2rem));' }, [
         U.el('h3', { style: 'margin:0 0 1rem;font-size:1.1rem;font-weight:800;', text: title }),
         U.el('div', { style: 'display:flex;flex-direction:column;gap:.85rem;max-height:65vh;overflow-y:auto;' }, fields),
         U.el('div', { style: 'display:flex;gap:.6rem;margin-top:1.25rem;' }, [
           submit,
-          U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => backdrop.remove() }, [document.createTextNode('Cancel')])
+          U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => backdrop.close() }, [document.createTextNode(T('Cancel'))])
         ])
       ])
     ])
     document.body.append(backdrop)
+    // Exposed on the node because callers already hold the node and used to
+    // call .remove() on it; .close() is the version that also unbinds.
+    backdrop.close = this.trapModal(backdrop)
     return backdrop
   },
 
   trailerModal (trailer) {
     if (!trailer?.id || trailer.site !== 'youtube') {
-      U.toast('No trailer available', 'error')
+      U.toast(T('No trailer available'), 'error')
       return
     }
     const backdrop = U.el('div', {
@@ -562,7 +621,7 @@ const C = {
       U.el('div', { class: 'trailer-modal' }, [
         U.el('iframe', {
           src: `https://www.youtube-nocookie.com/embed/${trailer.id}?autoplay=1`,
-          title: 'Trailer',
+          title: T('Trailer'),
           allow: 'autoplay; fullscreen',
           allowfullscreen: ''
         })

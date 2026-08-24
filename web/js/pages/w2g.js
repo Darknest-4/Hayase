@@ -1,4 +1,4 @@
-/* global U, WebSocket, YumeAPI, document, sessionStorage, window */
+/* global U, WebSocket, YumeAPI, document, sessionStorage, window, T */
 // Watch Together — create/join rooms (Yume API) and watch in sync.
 // Playback sync runs over the /ws socket; PageWatch picks up the ?w2g=
 // param and relays play/pause/seek between room members.
@@ -50,7 +50,7 @@ const PageW2G = {
   },
 
   async render (root, params, arg) {
-    root.append(window.C.spotlight('Watch Together', { subtitle: 'Synced rooms — play, pause and seeks stay together' }))
+    root.append(window.C.spotlight(T('Watch Together'), { subtitle: T('Synced rooms — play, pause and seeks stay together') }))
     const pad = U.el('div', { class: 'page-pad', style: 'max-width:44rem;' })
     root.append(pad)
 
@@ -66,7 +66,7 @@ const PageW2G = {
     // deep link: #/w2g/<code>
     if (arg) return this.renderRoom(pad, arg)
 
-    const codeInput = U.el('input', { class: 'input', placeholder: 'Room code (e.g. b7ce5ee3)', maxlength: '16', style: 'flex-grow:1;min-width:0;' })
+    const codeInput = U.el('input', { class: 'input', placeholder: T('Room code (e.g. b7ce5ee3)'), maxlength: '16', style: 'flex-grow:1;min-width:0;' })
     codeInput.addEventListener('keydown', e => { if (e.key === 'Enter') joinBtn.click() })
     const joinBtn = U.el('button', {
       class: 'btn btn-primary',
@@ -74,17 +74,17 @@ const PageW2G = {
         const code = codeInput.value.trim().toLowerCase()
         if (code) window.location.hash = '#/w2g/' + code
       }
-    }, [document.createTextNode('Join')])
+    }, [document.createTextNode(T('Join'))])
 
     pad.append(
       U.el('div', { class: 'setting-card' }, [
-        U.el('h3', { text: 'Join a room' }),
-        U.el('p', { text: 'Got a code from a friend? Jump in and watch in sync.' }),
+        U.el('h3', { text: T('Join a room') }),
+        U.el('p', { text: T('Got a code from a friend? Jump in and watch in sync.') }),
         U.el('div', { style: 'display:flex;gap:.6rem;' }, [codeInput, joinBtn])
       ]),
       U.el('div', { class: 'setting-card' }, [
-        U.el('h3', { text: 'Create a room' }),
-        U.el('p', { text: 'Start a room, share the code, then pick something to watch — play, pause and seeks stay in sync for everyone.' }),
+        U.el('h3', { text: T('Create a room') }),
+        U.el('p', { text: T('Start a room, share the code, then pick something to watch — play, pause and seeks stay in sync for everyone.') }),
         U.el('button', {
           class: 'btn btn-theme',
           onclick: async e => {
@@ -97,7 +97,7 @@ const PageW2G = {
               e.target.disabled = false
             }
           }
-        }, [document.createTextNode('Create room')])
+        }, [document.createTextNode(T('Create room'))])
       ])
     )
   },
@@ -107,9 +107,9 @@ const PageW2G = {
     try {
       room = await YumeAPI._request('/v1/w2g/' + encodeURIComponent(code))
     } catch (e) {
-      pad.append(U.el('div', { class: 'error-state', text: 'Room not found — it may have been closed.' }),
+      pad.append(U.el('div', { class: 'error-state', text: T('Room not found — it may have been closed.') }),
         U.el('div', { style: 'text-align:center;margin-top:1rem;' }, [
-          U.el('a', { class: 'btn btn-secondary btn-sm', href: '#/w2g' }, [document.createTextNode('Back')])
+          U.el('a', { class: 'btn btn-secondary btn-sm', href: '#/w2g' }, [document.createTextNode(T('Back'))])
         ]))
       return
     }
@@ -118,22 +118,22 @@ const PageW2G = {
     const feed = U.el('div', { class: 'w2g-feed' })
 
     pad.append(U.el('div', { class: 'setting-card' }, [
-      U.el('h3', {}, [document.createTextNode('Room '), U.el('code', { style: 'font-family:var(--font-mono);color:var(--accent);', text: room.code })]),
+      U.el('h3', {}, [document.createTextNode(T('Room ')), U.el('code', { style: 'font-family:var(--font-mono);color:var(--accent);', text: room.code })]),
       U.el('p', {}, [
         document.createTextNode(`Hosted by ${room.host} • `),
         viewers,
-        document.createTextNode(' watching now')
+        document.createTextNode(T(' watching now'))
       ]),
       U.el('div', { style: 'display:flex;gap:.6rem;flex-wrap:wrap;' }, [
         U.el('button', {
           class: 'btn btn-secondary btn-sm',
-          onclick: () => { navigator.clipboard?.writeText(room.code).then(() => U.toast('Code copied')) }
-        }, [document.createTextNode('Copy code')]),
-        U.el('a', { class: 'btn btn-primary btn-sm', href: '#/search', onclick: () => { sessionStorage.setItem('w2g-pending', room.code); U.toast('Pick an anime — playback will sync to the room') } }, [document.createTextNode('Pick something to watch')]),
+          onclick: () => { navigator.clipboard?.writeText(room.code).then(() => U.toast(T('Code copied'))) }
+        }, [document.createTextNode(T('Copy code'))]),
+        U.el('a', { class: 'btn btn-primary btn-sm', href: '#/search', onclick: () => { sessionStorage.setItem('w2g-pending', room.code); U.toast(T('Pick an anime — playback will sync to the room')) } }, [document.createTextNode(T('Pick something to watch'))]),
         U.el('button', {
           class: 'btn btn-ghost btn-sm',
           onclick: () => { this.disconnect(); window.location.hash = '#/w2g' }
-        }, [document.createTextNode('Leave')])
+        }, [document.createTextNode(T('Leave'))])
       ]),
       feed
     ]))

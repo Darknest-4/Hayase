@@ -99,7 +99,11 @@ psql "$ADMIN_URL" -qc \
 
 log "recreating $TARGET_DB"
 psql "$ADMIN_URL" -qc "DROP DATABASE IF EXISTS $TARGET_DB" >/dev/null
-psql "$ADMIN_URL" -qc "CREATE DATABASE $TARGET_DB" >/dev/null
+# ENCODING is stated, not inherited: a bare CREATE DATABASE copies template1,
+# so restoring onto a cluster whose template is SQL_ASCII would silently
+# produce a database that cannot fold accented letters. template0 is used
+# because template1 may carry a conflicting encoding.
+psql "$ADMIN_URL" -qc "CREATE DATABASE $TARGET_DB ENCODING 'UTF8' LOCALE 'C.UTF-8' TEMPLATE template0" >/dev/null
 
 log "restoring"
 if ! pg_restore --dbname="$RESTORE_URL" --no-owner --no-privileges --exit-on-error "$DUMP"; then

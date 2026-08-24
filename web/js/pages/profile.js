@@ -1,10 +1,14 @@
-/* global window, document, U, C, Store, PageAnalytics, PageAchievements, PageHistory */
+/* global window, document, U, C, Store, PageAnalytics, PageAchievements, PageHistory, T, I18n */
 // Profile — a hub for everything personal to the active profile. Overview
 // shows identity + headline stats; the Analytics, Achievements and History
 // tabs embed those modules' bodies so they don't need their own routes.
 
 const PageProfile = {
   TABS: [
+  // Labels are stored in English and translated where they are rendered, not
+  // here: this literal is evaluated once when the script loads, so a T() call
+  // in it would freeze the label in whatever language was active at boot and
+  // never follow a language switch.
     { key: 'overview', label: 'Overview' },
     { key: 'analytics', label: 'Analytics' },
     { key: 'achievements', label: 'Achievements' },
@@ -21,7 +25,14 @@ const PageProfile = {
     const xp = episodesWatched * 10 + entries.filter(e => e.status === 'COMPLETED').length * 100
     const level = Math.floor(Math.sqrt(xp / 100)) + 1
 
-    root.append(C.spotlight(name, { subtitle: `Level ${level} · ${xp.toLocaleString()} XP · ${entries.length} in library` }))
+    root.append(C.spotlight(name, {
+      // f(), not a template literal: Hungarian puts these in a different
+      // order, and a positional format string would force it to keep the
+      // English one.
+      subtitle: I18n.f('Level {level} · {xp} XP · {count} in library', {
+        level, xp: I18n.number(xp), count: entries.length
+      })
+    }))
 
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
@@ -32,7 +43,7 @@ const PageProfile = {
       tabs.append(U.el('a', {
         class: 'tab' + (t.key === active ? ' active' : ''),
         href: t.key === 'overview' ? '#/profile' : `#/profile?tab=${t.key}`
-      }, [document.createTextNode(t.label)]))
+      }, [document.createTextNode(T(t.label))]))
     }
     pad.append(tabs)
 
@@ -57,12 +68,12 @@ const PageProfile = {
 
     const hours = Math.floor(minutesWatched / 60)
     const statDefs = [
-      [String(entries.length), 'Anime in library'],
-      [String(completed.length), 'Completed'],
-      [episodesWatched.toLocaleString(), 'Episodes watched'],
-      [hours >= 24 ? `${Math.floor(hours / 24)}d ${hours % 24}h` : `${hours}h`, 'Watch time'],
-      [meanScore ?? '—', 'Mean score'],
-      [String(favs.length), 'Favourites']
+      [String(entries.length), T('Anime in library')],
+      [String(completed.length), T('Completed')],
+      [episodesWatched.toLocaleString(I18n.locale()), T('Episodes watched')],
+      [hours >= 24 ? `${Math.floor(hours / 24)}d ${hours % 24}h` : `${hours}h`, T('Watch time')],
+      [meanScore ?? '—', T('Mean score')],
+      [String(favs.length), T('Favourites')]
     ]
     pad.append(U.el('div', { class: 'stat-cards', style: 'margin-top:0;' },
       statDefs.map(([value, label]) => U.el('div', { class: 'stat-card' }, [
@@ -71,13 +82,13 @@ const PageProfile = {
       ]))))
 
     // ---- status breakdown ----
-    pad.append(U.el('h2', { class: 'detail-section-title', text: 'Library breakdown' }))
+    pad.append(U.el('h2', { class: 'detail-section-title', text: T('Library breakdown') }))
     const statuses = Object.entries(U.listStatusMap)
       .map(([status, label]) => [label, entries.filter(e => e.status === status).length, status])
       .filter(([, count]) => count > 0)
 
     if (!statuses.length) {
-      pad.append(U.el('div', { class: 'empty-state', text: 'Your library is empty — add some anime and your stats will grow here.' }))
+      pad.append(U.el('div', { class: 'empty-state', text: T('Your library is empty — add some anime and your stats will grow here.') }))
       return
     }
 
@@ -105,7 +116,7 @@ const PageProfile = {
     // ---- recently updated ----
     const recent = entries.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 10)
     if (recent.length) {
-      pad.append(U.el('h2', { class: 'detail-section-title', text: 'Recent activity' }))
+      pad.append(U.el('h2', { class: 'detail-section-title', text: T('Recent activity') }))
       const row = U.el('div', { class: 'hscroll', style: 'padding-left:0;padding-right:0;' })
       for (const entry of recent) {
         row.append(C.card(entry.media, {

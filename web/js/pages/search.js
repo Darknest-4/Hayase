@@ -1,4 +1,4 @@
-/* global C, Catalogue, MutationObserver, U, window */
+/* global C, Catalogue, MutationObserver, U, window, T */
 // Search page — text search plus the same filters the original search route has
 // (genre, season, year, format, status, sort), with load-more pagination.
 
@@ -37,7 +37,7 @@ const PageSearch = {
         class: 'select',
         onchange: e => { state[key] = e.target.value; reset() }
       }, [
-        U.el('option', { value: '', text: 'Any' }),
+        U.el('option', { value: '', text: T('Any') }),
         ...options.map(value => U.el('option', {
           value: String(value),
           text: labelMap(value),
@@ -50,7 +50,7 @@ const PageSearch = {
     const searchInput = U.el('input', {
       class: 'input search-input-big',
       type: 'text',
-      placeholder: 'Search anime...',
+      placeholder: T('Search anime...'),
       value: state.search,
       oninput: U.debounce(e => { state.search = e.target.value; reset() })
     })
@@ -66,20 +66,20 @@ const PageSearch = {
         const hits = (json.result ?? []).filter(r => r.similarity >= 0.8 && r.anilist?.id)
         const ids = [...new Set(hits.map(r => r.anilist.id))].slice(0, 10)
         if (!ids.length) {
-          results.replaceChildren(U.el('div', { class: 'empty-state', text: 'No confident match for that frame.' }))
+          results.replaceChildren(U.el('div', { class: 'empty-state', text: T('No confident match for that frame.') }))
           return
         }
         const page = await Catalogue.searchOrAniList({ ids, perPage: 20 })
         results.replaceChildren(C.grid(page.media ?? []))
         U.toast(`Best match: ${Math.round(hits[0].similarity * 100)}% • episode ${hits[0].episode ?? '?'}`)
       } catch (e) {
-        results.replaceChildren(U.el('div', { class: 'error-state', text: 'Image search failed: ' + e.message }))
+        results.replaceChildren(U.el('div', { class: 'error-state', text: T('Image search failed: ') + e.message }))
       }
     }
 
     const filePick = U.el('input', { type: 'file', accept: 'image/*', style: 'display:none;' })
     filePick.addEventListener('change', () => { if (filePick.files[0]) imageSearch(filePick.files[0]) })
-    const imageBtn = U.el('button', { class: 'btn btn-ghost', title: 'Search by image (or paste/drop a frame)', onclick: () => filePick.click() }, [document.createTextNode('Upload a frame')])
+    const imageBtn = U.el('button', { class: 'btn btn-ghost', title: T('Search by image (or paste/drop a frame)'), onclick: () => filePick.click() }, [document.createTextNode(T('Upload a frame'))])
 
     const onPaste = e => {
       const item = [...(e.clipboardData?.items ?? [])].find(i => i.type.startsWith('image/'))
@@ -117,17 +117,17 @@ const PageSearch = {
      */
     const filterBox = U.el('details', { class: 'filters-box', open: !window.matchMedia('(max-width: 560px)').matches }, [
       U.el('summary', { class: 'filters-summary' }, [
-        U.el('span', { text: 'Filters' }),
-        U.el('span', { class: 'filters-hint', text: 'search, genre, season, year, format, status, sort' })
+        U.el('span', { text: T('Filters') }),
+        U.el('span', { class: 'filters-hint', text: T('search, genre, season, year, format, status, sort') })
       ])
     ])
     pad.append(filterBox)
     filterBox.append(U.el('div', { class: 'filters' }, [
-      U.el('div', { class: 'filter-group', style: 'flex-grow:1;' }, [U.el('label', { text: 'Search' }), searchInput]),
+      U.el('div', { class: 'filter-group', style: 'flex-grow:1;' }, [U.el('label', { text: T('Search') }), searchInput]),
       // A blank label put this control under the neighbouring field's heading,
       // so on a phone the image-search button read as part of GENRE. It says
       // what it is now.
-      imageOn ? U.el('div', { class: 'filter-group' }, [U.el('label', { text: 'By image' }), imageBtn]) : null,
+      imageOn ? U.el('div', { class: 'filter-group' }, [U.el('label', { text: T('By image') }), imageBtn]) : null,
       imageOn ? filePick : null,
       mkSelect('Genre', 'genre', this.GENRES),
       mkSelect('Season', 'season', Object.keys(U.seasonMap), v => U.seasonMap[v]),
@@ -173,7 +173,7 @@ const PageSearch = {
 
         if (!append) {
           if (!media.length) {
-            results.replaceChildren(U.el('div', { class: 'empty-state', text: 'No results found.' }))
+            results.replaceChildren(U.el('div', { class: 'empty-state', text: T('No results found.') }))
           } else {
             results.replaceChildren(C.grid(media))
           }
@@ -186,11 +186,11 @@ const PageSearch = {
           loadMoreWrap.append(U.el('button', {
             class: 'btn btn-secondary',
             onclick: () => { state.page++; load(true) }
-          }, [document.createTextNode('Load more')]))
+          }, [document.createTextNode(T('Load more'))]))
         }
       } catch (e) {
         if (current !== token) return
-        results.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load results: ' + e.message }))
+        results.replaceChildren(U.el('div', { class: 'error-state', text: T('Failed to load results: ') + e.message }))
         loadMoreWrap.replaceChildren()
       }
     }

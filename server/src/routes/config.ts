@@ -6,6 +6,7 @@
 
 import { query, queryOne } from '../db.ts'
 import { invalidateThresholds } from '../lib/thresholds.ts'
+import { PREFERENCES } from '../lib/preferences.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
@@ -39,6 +40,11 @@ async function buildPublicConfig (): Promise<unknown> {
       requireLogin: settings.require_login === true,
       registrationOpen: settings.registration_open !== false
     },
+    // The preference spec is public because the settings screen and the
+    // onboarding wizard both render from it, and both have to work for a
+    // viewer who is not signed in. Serving it here means the client never
+    // carries its own copy of the labels.
+    preferences: PREFERENCES,
     flags: Object.fromEntries(flags.map(f => [f.key, {
       enabled: f.enabled,
       access: f.access,

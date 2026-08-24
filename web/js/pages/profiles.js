@@ -1,4 +1,4 @@
-/* global window, document, U, Store */
+/* global window, document, U, Store, T */
 // "Who's watching" — Netflix-style profile picker + manager. Each profile
 // has its own library, history, favourites, continue-watching and settings
 // (namespaced in Store). Switching reloads the app for the new profile.
@@ -37,8 +37,8 @@ const PageProfiles = {
             document.createTextNode(p.avatar ?? p.name.slice(0, 1).toUpperCase())
           ]),
           U.el('div', { class: 'profile-tile-name', text: p.name }),
-          p.kids ? U.el('span', { class: 'badge badge-outline', text: 'KIDS' }) : null,
-          managing ? U.el('div', { class: 'profile-tile-edit', text: '✎ Edit' }) : null
+          p.kids ? U.el('span', { class: 'badge badge-outline', text: T('KIDS') }) : null,
+          managing ? U.el('div', { class: 'profile-tile-edit', text: T('✎ Edit') }) : null
         ])
         grid.append(tile)
       }
@@ -49,7 +49,7 @@ const PageProfiles = {
           onclick: () => this.editProfile(null, render)
         }, [
           U.el('div', { class: 'profile-avatar-big profile-avatar-add', text: '+' }),
-          U.el('div', { class: 'profile-tile-name', text: 'Add profile' })
+          U.el('div', { class: 'profile-tile-name', text: T('Add profile') })
         ]))
       }
     }
@@ -57,14 +57,14 @@ const PageProfiles = {
 
     wrap.append(U.el('div', { style: 'margin-top:2rem;' }, [
       managing
-        ? U.el('a', { class: 'btn btn-primary', href: '#/profiles' }, [document.createTextNode('Done')])
-        : U.el('a', { class: 'btn btn-secondary', href: '#/profiles?manage=1' }, [document.createTextNode('Manage profiles')])
+        ? U.el('a', { class: 'btn btn-primary', href: '#/profiles' }, [document.createTextNode(T('Done'))])
+        : U.el('a', { class: 'btn btn-secondary', href: '#/profiles?manage=1' }, [document.createTextNode(T('Manage profiles'))])
     ]))
   },
 
   editProfile (profile, done) {
     const isNew = !profile
-    const name = U.el('input', { class: 'input', style: 'width:100%;', maxlength: '50', placeholder: 'Profile name', value: profile?.name ?? '' })
+    const name = U.el('input', { class: 'input', style: 'width:100%;', maxlength: '50', placeholder: T('Profile name'), value: profile?.name ?? '' })
 
     let chosenAvatar = profile?.avatar ?? this.AVATARS[0]
     const avatarGrid = U.el('div', { class: 'avatar-picker' }, this.AVATARS.map(a => {
@@ -83,10 +83,10 @@ const PageProfiles = {
     const nsfw = U.el('input', { type: 'checkbox', ...(profile?.nsfw ? { checked: '' } : {}) })
 
     const fields = [
-      U.el('div', { class: 'filter-group' }, [U.el('label', { text: 'Name' }), name]),
-      U.el('div', {}, [U.el('label', { class: 'filter-group', style: 'display:block;margin-bottom:.4rem;', text: 'Avatar' }), avatarGrid]),
-      U.el('label', { style: 'display:flex;gap:.5rem;align-items:center;font-size:.85rem;cursor:pointer;' }, [kids, document.createTextNode('Kids profile (hide mature content)')]),
-      U.el('label', { style: 'display:flex;gap:.5rem;align-items:center;font-size:.85rem;cursor:pointer;' }, [nsfw, document.createTextNode('Allow adult (18+) content')])
+      U.el('div', { class: 'filter-group' }, [U.el('label', { text: T('Name') }), name]),
+      U.el('div', {}, [U.el('label', { class: 'filter-group', style: 'display:block;margin-bottom:.4rem;', text: T('Avatar') }), avatarGrid]),
+      U.el('label', { style: 'display:flex;gap:.5rem;align-items:center;font-size:.85rem;cursor:pointer;' }, [kids, document.createTextNode(T('Kids profile (hide mature content)'))]),
+      U.el('label', { style: 'display:flex;gap:.5rem;align-items:center;font-size:.85rem;cursor:pointer;' }, [nsfw, document.createTextNode(T('Allow adult (18+) content'))])
     ]
 
     if (!isNew && Store.profiles().length > 1) {
@@ -96,11 +96,11 @@ const PageProfiles = {
         onclick: () => {
           if (!window.confirm(`Delete profile "${profile.name}" and all its data?`)) return
           Store.deleteProfile(profile.id)
-          U.toast('Profile deleted')
-          modal.remove()
+          U.toast(T('Profile deleted'))
+          modal.close()
           done()
         }
-      }, [document.createTextNode('Delete profile')]))
+      }, [document.createTextNode(T('Delete profile'))]))
     }
 
     const modal = window.C.modalShell(isNew ? 'Add profile' : 'Edit profile', fields, () => {
@@ -108,7 +108,7 @@ const PageProfiles = {
       if (isNew) Store.createProfile(patch)
       else Store.updateProfile(profile.id, patch)
       U.toast(isNew ? 'Profile created' : 'Profile updated')
-      modal.remove()
+      modal.close()
       done()
     })
   }

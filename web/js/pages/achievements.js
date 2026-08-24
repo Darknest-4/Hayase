@@ -1,4 +1,4 @@
-/* global window, document, U, Store */
+/* global window, document, U, Store, T, I18n */
 // Achievements & Badges — a catalogue of unlockable achievements whose
 // conditions are evaluated on the client against the active profile's
 // library and watch history. Mirrors the backend `achievements` table; the
@@ -28,7 +28,7 @@ const PageAchievements = {
 
   render (root) {
     const profile = Store.activeProfile()
-    root.append(window.C.spotlight('Achievements', { subtitle: profile ? `${profile.avatar ?? ''} ${profile.name}` : null }))
+    root.append(window.C.spotlight(T('Achievements'), { subtitle: profile ? `${profile.avatar ?? ''} ${profile.name}` : null }))
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
     this.body(pad)
@@ -55,12 +55,12 @@ const PageAchievements = {
       U.el('div', { class: 'ach-level-badge', text: String(level) }),
       U.el('div', { style: 'flex-grow:1;min-width:12rem;' }, [
         U.el('div', { class: 'ach-level-title', text: `Level ${level}` }),
-        U.el('div', { class: 'ach-level-xp', text: `${xp.toLocaleString()} XP · ${(levelCeil - xp).toLocaleString()} to next level` }),
+        U.el('div', { class: 'ach-level-xp', text: `${xp.toLocaleString(I18n.locale())} XP · ${(levelCeil - xp).toLocaleString(I18n.locale())} to next level` }),
         U.el('div', { class: 'ach-level-track' }, [U.el('div', { class: 'ach-level-fill', style: `width:${levelPct}%;` })])
       ]),
       U.el('div', { class: 'ach-count' }, [
         U.el('b', { text: `${unlockedCount}/${this.CATALOG.length}` }),
-        U.el('span', { text: 'unlocked' })
+        U.el('span', { text: T('unlocked') })
       ])
     ]))
 
@@ -81,10 +81,10 @@ const PageAchievements = {
           ]),
           U.el('div', { class: 'ach-desc', text: a.desc }),
           a.unlocked
-            ? U.el('div', { class: 'ach-done', text: '✓ Unlocked' })
+            ? U.el('div', { class: 'ach-done', text: T('✓ Unlocked') })
             : U.el('div', { class: 'ach-progress-wrap' }, [
               U.el('div', { class: 'ach-progress-track' }, [U.el('div', { class: 'ach-progress-fill', style: `width:${a.pct}%;` })]),
-              U.el('span', { class: 'ach-progress-text', text: `${a.current.toLocaleString()} / ${a.target.toLocaleString()}` })
+              U.el('span', { class: 'ach-progress-text', text: `${a.current.toLocaleString(I18n.locale())} / ${a.target.toLocaleString(I18n.locale())}` })
             ])
         ])
       ]))

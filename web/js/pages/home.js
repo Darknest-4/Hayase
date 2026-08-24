@@ -98,7 +98,7 @@ const PageHome = {
         class: 'hero-trailer',
         src: `https://www.youtube-nocookie.com/embed/${media.trailer.id}?autoplay=1&mute=1&controls=0&rel=0&playsinline=1&loop=1&playlist=${media.trailer.id}`,
         allow: 'autoplay',
-        title: 'trailer'
+        title: T('trailer')
       })
       frame.addEventListener('load', () => frame.classList.add('loaded'))
       hero.append(frame)
@@ -136,15 +136,15 @@ const PageHome = {
             U.el('a', { class: 'badge', href: `#/search?genre=${encodeURIComponent(g)}`, text: g })))
           : null,
         U.el('div', { class: 'hero-buttons' }, [
-          U.el('a', { class: 'btn btn-primary', href: `#/watch/${media.id}:${(Store.entry(media.id)?.progress ?? 0) + 1}` }, [U.svg(C.PLAY, 15), document.createTextNode('Watch now')]),
+          U.el('a', { class: 'btn btn-primary', href: `#/watch/${media.id}:${(Store.entry(media.id)?.progress ?? 0) + 1}` }, [U.svg(C.PLAY, 15), document.createTextNode(T('Watch now'))]),
           Store.entry(media.id)
             ? null
             : U.el('button', {
               class: 'btn btn-secondary',
-              onclick: e => { Store.saveEntry(media, { status: 'PLANNING' }); U.toast('Added to Planning'); e.target.textContent = '✓ In your list' }
-            }, [document.createTextNode('+ Add to list')]),
-          U.el('button', { class: 'btn btn-secondary', onclick: () => C.trailerModal(media.trailer) }, [document.createTextNode('Trailer')]),
-          U.el('a', { class: 'btn btn-ghost', href: `#/anime/${media.id}` }, [document.createTextNode('Details')])
+              onclick: e => { Store.saveEntry(media, { status: 'PLANNING' }); U.toast(T('Added to Planning')); e.target.textContent = '✓ In your list' }
+            }, [document.createTextNode(T('+ Add to list'))]),
+          U.el('button', { class: 'btn btn-secondary', onclick: () => C.trailerModal(media.trailer) }, [document.createTextNode(T('Trailer'))]),
+          U.el('a', { class: 'btn btn-ghost', href: `#/anime/${media.id}` }, [document.createTextNode(T('Details'))])
         ])
       ])
     )

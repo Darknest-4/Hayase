@@ -1,11 +1,11 @@
-/* global window, document, U, C, Store */
+/* global window, document, U, C, Store, T, I18n */
 // Watch History — per-profile chronological log of what you watched,
 // grouped by day. Recorded automatically as episode progress advances.
 
 const PageHistory = {
   render (root) {
     const profile = Store.activeProfile()
-    root.append(window.C.spotlight('Watch History', { subtitle: profile ? `${profile.avatar ?? ''} ${profile.name}` : null }))
+    root.append(window.C.spotlight(T('Watch History'), { subtitle: profile ? `${profile.avatar ?? ''} ${profile.name}` : null }))
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
     this.body(pad)
@@ -18,15 +18,15 @@ const PageHistory = {
         onclick: () => {
           if (!window.confirm('Clear this profile’s entire watch history?')) return
           Store.clearHistory()
-          U.toast('History cleared')
+          U.toast(T('History cleared'))
           window.App.navigate()
         }
-      }, [document.createTextNode('Clear history')])
+      }, [document.createTextNode(T('Clear history'))])
     ]))
 
     const history = Store.history()
     if (!history.length) {
-      pad.append(U.el('div', { class: 'empty-state', text: 'Nothing watched yet on this profile. Play an episode and it shows up here.' }))
+      pad.append(U.el('div', { class: 'empty-state', text: T('Nothing watched yet on this profile. Play an episode and it shows up here.') }))
       return
     }
 
@@ -42,7 +42,7 @@ const PageHistory = {
     const yesterday = new Date(Date.now() - 86400000).toDateString()
 
     for (const [key, items] of groups) {
-      let label = new Date(key).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })
+      let label = new Date(key).toLocaleDateString(I18n.locale(), { weekday: 'long', month: 'short', day: 'numeric' })
       if (key === today) label = 'Today'
       else if (key === yesterday) label = 'Yesterday'
 
@@ -57,7 +57,7 @@ const PageHistory = {
           U.el('img', { src: media.coverImage?.large ?? '', alt: U.title(media), loading: 'lazy' }),
           U.el('div', { class: 'list-row-grow' }, [
             U.el('div', { class: 'list-row-title', text: U.title(media) }),
-            U.el('div', { class: 'list-row-sub', text: `Episode ${item.episode} • ${new Date(item.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}` })
+            U.el('div', { class: 'list-row-sub', text: `Episode ${item.episode} • ${new Date(item.at).toLocaleTimeString(I18n.locale(), { hour: '2-digit', minute: '2-digit' })}` })
           ]),
           U.svg(C.PLAY, 16)
         ]))
