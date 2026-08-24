@@ -74,10 +74,65 @@ enforced**. What is live today:
 | Call timeouts + worker teardown | ✅ 10s, wedged workers are replaced |
 | Result sanitising + accuracy cap | ✅ enforced in the worker |
 | Extension health classification | ✅ from failure telemetry |
+| Install / uninstall / enable from the store | ✅ `web/js/pages/extensions.js` |
+| Per-install options, validated against the manifest | ✅ `PATCH /v1/extensions/:slug/install` |
+| Bundled extensions published on boot | ✅ `scripts/publish-extensions.ts` |
 | Package upload to object storage | ⏳ the portal still sends a manifest + hash, not bytes |
 | Human review queue UI | ⏳ static checks run; the moderator screen is pending |
 | `create-yume-extension` scaffold / CLI | ⏳ not built |
 | Dev-mode side-loading with hot reload | ⏳ not built |
+
+## The extensions that ship with the project
+
+`extensions/` holds first-party packages — source folders in the repository,
+not store rows. Nothing connected the two, so a fresh deployment browsed an
+empty store while eight working extensions sat in the tree.
+
+`server/scripts/publish-extensions.ts` is that connection. It validates each
+manifest with the same validator the publish endpoint uses, stores the bytes in
+the content-addressed package store, and records the version as approved and
+published. The app runs it on every boot (see the `Dockerfile`), and it can be
+run on demand:
+
+```
+docker compose --profile extensions run --rm extensions
+```
+
+Three rules it will not break:
+
+* **It never creates a user.** The owner is an existing administrator — the
+  oldest one, the same rule the admin bootstrap in migration 0021 follows, or
+  whoever `EXTENSIONS_OWNER` names. On a database with no administrator yet it
+  says so and publishes nothing, so a first boot still starts normally.
+* **It never changes the status of an extension that already exists.** An
+  operator who suspended one meant it, and a restart resurrecting it would make
+  the kill switch a suggestion.
+* **It never overwrites a published version with different bytes.** Versions
+  are immutable, which is what makes the recorded hash worth verifying; changed
+  code needs a version bump in `manifest.json`. `--force` overrides this for
+  local development.
+
+## Installing and configuring
+
+| Endpoint | Does |
+|---|---|
+| `POST /v1/extensions/:slug/install` | installs the latest published version, seeded with the manifest's declared option defaults |
+| `PATCH /v1/extensions/:slug/install` | sets `enabled`, or replaces `options` |
+| `DELETE /v1/extensions/:slug/install` | uninstalls |
+
+Options are validated against the schema the **installed version** declared —
+not the latest, which may have added options this install has never seen. A
+value of the wrong type is rejected rather than converted: `Number('')` is 0
+and `Boolean('false')` is true, and both are settings nobody chose. An
+undeclared key is rejected rather than dropped, because silently discarding it
+turns a typo into "the setting does nothing and nothing says why".
+
+`options` replaces rather than merges. The settings form submits every field
+for exactly that reason: merging would make an option impossible to clear.
+
+Saving restarts the sandbox. The worker holds the options it was started with,
+so without that a saved change does nothing until the page is reloaded — which
+reads as the setting being ignored.
 
 ## Extension types
 

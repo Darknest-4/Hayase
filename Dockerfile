@@ -18,6 +18,10 @@ RUN npm ci --omit=dev
 COPY server/ ./
 COPY db/ /app/db/
 COPY web/ /app/web/
+# The extensions that ship with the project. They are source folders, not store
+# rows, so scripts/publish-extensions.ts registers them on boot — without this
+# copy the store is empty on every deployment.
+COPY extensions/ /app/extensions/
 
 # Extension packages are stored on disk, outside the database. Creating the
 # directory here (owned by the runtime user) means a fresh named volume mounted
@@ -34,5 +38,9 @@ EXPOSE 4000
 # Run as the built-in unprivileged user.
 USER node
 
-# Apply pending migrations, then start the API.
-CMD ["sh", "-c", "node --experimental-strip-types src/lib/migrate.ts && node --experimental-strip-types src/index.ts"]
+# Apply pending migrations, publish the bundled extensions, then start the API.
+#
+# The publish step is idempotent and deliberately non-fatal: it skips quietly
+# when no administrator account exists yet (a fresh install, before anyone has
+# registered), and one bad package must not keep the whole app from booting.
+CMD ["sh", "-c", "node --experimental-strip-types src/lib/migrate.ts && { node --experimental-strip-types scripts/publish-extensions.ts || echo 'publish-extensions: skipped, see the log above'; } && node --experimental-strip-types src/index.ts"]

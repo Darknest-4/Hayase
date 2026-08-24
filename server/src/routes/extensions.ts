@@ -2,7 +2,7 @@
 // client needs to load extensions into its sandbox.
 
 import { query, queryOne, transaction } from '../db.ts'
-import { EXTENSION_TYPES } from '../lib/extension-manifest.ts'
+import { coerceOptions, defaultOptions, EXTENSION_TYPES } from '../lib/extension-manifest.ts'
 import { get as getPackage } from '../lib/package-store.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 import { WRITE_LIMIT } from '../plugins/security.ts'
@@ -112,6 +112,9 @@ const routes: FastifyPluginAsync = async fastify => {
       `SELECT e.id AS extension_id, e.slug, e.name, e.type, e.accuracy, e.status, e.install_count,
               i.enabled, i.auto_update, i.options,
               v.id AS version_id, v.version, v.package_key, v.package_hash, v.min_app_version,
+              -- the declared option schema, so the client can draw a settings
+              -- form without fetching the package and parsing its manifest
+              coalesce(v.manifest->'options', '{}'::jsonb) AS option_schema,
               (SELECT coalesce(jsonb_agg(jsonb_build_object('permission', p.permission, 'hosts', p.hosts)), '[]')
                  FROM extension_permissions p WHERE p.version_id = v.id) AS permissions
        FROM extension_installs i
@@ -224,8 +227,8 @@ const routes: FastifyPluginAsync = async fastify => {
   fastify.post('/:slug/install', { preHandler: fastify.authenticate }, async (request, reply) => {
     const { slug } = request.params as { slug: string }
 
-    const latest = await queryOne<{ extension_id: string, version_id: string }>(
-      `SELECT e.id AS extension_id, v.id AS version_id
+    const latest = await queryOne<{ extension_id: string, version_id: string, options: Record<string, never> | null }>(
+      `SELECT e.id AS extension_id, v.id AS version_id, v.manifest->'options' AS options
        FROM extensions e
        JOIN extension_versions v ON v.extension_id = e.id AND v.published_at IS NOT NULL
        WHERE e.slug = $1 AND e.status = 'published'
@@ -235,12 +238,24 @@ const routes: FastifyPluginAsync = async fastify => {
     if (!latest) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404, detail: 'No published version' })
 
     const install = await transaction(async client => {
+      /*
+       * Start from the defaults the manifest declares.
+       *
+       * Nothing merged them before, so an extension whose manifest said
+       * `default: 'op_ed'` was handed `{}` and had to re-declare every default
+       * in its own code. Storing them makes the settings form show what the
+       * extension will actually do, which is the point of showing it.
+       *
+       * On re-install the existing options are kept: they are the viewer's,
+       * and a server URL retyped after every accidental uninstall is a bad
+       * trade for a tidier row.
+       */
       const { rows } = await client.query(
-        `INSERT INTO extension_installs (user_id, extension_id, version_id)
-         VALUES ($1, $2, $3)
+        `INSERT INTO extension_installs (user_id, extension_id, version_id, options)
+         VALUES ($1, $2, $3, $4::jsonb)
          ON CONFLICT (user_id, extension_id) DO UPDATE SET enabled = true, version_id = $3
          RETURNING *`,
-        [request.user.sub, latest.extension_id, latest.version_id]
+        [request.user.sub, latest.extension_id, latest.version_id, JSON.stringify(defaultOptions(latest.options))]
       )
       await client.query('UPDATE extensions SET install_count = install_count + 1 WHERE id = $1', [latest.extension_id])
       await client.query(
@@ -292,6 +307,75 @@ const routes: FastifyPluginAsync = async fastify => {
         JSON.stringify({ message: body.message?.slice(0, 200) ?? null, appVersion: body.appVersion ?? null })]
     )
     return reply.code(202).send({ recorded: true })
+  })
+
+  /**
+   * Change an install: its options, or whether it runs at all.
+   *
+   * `extension_installs.options` is handed to the sandbox and from there to
+   * extension code, so values are checked against the schema the installed
+   * *version* declared — not the latest one, which may have added options this
+   * install has never seen.
+   *
+   * Options replace rather than merge. A settings form submits the whole form,
+   * and merging would make an option impossible to clear: sending it back
+   * without a token would leave the old token in place.
+   */
+  fastify.patch('/:slug/install', {
+    preHandler: fastify.authenticate,
+    config: WRITE_LIMIT,
+    schema: {
+      params: { type: 'object', properties: { slug: { type: 'string', maxLength: 64 } } },
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          enabled: { type: 'boolean' },
+          // shape-checked against the manifest below, not here
+          options: { type: 'object' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const { slug } = request.params as { slug: string }
+    const body = request.body as { enabled?: boolean, options?: unknown }
+
+    const install = await queryOne<{ extension_id: string, options: Record<string, never> | null }>(
+      `SELECT i.extension_id, v.manifest->'options' AS options
+       FROM extension_installs i
+       JOIN extensions e ON e.id = i.extension_id
+       JOIN extension_versions v ON v.id = i.version_id
+       WHERE e.slug = $1 AND i.user_id = $2`,
+      [slug, request.user.sub]
+    )
+    if (!install) {
+      return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404, detail: 'Not installed' })
+    }
+
+    let options: Record<string, unknown> | undefined
+    if (body.options !== undefined) {
+      const result = coerceOptions(install.options, body.options)
+      if (!result.valid) {
+        return reply.code(422).send({
+          type: 'about:blank',
+          title: 'Unprocessable Entity',
+          status: 422,
+          detail: result.errors.join('; ')
+        })
+      }
+      options = result.options
+    }
+
+    const updated = await queryOne(
+      `UPDATE extension_installs
+          SET enabled = coalesce($3, enabled),
+              options = coalesce($4::jsonb, options),
+              updated_at = now()
+        WHERE user_id = $1 AND extension_id = $2
+        RETURNING enabled, auto_update, options`,
+      [request.user.sub, install.extension_id, body.enabled ?? null, options ? JSON.stringify(options) : null]
+    )
+    return updated
   })
 
   fastify.delete('/:slug/install', { preHandler: fastify.authenticate }, async (request, reply) => {

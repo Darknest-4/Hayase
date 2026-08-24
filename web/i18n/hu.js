@@ -281,6 +281,16 @@ I18n.register('hu', {
   // ---------------------------------------------------------------- kiegészítők
   'No published extensions in this category yet.':
     'Ebben a kategóriában még nincs közzétett kiegészítő.',
+  Install: 'Telepítés',
+  Uninstall: 'Eltávolítás',
+  Enable: 'Bekapcsolás',
+  Disable: 'Kikapcsolás',
+  'Sign in to install': 'Jelentkezz be a telepítéshez',
+  'Installed, not running': 'Telepítve, de nem fut',
+  'Save settings': 'Beállítások mentése',
+  'Saved.': 'Mentve.',
+  'This extension has nothing to configure.':
+    'Ehhez a kiegészítőhöz nincs mit beállítani.',
   'Failed to load the store: ': 'A bolt betöltése nem sikerült: ',
   'Developer Portal →': 'Fejlesztői portál →',
 
