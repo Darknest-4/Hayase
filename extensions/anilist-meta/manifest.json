@@ -1,0 +1,39 @@
+{
+  "manifestVersion": 3,
+  "id": "anilist-meta",
+  "name": "AniList Extras",
+  "version": "1.0.0",
+  "type": "metadata",
+  "summary": "Fills in the characters, staff and recommendations tabs.",
+  "description": "Supplies cast, staff and recommended titles from AniList's public API for the anime detail page, whose Characters and Recommendations tabs are otherwise empty for anything served from the local catalogue. Needs an AniList id on the title; anything without one is skipped rather than guessed at. Results are cached, because AniList rate-limits and a detail page should not spend a request every time it is opened.",
+  "icon": "🎭",
+  "accuracy": "high",
+  "languages": ["en", "ja"],
+  "permissions": {
+    "query:ids": {},
+    "storage:local": {},
+    "net:fetch": { "hosts": ["graphql.anilist.co"] }
+  },
+  "options": {
+    "characters": {
+      "type": "boolean",
+      "default": true,
+      "description": "Fetch the cast."
+    },
+    "staff": {
+      "type": "boolean",
+      "default": true,
+      "description": "Fetch the staff credits."
+    },
+    "recommendations": {
+      "type": "boolean",
+      "default": true,
+      "description": "Fetch recommended titles."
+    },
+    "limit": {
+      "type": "number",
+      "default": 24,
+      "description": "How many of each to fetch. Higher means a larger response for a tab most people scroll past."
+    }
+  }
+}

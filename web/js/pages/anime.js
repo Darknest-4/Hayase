@@ -226,7 +226,13 @@ const PageAnime = {
       tabContent.replaceChildren()
       if (!rendered[name]) {
         rendered[name] = U.el('div')
-        this['renderTab' + name[0].toUpperCase() + name.slice(1)](rendered[name], media)
+        // Some tab renderers are async — they draw synchronously and then fill
+        // in from extensions. The node is appended either way, so the promise
+        // is deliberately not awaited; it is caught so a failure cannot become
+        // an unhandled rejection.
+        Promise
+          .resolve(this['renderTab' + name[0].toUpperCase() + name.slice(1)](rendered[name], media))
+          .catch(error => console.warn('[anime] tab failed:', name, error))
       }
       tabContent.append(rendered[name])
     }
@@ -397,34 +403,114 @@ const PageAnime = {
     wrap.append(row)
   },
 
-  renderTabCharacters (wrap, media) {
+  /**
+   * Ask metadata extensions about this title.
+   *
+   * Cached on the page instance for the life of the render: the characters and
+   * the recommendations tabs both want the answer, and they are drawn at
+   * different times, so without this the same query runs twice.
+   *
+   * Returns [] on any failure. An empty tab is the status quo; an error state
+   * where a tab used to be is a regression.
+   */
+  async _extensionMetadata (media) {
+    const host = window.ExtensionHost
+    if (!host?.collect || !media?.id) return []
+    if (this._metaCache?.id === media.id) return this._metaCache.records
+
+    let records = []
+    try {
+      const query = window.StreamEngine?.buildQuery(media, 1) ?? { anilistId: media.id }
+      const out = await host.collect('metadata', query, { types: ['metadata'] })
+      records = out.results ?? []
+    } catch (e) {
+      records = []
+    }
+    this._metaCache = { id: media.id, records }
+    return records
+  },
+
+  _charCard (name, role, image) {
+    return U.el('div', { class: 'char-card' }, [
+      U.el('img', { src: image ?? '', alt: name ?? '', loading: 'lazy' }),
+      U.el('div', { class: 'char-name', text: name ?? '' }),
+      U.el('div', { class: 'char-role', text: role ?? '' })
+    ])
+  },
+
+  async renderTabCharacters (wrap, media) {
     const characters = media.characters?.edges ?? []
-    if (!characters.length) {
-      wrap.append(U.el('div', { class: 'empty-state', text: T('No character data.') }))
+    if (characters.length) {
+      const crow = U.el('div', { class: 'hscroll', style: 'padding-left:0;padding-right:0;flex-wrap:wrap;' })
+      for (const edge of characters) {
+        crow.append(this._charCard(edge.node.name?.userPreferred, edge.role, edge.node.image?.large))
+      }
+      wrap.append(crow)
       return
     }
-    const crow = U.el('div', { class: 'hscroll', style: 'padding-left:0;padding-right:0;flex-wrap:wrap;' })
-    for (const edge of characters) {
-      crow.append(U.el('div', { class: 'char-card' }, [
-        U.el('img', { src: edge.node.image?.large ?? '', alt: edge.node.name?.userPreferred, loading: 'lazy' }),
-        U.el('div', { class: 'char-name', text: edge.node.name?.userPreferred ?? '' }),
-        U.el('div', { class: 'char-role', text: edge.role ?? '' })
-      ]))
+
+    // Nothing from the catalogue — the tables that would hold cast have no
+    // code path, so this tab has always been empty for locally-served titles.
+    // Metadata extensions are the way to fill it.
+    const placeholder = U.el('div', { class: 'empty-state', text: T('No character data.') })
+    wrap.append(placeholder)
+
+    const records = await this._extensionMetadata(media)
+    const cast = records.filter(r => r?.kind === 'character' && r.name)
+    const staff = records.filter(r => r?.kind === 'staff' && r.name)
+    if (!cast.length && !staff.length) return
+
+    placeholder.remove()
+
+    if (cast.length) {
+      const crow = U.el('div', { class: 'hscroll', style: 'padding-left:0;padding-right:0;flex-wrap:wrap;' })
+      for (const row of cast) crow.append(this._charCard(row.name, row.role, row.image))
+      wrap.append(crow)
     }
-    wrap.append(crow)
+
+    // Staff has no tab of its own; a second section under the cast is where a
+    // viewer would look for it, and adding a tab for it would push the row
+    // past what fits on a phone.
+    if (staff.length) {
+      wrap.append(U.el('h3', { class: 'detail-section-title', text: T('Staff') }))
+      const srow = U.el('div', { class: 'hscroll', style: 'padding-left:0;padding-right:0;flex-wrap:wrap;' })
+      for (const row of staff) srow.append(this._charCard(row.name, row.role, row.image))
+      wrap.append(srow)
+    }
   },
 
   renderTabComments (wrap, media) {
     wrap.append(C.commentsSection(media))
   },
 
-  renderTabRecommendations (wrap, media) {
+  async renderTabRecommendations (wrap, media) {
     const recs = (media.recommendations?.nodes ?? []).map(n => n.mediaRecommendation).filter(Boolean)
-    if (!recs.length) {
-      wrap.append(U.el('div', { class: 'empty-state', text: T('No recommendations yet.') }))
+    if (recs.length) {
+      wrap.append(C.grid(recs))
       return
     }
-    wrap.append(C.grid(recs))
+
+    const placeholder = U.el('div', { class: 'empty-state', text: T('No recommendations yet.') })
+    wrap.append(placeholder)
+
+    const records = await this._extensionMetadata(media)
+    const fromExtensions = records
+      .filter(r => r?.kind === 'recommendation' && r.anilistId)
+      // Back into the shape C.grid draws, so the cards are the same cards
+      // everywhere else on the site rather than a second kind that looks
+      // almost right.
+      .map(r => ({
+        id: r.anilistId,
+        title: { userPreferred: r.title, romaji: r.titleRomaji, english: r.titleEnglish },
+        coverImage: { large: r.image },
+        format: r.format || null,
+        averageScore: r.score || null,
+        episodes: r.episodes || null
+      }))
+
+    if (!fromExtensions.length) return
+    placeholder.remove()
+    wrap.append(C.grid(fromExtensions))
   },
 
   async renderEpisodes (wrap, media) {
