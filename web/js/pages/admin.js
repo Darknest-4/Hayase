@@ -1,4 +1,4 @@
-/* global C, Charts, U, YumeAPI, confirm, document, history, window */
+/* global C, Charts, U, YumeAPI, confirm, document, history, window, I18n */
 // Admin dashboard — overview analytics, user management and the
 // moderation queue. Only reachable with the right permissions; the
 // server enforces them regardless.
@@ -29,6 +29,7 @@ const PageAdmin = {
     { key: 'reports', group: 'people', label: 'Reports', sub: 'Moderation queue', perm: 'community.moderate', render: 'renderReports', icon: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>' },
 
     { key: 'catalogue', group: 'content', label: 'Catalogue', sub: 'Anime, episodes & publishing', perm: 'anime.view', render: 'renderCatalogue', icon: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>' },
+    { key: 'translations', group: 'content', label: 'Translations', sub: 'Hungarian titles & descriptions', perm: 'anime.edit', render: 'renderTranslations', icon: '<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>' },
 
     { key: 'monitoring', group: 'system', label: 'Infrastructure', sub: 'VPS health & services', perm: 'system.metrics.view', render: 'renderMonitoring', icon: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>' },
     { key: 'webhooks', group: 'system', label: 'Webhooks', sub: 'Outbound integrations', perm: 'admin.webhooks.manage', render: 'renderWebhooks', icon: '<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>' },
@@ -511,6 +512,193 @@ const PageAdmin = {
   STATUSES: ['NOT_YET_RELEASED', 'RELEASING', 'FINISHED', 'CANCELLED', 'HIATUS'],
   SEASONS: ['WINTER', 'SPRING', 'SUMMER', 'FALL'],
 
+  // =========================================================================
+  // Translations — writing the Hungarian catalogue text
+  // =========================================================================
+  //
+  // The catalogue holds 25,703 English synopses and Hungarian ones only exist
+  // once somebody writes them. Translating all of it is not going to happen;
+  // translating what people actually open is a week of work and covers most of
+  // what anyone reads. So the queue is ordered by popularity and the editor
+  // works down it — that ordering is the feature, not a detail of the list.
+  //
+  // Source text sits beside the field being written. Translating from memory
+  // of what the English said is how a description ends up describing a
+  // different show.
+
+  async renderTranslations (content) {
+    const layout = U.el('div', { class: 'cat-layout' })
+    const listCol = U.el('div', { class: 'cat-list-col' })
+    const editCol = U.el('div', { class: 'cat-edit-col' })
+    layout.append(listCol, editCol)
+    content.replaceChildren(layout)
+
+    const state = { offset: 0, publishedOnly: true, selected: null }
+    const listBox = U.el('div', { class: 'cat-list' })
+    const progressBox = U.el('div', { class: 'tr-progress' })
+
+    const toolbar = U.el('div', { class: 'cat-toolbar' }, [
+      U.el('label', { class: 'tr-toggle' }, [
+        U.el('input', {
+          type: 'checkbox',
+          checked: '',
+          onchange: e => { state.publishedOnly = e.target.checked; state.offset = 0; loadList() }
+        }),
+        U.el('span', { text: 'Published only' })
+      ])
+    ])
+    listCol.append(progressBox, toolbar, listBox)
+    editCol.append(U.el('div', { class: 'empty-state', style: 'padding:2rem;', text: 'Pick a title on the left to write its Hungarian text.' }))
+
+    const loadProgress = async () => {
+      try {
+        const p = await YumeAPI.admin.translations.progress()
+        const done = p.translated ?? 0
+        const target = p.published ?? 0
+        const pct = target ? Math.round((done / target) * 100) : 0
+        progressBox.replaceChildren(
+          U.el('div', { class: 'tr-progress-bar' }, [U.el('span', { style: `width:${pct}%;` })]),
+          U.el('div', {
+            class: 'tr-progress-text',
+            // Measured against published titles, not the whole catalogue: a
+            // hidden entry nobody can open is not work anyone is waiting on.
+            text: `${done.toLocaleString(I18n.locale())} / ${target.toLocaleString(I18n.locale())} published titles have a Hungarian description (${pct}%)`
+          }),
+          (p.drafts ?? 0) > 0
+            ? U.el('div', { class: 'tr-progress-drafts', text: `${p.drafts} unreviewed machine draft(s) — not shown to viewers until approved` })
+            : null
+        )
+      } catch (e) {
+        progressBox.replaceChildren(U.el('div', { class: 'tr-progress-text', text: 'Could not load progress.' }))
+      }
+    }
+
+    const loadList = async () => {
+      listBox.replaceChildren(U.el('div', { class: 'spinner' }))
+      try {
+        const { data, total } = await YumeAPI.admin.translations.queue({
+          limit: 30, offset: state.offset, publishedOnly: state.publishedOnly
+        })
+        listBox.replaceChildren(
+          U.el('div', { class: 'cat-count', text: `${total.toLocaleString(I18n.locale())} still need a Hungarian description` })
+        )
+        if (!data.length) {
+          listBox.append(U.el('div', { class: 'empty-state', style: 'padding:1rem;', text: 'Nothing left in this filter.' }))
+          return
+        }
+        for (const row of data) listBox.append(rowNode(row))
+        if (total > state.offset + data.length) {
+          listBox.append(U.el('button', {
+            class: 'btn btn-ghost btn-sm',
+            style: 'width:100%;margin-top:.6rem;',
+            onclick: () => { state.offset += 30; loadList() }
+          }, [document.createTextNode('Next 30')]))
+        }
+      } catch (e) {
+        listBox.replaceChildren(U.el('div', { class: 'empty-state', style: 'padding:1rem;', text: 'Could not load the queue: ' + e.message }))
+      }
+    }
+
+    const rowNode = row => {
+      const node = U.el('button', {
+        class: 'cat-row' + (state.selected === row.id ? ' active' : ''),
+        onclick: () => { state.selected = row.id; openEditor(row); loadList() }
+      }, [
+        U.el('div', { class: 'cat-row-main' }, [
+          U.el('div', { class: 'cat-row-title', text: row.canonical_title }),
+          U.el('div', { class: 'cat-row-sub', text: `${(row.popularity ?? 0).toLocaleString(I18n.locale())} · ${row.visibility}` })
+        ]),
+        // Which half is missing, so a half-done entry is visible as half-done
+        // rather than looking identical to an untouched one.
+        U.el('div', { class: 'tr-flags' }, [
+          U.el('span', { class: 'tr-flag' + (row.has_title ? ' on' : ''), title: 'Title', text: 'T' }),
+          U.el('span', { class: 'tr-flag' + (row.has_synopsis ? ' on' : ''), title: 'Description', text: 'D' })
+        ])
+      ])
+      return node
+    }
+
+    const openEditor = async row => {
+      editCol.replaceChildren(U.el('div', { class: 'spinner' }))
+      let payload
+      try {
+        payload = await YumeAPI.admin.translations.get(row.id)
+      } catch (e) {
+        editCol.replaceChildren(U.el('div', { class: 'empty-state', style: 'padding:2rem;', text: 'Could not load: ' + e.message }))
+        return
+      }
+
+      const existing = (payload.translations ?? []).find(t => t.language === 'hu') ?? {}
+      const titleInput = U.el('input', { class: 'input', maxlength: '500', value: existing.title ?? '', placeholder: payload.source.canonical_title })
+      const synopsisInput = U.el('textarea', { class: 'input', rows: '10', maxlength: '8000', placeholder: 'Magyar leírás…' })
+      synopsisInput.value = existing.synopsis ?? ''
+
+      const save = U.el('button', { class: 'btn btn-primary btn-sm' }, [document.createTextNode('Save Hungarian text')])
+      save.addEventListener('click', async () => {
+        save.disabled = true
+        try {
+          await YumeAPI.admin.translations.put(row.id, 'hu', {
+            title: titleInput.value.trim() || null,
+            synopsis: synopsisInput.value.trim() || null
+          })
+          U.toast('Saved')
+          loadProgress()
+          loadList()
+        } catch (e) {
+          U.toast('Could not save: ' + e.message, 'error')
+        } finally {
+          save.disabled = false
+        }
+      })
+
+      const remove = existing.title || existing.synopsis
+        ? U.el('button', { class: 'btn btn-ghost btn-sm' }, [document.createTextNode('Remove translation')])
+        : null
+      remove?.addEventListener('click', async () => {
+        if (!window.confirm('Remove the Hungarian text for this title?')) return
+        try {
+          await YumeAPI.admin.translations.remove(row.id, 'hu')
+          U.toast('Removed')
+          openEditor(row)
+          loadProgress()
+          loadList()
+        } catch (e) {
+          U.toast('Could not remove: ' + e.message, 'error')
+        }
+      })
+
+      editCol.replaceChildren(U.el('div', { class: 'tr-editor' }, [
+        U.el('h3', { class: 'tr-editor-title', text: payload.source.canonical_title }),
+
+        U.el('div', { class: 'tr-field' }, [
+          U.el('label', { text: 'Hungarian title' }),
+          U.el('p', { class: 'tr-hint', text: 'Leave empty to keep the original title. Most shows are known by their romaji name — only translate a title that genuinely has a Hungarian one.' }),
+          titleInput
+        ]),
+
+        U.el('div', { class: 'tr-field' }, [
+          U.el('label', { text: 'Hungarian description' }),
+          synopsisInput
+        ]),
+
+        // The English beside the field, not behind a tab.
+        U.el('details', { class: 'tr-source', open: '' }, [
+          U.el('summary', { text: 'Original description' }),
+          U.el('p', { class: 'tr-source-text', text: U.plainDesc(payload.source.synopsis) || '(none)' })
+        ]),
+
+        U.el('div', { class: 'tr-actions' }, [save, remove]),
+
+        existing.updated_at
+          ? U.el('div', { class: 'tr-meta', text: `Last edited ${U.relTime(existing.updated_at)} · ${existing.source}${existing.approved ? '' : ' · unapproved draft'}` })
+          : null
+      ]))
+    }
+
+    loadProgress()
+    loadList()
+  },
+
   async renderCatalogue (content) {
     const perms = await YumeAPI.myPermissions()
     const can = s => perms.includes(s)
@@ -886,7 +1074,7 @@ const PageAdmin = {
       try {
         if (isNew) await YumeAPI.admin.catalogue.addEpisode(anime.id, body)
         else await YumeAPI.admin.catalogue.updateEpisode(ep.id, body)
-        U.toast(isNew ? 'Episode added' : 'Episode updated'); backdrop.remove(); onDone?.()
+        U.toast(isNew ? 'Episode added' : 'Episode updated'); backdrop.close(); onDone?.()
       } catch (e) { U.toast(e.message, 'error') }
     })
   },
@@ -1450,7 +1638,7 @@ const PageAdmin = {
         if (isEdit) await YumeAPI.admin.updateWebhook(hook.id, body)
         else await YumeAPI.admin.createWebhook(body)
         U.toast(isEdit ? 'Webhook updated' : 'Webhook created')
-        modal.remove()
+        modal.close()
         this.renderWebhooks(content)
       } catch (e) { U.toast(e.message, 'error') }
     })

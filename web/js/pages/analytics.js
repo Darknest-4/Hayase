@@ -1,4 +1,4 @@
-/* global window, U, C, Store, Charts */
+/* global window, U, C, Store, Charts, T, I18n */
 // Analytics — a personal "year in review" style dashboard computed entirely
 // from the active profile's local library and watch history. Everything is
 // derived on the client from Store.list() + Store.history(); no network calls.
@@ -10,7 +10,7 @@ const PageAnalytics = {
   // standalone route (kept as a fallback / deep-link target)
   render (root) {
     const profile = Store.activeProfile()
-    root.append(C.spotlight('Analytics', { subtitle: profile ? `${profile.avatar ?? ''} ${profile.name} · your viewing at a glance` : 'Your viewing at a glance' }))
+    root.append(C.spotlight(T('Analytics'), { subtitle: profile ? `${profile.avatar ?? ''} ${profile.name} · your viewing at a glance` : 'Your viewing at a glance' }))
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
     this.body(pad)
@@ -22,7 +22,7 @@ const PageAnalytics = {
     const history = Store.history()
 
     if (!entries.length && !history.length) {
-      pad.append(U.el('div', { class: 'empty-state', text: 'No data yet on this profile. Add anime to your library and watch a few episodes — your analytics build up here automatically.' }))
+      pad.append(U.el('div', { class: 'empty-state', text: T('No data yet on this profile. Add anime to your library and watch a few episodes — your analytics build up here automatically.') }))
       return
     }
 
@@ -37,7 +37,7 @@ const PageAnalytics = {
 
     pad.append(U.el('div', { class: 'stat-cards' }, [
       ['Watch time', watchTime],
-      ['Episodes', episodesWatched.toLocaleString()],
+      ['Episodes', episodesWatched.toLocaleString(I18n.locale())],
       ['In library', String(entries.length)],
       ['Completed', String(completed)],
       ['Mean score', mean],
@@ -49,7 +49,7 @@ const PageAnalytics = {
 
     // ---- weekly activity (episodes watched per day, last 14 days) ----
     this._section(pad, 'Activity', 'Episodes watched per day over the last two weeks.')
-    pad.append(this._panel(Charts.bars(this._weekly(history), { label: 'Episodes watched per day' })))
+    pad.append(this._panel(Charts.bars(this._weekly(history), { label: T('Episodes watched per day') })))
 
     // ---- two-up: genre donut + format donut ----
     const twoUp = U.el('div', { class: 'analytics-grid' })
@@ -57,12 +57,12 @@ const PageAnalytics = {
 
     const genres = this._genreBreakdown(entries)
     twoUp.append(this._card('Top genres', genres.length
-      ? Charts.donut(genres.slice(0, 8).map((g, i) => ({ label: g.label, value: g.value, color: this.PALETTE[i % this.PALETTE.length] })), { label: 'Genre distribution' })
+      ? Charts.donut(genres.slice(0, 8).map((g, i) => ({ label: g.label, value: g.value, color: this.PALETTE[i % this.PALETTE.length] })), { label: T('Genre distribution') })
       : this._noData()))
 
     const formats = this._countBy(entries, e => U.format(e.media) || 'Unknown')
     twoUp.append(this._card('Formats', formats.length
-      ? Charts.donut(formats.map((f, i) => ({ label: f.label, value: f.value, color: this.PALETTE[i % this.PALETTE.length] })), { label: 'Format distribution' })
+      ? Charts.donut(formats.map((f, i) => ({ label: f.label, value: f.value, color: this.PALETTE[i % this.PALETTE.length] })), { label: T('Format distribution') })
       : this._noData()))
 
     // ---- status distribution ----
@@ -71,7 +71,7 @@ const PageAnalytics = {
       .filter(s => s.value > 0)
     if (statuses.length) {
       this._section(pad, 'Library status', 'How your list breaks down across watching, completed, planning and more.')
-      pad.append(this._panel(Charts.bars(statuses.map(s => ({ label: s.label.slice(0, 4), value: s.value })), { label: 'Status distribution' })))
+      pad.append(this._panel(Charts.bars(statuses.map(s => ({ label: s.label.slice(0, 4), value: s.value })), { label: T('Status distribution') })))
     }
 
     // ---- score histogram ----
@@ -82,14 +82,14 @@ const PageAnalytics = {
         const b = Math.min(9, Math.max(0, Math.round(e.score) - 1))
         buckets[b].value++
       }
-      pad.append(this._panel(Charts.bars(buckets, { label: 'Score histogram' })))
+      pad.append(this._panel(Charts.bars(buckets, { label: T('Score histogram') })))
     }
 
     // ---- top studios ----
     const studios = this._studioBreakdown(entries)
     if (studios.length) {
       this._section(pad, 'Top studios', 'Studios you watch the most, by number of titles in your library.')
-      pad.append(this._panel(Charts.ranked(studios.slice(0, 8), { label: 'Top studios' })))
+      pad.append(this._panel(Charts.ranked(studios.slice(0, 8), { label: T('Top studios') })))
     }
   },
 
@@ -112,7 +112,7 @@ const PageAnalytics = {
   },
 
   _noData () {
-    return U.el('div', { class: 'chart-empty', text: 'Not enough data yet.' })
+    return U.el('div', { class: 'chart-empty', text: T('Not enough data yet.') })
   },
 
   _activeDays (history) {
@@ -123,7 +123,7 @@ const PageAnalytics = {
     const days = []
     for (let i = 13; i >= 0; i--) {
       const d = new Date(Date.now() - i * 86400000)
-      days.push({ key: d.toDateString(), label: d.toLocaleDateString(undefined, { day: 'numeric' }), value: 0 })
+      days.push({ key: d.toDateString(), label: d.toLocaleDateString(I18n.locale(), { day: 'numeric' }), value: 0 })
     }
     const index = new Map(days.map(d => [d.key, d]))
     for (const h of history) {

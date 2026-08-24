@@ -1,5 +1,7 @@
 <!doctype html>
-<html lang="en">
+<!-- lang is replaced at boot by I18n.setLanguage() from the viewer's
+     preference; "hu" is the starting value because this is a Hungarian site. -->
+<html lang="hu">
 
 <head>
   <meta charset="utf-8" />
@@ -115,6 +117,12 @@
   <script src="copy.js"></script>
   <script src="js/util.js"></script>
   <script src="js/store.js"></script>
+  <!-- Preferences and translation load before every page module: the pages
+       call T() while rendering, and hu.js registers itself into I18n at
+       load time, so the order here is load-bearing. -->
+  <script src="js/prefs.js"></script>
+  <script src="js/i18n.js"></script>
+  <script src="i18n/hu.js"></script>
   <script src="js/api.js"></script>
   <script src="js/yume-api.js"></script>
   <!-- the catalogue resolver: decides whether our database or an external
@@ -149,6 +157,7 @@
   <script src="js/pages/developer.js"></script>
   <script src="js/pages/admin.js"></script>
   <script src="js/pages/settings.js"></script>
+  <script src="js/onboarding.js"></script>
   <script src="js/app.js"></script>
 </body>
 

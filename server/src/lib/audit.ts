@@ -20,6 +20,9 @@ export type AuditAction =
   // Publishing is its own act, separate from editing an episode's text: it is
   // the one that decides whether viewers can reach the thing at all.
   | 'episode.visibility' | 'anime.visibility'
+  // Catalogue text a viewer reads, written by hand. Recorded because
+  // "who changed this description and to what" is asked afterwards.
+  | 'anime.translation.create' | 'anime.translation.update' | 'anime.translation.delete'
   | 'config.flag' | 'config.setting'
   | 'webhook.create' | 'webhook.update' | 'webhook.delete'
   | 'extension.review'

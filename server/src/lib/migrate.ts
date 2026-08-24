@@ -7,6 +7,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { pool } from '../db.ts'
+import { check as checkEncoding } from './db-encoding.ts'
 
 const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), '../../../db/migrations')
 
@@ -20,20 +21,18 @@ async function migrate (): Promise<void> {
     (await pool.query<{ filename: string }>('SELECT filename FROM schema_migrations')).rows.map(row => row.filename)
   )
 
-  // A database created as SQL_ASCII silently turns every character limit into
-  // a byte limit: length('á') is 2, so a 4000-character body check rejects
-  // Hungarian or Japanese text at roughly half the documented length, with an
-  // error that points at the constraint rather than the cause. Postgres cannot
-  // change this after initdb, so it has to be caught before data exists.
-  const encoding = await pool.query<{ encoding: string }>("SELECT current_setting('server_encoding') AS encoding")
-  const serverEncoding = encoding.rows[0]?.encoding
-  if (serverEncoding !== 'UTF8') {
-    console.warn(
-      `WARNING: database encoding is ${serverEncoding}, not UTF8.\n` +
-      '  length() will count bytes instead of characters, so text limits apply at a fraction\n' +
-      '  of their documented size for non-ASCII content. This cannot be changed in place —\n' +
-      '  recreate the database with: CREATE DATABASE yume ENCODING \'UTF8\' TEMPLATE template0;'
-    )
+  // Encoding is checked here because this is the last moment it is free to
+  // fix. `applied.size === 0` means the schema is about to be created, so
+  // there is no data to migrate and recreating the database is a one-liner;
+  // once rows exist, the same defect costs a dump and restore, and refusing
+  // to start would be worse than the defect itself. See lib/db-encoding.ts.
+  const encodingVerdict = await checkEncoding(
+    async (sql, params) => (await pool.query(sql, params as unknown[])).rows,
+    applied.size === 0
+  )
+  if (encodingVerdict.level === 'fatal') {
+    await pool.end()
+    process.exit(1)
   }
 
   const files = (await readdir(migrationsDir)).filter(f => f.endsWith('.sql')).sort()

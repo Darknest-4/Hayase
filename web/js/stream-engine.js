@@ -43,6 +43,77 @@ const StreamEngine = {
     return 'unknown'
   },
 
+  // ---------------------------------------------------------------- variant
+
+  /**
+   * Sub / dub, and which languages.
+   *
+   * Viewers ask for "dub", not for "a Japanese-audio release with a Hungarian
+   * subtitle track", so the switch on the watch page is sub/dub and everything
+   * below exists to answer that one question from whatever a source happened
+   * to send.
+   *
+   * Three signals, in order of how much they can be trusted:
+   *
+   *   1. An explicit `audio` language from the source. A source that says
+   *      "audio: hu" for a Hungarian audience is telling us it is a dub.
+   *   2. Subtitle tracks. Original audio plus a subtitle track is a sub.
+   *   3. The release title. Least reliable, and last — but in practice it is
+   *      the only signal most sources give, so it cannot be skipped.
+   *
+   * Returns 'dub' | 'sub' | 'raw' | 'unknown'. 'unknown' is a real answer and
+   * is never guessed into one of the others: a wrong guess starts the wrong
+   * audio, which is worse than admitting we do not know.
+   */
+  VARIANT_PATTERNS: {
+    // Word-bounded so "Subaru" is not a subtitle and "Dubai" is not a dub.
+    dub: /\b(dub|dubbed|dual[\s.-]?audio|szinkron(os)?|magyar[\s.-]?szinkron)\b/i,
+    sub: /\b(sub|subbed|subtitled|softsub|hardsub|multi[\s.-]?sub|felirat(os)?|magyar[\s.-]?felirat)\b/i,
+    raw: /\b(raw|no[\s.-]?subs?|unsubbed)\b/i
+  },
+
+  /** Language codes we can name, mapped from the spellings sources use. */
+  LANGUAGE_ALIASES: {
+    hu: ['hu', 'hun', 'hungarian', 'magyar'],
+    en: ['en', 'eng', 'english', 'angol'],
+    ja: ['ja', 'jp', 'jpn', 'japanese', 'japán']
+  },
+
+  /** Normalise whatever spelling a source used into a two-letter code. */
+  languageCode (value) {
+    const raw = String(value ?? '').trim().toLowerCase()
+    if (!raw) return null
+    // 'hu-HU' and 'hu' are the same language.
+    const base = raw.split(/[-_]/)[0]
+    for (const [code, aliases] of Object.entries(this.LANGUAGE_ALIASES)) {
+      if (aliases.includes(raw) || aliases.includes(base)) return code
+    }
+    return base.slice(0, 3) || null
+  },
+
+  classifyVariant (raw, subtitles) {
+    const audioLang = this.languageCode(raw?.audio)
+    const subLangs = [...new Set((subtitles ?? []).map(s => this.languageCode(s.lang)).filter(Boolean))]
+    const title = String(raw?.title ?? '')
+
+    // An explicit non-Japanese audio language is a dub by definition.
+    if (audioLang && audioLang !== 'ja') return { variant: 'dub', audioLang, subLangs }
+    // Japanese audio with subtitles is a sub, whatever the title claims.
+    if (audioLang === 'ja' && subLangs.length) return { variant: 'sub', audioLang, subLangs }
+
+    // Title, in a deliberate order: "Dual Audio" releases carry both and match
+    // the dub pattern too, and someone who asked for a dub can use them, so dub
+    // is tested first. `raw` last because a title can say "raw" about one of
+    // several tracks.
+    if (this.VARIANT_PATTERNS.dub.test(title)) return { variant: 'dub', audioLang, subLangs }
+    if (this.VARIANT_PATTERNS.sub.test(title)) return { variant: 'sub', audioLang, subLangs }
+    if (this.VARIANT_PATTERNS.raw.test(title)) return { variant: 'raw', audioLang, subLangs }
+
+    // Subtitle tracks with no audio claim still mean a sub.
+    if (subLangs.length) return { variant: 'sub', audioLang, subLangs }
+    return { variant: 'unknown', audioLang, subLangs }
+  },
+
   /** Pull a resolution out of a release title when the source did not say. */
   detectQuality (title) {
     const match = /(\d{3,4})[pP]\b/.exec(String(title ?? ''))
@@ -91,20 +162,28 @@ const StreamEngine = {
     const container = raw?.container ? String(raw.container).slice(0, 60) : null
     const { playable, reason } = this.playability(kind, container)
 
+    const subtitles = Array.isArray(raw?.subtitles)
+      ? raw.subtitles.slice(0, 20)
+        .filter(s => s && typeof s.url === 'string')
+        .map(s => ({ url: String(s.url), label: String(s.label ?? 'Subtitles').slice(0, 60), lang: String(s.lang ?? '').slice(0, 12) }))
+      : []
+
+    const { variant, audioLang, subLangs } = this.classifyVariant(raw, subtitles)
+
     return {
       id: `${source?.slug ?? 'manual'}:${url.slice(0, 120)}`,
       url,
       kind,
       container,
+      // sub / dub / raw / unknown — what the watch page's switch reads
+      variant,
+      audioLang,
+      subLangs,
       // quality may arrive as a number (1080), a label ("1080p") or not at
       // all, in which case it is parsed out of the release title
       quality: Number(raw?.quality) || this.detectQuality(raw?.quality) || this.detectQuality(raw?.title),
       audio: raw?.audio ? String(raw.audio).slice(0, 40) : null,
-      subtitles: Array.isArray(raw?.subtitles)
-        ? raw.subtitles.slice(0, 20)
-          .filter(s => s && typeof s.url === 'string')
-          .map(s => ({ url: String(s.url), label: String(s.label ?? 'Subtitles').slice(0, 60), lang: String(s.lang ?? '').slice(0, 12) }))
-        : [],
+      subtitles,
       // headers a source needs are recorded but NOT applied by the browser
       // player — a <video> element cannot send custom headers. They exist for
       // the desktop client, which can.
@@ -128,13 +207,52 @@ const StreamEngine = {
   _ACCURACY_RANK: { high: 3, medium: 2, low: 1 },
 
   /**
-   * Best candidate first. Playability dominates — an unplayable stream is never
-   * worth trying — then source health, then how exactly the source matched,
-   * then quality and swarm size.
+   * How well a candidate matches what the viewer asked for.
+   *
+   * Separate from rank() so the watch page can show the same reasoning it
+   * sorts by, and so a preference can be applied without re-fetching.
+   *
+   *   2  exactly the requested variant
+   *   1  unknown variant — might be right, worth trying before a known wrong one
+   *   0  the other variant
+   *
+   * 'any' scores everything equally, which is what "no preference" has to mean
+   * for the rest of the ranking to decide.
    */
-  rank (results) {
+  variantScore (candidate, wanted) {
+    if (!wanted || wanted === 'any') return 2
+    if (candidate.variant === wanted) return 2
+    if (candidate.variant === 'unknown') return 1
+    return 0
+  },
+
+  /** Does this candidate carry the subtitle language the viewer wants? */
+  subtitleScore (candidate, wanted) {
+    if (!wanted || wanted === 'off') return 1
+    return candidate.subLangs?.includes(wanted) ? 1 : 0
+  },
+
+  /**
+   * Best candidate first.
+   *
+   * Playability dominates — an unplayable stream is never worth trying — and
+   * the viewer's sub/dub choice comes immediately after it, ahead of source
+   * health and quality. That order is the point of the preference: a 1080p
+   * subbed release is the wrong answer for someone who asked for a dub, and
+   * ranking it first would make the setting decorative.
+   */
+  rank (results, prefs = {}) {
+    const wantVariant = prefs.variant ?? null
+    const wantSubs = prefs.subtitles ?? null
     return [...results].sort((a, b) => {
       if (a.playable !== b.playable) return a.playable ? -1 : 1
+
+      const variant = this.variantScore(b, wantVariant) - this.variantScore(a, wantVariant)
+      if (variant) return variant
+
+      const subs = this.subtitleScore(b, wantSubs) - this.subtitleScore(a, wantSubs)
+      if (subs) return subs
+
       const health = (this._HEALTH_RANK[b.source.health] ?? 2) - (this._HEALTH_RANK[a.source.health] ?? 2)
       if (health) return health
       const accuracy = (this._ACCURACY_RANK[b.source.accuracy] ?? 1) - (this._ACCURACY_RANK[a.source.accuracy] ?? 1)
@@ -163,7 +281,7 @@ const StreamEngine = {
    * Ask every loaded extension for candidates. One failing extension never
    * blocks the others — its error is recorded and the rest still answer.
    */
-  async candidates (media, episode, { sources = [], extensions = [] } = {}) {
+  async candidates (media, episode, { sources = [], extensions = [], prefs = {} } = {}) {
     const query = this.buildQuery(media, episode)
     const results = []
     const errors = []
@@ -197,7 +315,7 @@ const StreamEngine = {
       }
     }
 
-    return { results: this.rank(results), errors }
+    return { results: this.rank(results, prefs), errors }
   },
 
   // ---------------------------------------------------------------- playing

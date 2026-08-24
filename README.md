@@ -23,17 +23,19 @@ URL-pasted plugins. Two ideas are inherited and kept sacred:
 │  ├─ backup.md           Backup, restore and what has not been rehearsed
 │  └─ redis.md            Why Redis is carried but not adopted
 ├─ db/
-│  ├─ migrations/         PostgreSQL 16 schema — 20 migrations, ~100
+│  ├─ migrations/         PostgreSQL 16 schema — 23 migrations, ~100
 │  │                      relations, every one commented with its reasoning
 │  └─ *.sh               Backup, restore and cron scripts (POSIX sh)
 ├─ server/                API gateway — Fastify 5 + TypeScript on Node 22
 │  ├─ src/                No build step: --experimental-strip-types
-│  └─ test/               13 suites, including the adversarial one
+│  └─ test/               17 suites, including the adversarial one
 ├─ packages/
 │  └─ design-tokens/      Design tokens shared with native surfaces
 ├─ web/                   Web client — framework-free HTML/CSS/JS SPA
 │  ├─ js/catalogue.js     Which source answers: our database, then AniList
-│  └─ test/               Engine, resolver and DOM-helper tests
+│  ├─ js/i18n.js          One text lookup: copy catalogue + translation
+│  ├─ i18n/hu.js          Hungarian dictionary, keyed by the English source
+│  └─ test/               Engine, resolver, i18n and DOM-helper tests
 ├─ .github/workflows/     CI: typecheck, tests, migrations, worker, lint
 ├─ Caddyfile              TLS termination in front of the app
 └─ docker-compose.yml     app · worker · caddy · backup · postgres
@@ -482,6 +484,95 @@ curl -X POST localhost:4000/v1/auth/register \
   -d '{"email":"you@example.com","username":"you","password":"correct-horse-9"}'
 ```
 
+## Hungarian and English
+
+The site is bilingual on one domain — the language is a setting, not an
+address. There is no `/hu/` prefix and no second deployment.
+
+**Four independent axes, not one switch.** A Hungarian viewer typically wants
+a Hungarian interface and Hungarian subtitles but *romaji* titles, because
+that is how the community refers to shows. One combined "Hungarian" toggle
+would take the titles away from them.
+
+| Setting | Controls | State |
+|---|---|---|
+| `language.ui` | buttons, menus, messages | complete, both languages |
+| `language.titles` | romaji / English / Hungarian / native | data exists for romaji |
+| `language.content` | synopses and episode text | sparse; falls back to English |
+| `playback.variant` | **sub or dub** | ranks the sources a provider offers |
+| `playback.subtitles` / `playback.audio` | preferred tracks | applied when a source declares them |
+
+Preferences live in `user_settings`, keyed **per profile** — one household can
+have a Hungarian child profile and an English adult profile on one login. The
+list of preferences is declared once, in `server/src/lib/preferences.ts`;
+`GET /v1/config` publishes it, and both the settings screen and the onboarding
+wizard render from it, so adding a preference is one entry and nothing else
+changes.
+
+### The first-run wizard
+
+Three steps, pre-answered from the browser's own language, and always
+dismissable. It triggers on *"this profile has no language preference"* — not
+on *"this account just registered"* — so accounts created before the feature
+existed get it too, and a registration finished on another device is not
+skipped. Everything is written in one request at the end, so an abandoned
+wizard cannot leave a profile half-configured.
+
+### Sub / dub
+
+`playback.variant` is a real ranking input, not a label. The stream engine
+classifies each candidate as `sub`, `dub`, `raw` or `unknown` from the audio
+language a source declares, the subtitle tracks it carries, and — last and
+least trusted — the release title. The viewer's choice outranks source health
+and resolution, because a 1080p subbed release is the wrong answer for someone
+who asked for a dub.
+
+`unknown` is a real answer and is never guessed into one of the others: a
+wrong guess starts the wrong audio. Under the player, a bar switches between
+the variants and providers actually on offer, re-ranking candidates already in
+hand rather than re-querying every extension.
+
+### Translating the catalogue
+
+The catalogue holds ~25,700 English synopses and Hungarian ones exist only
+once somebody writes them. `anime_translations` is a sparse overlay that
+starts empty — **not** `anime_titles`, which every re-import rewrites and
+which would silently discard hand-written text. Reads are a `LEFT JOIN` with
+fallback, so nothing 404s for want of a translation.
+
+Every localised response carries a `_lang` marker saying which language each
+field actually resolved to. The client uses it to say *"this description has
+not been translated yet"* rather than showing a Hungarian viewer an
+unexplained English paragraph, which reads as the site being broken.
+
+Admin → **Translations** lists what is still missing, ordered by popularity:
+translating 25,700 entries is not going to happen, translating the few hundred
+people actually open is a week of work.
+
+### Interface strings
+
+`T('Start Watching')` — the key *is* the English text, so a missing
+translation renders the English sentence rather than an identifier or a blank
+button. `T('nav.community')` still resolves through the pre-existing
+`web/copy.js` catalogue and is then translated; the two used to be separate
+systems and are now one function.
+
+### Text handling
+
+Hungarian needs the database to be UTF-8. Under `SQL_ASCII`, `lower('Á')`
+stays `'Á'`, `ILIKE` misses accented matches, and `length()` counts bytes —
+and `server/src/lib/search.ts` matches on `lower()` and `ILIKE` in all three of
+its tiers. Encoding cannot be changed after `initdb`, so it is pinned in
+`docker-compose.yml`, stated explicitly in `db/restore.sh`, and checked at
+migration time: `server/src/lib/db-encoding.ts` **refuses to create a schema**
+on a non-UTF-8 database and warns loudly on one that already has data —
+failing closed while it is free to fix, and never turning a text defect into
+an outage.
+
+Migration 0022 adds accent-folding (`tamadas` finds `támadás`), Hungarian
+stemming for translated text, and the `hu-HU-x-icu` collation for alphabetical
+order — the default sorts `Zebra` before `Álom`.
+
 ## Status & roadmap
 
 The catalogue is the source of truth for anime data; AniList, ani.zip and
@@ -491,6 +582,15 @@ arrives days after an episode does, so both `anime.visibility` and
 `episodes.visibility` default to `hidden`. See `docs/architecture.md`.
 
 Delivered:
+- [x] **Hungarian/English on one domain** — four independent language axes
+      (interface, titles, descriptions, playback), stored per profile in
+      `user_settings`; a three-step first-run wizard pre-answered from the
+      browser; a live language switch with no reload; a sub/dub and provider
+      switcher under the player; `anime_translations` as an import-proof
+      overlay with a popularity-ordered editor queue in the admin panel; and
+      UTF-8, accent-folding and Hungarian collation pinned in provisioning and
+      enforced at migration time
+
 - [x] Multiple profiles per account (Netflix-style): per-profile library,
       history, favourites, continue-watching and settings; profile picker,
       sidebar switcher and manager; backend `/v1/profiles` CRUD; expanded

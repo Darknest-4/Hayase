@@ -1,4 +1,4 @@
-/* global C, Catalogue, MutationObserver, PageW2G, Store, U, YumeAPI, document, location, window */
+/* global C, Catalogue, MutationObserver, PageW2G, Store, U, YumeAPI, document, location, window, T */
 // Watch page — modern embedded player. Progress is tracked automatically:
 // the exact second you reached is saved per profile and resumed next time,
 // history is logged the moment you start, and the episode is marked watched
@@ -19,7 +19,7 @@ const PageWatch = {
     const w2gCode = params.get('w2g') ?? window.sessionStorage.getItem('w2g-pending')
 
     if (!animeId) {
-      root.append(U.el('div', { class: 'error-state', text: 'Invalid watch link.' }))
+      root.append(U.el('div', { class: 'error-state', text: T('Invalid watch link.') }))
       return
     }
 
@@ -28,7 +28,7 @@ const PageWatch = {
     try {
       media = await Catalogue.media(animeId)
     } catch (e) {
-      root.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load anime: ' + e.message }))
+      root.replaceChildren(U.el('div', { class: 'error-state', text: T('Failed to load anime: ') + e.message }))
       return
     }
     root.replaceChildren()
@@ -55,6 +55,12 @@ const PageWatch = {
 
     // ---- two-column layout: player + content left, episode list right ----
     const left = U.el('div', { class: 'watch-main' })
+    // New episode, new sources: without clearing these the switcher would
+    // offer the previous episode's providers and switching would play it.
+    this._candidates = null
+    this._activeCandidate = null
+    this._playContext = null
+
     const side = U.el('aside', { class: 'watch-side' })
     pad.append(U.el('div', { class: 'watch-layout' }, [left, side]))
     const col = left // content below the player goes here
@@ -69,6 +75,11 @@ const PageWatch = {
       this._video = null
       this.mountSourcePicker(playerBox, media, episode)
     }
+
+    // Sub/dub and provider switch. Filled in by mountVariantBar() once the
+    // candidates are known, and left empty when there is only one of each —
+    // an empty container costs nothing and keeps the DOM order stable.
+    col.append(U.el('div', { id: 'watch-variant-bar' }))
 
     // ---- actions row under the player ----
     const watched = (Store.entry(media.id)?.progress ?? 0) >= episode
@@ -87,21 +98,21 @@ const PageWatch = {
       U.el('a', {
         class: 'btn btn-secondary btn-sm' + (episode <= 1 ? ' hidden' : ''),
         href: `#/watch/${media.id}:${episode - 1}`
-      }, [document.createTextNode('‹ Previous')]),
+      }, [document.createTextNode(T('‹ Previous'))]),
       U.el('a', {
         class: 'btn btn-secondary btn-sm' + (episode >= total ? ' hidden' : ''),
         href: `#/watch/${media.id}:${episode + 1}`
-      }, [document.createTextNode('Next ›')]),
+      }, [document.createTextNode(T('Next ›'))]),
       // Watch Together — opens the sync-room popup (feature-flagged)
       (!window.App || window.App.featureOn('watch_together'))
         ? U.el('button', {
           class: 'btn btn-secondary btn-sm w2g-open',
           onclick: () => this.openW2G()
-        }, [U.svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>', 13), document.createTextNode('Watch Together')])
+        }, [U.svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>', 13), document.createTextNode(T('Watch Together'))])
         : null,
       U.el('div', { style: 'flex-grow:1;' }),
       markBtn,
-      src ? U.el('a', { class: 'btn btn-ghost btn-sm', href: `#/watch/${media.id}:${episode}` }, [document.createTextNode('Change source')]) : null
+      src ? U.el('a', { class: 'btn btn-ghost btn-sm', href: `#/watch/${media.id}:${episode}` }, [document.createTextNode(T('Change source'))]) : null
     ]))
 
     // ---- Continue Watching card: live auto-save progress (reference style) ----
@@ -113,15 +124,15 @@ const PageWatch = {
         U.el('div', { class: 'cw-head' }, [
           U.el('div', { class: 'cw-title' }, [
             U.svg('<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>', 15),
-            document.createTextNode('Continue Watching')
+            document.createTextNode(T('Continue Watching'))
           ]),
           U.el('div', { class: 'cw-right' }, [
-            U.el('span', { class: 'cw-right-label', text: 'Your progress' }),
+            U.el('span', { class: 'cw-right-label', text: T('Your progress') }),
             U.el('b', { id: 'cw-pct', text: Math.round(frac * 100) + '%' })
           ])
         ]),
         U.el('div', { class: 'cw-sub' }, [
-          U.el('span', { text: 'Automatically saved. You’ll resume right where you left off.' }),
+          U.el('span', { text: T('Automatically saved. You’ll resume right where you left off.') }),
           U.el('span', { id: 'cw-time', class: 'cw-time', text: resume ? `${U.fmtTime(resume)} / ${U.fmtTime(estTotal)}` : '' })
         ]),
         U.el('div', { class: 'cw-segments', id: 'cw-segments' },
@@ -143,7 +154,7 @@ const PageWatch = {
       if (ep.runtime || media.duration) chips.append(metaChip('<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>', `${ep.runtime ?? media.duration} min`))
       if (media.format) chips.append(metaChip('<rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/>', U.format(media)))
       if (media.isAdult) chips.append(U.el('span', { class: 'epmeta-badge', text: '18+' }))
-      if (ep.filler) chips.append(U.el('span', { class: 'epmeta-badge filler', text: 'Filler' }))
+      if (ep.filler) chips.append(U.el('span', { class: 'epmeta-badge filler', text: T('Filler') }))
 
       const summary = ep.summary ? U.el('div', { class: 'watch-ep-summary clamped', text: ep.summary }) : null
       const info = U.el('div', { class: 'watch-ep-info' }, [
@@ -157,7 +168,7 @@ const PageWatch = {
               const open = summary.classList.toggle('clamped')
               e.currentTarget.textContent = open ? 'Show more ⌄' : 'Show less ⌃'
             }
-          }, [document.createTextNode('Show more ⌄')])
+          }, [document.createTextNode(T('Show more ⌄'))])
           : null
       ])
       const anchor = col.querySelector('#cw-card') ?? col.querySelector('.watch-actions')
@@ -172,7 +183,7 @@ const PageWatch = {
   mountEpisodeList (side, media, episode, total, keepSrc) {
     const panel = U.el('div', { class: 'wep-panel' }, [
       U.el('div', { class: 'wep-head' }, [
-        U.el('h3', { text: 'Episodes' }),
+        U.el('h3', { text: T('Episodes') }),
         U.el('span', { class: 'wep-count', text: `${total}` })
       ])
     ])
@@ -213,6 +224,133 @@ const PageWatch = {
     Catalogue.episodes(media).then(meta => { if (meta?.length) renderRows(meta) }).catch(() => {})
   },
 
+  // ---- sub / dub + provider switcher ----
+  //
+  // Anime is served by several providers at once, and the same episode
+  // commonly exists as a sub and as a dub. Both are one decision to a viewer
+  // — "watch this, this way" — so they sit in one bar under the player
+  // instead of being buried in settings.
+  //
+  // It re-ranks and replays from the candidates already in hand rather than
+  // asking every extension again, so switching is instant. The sub/dub choice
+  // is also written back to preferences: someone who switches to dub here
+  // almost always wants dub next time too, and making them state it twice is
+  // the kind of small rudeness that adds up.
+
+  /** Variants actually on offer for this episode, in a stable order. */
+  _variantsAvailable () {
+    const order = ['sub', 'dub', 'raw', 'unknown']
+    const present = new Set((this._candidates ?? []).map(c => c.variant))
+    return order.filter(v => present.has(v))
+  },
+
+  /** Providers actually on offer, best-ranked first. */
+  _providersAvailable () {
+    const seen = new Map()
+    for (const candidate of this._candidates ?? []) {
+      if (!seen.has(candidate.source.slug)) seen.set(candidate.source.slug, candidate.source)
+    }
+    return [...seen.values()]
+  },
+
+  VARIANT_LABELS: { sub: 'Sub', dub: 'Dub', raw: 'Raw', unknown: 'Unknown' },
+
+  mountVariantBar (media, episode) {
+    const host = document.getElementById('watch-variant-bar')
+    if (!host) return
+
+    const variants = this._variantsAvailable()
+    const providers = this._providersAvailable()
+
+    // One provider offering one variant is not a choice; showing a switch with
+    // a single option makes the player look busier without giving the viewer
+    // anything to do.
+    if (variants.length < 2 && providers.length < 2) { host.replaceChildren(); return }
+
+    const active = this._activeCandidate
+    const wanted = window.Prefs?.get('playback.variant') ?? 'any'
+    const row = []
+
+    if (variants.length > 1) {
+      row.push(U.el('div', { class: 'vbar-group' }, [
+        U.el('span', { class: 'vbar-label', text: T('Version') }),
+        U.el('div', { class: 'vbar-chips' }, variants.map(variant => {
+          const on = active ? active.variant === variant : wanted === variant
+          const btn = U.el('button', {
+            class: 'vbar-chip' + (on ? ' active' : ''),
+            'aria-pressed': on ? 'true' : 'false',
+            title: T(this.VARIANT_LABELS[variant])
+          }, [document.createTextNode(T(this.VARIANT_LABELS[variant]))])
+          btn.addEventListener('click', () => this.switchTo({ variant }, media, episode))
+          return btn
+        }))
+      ]))
+    }
+
+    if (providers.length > 1) {
+      row.push(U.el('div', { class: 'vbar-group' }, [
+        U.el('span', { class: 'vbar-label', text: T('Provider') }),
+        U.el('div', { class: 'vbar-chips' }, providers.map(source => {
+          const on = active?.source.slug === source.slug
+          const btn = U.el('button', {
+            class: 'vbar-chip' + (on ? ' active' : ''),
+            'aria-pressed': on ? 'true' : 'false',
+            title: source.name
+          }, [document.createTextNode(source.name)])
+          btn.addEventListener('click', () => this.switchTo({ provider: source.slug }, media, episode))
+          return btn
+        }))
+      ]))
+    }
+
+    host.replaceChildren(U.el('div', { class: 'vbar' }, row))
+  },
+
+  /**
+   * Play the best candidate matching a narrowed choice.
+   *
+   * Narrowing can produce nothing playable — a provider may only offer a dub,
+   * or a variant may only exist behind a source this browser cannot play. That
+   * is reported and the current stream is left alone, rather than stopping
+   * playback to show an error.
+   */
+  async switchTo (choice, media, episode) {
+    const engine = window.StreamEngine
+    const context = this._playContext
+    if (!engine || !context || !this._candidates?.length) return
+
+    let pool = this._candidates
+    if (choice.variant) pool = pool.filter(c => c.variant === choice.variant)
+    if (choice.provider) pool = pool.filter(c => c.source.slug === choice.provider)
+
+    const playable = pool.filter(c => c.playable)
+    if (!playable.length) {
+      U.toast(T('Nothing playable here — keeping the current source'), 'error')
+      return
+    }
+
+    // Remember a sub/dub switch; a provider switch is a one-off and is not
+    // worth turning into a standing preference.
+    if (choice.variant) window.Prefs?.set({ 'playback.variant': choice.variant })
+
+    const ranked = engine.rank(playable, {
+      variant: choice.variant ?? window.Prefs?.get('playback.variant'),
+      subtitles: window.Prefs?.get('playback.subtitles')
+    })
+
+    try {
+      const { candidate } = await engine.play(context.video, ranked, {
+        onFallback: (failed, reason) => console.warn('[stream] falling back from', failed.source.slug, '—', reason)
+      })
+      this._activeCandidate = candidate
+      this.mountVariantBar(media, episode)
+      U.toast(`${T('Playing from')} ${candidate.source.name}`)
+    } catch (error) {
+      U.toast(T('That source would not start — keeping the current one'), 'error')
+      console.warn('[stream] switch failed:', error.message)
+    }
+  },
+
   /**
    * Build the candidate list for this episode and hand it to the engine.
    *
@@ -224,7 +362,7 @@ const PageWatch = {
     const engine = window.StreamEngine
     const manual = String(src ?? '')
       .split('\n').map(u => u.trim()).filter(Boolean)
-      .map(url => ({ url, title: 'Manual source', source: { slug: 'manual', name: 'Manual URL', accuracy: 'low', health: 'unknown' } }))
+      .map(url => ({ url, title: T('Manual source'), source: { slug: 'manual', name: 'Manual URL', accuracy: 'low', health: 'unknown' } }))
 
     if (!engine) { // engine unavailable → behave like the old direct player
       if (manual[0]) { video.src = manual[0].url; video.load() }
@@ -233,20 +371,36 @@ const PageWatch = {
 
     // only extensions that are actually loaded in the sandbox can be asked
     const loaded = (window.ExtensionHost?.loaded?.() ?? []).map(slug => ({ slug }))
-    const { results, errors } = await engine.candidates(media, episode, { sources: manual, extensions: loaded })
+
+    // The viewer's sub/dub and subtitle-language choice reaches the engine
+    // here, where it decides the order candidates are tried in. Without it the
+    // setting would be a label with nothing behind it.
+    const prefs = {
+      variant: window.Prefs?.get('playback.variant') ?? 'any',
+      subtitles: window.Prefs?.get('playback.subtitles') ?? null
+    }
+
+    const { results, errors } = await engine.candidates(media, episode, { sources: manual, extensions: loaded, prefs })
     for (const error of errors) console.warn('[stream] extension failed:', error)
 
-    if (!results.length) { giveUp('No sources were offered for this episode.'); return }
+    if (!results.length) { giveUp(T('No sources were offered for this episode.')); return }
+
+    // Kept so the switcher can re-rank and replay without asking every
+    // extension again — switching from sub to dub should be instant.
+    this._candidates = results
+    this._playContext = { video, media, episode, giveUp }
+    this.mountVariantBar(media, episode)
 
     try {
       const { candidate } = await engine.play(video, results, {
         onFallback: (failed, reason) => {
           console.warn('[stream] falling back from', failed.source.slug, '—', reason)
-          U.toast(`Source failed (${failed.source.name}) — trying the next one`, 'error')
+          U.toast(`${T('Source failed')} (${failed.source.name}) — ${T('trying the next one')}`, 'error')
         }
       })
       this._activeCandidate = candidate
-      if (candidate.source.slug !== 'manual') U.toast(`Playing from ${candidate.source.name}`)
+      this.mountVariantBar(media, episode)
+      if (candidate.source.slug !== 'manual') U.toast(`${T('Playing from')} ${candidate.source.name}`)
     } catch (error) {
       // every candidate was tried; show the reason from the last attempt
       const unplayable = (error.attempts ?? []).filter(a => !a.candidate.playable)
@@ -263,11 +417,11 @@ const PageWatch = {
       class: 'input',
       rows: 2,
       style: 'width:100%;resize:vertical;font-family:inherit;',
-      placeholder: 'https://… direct video stream (mp4 / webm) — one per line to enable automatic fallback'
+      placeholder: T('https://… direct video stream (mp4 / webm) — one per line to enable automatic fallback')
     })
     const play = () => {
       const urls = input.value.split('\n').map(u => u.trim()).filter(Boolean)
-      if (!urls.length) return U.toast('Paste a stream URL first', 'error')
+      if (!urls.length) return U.toast(T('Paste a stream URL first'), 'error')
       window.location.hash = `#/watch/${media.id}:${episode}?src=${encodeURIComponent(urls.join('\n'))}`
     }
     input.addEventListener('keydown', e => { if (e.key === 'Enter') play() })
@@ -276,12 +430,12 @@ const PageWatch = {
 
     box.append(U.el('div', { class: 'player-pick' }, [
       U.el('div', { class: 'player-pick-inner' }, [
-        U.el('h3', { style: 'margin:0 0 .35rem;font-weight:800;', text: 'Pick a source' }),
-        U.el('p', { style: 'margin:0 0 .9rem;color:var(--fg-faint);font-size:.85rem;', text: 'Paste a direct stream URL. Add more on separate lines and the player falls back automatically if one fails. Installed extensions supply sources here too.' }),
-        U.el('div', { style: 'display:flex;gap:.6rem;' }, [input, U.el('button', { class: 'btn btn-primary', onclick: play }, [document.createTextNode('Play')])]),
+        U.el('h3', { style: 'margin:0 0 .35rem;font-weight:800;', text: T('Pick a source') }),
+        U.el('p', { style: 'margin:0 0 .9rem;color:var(--fg-faint);font-size:.85rem;', text: T('Paste a direct stream URL. Add more on separate lines and the player falls back automatically if one fails. Installed extensions supply sources here too.') }),
+        U.el('div', { style: 'display:flex;gap:.6rem;' }, [input, U.el('button', { class: 'btn btn-primary', onclick: play }, [document.createTextNode(T('Play'))])]),
         streams.length
           ? U.el('div', { style: 'margin-top:1rem;' }, [
-            U.el('div', { style: 'font-size:.75rem;font-weight:800;color:var(--fg-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.4rem;', text: 'Official streams' }),
+            U.el('div', { style: 'font-size:.75rem;font-weight:800;color:var(--fg-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.4rem;', text: T('Official streams') }),
             U.el('div', { class: 'badges' }, streams.map(link =>
               U.el('a', { class: 'badge badge-theme', href: link.url, target: '_blank', rel: 'noopener', text: link.site })))
           ])
@@ -308,11 +462,11 @@ const PageWatch = {
     const muteBtn = U.el('button', { class: 'player-btn', 'aria-label': 'Mute' })
     muteBtn.append(U.svg('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>', 18))
     const speedBtn = U.el('button', { class: 'player-btn player-speed', text: '1×', 'aria-label': 'Playback speed' })
-    const pipBtn = U.el('button', { class: 'player-btn', 'aria-label': 'Picture in picture', title: 'Picture in picture' })
+    const pipBtn = U.el('button', { class: 'player-btn', 'aria-label': 'Picture in picture', title: T('Picture in picture') })
     pipBtn.append(U.svg('<rect x="2" y="4" width="20" height="16" rx="2"/><rect x="12" y="12" width="8" height="6" rx="1" fill="currentColor" stroke="none"/>', 18))
-    const fsBtn = U.el('button', { class: 'player-btn', 'aria-label': 'Fullscreen', title: 'Fullscreen' })
+    const fsBtn = U.el('button', { class: 'player-btn', 'aria-label': 'Fullscreen', title: T('Fullscreen') })
     fsBtn.append(U.svg('<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>', 18))
-    const skipBtn = U.el('button', { class: 'btn btn-primary btn-sm player-skip hidden', text: 'Skip intro' })
+    const skipBtn = U.el('button', { class: 'btn btn-primary btn-sm player-skip hidden', text: T('Skip intro') })
 
     const controls = U.el('div', { class: 'player-controls' }, [
       seekBar,
@@ -396,9 +550,9 @@ const PageWatch = {
     const giveUp = detail => {
       shell.replaceChildren(U.el('div', { class: 'player-pick' }, [
         U.el('div', { class: 'player-pick-inner', style: 'text-align:center;' }, [
-          U.el('p', { style: 'color:var(--danger);font-weight:700;', text: 'Could not play this episode from any available source.' }),
+          U.el('p', { style: 'color:var(--danger);font-weight:700;', text: T('Could not play this episode from any available source.') }),
           detail ? U.el('p', { style: 'color:var(--fg-faint);font-size:.85rem;margin:.3rem 0 .9rem;', text: detail }) : null,
-          U.el('a', { class: 'btn btn-secondary btn-sm', href: `#/watch/${media.id}:${episode}` }, [document.createTextNode('Pick another source')])
+          U.el('a', { class: 'btn btn-secondary btn-sm', href: `#/watch/${media.id}:${episode}` }, [document.createTextNode(T('Pick another source'))])
         ])
       ]))
     }
@@ -499,7 +653,7 @@ const PageWatch = {
 
     pipBtn.addEventListener('click', () => {
       if (document.pictureInPictureElement) document.exitPictureInPicture()
-      else video.requestPictureInPicture?.().catch(() => U.toast('Picture-in-picture unavailable', 'error'))
+      else video.requestPictureInPicture?.().catch(() => U.toast(T('Picture-in-picture unavailable'), 'error'))
     })
     fsBtn.addEventListener('click', () => {
       if (document.fullscreenElement) document.exitFullscreen()
@@ -546,11 +700,11 @@ const PageWatch = {
     const countLabel = U.el('span', { text: autoplay ? 'Autoplaying in 5…' : '' })
     const card = U.el('div', { class: 'player-upnext' }, [
       U.el('div', { class: 'player-upnext-inner' }, [
-        U.el('div', { class: 'player-upnext-label', text: 'Up next' }),
+        U.el('div', { class: 'player-upnext-label', text: T('Up next') }),
         U.el('div', { class: 'player-upnext-title', text: `Episode ${episode + 1}` }),
         U.el('div', { style: 'display:flex;gap:.6rem;justify-content:center;margin-top:1rem;flex-wrap:wrap;' }, [
-          U.el('button', { class: 'btn btn-primary', onclick: go }, [U.svg(C.PLAY, 14), document.createTextNode(' Play next')]),
-          U.el('button', { class: 'btn btn-ghost', onclick: () => card.remove() }, [document.createTextNode('Dismiss')])
+          U.el('button', { class: 'btn btn-primary', onclick: go }, [U.svg(C.PLAY, 14), document.createTextNode(T(' Play next'))]),
+          U.el('button', { class: 'btn btn-ghost', onclick: () => card.remove() }, [document.createTextNode(T('Dismiss'))])
         ]),
         autoplay ? U.el('div', { class: 'player-upnext-count' }, [countLabel]) : null
       ])
@@ -613,7 +767,7 @@ const PageWatch = {
 
     const close = () => backdrop.remove()
     const head = U.el('div', { class: 'w2g-panel-head' }, [
-      U.el('h3', { text: 'Watch Together' }),
+      U.el('h3', { text: T('Watch Together') }),
       U.el('button', { class: 'w2g-close', text: '×', onclick: close })
     ])
     const bodyEl = U.el('div', { class: 'w2g-panel-body' })
@@ -647,10 +801,10 @@ const PageWatch = {
           this._roomView(bodyEl, room.code, close)
         } catch (e) { U.toast(e.message, 'error'); createBtn.disabled = false }
       }
-    }, [document.createTextNode('Create a room')])
+    }, [document.createTextNode(T('Create a room'))])
 
     // join
-    const codeInput = U.el('input', { class: 'input', placeholder: 'Room code', maxlength: '16', style: 'flex-grow:1;min-width:0;' })
+    const codeInput = U.el('input', { class: 'input', placeholder: T('Room code'), maxlength: '16', style: 'flex-grow:1;min-width:0;' })
     const joinBtn = U.el('button', {
       class: 'btn btn-secondary',
       onclick: async () => {
@@ -658,13 +812,13 @@ const PageWatch = {
         if (!code) return
         try { await this.joinW2G(code); this._roomView(bodyEl, code, close) } catch (e) { U.toast(e.message, 'error') }
       }
-    }, [document.createTextNode('Join')])
+    }, [document.createTextNode(T('Join'))])
     codeInput.addEventListener('keydown', e => { if (e.key === 'Enter') joinBtn.click() })
 
     bodyEl.append(
-      U.el('p', { class: 'list-row-sub', style: 'margin:0 0 1rem;', text: 'Watch this episode in sync with friends — play, pause and seeks stay together.' }),
+      U.el('p', { class: 'list-row-sub', style: 'margin:0 0 1rem;', text: T('Watch this episode in sync with friends — play, pause and seeks stay together.') }),
       createBtn,
-      U.el('div', { class: 'w2g-or', text: 'or' }),
+      U.el('div', { class: 'w2g-or', text: T('or') }),
       U.el('div', { style: 'display:flex;gap:.5rem;' }, [codeInput, joinBtn])
     )
   },
@@ -678,16 +832,16 @@ const PageWatch = {
 
     bodyEl.append(
       U.el('div', { class: 'w2g-room-code' }, [
-        U.el('span', { class: 'list-row-sub', text: 'Room code' }),
+        U.el('span', { class: 'list-row-sub', text: T('Room code') }),
         U.el('code', { text: code })
       ]),
-      U.el('p', { class: 'list-row-sub', style: 'margin:.4rem 0;' }, [viewers, document.createTextNode(' watching now')]),
+      U.el('p', { class: 'list-row-sub', style: 'margin:.4rem 0;' }, [viewers, document.createTextNode(T(' watching now'))]),
       U.el('div', { style: 'display:flex;gap:.5rem;flex-wrap:wrap;margin:.6rem 0;' }, [
-        U.el('button', { class: 'btn btn-secondary btn-sm', onclick: () => navigator.clipboard?.writeText(code).then(() => U.toast('Code copied')) }, [document.createTextNode('Copy code')]),
-        U.el('button', { class: 'btn btn-secondary btn-sm', onclick: () => navigator.clipboard?.writeText(shareUrl).then(() => U.toast('Invite link copied')) }, [document.createTextNode('Copy invite link')]),
-        U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => { PageW2G.disconnect(); this._wiredRoom = null; this.refreshRoomBadge(); this._lobbyView(bodyEl, close) } }, [document.createTextNode('Leave')])
+        U.el('button', { class: 'btn btn-secondary btn-sm', onclick: () => navigator.clipboard?.writeText(code).then(() => U.toast(T('Code copied'))) }, [document.createTextNode(T('Copy code'))]),
+        U.el('button', { class: 'btn btn-secondary btn-sm', onclick: () => navigator.clipboard?.writeText(shareUrl).then(() => U.toast(T('Invite link copied'))) }, [document.createTextNode(T('Copy invite link'))]),
+        U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => { PageW2G.disconnect(); this._wiredRoom = null; this.refreshRoomBadge(); this._lobbyView(bodyEl, close) } }, [document.createTextNode(T('Leave'))])
       ]),
-      U.el('div', { class: 'detail-section-title', style: 'margin:.6rem 0 .3rem;font-size:.8rem;', text: 'Activity' }),
+      U.el('div', { class: 'detail-section-title', style: 'margin:.6rem 0 .3rem;font-size:.8rem;', text: T('Activity') }),
       feed
     )
 
@@ -714,7 +868,7 @@ const PageWatch = {
     const menu = U.el('div', { class: 'player-menu' })
     menu.addEventListener('click', e => e.stopPropagation())
 
-    menu.append(U.el('div', { class: 'player-menu-label', text: 'Speed' }))
+    menu.append(U.el('div', { class: 'player-menu-label', text: T('Speed') }))
     const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2]
     const speedRow = U.el('div', { class: 'player-menu-speeds' }, speeds.map(s =>
       U.el('button', {
@@ -730,7 +884,7 @@ const PageWatch = {
 
     const autoSkip = Store.settings().autoSkip ?? false
     menu.append(U.el('div', { class: 'player-menu-row' }, [
-      U.el('span', { text: 'Auto-skip intro / outro' }),
+      U.el('span', { text: T('Auto-skip intro / outro') }),
       U.el('label', { class: 'switch' }, [
         U.el('input', { type: 'checkbox', ...(autoSkip ? { checked: '' } : {}), onchange: e => Store.saveSettings({ autoSkip: e.target.checked }) }),
         U.el('span', { class: 'slider' })

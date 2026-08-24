@@ -3,6 +3,8 @@
 
 import { pool, query, queryOne } from '../db.ts'
 import { SEARCH_SORTS, recordSearch, searchAnime, suggest } from '../lib/search.ts'
+import { localiseAnime, localiseEpisode } from '../lib/localise.ts'
+import { requestLanguage, coerce } from '../lib/preferences.ts'
 
 import type { SearchFilters } from '../lib/search.ts'
 
@@ -22,6 +24,26 @@ import type { FastifyPluginAsync } from 'fastify'
  * exist (date < text).
  */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * Which language this request wants, and how it wants titles written.
+ *
+ * Precedence is explicit query parameter, then Accept-Language, then the site
+ * default. The viewer's stored preference is applied by the client, which
+ * sends it as ?lang= after a switch — the server does not read user_settings
+ * on catalogue reads, because these endpoints are public and cacheable and a
+ * per-viewer database lookup on every card would undo that.
+ */
+function localeOf (request: { headers: Record<string, unknown>, query: unknown }): { language: 'hu' | 'en', titles: string } {
+  const q = (request.query ?? {}) as { lang?: string, titles?: string }
+  return {
+    language: requestLanguage({
+      explicit: q.lang ?? null,
+      header: (request.headers['accept-language'] as string | undefined) ?? null
+    }),
+    titles: (coerce('language.titles', q.titles) as string) ?? 'romaji'
+  }
+}
 
 const SORTS = {
   popularity: { column: 'a.popularity', dir: 'DESC', nulls: 'LAST', cast: 'numeric' },
@@ -51,9 +73,14 @@ interface BrowseQuery {
  * AniList id to a Yume id and then fetching the record was two round trips for
  * the single most-loaded screen in the app.
  */
-async function animeDetail (id: string): Promise<Record<string, unknown> | undefined> {
+async function animeDetail (
+  id: string,
+  locale: { language: 'hu' | 'en', titles: string } = { language: 'hu', titles: 'romaji' }
+): Promise<Record<string, unknown> | undefined> {
   const anime = await queryOne<Record<string, unknown>>(
     `SELECT a.*,
+        tr.title    AS title_hu,
+        tr.synopsis AS synopsis_hu,
         (SELECT jsonb_object_agg(t.kind, t.title) FROM anime_titles t WHERE t.anime_id = a.id) AS titles,
         (SELECT coalesce(jsonb_agg(s.synonym), '[]') FROM anime_synonyms s WHERE s.anime_id = a.id) AS synonyms,
         (SELECT coalesce(jsonb_agg(g.name ORDER BY g.name), '[]') FROM anime_genres ag JOIN genres g ON g.id = ag.genre_id WHERE ag.anime_id = a.id) AS genres,
@@ -64,12 +91,25 @@ async function animeDetail (id: string): Promise<Record<string, unknown> | undef
         (SELECT coalesce(jsonb_agg(jsonb_build_object('kind', i.kind, 'key', i.object_key, 'blurhash', i.blurhash, 'color', i.dominant_color)), '[]')
            FROM anime_images i WHERE i.anime_id = a.id AND i.is_primary) AS images,
         (SELECT to_jsonb(m) - 'anime_id' FROM anime_mappings m WHERE m.anime_id = a.id) AS mappings
-       FROM anime a WHERE a.id = $1 AND a.visibility <> 'hidden'`,
-    [id]
+       FROM anime a
+       LEFT JOIN anime_translations tr
+              ON tr.anime_id = a.id AND tr.language = $2 AND tr.approved
+      WHERE a.id = $1 AND a.visibility <> 'hidden'`,
+    [id, locale.language]
   )
+  if (!anime) return anime
   // The tsvector is an implementation detail of search, not part of the record.
-  if (anime) delete anime.search
-  return anime
+  delete anime.search
+
+  // The title forms live in the `titles` jsonb the query above builds; lift
+  // the three the resolver knows about so it does not have to know the shape.
+  const titles = (anime.titles ?? {}) as Record<string, string>
+  return localiseAnime({
+    ...anime,
+    title_romaji: titles.romaji ?? titles.preferred ?? null,
+    title_english: titles.english ?? null,
+    title_native: titles.native ?? null
+  }, locale)
 }
 
 const routes: FastifyPluginAsync = async fastify => {
@@ -360,7 +400,7 @@ const routes: FastifyPluginAsync = async fastify => {
     if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
     if (!full) return row
 
-    const anime = await animeDetail(row.id)
+    const anime = await animeDetail(row.id, localeOf(request))
     // The row existed a statement ago; if it does not now it was hidden or
     // deleted between the two, which is a 404 like any other miss.
     if (!anime) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
@@ -411,7 +451,7 @@ const routes: FastifyPluginAsync = async fastify => {
     schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const anime = await animeDetail(id)
+    const anime = await animeDetail(id, localeOf(request))
     if (!anime) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
     return anime
   })
@@ -442,16 +482,22 @@ const routes: FastifyPluginAsync = async fastify => {
     const exists = await queryOne("SELECT 1 FROM anime WHERE id = $1 AND visibility <> 'hidden'", [id])
     if (!exists) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
 
+    const locale = localeOf(request)
     const [data, counts] = await Promise.all([
       query(
-        `SELECT id, number, absolute_number, title, synopsis, thumbnail_key,
-                air_date, duration, is_filler, is_recap
-         FROM episodes WHERE anime_id = $1 AND visibility = 'public' ORDER BY number`,
-        [id]
+        `SELECT e.id, e.number, e.absolute_number, e.title, e.synopsis, e.thumbnail_key,
+                e.air_date, e.duration, e.is_filler, e.is_recap,
+                tr.title    AS title_hu,
+                tr.synopsis AS synopsis_hu
+         FROM episodes e
+         LEFT JOIN episode_translations tr
+                ON tr.episode_id = e.id AND tr.language = $2 AND tr.approved
+         WHERE e.anime_id = $1 AND e.visibility = 'public' ORDER BY e.number`,
+        [id, locale.language]
       ),
       queryOne<{ total: string }>('SELECT count(*)::int AS total FROM episodes WHERE anime_id = $1', [id])
     ])
-    return { data, total: Number(counts?.total ?? 0) }
+    return { data: data.map(row => localiseEpisode(row, locale.language)), total: Number(counts?.total ?? 0) }
   })
 
   fastify.get('/:id/relations', async (request, reply) => {

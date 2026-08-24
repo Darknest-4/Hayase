@@ -1,4 +1,4 @@
-/* global window, document, U, C, Catalogue, Store */
+/* global window, document, U, C, Catalogue, Store, T, I18n */
 // Anime detail page — faithful to the original Hayase layout:
 // content scrolls over the global banner; cover bottom-aligned next to a
 // huge title; chips tinted with the cover's dominant color (score chip
@@ -17,11 +17,11 @@ const PageAnime = {
     try {
       media = await Catalogue.media(id)
     } catch (e) {
-      root.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load anime: ' + e.message }))
+      root.replaceChildren(U.el('div', { class: 'error-state', text: T('Failed to load anime: ') + e.message }))
       return
     }
     if (!media) {
-      root.replaceChildren(U.el('div', { class: 'empty-state', text: 'Anime not found.' }))
+      root.replaceChildren(U.el('div', { class: 'empty-state', text: T('Anime not found.') }))
       return
     }
 
@@ -69,12 +69,24 @@ const PageAnime = {
           U.svg('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="currentColor" stroke="none"/>', 13),
           document.createTextNode((media.averageScore / 10).toFixed(2))
         ]),
-        media.favourites ? U.el('span', { class: 'score-favs', text: `${media.favourites.toLocaleString()} favourites` }) : null
+        media.favourites ? U.el('span', { class: 'score-favs', text: `${media.favourites.toLocaleString(I18n.locale())} favourites` }) : null
       ])
       : null
 
     const descText = U.plainDesc(media.description)
     const desc = U.el('div', { class: 'detail-desc clamped', text: descText })
+
+    // Say so when the description is not in the language the viewer asked for.
+    //
+    // 25,703 synopses are English and a Hungarian one exists only once somebody
+    // writes it. An unexplained English paragraph on a Hungarian site reads as
+    // the site being broken; the same paragraph labelled as an untranslated one
+    // reads as what it is, and costs one line to say.
+    const wantLang = window.Prefs?.get('language.content') ?? 'hu'
+    const gotLang = media._lang?.synopsis ?? null
+    const descNote = descText && gotLang && gotLang !== wantLang && gotLang !== 'unknown'
+      ? U.el('p', { class: 'detail-desc-note', text: T('This description has not been translated yet.') })
+      : null
     const moreBtn = descText.length > 220
       ? U.el('button', {
         class: 'showmore',
@@ -82,7 +94,7 @@ const PageAnime = {
           const clamped = desc.classList.toggle('clamped')
           e.currentTarget.textContent = clamped ? 'Show more ⌄' : 'Show less ⌃'
         }
-      }, [document.createTextNode('Show more ⌄')])
+      }, [document.createTextNode(T('Show more ⌄'))])
       : null
 
     wrap.append(U.el('div', { class: 'detail-hero-row' }, [
@@ -92,6 +104,7 @@ const PageAnime = {
         secondary ? U.el('h2', { class: 'detail-secondary', style: 'margin-top:.1rem;', text: secondary }) : null,
         starRow,
         chips,
+        descNote,
         desc,
         moreBtn
       ])
@@ -147,10 +160,10 @@ const PageAnime = {
       U.svg('<path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>', 15),
       inList ? 'On your list' : 'Add to Planning',
       e => {
-        if (Store.entry(media.id)) return U.toast('Already on your list')
+        if (Store.entry(media.id)) return U.toast(T('Already on your list'))
         Store.saveEntry(media, { status: 'PLANNING' })
         e.currentTarget.classList.add('active')
-        U.toast('Added to Planning')
+        U.toast(T('Added to Planning'))
         window.App.navigate()
       },
       inList
@@ -162,7 +175,7 @@ const PageAnime = {
       'Share',
       () => {
         navigator.clipboard?.writeText(`https://hayase.watch/anime/${media.id}`)
-          .then(() => U.toast('Link copied'))
+          .then(() => U.toast(T('Link copied')))
       }
     ))
 
@@ -180,10 +193,10 @@ const PageAnime = {
     // catalogue-only title, and pointing anilist.co at that builds a dead link.
     const anilistId = media.anilistId ?? (typeof media.id === 'number' ? media.id : null)
     if (anilistId) {
-      actions.append(U.el('a', { class: 'detail-icon-btn', title: 'AniList', href: `https://anilist.co/anime/${anilistId}`, target: '_blank', rel: 'noopener', text: 'AL' }))
+      actions.append(U.el('a', { class: 'detail-icon-btn', title: T('AniList'), href: `https://anilist.co/anime/${anilistId}`, target: '_blank', rel: 'noopener', text: T('AL') }))
     }
     if (media.idMal) {
-      actions.append(U.el('a', { class: 'detail-icon-btn', title: 'MyAnimeList', href: `https://myanimelist.net/anime/${media.idMal}`, target: '_blank', rel: 'noopener', text: 'MAL' }))
+      actions.append(U.el('a', { class: 'detail-icon-btn', title: T('MyAnimeList'), href: `https://myanimelist.net/anime/${media.idMal}`, target: '_blank', rel: 'noopener', text: T('MAL') }))
     }
 
     wrap.append(actions)
@@ -239,7 +252,7 @@ const PageAnime = {
     const air = media.nextAiringEpisode
     if (air?.airingAt) {
       side.append(U.el('div', { class: 'side-card side-airing' }, [
-        U.el('div', { class: 'side-airing-label', text: 'Next episode' }),
+        U.el('div', { class: 'side-airing-label', text: T('Next episode') }),
         U.el('div', { class: 'side-airing-ep', text: `Episode ${air.episode}` }),
         U.el('div', { class: 'side-airing-time', text: U.relTime(new Date(air.airingAt * 1000)) })
       ]))
@@ -261,12 +274,12 @@ const PageAnime = {
       ['Source', prettify(media.source)],
       ['Country', media.countryOfOrigin],
       ['Mean score', media.meanScore ? media.meanScore + '%' : null],
-      ['Popularity', media.popularity ? media.popularity.toLocaleString() : null],
-      ['Favourites', media.favourites ? media.favourites.toLocaleString() : null]
+      ['Popularity', media.popularity ? media.popularity.toLocaleString(I18n.locale()) : null],
+      ['Favourites', media.favourites ? media.favourites.toLocaleString(I18n.locale()) : null]
     ].filter(([, v]) => v)
 
     side.append(U.el('div', { class: 'side-card' }, [
-      U.el('h3', { class: 'side-card-title', text: 'Information' }),
+      U.el('h3', { class: 'side-card-title', text: T('Information') }),
       U.el('div', { class: 'side-rows' }, rows.map(([label, value]) =>
         U.el('div', { class: 'side-row' }, [
           U.el('span', { class: 'side-row-label', text: label }),
@@ -280,18 +293,18 @@ const PageAnime = {
       const done = entry.progress ?? 0
       const pct = Math.min(100, Math.round(done / media.episodes * 100))
       side.append(U.el('div', { class: 'side-card' }, [
-        U.el('h3', { class: 'side-card-title', text: 'Your Progress' }),
+        U.el('h3', { class: 'side-card-title', text: T('Your Progress') }),
         U.el('div', { class: 'side-progress' }, [
           U.el('div', { class: 'side-ring', style: `--pct:${pct};` }, [
             U.el('div', { class: 'side-ring-inner' }, [
               U.el('b', { text: `${done} of ${media.episodes}` }),
-              U.el('span', { text: 'episodes' })
+              U.el('span', { text: T('episodes') })
             ])
           ]),
           U.el('div', { class: 'side-rows', style: 'flex-grow:1;' }, [
-            U.el('div', { class: 'side-row' }, [U.el('span', { class: 'side-row-label', text: 'Status' }), U.el('span', { class: 'side-row-value', text: U.listStatusMap[entry.status] ?? '—' })]),
-            entry.score ? U.el('div', { class: 'side-row' }, [U.el('span', { class: 'side-row-label', text: 'Your score' }), U.el('span', { class: 'side-row-value', text: entry.score + '/10' })]) : null,
-            Store.isFavourite(media.id) ? U.el('div', { class: 'side-row' }, [U.el('span', { class: 'side-row-label', text: 'Favourite' }), U.el('span', { class: 'side-row-value', text: '❤' })]) : null
+            U.el('div', { class: 'side-row' }, [U.el('span', { class: 'side-row-label', text: T('Status') }), U.el('span', { class: 'side-row-value', text: U.listStatusMap[entry.status] ?? '—' })]),
+            entry.score ? U.el('div', { class: 'side-row' }, [U.el('span', { class: 'side-row-label', text: T('Your score') }), U.el('span', { class: 'side-row-value', text: entry.score + '/10' })]) : null,
+            Store.isFavourite(media.id) ? U.el('div', { class: 'side-row' }, [U.el('span', { class: 'side-row-label', text: T('Favourite') }), U.el('span', { class: 'side-row-value', text: '❤' })]) : null
           ])
         ])
       ]))
@@ -301,7 +314,7 @@ const PageAnime = {
     const streams = (media.externalLinks ?? []).filter(l => l.type === 'STREAMING')
     if (streams.length) {
       side.append(U.el('div', { class: 'side-card' }, [
-        U.el('h3', { class: 'side-card-title', text: 'Where to watch' }),
+        U.el('h3', { class: 'side-card-title', text: T('Where to watch') }),
         U.el('div', { class: 'side-streams' }, streams.slice(0, 8).map(link =>
           U.el('a', { class: 'side-stream', href: link.url, target: '_blank', rel: 'noopener' }, [
             U.el('span', { class: 'side-stream-dot', style: link.color ? `background:${link.color};` : null }),
@@ -315,7 +328,7 @@ const PageAnime = {
       .sort((a, b) => (b?.rank ?? 0) - (a?.rank ?? 0)).slice(0, 14)
     if (tags.length) {
       side.append(U.el('div', { class: 'side-card' }, [
-        U.el('h3', { class: 'side-card-title', text: 'Tags' }),
+        U.el('h3', { class: 'side-card-title', text: T('Tags') }),
         U.el('div', { class: 'side-tags' }, tags.map(tag =>
           U.el('span', {
             class: 'tag-chip' + (tag.isMediaSpoiler || tag.isGeneralSpoiler ? ' spoiler' : ''),
@@ -328,7 +341,7 @@ const PageAnime = {
     // synonyms (compact)
     if (media.synonyms?.length) {
       side.append(U.el('div', { class: 'side-card' }, [
-        U.el('h3', { class: 'side-card-title', text: 'Also known as' }),
+        U.el('h3', { class: 'side-card-title', text: T('Also known as') }),
         U.el('div', { class: 'side-synonyms', text: media.synonyms.slice(0, 4).join(' · ') })
       ]))
     }
@@ -341,11 +354,11 @@ const PageAnime = {
     const entry = Store.entry(media.id)
     const select = U.el('select', {
       class: 'entry-select',
-      title: 'List status',
+      title: T('List status'),
       onchange: e => {
         if (e.target.value === '') {
           Store.removeEntry(media.id)
-          U.toast('Removed from list')
+          U.toast(T('Removed from list'))
         } else {
           Store.saveEntry(media, { status: e.target.value })
           U.toast(`Set to ${U.listStatusMap[e.target.value]}`)
@@ -364,7 +377,7 @@ const PageAnime = {
     const list = U.el('div', { class: 'episodes' }, [U.el('div', { class: 'spinner' })])
     wrap.append(list)
     this.renderEpisodes(list, media).catch(() => {
-      list.replaceChildren(U.el('div', { class: 'empty-state', text: 'No episode data available.' }))
+      list.replaceChildren(U.el('div', { class: 'empty-state', text: T('No episode data available.') }))
     })
   },
 
@@ -372,7 +385,7 @@ const PageAnime = {
     const relations = (media.relations?.edges ?? [])
       .filter(e => e.node?.type !== 'MANGA' && e.relationType !== 'CHARACTER' && e.node?.coverImage)
     if (!relations.length) {
-      wrap.append(U.el('div', { class: 'empty-state', text: 'No known relations.' }))
+      wrap.append(U.el('div', { class: 'empty-state', text: T('No known relations.') }))
       return
     }
     const row = U.el('div', { class: 'hscroll', style: 'padding-left:0;padding-right:0;flex-wrap:wrap;' })
@@ -387,7 +400,7 @@ const PageAnime = {
   renderTabCharacters (wrap, media) {
     const characters = media.characters?.edges ?? []
     if (!characters.length) {
-      wrap.append(U.el('div', { class: 'empty-state', text: 'No character data.' }))
+      wrap.append(U.el('div', { class: 'empty-state', text: T('No character data.') }))
       return
     }
     const crow = U.el('div', { class: 'hscroll', style: 'padding-left:0;padding-right:0;flex-wrap:wrap;' })
@@ -408,7 +421,7 @@ const PageAnime = {
   renderTabRecommendations (wrap, media) {
     const recs = (media.recommendations?.nodes ?? []).map(n => n.mediaRecommendation).filter(Boolean)
     if (!recs.length) {
-      wrap.append(U.el('div', { class: 'empty-state', text: 'No recommendations yet.' }))
+      wrap.append(U.el('div', { class: 'empty-state', text: T('No recommendations yet.') }))
       return
     }
     wrap.append(C.grid(recs))
@@ -438,7 +451,7 @@ const PageAnime = {
       // header: count + duration + range chips
       const head = U.el('div', { class: 'eplist-head' }, [
         U.el('div', { class: 'eplist-title' }, [
-          U.el('b', { text: 'Episodes' }),
+          U.el('b', { text: T('Episodes') }),
           U.el('span', { text: `${episodes.length} episodes${media.duration ? ` • ${media.duration} min each` : ''}` })
         ])
       ])
@@ -464,8 +477,8 @@ const PageAnime = {
         const watched = progress >= ep.episode
         const thumb = U.el('div', { class: 'episode-thumb' }, [
           ep.image ? U.el('img', { src: ep.image, loading: 'lazy', alt: `Episode ${ep.episode}` }) : null,
-          U.el('div', { class: 'ep-num', text: 'Ep ' + ep.episode }),
-          ep.filler ? U.el('div', { class: 'ep-filler', text: 'FILLER' }) : null
+          U.el('div', { class: 'ep-num', text: T('Ep ') + ep.episode }),
+          ep.filler ? U.el('div', { class: 'ep-filler', text: T('FILLER') }) : null
         ])
         if (watched) {
           thumb.append(U.el('div', { class: 'ep-watched-overlay' }, [U.svg(C.CHECK, 24)]))

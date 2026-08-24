@@ -362,6 +362,19 @@ const YumeAPI = {
       YumeAPI._request(`/v1/admin/reports/${id}/resolve`, { method: 'POST', auth: true, body: { action, reason } }),
     overview: () =>
       YumeAPI._request('/v1/admin/analytics/overview', { auth: true }),
+
+    // Hungarian catalogue text. `queue` is the only one an editor opens
+    // deliberately — everything else follows from picking something in it.
+    translations: {
+      progress: () => YumeAPI._request('/v1/admin/translations/progress', { auth: true }),
+      queue: ({ limit = 25, offset = 0, publishedOnly = true } = {}) =>
+        YumeAPI._request(`/v1/admin/translations/queue?limit=${limit}&offset=${offset}&publishedOnly=${publishedOnly}`, { auth: true }),
+      get: id => YumeAPI._request(`/v1/admin/translations/anime/${id}`, { auth: true }),
+      put: (id, language, body) =>
+        YumeAPI._request(`/v1/admin/translations/anime/${id}/${language}`, { method: 'PUT', auth: true, body }),
+      remove: (id, language) =>
+        YumeAPI._request(`/v1/admin/translations/anime/${id}/${language}`, { method: 'DELETE', auth: true })
+    },
     // webhooks
     webhookEvents: () => YumeAPI._request('/v1/admin/webhooks/events', { auth: true }),
     webhooks: () => YumeAPI._request('/v1/admin/webhooks', { auth: true }),

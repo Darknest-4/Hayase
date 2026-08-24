@@ -1,10 +1,10 @@
-/* global window, U, C, YumeAPI */
+/* global window, U, C, YumeAPI, T */
 // Community page — platform-wide recent discussion feed (Yume API),
 // with account sign-in when the user isn't authenticated yet.
 
 const PageCommunity = {
   async render (root) {
-    root.append(window.C.spotlight('Community', { subtitle: 'Live discussion across the whole platform' }))
+    root.append(window.C.spotlight(T('Community'), { subtitle: T('Live discussion across the whole platform') }))
     const pad = U.el('div', { class: 'page-pad', style: 'max-width:56rem;' })
     root.append(pad)
 
@@ -29,13 +29,13 @@ const PageCommunity = {
     }
 
     const feed = U.el('div', {}, [U.el('div', { class: 'spinner' })])
-    content.append(U.el('h2', { class: 'detail-section-title', text: 'Recent discussion' }), feed)
+    content.append(U.el('h2', { class: 'detail-section-title', text: T('Recent discussion') }), feed)
 
     try {
       const { data } = await YumeAPI.recentComments()
       feed.replaceChildren()
       if (!data.length) {
-        feed.append(U.el('div', { class: 'empty-state', text: 'No discussion yet — be the first: open any anime and leave a comment.' }))
+        feed.append(U.el('div', { class: 'empty-state', text: T('No discussion yet — be the first: open any anime and leave a comment.') }))
         return
       }
       for (const comment of data) {
@@ -46,14 +46,14 @@ const PageCommunity = {
         }, [
           U.el('div', { class: 'comment-head' }, [
             U.el('span', { class: 'comment-author', text: comment.author }),
-            comment.anime_title ? U.el('span', { class: 'comment-context', text: 'on ' + comment.anime_title }) : null,
+            comment.anime_title ? U.el('span', { class: 'comment-context', text: T('on ') + comment.anime_title }) : null,
             U.el('span', { class: 'comment-time', text: U.relTime(new Date(comment.created_at)) })
           ]),
           C.commentBody(comment)
         ]))
       }
     } catch (e) {
-      feed.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load the feed: ' + e.message }))
+      feed.replaceChildren(U.el('div', { class: 'error-state', text: T('Failed to load the feed: ') + e.message }))
     }
   }
 }

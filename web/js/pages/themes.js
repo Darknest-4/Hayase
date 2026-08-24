@@ -1,4 +1,4 @@
-/* global Store, U, document, getComputedStyle, window */
+/* global Store, U, document, getComputedStyle, window, T */
 // Theme Engine — pick a base (dark/light), choose an accent from curated
 // presets or a fully custom colour, and optionally tint surfaces toward the
 // accent. Applied live via CSS custom-property overrides (Store.applyTheme).
@@ -19,8 +19,8 @@ const PageThemes = {
   render (root) {
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
-    pad.append(U.el('h1', { class: 'page-title', text: 'Theme Engine' }))
-    pad.append(U.el('p', { class: 'list-row-sub', style: 'margin-top:-.5rem;', text: 'Personalise Yume. Changes apply instantly and are saved for this profile.' }))
+    pad.append(U.el('h1', { class: 'page-title', text: T('Theme Engine') }))
+    pad.append(U.el('p', { class: 'list-row-sub', style: 'margin-top:-.5rem;', text: T('Personalise Yume. Changes apply instantly and are saved for this profile.') }))
     this.body(pad)
   },
 
@@ -31,7 +31,7 @@ const PageThemes = {
     const currentAccent = settings.themeAccent ?? null
 
     // ---- base toggle ----
-    pad.append(U.el('h2', { class: 'detail-section-title', text: 'Base' }))
+    pad.append(U.el('h2', { class: 'detail-section-title', text: T('Base') }))
     const baseRow = U.el('div', { class: 'theme-base-row' })
     for (const [value, label, icon] of [['dark', 'Dark', '🌙'], ['light', 'Light', '☀️']]) {
       baseRow.append(U.el('button', {
@@ -42,7 +42,7 @@ const PageThemes = {
     pad.append(baseRow)
 
     // ---- accent presets ----
-    pad.append(U.el('h2', { class: 'detail-section-title', text: 'Accent' }))
+    pad.append(U.el('h2', { class: 'detail-section-title', text: T('Accent') }))
     const grid = U.el('div', { class: 'theme-grid' })
     for (const p of this.PRESETS) {
       const active = currentAccent === p.accent && currentBase === p.base
@@ -58,7 +58,7 @@ const PageThemes = {
     pad.append(grid)
 
     // ---- custom colour ----
-    pad.append(U.el('h2', { class: 'detail-section-title', text: 'Custom accent' }))
+    pad.append(U.el('h2', { class: 'detail-section-title', text: T('Custom accent') }))
     const picker = U.el('input', {
       type: 'color',
       class: 'theme-color-input',
@@ -69,14 +69,14 @@ const PageThemes = {
     pad.append(U.el('div', { class: 'theme-custom-row' }, [
       picker,
       U.el('div', {}, [
-        U.el('div', { style: 'font-weight:700;font-size:.9rem;', text: 'Pick any colour' }),
-        U.el('div', { class: 'list-row-sub', text: 'Drag the picker — the whole UI recolours live.' })
+        U.el('div', { style: 'font-weight:700;font-size:.9rem;', text: T('Pick any colour') }),
+        U.el('div', { class: 'list-row-sub', text: T('Drag the picker — the whole UI recolours live.') })
       ]),
       U.el('button', {
         class: 'btn btn-secondary btn-sm',
         style: 'margin-left:auto;',
         onclick: () => { Store.setTheme({ accent: '', tint: false }); window.App.navigate() }
-      }, [document.createTextNode('Reset to default')])
+      }, [document.createTextNode(T('Reset to default'))])
     ]))
 
     // ---- surface tint ----
@@ -90,22 +90,22 @@ const PageThemes = {
     ])
     pad.append(U.el('div', { class: 'setting-card', style: 'display:flex;align-items:center;gap:1rem;margin-top:1rem;' }, [
       U.el('div', { style: 'flex-grow:1;' }, [
-        U.el('h3', { style: 'margin:0;', text: 'Tint surfaces' }),
-        U.el('p', { style: 'margin:.2rem 0 0;', text: 'Blend a hint of the accent colour into cards and panels.' })
+        U.el('h3', { style: 'margin:0;', text: T('Tint surfaces') }),
+        U.el('p', { style: 'margin:.2rem 0 0;', text: T('Blend a hint of the accent colour into cards and panels.') })
       ]),
       tint
     ]))
 
     // ---- live preview ----
-    pad.append(U.el('h2', { class: 'detail-section-title', text: 'Preview' }))
+    pad.append(U.el('h2', { class: 'detail-section-title', text: T('Preview') }))
     pad.append(U.el('div', { class: 'theme-preview' }, [
       U.el('div', { class: 'theme-preview-card' }, [
-        U.el('div', { class: 'theme-preview-title', text: 'Attack on Titan' }),
-        U.el('div', { class: 'theme-preview-sub', text: 'TV · Finished · 25 episodes' }),
+        U.el('div', { class: 'theme-preview-title', text: T('Attack on Titan') }),
+        U.el('div', { class: 'theme-preview-sub', text: T('TV · Finished · 25 episodes') }),
         U.el('div', { style: 'display:flex;gap:.5rem;margin-top:.75rem;' }, [
-          U.el('span', { class: 'btn btn-primary btn-sm', text: 'Play' }),
-          U.el('span', { class: 'btn btn-secondary btn-sm', text: 'Add to list' }),
-          U.el('span', { class: 'badge badge-outline', text: 'Action' })
+          U.el('span', { class: 'btn btn-primary btn-sm', text: T('Play') }),
+          U.el('span', { class: 'btn btn-secondary btn-sm', text: T('Add to list') }),
+          U.el('span', { class: 'badge badge-outline', text: T('Action') })
         ]),
         U.el('div', { class: 'ach-progress-track', style: 'margin-top:.9rem;' }, [
           U.el('div', { class: 'ach-progress-fill', style: 'width:68%;' })

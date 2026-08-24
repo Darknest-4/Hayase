@@ -1,10 +1,14 @@
-/* global window, document, U, Store */
+/* global window, document, U, Store, T */
 // Notification Center — a filterable inbox built from local signals: airing
 // episodes for library titles, stalled continue-watching, and achievement
 // unlocks. Read/dismiss state persists per profile.
 
 const PageNotifications = {
   FILTERS: [
+  // Labels are stored in English and translated where they are rendered, not
+  // here: this literal is evaluated once when the script loads, so a T() call
+  // in it would freeze the label in whatever language was active at boot and
+  // never follow a language switch.
     { key: 'all', label: 'All' },
     { key: 'unread', label: 'Unread' },
     { key: 'airing', label: 'Airing' },
@@ -17,7 +21,7 @@ const PageNotifications = {
     const all = Store.syncNotifications()
     const unread = all.filter(n => !n.read).length
 
-    root.append(window.C.spotlight('Notifications', { subtitle: unread ? `${unread} unread` : 'All caught up' }))
+    root.append(window.C.spotlight(T('Notifications'), { subtitle: unread ? `${unread} unread` : 'All caught up' }))
 
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
@@ -28,12 +32,12 @@ const PageNotifications = {
         class: 'btn btn-ghost btn-sm',
         disabled: unread ? null : '',
         onclick: () => { Store.markAllNotificationsRead(); window.App.navigate(); window.App.refreshNotifBadge?.() }
-      }, [document.createTextNode('Mark all read')]),
+      }, [document.createTextNode(T('Mark all read'))]),
       U.el('button', {
         class: 'btn btn-ghost btn-sm',
         disabled: all.length ? null : '',
         onclick: () => { if (window.confirm('Clear all notifications?')) { Store.clearNotifications(); window.App.navigate(); window.App.refreshNotifBadge?.() } }
-      }, [document.createTextNode('Clear all')])
+      }, [document.createTextNode(T('Clear all'))])
     ]))
 
     // ---- filter tabs ----
@@ -44,7 +48,7 @@ const PageNotifications = {
         class: 'notif-filter' + (f.key === active ? ' active' : ''),
         href: `#/notifications?filter=${f.key}`
       }, [
-        document.createTextNode(f.label),
+        document.createTextNode(T(f.label)),
         count ? U.el('span', { class: 'notif-filter-count', text: String(count) }) : null
       ]))
     }
@@ -74,7 +78,7 @@ const PageNotifications = {
         U.el('span', { class: 'notif-time', text: U.relTime(new Date(n.at)) }),
         U.el('button', {
           class: 'notif-dismiss',
-          title: 'Dismiss',
+          title: T('Dismiss'),
           onclick: e => {
             e.preventDefault(); e.stopPropagation()
             Store.dismissNotification(n.id)

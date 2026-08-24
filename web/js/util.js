@@ -1,13 +1,12 @@
-/* global window, document */
+/* global window, document, I18n */
 // Small DOM + formatting helpers shared by every page.
 
-// Central copy lookup: T('home.rails.trending') → the string from web/copy.js.
-// Falls back to the key itself (or an optional fallback) if it's missing, so a
-// typo is visible rather than blank. All fixed UI text should come through here.
-window.T = function (key, fallback) {
-  const val = String(key).split('.').reduce((o, k) => (o == null ? undefined : o[k]), window.Copy)
-  return val ?? fallback ?? key
-}
+// T() — the single text lookup — is defined in web/js/i18n.js, which loads
+// after this file. It kept the copy-catalog behaviour that used to live here
+// and added translation on top: a dotted key still resolves through
+// web/copy.js, and the English string it produces is then translated.
+// Nothing calls T() at load time, only while rendering, so the later
+// definition is in place long before the first call.
 
 const U = {
   // createElement helper: U.el('div', { class: 'foo', onclick: fn }, [children...])
@@ -126,7 +125,7 @@ const U = {
     if (!str) return ''
     const date = new Date(str)
     if (isNaN(+date)) return str
-    return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+    return date.toLocaleDateString(I18n.locale(), { year: 'numeric', month: 'short', day: 'numeric' })
   },
 
   fmtTime (s) {
