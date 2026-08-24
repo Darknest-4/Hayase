@@ -94,6 +94,26 @@ services:
       # SEED_URL: <override the dump source, or mount a file and pass its path>
     command: ['sh', '-c', 'node --experimental-strip-types src/lib/migrate.ts && node --experimental-strip-types scripts/seed.ts']
 
+  # one-shot re-publish of the bundled extensions into the store.
+  # The app already does this on every boot; run this when you have edited a
+  # package and want it live without restarting:
+  #   docker compose --profile extensions run --rm extensions
+  # It never changes the status of an extension you suspended, and refuses to
+  # overwrite a published version with different bytes unless you bump the
+  # version in its manifest.json.
+  extensions:
+    build: .
+    profiles: ['extensions']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/yume
+      # EXTENSIONS_OWNER: <username or email>   # defaults to the oldest admin
+    volumes:
+      - packages:/app/packages
+    command: ['node', '--experimental-strip-types', 'scripts/publish-extensions.ts']
+
   # one-shot AniList enrichment: fills synopsis, cover/banner, score, genres,
   # tags, studios and trailer onto the seeded rows (matched by anilist_id).
   # Run after seed: docker compose --profile enrich run --rm enrich

@@ -218,3 +218,80 @@ export function escalatedPermissions (
   }
   return added
 }
+
+/**
+ * Coerce user-supplied option values against a version's declared schema.
+ *
+ * `extension_installs.options` is handed straight to the sandbox and from
+ * there to extension code, so this is the only place values are checked. Two
+ * rules, both deliberate:
+ *
+ *   * an undeclared key is rejected rather than dropped — silently discarding
+ *     it turns a typo into "the setting does not work and nothing said why",
+ *   * a value of the wrong type is rejected rather than converted, because
+ *     `Number('')` is 0 and `Boolean('false')` is true, and both of those are
+ *     answers nobody asked for.
+ *
+ * Strings are bounded: an option holds a URL or a token, not a payload.
+ */
+export const MAX_OPTION_LENGTH = 2000
+
+export interface OptionResult {
+  valid: boolean
+  errors: string[]
+  options: Record<string, unknown>
+}
+
+export function coerceOptions (schema: Record<string, OptionSpec> | undefined | null, input: unknown): OptionResult {
+  const errors: string[] = []
+  const options: Record<string, unknown> = {}
+
+  if (!isPlainObject(input)) return { valid: false, errors: ['options must be an object'], options }
+  const declared = isPlainObject(schema) ? schema as Record<string, OptionSpec> : {}
+
+  for (const [key, value] of Object.entries(input)) {
+    const spec = Object.prototype.hasOwnProperty.call(declared, key) ? declared[key] : undefined
+    if (!spec) {
+      errors.push(`unknown option "${key}"`)
+      continue
+    }
+    // Clearing an option is how a viewer removes a token they pasted; it means
+    // "unset", not "store null".
+    if (value === null || value === undefined) continue
+
+    switch (spec.type) {
+      case 'boolean':
+        if (typeof value !== 'boolean') errors.push(`option "${key}" must be true or false`)
+        else options[key] = value
+        break
+      case 'number':
+        if (typeof value !== 'number' || !Number.isFinite(value)) errors.push(`option "${key}" must be a number`)
+        else options[key] = value
+        break
+      case 'string':
+        if (typeof value !== 'string') errors.push(`option "${key}" must be a string`)
+        else if (value.length > MAX_OPTION_LENGTH) errors.push(`option "${key}" is over ${MAX_OPTION_LENGTH} characters`)
+        else options[key] = value
+        break
+      case 'select':
+        if (typeof value !== 'string' || !(spec.choices ?? []).includes(value)) {
+          errors.push(`option "${key}" must be one of: ${(spec.choices ?? []).join(', ')}`)
+        } else options[key] = value
+        break
+      default:
+        errors.push(`option "${key}" has an unsupported type`)
+    }
+  }
+
+  return { valid: errors.length === 0, errors, options }
+}
+
+/** The defaults a manifest declares, as the option object to start an install with. */
+export function defaultOptions (schema: Record<string, OptionSpec> | undefined | null): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  if (!isPlainObject(schema)) return out
+  for (const [key, spec] of Object.entries(schema as Record<string, OptionSpec>)) {
+    if (isPlainObject(spec) && spec.default !== undefined) out[key] = spec.default
+  }
+  return out
+}

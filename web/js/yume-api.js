@@ -475,6 +475,28 @@ const YumeAPI = {
     return data
   },
 
+  /** Install the latest published version. Returns the install row. */
+  installExtension (slug) {
+    return this._request(`/v1/extensions/${encodeURIComponent(slug)}/install`, { method: 'POST', auth: true })
+  },
+
+  /**
+   * Change an install: its options, or whether it runs.
+   *
+   * Options replace rather than merge, so a caller sends the whole set — the
+   * settings form submits every field for exactly this reason.
+   */
+  configureExtension (slug, { enabled, options } = {}) {
+    const body = {}
+    if (enabled !== undefined) body.enabled = enabled
+    if (options !== undefined) body.options = options
+    return this._request(`/v1/extensions/${encodeURIComponent(slug)}/install`, { method: 'PATCH', auth: true, body })
+  },
+
+  uninstallExtension (slug) {
+    return this._request(`/v1/extensions/${encodeURIComponent(slug)}/install`, { method: 'DELETE', auth: true })
+  },
+
   /**
    * Anonymous sandbox failure telemetry. Best-effort: a reporting failure must
    * never surface to the user or break the extension flow that triggered it.
