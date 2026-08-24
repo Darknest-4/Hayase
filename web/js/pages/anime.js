@@ -97,10 +97,12 @@ const PageAnime = {
       }, [document.createTextNode(T('Show more ⌄'))])
       : null
 
+    const titleEl = U.el('h1', { class: 'detail-title', text: mainTitle })
+
     wrap.append(U.el('div', { class: 'detail-hero-row' }, [
       U.el('div', { class: 'detail-cover' }, [U.el('img', { src: U.cover(media), alt: mainTitle })]),
       U.el('div', { class: 'detail-headings' }, [
-        U.el('h1', { class: 'detail-title', text: mainTitle }),
+        titleEl,
         secondary ? U.el('h2', { class: 'detail-secondary', style: 'margin-top:.1rem;', text: secondary }) : null,
         starRow,
         chips,
@@ -109,6 +111,13 @@ const PageAnime = {
         moreBtn
       ])
     ]))
+
+    // A metadata extension may carry the translation the catalogue lacks.
+    // Deliberately after the hero is on screen: the untranslated text appears
+    // immediately and is replaced when and if an answer arrives, rather than
+    // the page waiting on a network call that usually has nothing to add.
+    this._applyTranslations(media, { titleEl, desc, descNote, wantLang })
+      .catch(error => console.warn('[anime] translations failed:', error))
 
     // ---- action row: Continue Watching + list editor + icon buttons ----
     const progress = Store.entry(media.id)?.progress ?? 0
@@ -428,6 +437,35 @@ const PageAnime = {
     }
     this._metaCache = { id: media.id, records }
     return records
+  },
+
+  /**
+   * Swap in translated text from a metadata extension.
+   *
+   * Only where the catalogue has none: `_lang` says which language each field
+   * actually resolved to, and overwriting an editorial Hungarian synopsis with
+   * a feed's version would be the extension outranking the catalogue, which is
+   * backwards.
+   */
+  async _applyTranslations (media, { titleEl, desc, descNote, wantLang }) {
+    const records = await this._extensionMetadata(media)
+    const pick = field => records.find(r =>
+      r?.kind === 'translation' && r.field === field && r.language === wantLang && typeof r.text === 'string' && r.text.trim()
+    )
+
+    if (media._lang?.title !== wantLang) {
+      const title = pick('title')
+      if (title && titleEl.isConnected) titleEl.textContent = title.text
+    }
+
+    if (media._lang?.synopsis !== wantLang) {
+      const synopsis = pick('description')
+      if (synopsis && desc.isConnected) {
+        desc.textContent = synopsis.text
+        // The note said this had not been translated yet. It has now.
+        descNote?.remove()
+      }
+    }
   },
 
   _charCard (name, role, image) {
