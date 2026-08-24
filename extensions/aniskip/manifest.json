@@ -1,0 +1,29 @@
+{
+  "manifestVersion": 3,
+  "id": "aniskip",
+  "name": "AniSkip",
+  "version": "1.0.0",
+  "type": "metadata",
+  "summary": "Intro and ending timestamps, so the player can offer a skip button.",
+  "description": "Supplies opening and ending intervals for an episode from the community AniSkip database, which the player turns into a skip button and the auto-skip setting. Needs a MyAnimeList id on the episode; titles without one simply get no skip data. This is the same source the client used to call directly — as an extension it can be turned off, replaced, and its failures show up in the developer portal like any other.",
+  "icon": "⏭️",
+  "accuracy": "high",
+  "languages": ["en"],
+  "permissions": {
+    "query:ids": {},
+    "net:fetch": { "hosts": ["api.aniskip.com"] }
+  },
+  "options": {
+    "types": {
+      "type": "select",
+      "default": "op_ed",
+      "choices": ["op_ed", "op", "ed"],
+      "description": "Which intervals to fetch: opening and ending, or only one of them."
+    },
+    "min_length": {
+      "type": "number",
+      "default": 5,
+      "description": "Ignore intervals shorter than this many seconds. Very short ones are usually bad submissions and produce a skip button that jumps nowhere."
+    }
+  }
+}
