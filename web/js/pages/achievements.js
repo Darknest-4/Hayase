@@ -121,7 +121,12 @@ const PageAchievements = {
 
     return {
       episodes,
-      minutes: entries.reduce((s, e) => s + (e.progress ?? 0) * (e.media?.duration || 24), 0),
+      // Measured, not estimated. This used to be `progress * nominal runtime`,
+      // which credited a flat 24 minutes the instant an episode was marked —
+      // so the number grew by watching nothing. WatchTime.minutesFor() uses
+      // real playback seconds and only falls back to the old estimate for
+      // episodes credited before the meter existed.
+      minutes: window.WatchTime.minutesFor(entries).totalMinutes,
       completed: entries.filter(e => e.status === 'COMPLETED').length,
       library: entries.length,
       planning: entries.filter(e => e.status === 'PLANNING').length,

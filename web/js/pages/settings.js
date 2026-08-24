@@ -68,7 +68,7 @@ const PageSettings = {
     ))
     wrap.append(C.authCard())
     if (window.YumeAPI.user()) {
-      const LABEL = { off: 'Not syncing', syncing: 'Syncing…', synced: '✓ Synced to your account', error: '⚠ Sync unavailable' }
+      const LABEL = { off: T('Not syncing'), syncing: T('Syncing…'), synced: T('✓ Synced to your account'), error: T('⚠ Sync unavailable') }
       const statusEl = U.el('span', { class: 'list-row-sub', style: 'align-self:center;', text: LABEL[window.LibrarySync?.status ?? 'off'] })
       const syncBtn = U.el('button', {
         class: 'btn btn-secondary btn-sm',

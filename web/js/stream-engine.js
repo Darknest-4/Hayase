@@ -410,7 +410,14 @@ const StreamEngine = {
     })
   },
 
-  /** Subtitle tracks travel with the StreamResult, whatever produced it. */
+  /**
+   * Subtitle tracks travel with the StreamResult, whatever produced it.
+   *
+   * Attaching them was only half the job: a <track> without `default` loads
+   * as `disabled`, so every subtitle a source supplied was present in the DOM
+   * and invisible on screen. The viewer's `playback.subtitles` preference is
+   * what decides which one is showing.
+   */
   _applySubtitles (video, candidate) {
     for (const track of [...video.querySelectorAll('track[data-engine]')]) track.remove()
     for (const subtitle of candidate.subtitles) {
@@ -422,6 +429,76 @@ const StreamEngine = {
       track.dataset.engine = '1'
       video.append(track)
     }
+    this.selectSubtitleTrack(video, window.Prefs?.get('playback.subtitles') ?? null)
+    this.selectAudioTrack(video, window.Prefs?.get('playback.audio') ?? null)
+  },
+
+  /**
+   * Show the subtitle track in `language`, or none when it is 'off'.
+   *
+   * Matching is by language code rather than by label, because labels are
+   * whatever a source felt like writing ("HU", "Magyar felirat", "hun-full").
+   * Returns the index that ended up showing, or -1.
+   */
+  selectSubtitleTrack (video, language) {
+    const tracks = video?.textTracks
+    if (!tracks) return -1
+
+    // Everything off first: leaving two showing stacks two sets of captions
+    // on top of each other, which is worse than none.
+    for (const track of tracks) {
+      if (track.kind === 'subtitles' || track.kind === 'captions') track.mode = 'disabled'
+    }
+    if (!language || language === 'off') return -1
+
+    for (let i = 0; i < tracks.length; i++) {
+      const track = tracks[i]
+      if (track.kind !== 'subtitles' && track.kind !== 'captions') continue
+      if (this.languageCode(track.language) === language) {
+        track.mode = 'showing'
+        return i
+      }
+    }
+    return -1
+  },
+
+  /**
+   * Pick the audio track in `language`.
+   *
+   * `video.audioTracks` is not implemented in every browser — Chrome does not
+   * expose it — so this is best-effort by design and reports what it managed.
+   * The sub/dub preference does not depend on it: that is decided when ranking
+   * candidates, where a dub is a different stream rather than a track inside
+   * one. This only helps the multi-audio streams that do exist.
+   */
+  selectAudioTrack (video, language) {
+    const tracks = video?.audioTracks
+    if (!tracks || !tracks.length || !language) return -1
+    for (let i = 0; i < tracks.length; i++) {
+      if (this.languageCode(tracks[i].language) === language) {
+        for (let j = 0; j < tracks.length; j++) tracks[j].enabled = j === i
+        return i
+      }
+    }
+    return -1
+  },
+
+  /** The subtitle tracks currently attached, for a picker to render. */
+  subtitleTracks (video) {
+    const tracks = video?.textTracks
+    if (!tracks) return []
+    const out = []
+    for (let i = 0; i < tracks.length; i++) {
+      const track = tracks[i]
+      if (track.kind !== 'subtitles' && track.kind !== 'captions') continue
+      out.push({
+        index: i,
+        label: track.label || track.language || `Track ${i + 1}`,
+        language: this.languageCode(track.language),
+        showing: track.mode === 'showing'
+      })
+    }
+    return out
   },
 
   /** A failed stream is a data point about its source. */

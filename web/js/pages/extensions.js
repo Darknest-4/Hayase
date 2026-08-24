@@ -11,7 +11,7 @@ const PageExtensions = {
     root.append(pad)
 
     root.prepend(window.C.spotlight(T('Extension Store'), {
-      subtitle: 'Sources, trackers and tools — sandboxed and permission-scoped',
+      subtitle: T('Sources, trackers and tools — sandboxed and permission-scoped'),
       actions: U.el('a', { class: 'btn btn-secondary btn-sm', style: 'margin-top:.8rem;', href: '#/developer' }, [document.createTextNode(T('Developer Portal →'))])
     }))
 

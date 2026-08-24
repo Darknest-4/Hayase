@@ -388,6 +388,30 @@ I18n.register('hu', {
   'Could not load the language options — check your connection and reload.':
     'A nyelvi beállítások nem töltődtek be — ellenőrizd a kapcsolatot és tölts újra.',
   'English interface': 'Angol felület',
+  Subtitles: 'Feliratok',
+  'Episode {n} marked as watched': '{n}. rész megnézettnek jelölve',
+  'Hungarian interface':
+    'Magyar felület',
+  'Titles where a Hungarian one exists':
+    'A címek, ahol van magyar',
+  'Your dashboard':
+    'Az áttekintőd',
+  'Sources, trackers and tools — sandboxed and permission-scoped':
+    'Források, követők és eszközök — homokozóban, jogosultsághoz kötve',
+  'What drops this week, day by day':
+    'Mi jön ezen a héten, napról napra',
+  '✕ Remove from list':
+    '✕ Levétel a listáról',
+  '＋ Add to List':
+    '＋ Listára teszem',
+  'Not syncing':
+    'Nincs szinkron',
+  'Syncing…':
+    'Szinkronizálás…',
+  '✓ Synced to your account':
+    '✓ Szinkronizálva a fiókoddal',
+  '⚠ Sync unavailable':
+    '⚠ A szinkron nem érhető el',
   'Anime in library':
     'Anime a könyvtárban',
   Completed:

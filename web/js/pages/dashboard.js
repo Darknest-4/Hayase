@@ -25,7 +25,7 @@ const PageDashboard = {
     const layout = this._layout()
 
     root.append(window.C.spotlight(`${this._greeting()}, ${profile?.name ?? 'Dreamer'}`, {
-      subtitle: 'Your dashboard',
+      subtitle: T('Your dashboard'),
       actions: U.el('a', {
         class: 'btn btn-secondary btn-sm',
         style: 'margin-top:.8rem;',
@@ -140,7 +140,12 @@ const PageDashboard = {
   _widget_stats () {
     const entries = Object.values(Store.list())
     const episodes = entries.reduce((s, e) => s + (e.progress ?? 0), 0)
-    const minutes = entries.reduce((s, e) => s + (e.progress ?? 0) * (e.media?.duration || 24), 0)
+    // Measured, not estimated. This used to be `progress * nominal runtime`,
+    // which credited a flat 24 minutes the instant an episode was marked —
+    // so the number grew by watching nothing. WatchTime.minutesFor() uses
+    // real playback seconds and only falls back to the old estimate for
+    // episodes credited before the meter existed.
+    const minutes = window.WatchTime.minutesFor(entries).totalMinutes
     const hours = Math.floor(minutes / 60)
     const cards = U.el('div', { class: 'stat-cards', style: 'margin:0;' }, [
       [entries.length, 'In library'],
