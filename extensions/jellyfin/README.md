@@ -1,6 +1,6 @@
-# Jellyfin
+# Jellyfin / Emby
 
-Streams episodes from a Jellyfin server you have an account on — and it returns
+Streams episodes from a Jellyfin **or Emby** server you have an account on — and it returns
 **the actual video**, not a link to somewhere else. Jellyfin's
 `/Videos/{id}/stream` serves the file, so the player gets a real stream with the
 audio and subtitle tracks the file carries.
@@ -8,9 +8,17 @@ audio and subtitle tracks the file carries.
 It reaches one host: the one in its manifest. The sandbox enforces that, so it
 cannot wander.
 
+## One extension, two servers
+
+Jellyfin forked from Emby and kept its API — the same search, the same episode
+walk, the same stream endpoint, and the same `X-Emby-Token` header, which
+Jellyfin still calls that. A second near-identical package would double the
+surface to keep in step for no behavioural gain, so this one serves both.
+
 ## Setting it up
 
-1. In Jellyfin: **Dashboard → API Keys → New**. The key grants access to your
+1. Get an API key — Jellyfin: **Dashboard → API Keys → New**. Emby:
+   **Advanced → API Keys**. The key grants access to your
    library — treat it like a password.
 2. In `manifest.json`, replace `jellyfin.example.com` in
    `permissions."net:fetch".hosts` with **your** server's hostname. The sandbox

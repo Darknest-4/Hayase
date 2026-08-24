@@ -1,0 +1,42 @@
+{
+  "manifestVersion": 3,
+  "id": "plex",
+  "name": "Plex",
+  "version": "1.0.0",
+  "type": "http",
+  "summary": "Plays episodes from your own Plex server, with its audio and subtitle tracks.",
+  "description": "Connects Yume to a Plex Media Server you have access to and streams the episodes in your own library. Matches shows by the external id Plex stores on them — the HAMA agent records AniDB ids, and newer agents record TVDB and TMDB — falling back to a title search when the library carries none. Returns the original file rather than a transcode, plus the audio and subtitle tracks it contains.",
+  "icon": "🎞️",
+  "accuracy": "high",
+  "media": "both",
+  "languages": ["hu", "en", "ja"],
+  "permissions": {
+    "query:ids": {},
+    "query:titles": {},
+    "storage:local": {},
+    "net:fetch": { "hosts": ["plex.example.com"] }
+  },
+  "options": {
+    "server_url": {
+      "type": "string",
+      "default": "https://plex.example.com:32400",
+      "description": "Your Plex Media Server. Must match the host allowed in this extension's permissions."
+    },
+    "token": {
+      "type": "string",
+      "default": "",
+      "description": "An X-Plex-Token for your account. Grants access to your library, so treat it like a password."
+    },
+    "section": {
+      "type": "string",
+      "default": "",
+      "description": "Optional library section key to search. Leave empty to search every show library."
+    },
+    "max_height": {
+      "type": "select",
+      "default": "1080",
+      "choices": ["2160", "1080", "720", "480"],
+      "description": "Reported resolution ceiling. Direct play ignores it; it only labels the source."
+    }
+  }
+}

@@ -1,31 +1,39 @@
 {
   "manifestVersion": 3,
   "id": "jellyfin",
-  "name": "Jellyfin",
+  "name": "Jellyfin / Emby",
   "version": "1.0.0",
   "type": "http",
-  "summary": "Plays episodes from your own Jellyfin server, with its audio and subtitle tracks.",
-  "description": "Connects Yume to a Jellyfin server you have an account on and streams the episodes in your own library. Matches shows by provider id (AniList, AniDB, TVDB, MyAnimeList) when Jellyfin knows them, which is exact, and falls back to a title search when it does not. Returns the real stream plus every audio and subtitle track the file carries, so the sub/dub switch and the subtitle picker work on it.",
+  "summary": "Plays episodes from your own Jellyfin or Emby server, with its audio and subtitle tracks.",
+  "description": "Connects Yume to a Jellyfin or Emby server you have an account on and streams the episodes in your own library. The two share an API — Jellyfin forked from Emby and still authenticates with the same X-Emby-Token header — so one extension serves both rather than shipping a near-identical copy. Matches shows by provider id (AniList, AniDB, TVDB, MyAnimeList) when the server knows them, which is exact, and falls back to a title search when it does not. Returns the real stream plus every audio and subtitle track the file carries, so the sub/dub switch and the subtitle picker work on it.",
   "icon": "🪼",
   "accuracy": "high",
   "media": "both",
-  "languages": ["hu", "en", "ja"],
+  "languages": [
+    "hu",
+    "en",
+    "ja"
+  ],
   "permissions": {
     "query:ids": {},
     "query:titles": {},
     "storage:local": {},
-    "net:fetch": { "hosts": ["jellyfin.example.com"] }
+    "net:fetch": {
+      "hosts": [
+        "jellyfin.example.com"
+      ]
+    }
   },
   "options": {
     "server_url": {
       "type": "string",
       "default": "https://jellyfin.example.com",
-      "description": "Your Jellyfin server. Must match the host allowed in this extension's permissions."
+      "description": "Your Jellyfin or Emby server. Must match the host allowed in this extension's permissions."
     },
     "api_key": {
       "type": "string",
       "default": "",
-      "description": "An API key from Jellyfin: Dashboard → API Keys. Grants access to your library, so treat it like a password."
+      "description": "An API key from the server: Dashboard → API Keys on Jellyfin, Advanced → API Keys on Emby. Grants access to your library, so treat it like a password."
     },
     "user_id": {
       "type": "string",
@@ -35,13 +43,21 @@
     "max_height": {
       "type": "select",
       "default": "1080",
-      "choices": ["2160", "1080", "720", "480"],
+      "choices": [
+        "2160",
+        "1080",
+        "720",
+        "480"
+      ],
       "description": "Reported resolution ceiling. Direct play ignores it; it only labels the source."
     },
     "subtitle_format": {
       "type": "select",
       "default": "vtt",
-      "choices": ["vtt", "srt"],
+      "choices": [
+        "vtt",
+        "srt"
+      ],
       "description": "Format Jellyfin converts subtitle tracks to. Browsers only render vtt — change this only if you know why."
     },
     "allow_transcode": {

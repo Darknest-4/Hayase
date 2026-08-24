@@ -1,5 +1,15 @@
 /* global yume */
-// Jellyfin — plays episodes from a server the viewer has an account on.
+// Jellyfin / Emby — plays episodes from a server the viewer has an account on.
+//
+// ---------------------------------------------------------------------------
+// One extension, two servers
+// ---------------------------------------------------------------------------
+// Jellyfin forked from Emby and kept its API: the same /Items search, the same
+// /Shows/{id}/Episodes walk, the same /Videos/{id}/stream endpoint, and the
+// same X-Emby-Token header — Jellyfin still calls it that. Shipping a second,
+// near-identical package would double the surface to keep in step for no
+// behavioural gain, so this serves both and the operator points it at whichever
+// they run.
 //
 // ---------------------------------------------------------------------------
 // What it does
