@@ -1653,114 +1653,6 @@ svg.chart .chart-name { font-size: 12px; fill: var(--fg); dominant-baseline: mid
   margin: 0 0 var(--space-4);
 }
 
-/* ===== responsive ===== */
-
-/* tablet: collapse the two-column detail/watch layouts */
-@media (max-width: 1000px) {
-  .detail-columns { grid-template-columns: 1fr; }
-  .detail-side { position: static; order: 2; }
-  .detail-side .side-rows { display: grid; grid-template-columns: 1fr 1fr; gap: .45rem var(--space-5); }
-  .watch-layout { grid-template-columns: 1fr; }
-  .watch-side { position: static; }
-  .wep-panel { max-height: 24rem; }
-}
-
-/* mobile: bottom navigation bar — 4 primary tabs + a More sheet */
-@media (max-width: 720px) {
-  .app-shell { flex-direction: column; }
-  .page { padding-bottom: calc(4.4rem + env(safe-area-inset-bottom, 0px)); }
-  .sidebar {
-    position: fixed;
-    left: 0; right: 0; bottom: 0;
-    width: 100%;
-    height: auto;
-    flex-direction: row;
-    justify-content: space-around;
-    align-items: stretch;
-    gap: 0;
-    border-top: 1px solid var(--border);
-    border-right: none;
-    padding: .35rem .25rem calc(.35rem + env(safe-area-inset-bottom, 0px));
-    background: color-mix(in srgb, var(--bg) 90%, transparent);
-    backdrop-filter: blur(14px) saturate(1.2);
-    -webkit-backdrop-filter: blur(14px) saturate(1.2);
-    z-index: 80;
-  }
-  .sidebar-logo, .sidebar-spacer, #profile-switcher { display: none; }
-  /* only the primary tabs + More appear on the bar */
-  .sidebar-btn { display: none; }
-  .sidebar-btn.nav-primary,
-  .sidebar-btn.nav-more {
-    display: flex;
-    position: relative;
-    flex: 1 1 0;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: .18rem;
-    height: auto;
-    min-width: 0;
-    padding: .45rem 0 .25rem;
-    border-radius: var(--radius-md);
-    color: var(--fg-faint);
-    background: transparent;
-  }
-  .sidebar-btn.nav-primary svg,
-  .sidebar-btn.nav-more svg { width: 1.4rem; height: 1.4rem; }
-  .sidebar-btn.nav-primary span,
-  .sidebar-btn.nav-more span {
-    display: block;
-    font-size: .6rem;
-    font-weight: var(--weight-bold);
-    letter-spacing: .01em;
-    line-height: 1;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .sidebar-btn.nav-primary:hover,
-  .sidebar-btn.nav-more:hover { background: transparent; color: var(--fg-muted); }
-  .sidebar-btn.nav-primary.active,
-  .sidebar-btn.nav-more.active { background: transparent; color: var(--accent); }
-  /* active indicator bar along the top edge of the tab */
-  .sidebar-btn.nav-primary.active::before,
-  .sidebar-btn.nav-more.active::before {
-    content: '';
-    position: absolute;
-    top: -.35rem;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 1.7rem;
-    height: 2px;
-    border-radius: var(--radius-full);
-    background: var(--accent);
-  }
-  /* notification badge repositioned above the labeled tab icon */
-  .sidebar-btn.nav-primary .notif-badge { top: .2rem; right: auto; left: 50%; margin-left: .1rem; }
-  .detail-head { flex-direction: column; gap: var(--space-4); margin-top: -6rem; padding: 0 var(--space-4); }
-  .detail-grid { grid-template-columns: 1fr; margin-top: -6rem; padding: 0 var(--space-4) var(--space-7); }
-  .detail-page { padding: 4rem var(--space-4) var(--space-7); }
-  .detail-hero-row { flex-direction: column; align-items: center; text-align: center; }
-  .detail-headings { align-items: center; }
-  .detail-hero-row .detail-cover { width: 150px; height: 214px; }
-  .dtab { padding: .6rem 1.1rem; }
-  .info-panel { flex-direction: row; flex-wrap: wrap; gap: var(--space-4); align-items: flex-start; }
-  .info-panel .detail-cover { width: 9rem; }
-  .info-panel .btn { width: auto !important; }
-  .info-rows { flex-grow: 1; margin-top: 0; }
-  .detail-main { padding-top: 0; }
-  .detail-cover { width: 9rem; }
-  .detail-info { padding-top: 0; }
-  .page-pad { padding: var(--space-4) var(--space-4) var(--space-7); }
-  .section-head, .hscroll, .day-title { padding-left: var(--space-4); padding-right: var(--space-4); }
-  .hero { padding: var(--space-6) var(--space-4) var(--space-5); min-height: 20rem; }
-  .hero-title { font-size: var(--text-2xl); }
-  .detail-body { padding: 0 var(--space-4); }
-  .error-state { margin: var(--space-4); }
-  .episode-thumb { width: 8.5rem; }
-}
-
 /* ===== mobile "More" bottom sheet ===== */
 
 .more-backdrop {
@@ -2996,4 +2888,248 @@ svg.chart .chart-name { font-size: 12px; fill: var(--fg); dominant-baseline: mid
   .prov-row { grid-template-columns: 1fr auto; }
   .dup-pair { grid-template-columns: 1fr; }
   .dup-meta { text-align: left; }
+}
+
+
+/* ===========================================================================
+   Responsive overrides — LAST ON PURPOSE.
+
+   These used to sit in the middle of the file, which quietly disabled four of
+   them: a media query has no extra specificity, so a component rule written
+   further down wins outright. Three of the four were the watch page, and the
+   effect on a phone was severe — .watch-side kept `position: sticky` from its
+   later rule, so the episode panel floated over the page instead of stacking
+   under the player, and the content behind it was squeezed into a strip a few
+   characters wide.
+
+   Anything that overrides a component belongs after every component. Keep new
+   breakpoints in this block, at the end of the file.
+   =========================================================================== */
+/* ===== responsive ===== */
+
+/* tablet: collapse the two-column detail/watch layouts */
+@media (max-width: 1000px) {
+  .detail-columns { grid-template-columns: 1fr; }
+  .detail-side { position: static; order: 2; }
+  .detail-side .side-rows { display: grid; grid-template-columns: 1fr 1fr; gap: .45rem var(--space-5); }
+  .watch-layout { grid-template-columns: 1fr; }
+  .watch-side { position: static; }
+  .wep-panel { max-height: 24rem; }
+}
+
+/* mobile: bottom navigation bar — 4 primary tabs + a More sheet */
+@media (max-width: 720px) {
+  .app-shell { flex-direction: column; }
+  .page { padding-bottom: calc(4.4rem + env(safe-area-inset-bottom, 0px)); }
+  .sidebar {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    justify-content: space-around;
+    align-items: stretch;
+    gap: 0;
+    border-top: 1px solid var(--border);
+    border-right: none;
+    padding: .35rem .25rem calc(.35rem + env(safe-area-inset-bottom, 0px));
+    background: color-mix(in srgb, var(--bg) 90%, transparent);
+    backdrop-filter: blur(14px) saturate(1.2);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    z-index: 80;
+  }
+  .sidebar-logo, .sidebar-spacer, #profile-switcher { display: none; }
+  /* only the primary tabs + More appear on the bar */
+  .sidebar-btn { display: none; }
+  .sidebar-btn.nav-primary,
+  .sidebar-btn.nav-more {
+    display: flex;
+    position: relative;
+    flex: 1 1 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: .18rem;
+    height: auto;
+    min-width: 0;
+    padding: .45rem 0 .25rem;
+    border-radius: var(--radius-md);
+    color: var(--fg-faint);
+    background: transparent;
+  }
+  .sidebar-btn.nav-primary svg,
+  .sidebar-btn.nav-more svg { width: 1.4rem; height: 1.4rem; }
+  .sidebar-btn.nav-primary span,
+  .sidebar-btn.nav-more span {
+    display: block;
+    font-size: .6rem;
+    font-weight: var(--weight-bold);
+    letter-spacing: .01em;
+    line-height: 1;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sidebar-btn.nav-primary:hover,
+  .sidebar-btn.nav-more:hover { background: transparent; color: var(--fg-muted); }
+  .sidebar-btn.nav-primary.active,
+  .sidebar-btn.nav-more.active { background: transparent; color: var(--accent); }
+  /* active indicator bar along the top edge of the tab */
+  .sidebar-btn.nav-primary.active::before,
+  .sidebar-btn.nav-more.active::before {
+    content: '';
+    position: absolute;
+    top: -.35rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 1.7rem;
+    height: 2px;
+    border-radius: var(--radius-full);
+    background: var(--accent);
+  }
+  /* notification badge repositioned above the labeled tab icon */
+  .sidebar-btn.nav-primary .notif-badge { top: .2rem; right: auto; left: 50%; margin-left: .1rem; }
+  .detail-head { flex-direction: column; gap: var(--space-4); margin-top: -6rem; padding: 0 var(--space-4); }
+  .detail-grid { grid-template-columns: 1fr; margin-top: -6rem; padding: 0 var(--space-4) var(--space-7); }
+  .detail-page { padding: 4rem var(--space-4) var(--space-7); }
+  .detail-hero-row { flex-direction: column; align-items: center; text-align: center; }
+  .detail-headings { align-items: center; }
+  .detail-hero-row .detail-cover { width: 150px; height: 214px; }
+  .dtab { padding: .6rem 1.1rem; }
+  .info-panel { flex-direction: row; flex-wrap: wrap; gap: var(--space-4); align-items: flex-start; }
+  .info-panel .detail-cover { width: 9rem; }
+  .info-panel .btn { width: auto !important; }
+  .info-rows { flex-grow: 1; margin-top: 0; }
+  .detail-main { padding-top: 0; }
+  .detail-cover { width: 9rem; }
+  .detail-info { padding-top: 0; }
+  .page-pad { padding: var(--space-4) var(--space-4) var(--space-7); }
+  .section-head, .hscroll, .day-title { padding-left: var(--space-4); padding-right: var(--space-4); }
+  .hero { padding: var(--space-6) var(--space-4) var(--space-5); min-height: 20rem; }
+  .hero-title { font-size: var(--text-2xl); }
+  .detail-body { padding: 0 var(--space-4); }
+  .error-state { margin: var(--space-4); }
+  .episode-thumb { width: 8.5rem; }
+}
+
+/* ---------------------------------------------------------------------------
+   Phone (≤ 560px)
+   ---------------------------------------------------------------------------
+   Everything above is written for a pointer and a wide viewport, and a phone
+   inherits it whether or not it makes sense there. These are the places where
+   it did not.
+   ------------------------------------------------------------------------- */
+
+@media (max-width: 560px) {
+  /* A 180x256 cover next to the headings made the hero row 256px tall, so the
+     title started 302px down an 844px screen — a third of the phone spent
+     before the content, and when the cover fails to load, a third of the
+     screen showing nothing. Smaller cover, and the row may wrap. */
+  .detail-page { padding-top: 3.5rem; }
+  /* The 768px block stacks this column and centres it, which at 390px spends
+     the cover's full height before the title starts. Back to a row, so the
+     cover sits beside the headings instead of above them, and left-aligned so
+     a wrapped title does not read as ragged. flex-wrap lets the headings drop
+     below the cover if they are ever squeezed under their 12rem basis. */
+  .detail-hero-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    text-align: left;
+    gap: var(--space-3);
+  }
+  .detail-hero-row .detail-cover { width: 104px; height: 148px; flex: 0 0 auto; }
+  .detail-headings { flex: 1 1 12rem; align-items: flex-start; min-width: 0; }
+
+  /* The atmospheric backdrop is 46vh, which on a phone is most of the first
+     screen. Half that still reads as atmosphere and stops competing. */
+  .global-banner { height: 26vh; }
+
+  /* Chips were 16px with desktop padding, which on 390px turned five facts
+     into two rows of slabs louder than the title. */
+  .chip { font-size: var(--text-xs); padding: .18rem .6rem; }
+  .chip-row { gap: .35rem; }
+
+  /* The list control sits beside the play button and was squeezed until its
+     own option read "＋ Add to L", which looks broken rather than truncated.
+     On a phone the pair takes the full width and the control gets room. */
+  .play-group { width: 100%; }
+  .entry-select { flex: 0 0 auto; min-width: 8.5rem; }
+  .play-btn { min-width: 0; }
+  .play-btn-text { min-width: 0; overflow: hidden; }
+
+  /* Titles set for a 1200px column overflow a 390px one. */
+  .detail-title { font-size: 1.5rem; line-height: 1.15; }
+
+  /* A failed image used to render its alt text at full size, which pushed the
+     card open and turned a poster grid into a wall of words. The text is
+     clipped to the frame it was meant to fill; the frame keeps its shape. */
+  .card-cover { overflow: hidden; }
+  .card-cover img {
+    color: transparent;          /* hides alt text without hiding the box */
+    font-size: 0;
+    background: var(--bg-sunken);
+  }
+
+  /* The filter panel filled the first screen, so the results it filters were
+     never visible at the same time as the filters. Collapsed by default on a
+     phone: the details element carries its own toggle. */
+  .filters { padding: var(--space-3); gap: var(--space-3); }
+  .filters .filter-group { min-width: 0; }
+
+  /* The bottom bar is fixed and translucent, so content scrolled under it is
+     legible enough to look like a rendering fault. Clear it properly. */
+  .page { padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px)); }
+
+  /* On a watch page the episode list is the second most useful thing after the
+     player. It was ordered after the comments, which put it below a screen of
+     empty discussion on every phone. */
+  /* align-items: start is inherited from the desktop grid; in a flex column it
+     shrinks children to their content width, which left the episode panel half
+     the screen wide floating in space. */
+  .watch-layout { display: flex; flex-direction: column; align-items: stretch; }
+  .watch-side { order: -1; width: 100%; }
+  .wep-panel { max-height: 18rem; }
+}
+
+/* The search filter panel's own disclosure. On a wide screen it is always open
+   and the summary is decoration, so it is hidden there entirely; on a phone it
+   is the control that keeps the results visible. */
+.filters-box { border: none; }
+.filters-summary { display: none; }
+
+@media (max-width: 560px) {
+  .filters-summary {
+    display: flex;
+    flex-direction: column;
+    gap: .1rem;
+    cursor: pointer;
+    list-style: none;
+    padding: .6rem .8rem;
+    margin-bottom: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--bg-raised);
+    font-weight: var(--weight-semibold);
+    font-size: var(--text-sm);
+  }
+  .filters-summary::-webkit-details-marker { display: none; }
+  .filters-summary::after {
+    content: '▾';
+    position: absolute;
+    right: 1.4rem;
+    color: var(--fg-faint);
+  }
+  .filters-box[open] .filters-summary::after { content: '▴'; }
+  .filters-summary { position: relative; }
+  /* What the panel contains, so it can be left closed without wondering. */
+  .filters-hint {
+    font-size: var(--text-xs);
+    font-weight: var(--weight-normal);
+    color: var(--fg-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
