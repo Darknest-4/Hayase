@@ -29,6 +29,9 @@ URL-pasted plugins. Two ideas are inherited and kept sacred:
 ├─ server/                API gateway — Fastify 5 + TypeScript on Node 22
 │  ├─ src/                No build step: --experimental-strip-types
 │  └─ test/               17 suites, including the adversarial one
+├─ extensions/            First-party source extensions (sandboxed, one host each)
+│  ├─ jellyfin/           Streams from a Jellyfin server you have an account on
+│  └─ yume-library/       Streams from a server you run, by index or path pattern
 ├─ packages/
 │  └─ design-tokens/      Design tokens shared with native surfaces
 ├─ web/                   Web client — framework-free HTML/CSS/JS SPA
