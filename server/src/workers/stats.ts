@@ -43,6 +43,45 @@ export async function recomputeProfileStats (profileId: string): Promise<void> {
        updated_at = now()`,
     [profileId]
   )
+
+  /*
+   * Minutes per genre.
+   *
+   * The column has been in the schema since the profile migration and the
+   * insert above never wrote it, so it stayed `{}` and the analytics screen
+   * had nothing to draw from the server — which is part of why that screen
+   * computed everything from browser storage instead.
+   *
+   * A separate statement rather than another LEFT JOIN in the one above: this
+   * aggregates over a join of three tables, and folding it in would make a
+   * query that is already hard to read unreadable for no gain.
+   *
+   * The minutes deliberately overlap. A title that is both Action and Drama
+   * contributes its full runtime to each, so these numbers sum to more than
+   * `minutes_watched` — that is the honest answer to "which genres do you
+   * watch", and splitting a show's time between its genres would invent a
+   * precision nobody has. A chart drawn from this must be read as shares of
+   * attention, not as a partition of a total.
+   */
+  await query(
+    `UPDATE profile_stats SET genre_breakdown = coalesce((
+       SELECT jsonb_object_agg(genre, minutes)
+         FROM (
+           SELECT g.name AS genre, (sum(wh.watched_sec) / 60)::bigint AS minutes
+             FROM watch_history wh
+             JOIN anime_genres ag ON ag.anime_id = wh.anime_id
+             JOIN genres g ON g.id = ag.genre_id
+            WHERE wh.profile_id = $1 AND wh.finished
+            GROUP BY g.name
+            -- A genre with under a minute against it is noise on a chart.
+           HAVING sum(wh.watched_sec) >= 60
+            ORDER BY minutes DESC
+            LIMIT 30
+         ) per_genre
+     ), '{}'::jsonb)
+     WHERE profile_id = $1`,
+    [profileId]
+  )
 }
 
 export async function rollupDay (day: string): Promise<void> {

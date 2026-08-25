@@ -1,5 +1,12 @@
 # Yume — API reference
 
+> **Read this first.** This document was written as a specification, ahead of
+> the code, and parts of it still describe endpoints that do not exist. Rows
+> marked **⏳** are specified and unimplemented; everything else is live and
+> exercised by the integration tests. The authoritative, source-verified
+> inventory is `status.html` in the repository root — if the two disagree,
+> that one is right.
+
 One service, two protocols over the same service layer:
 
 - **REST** under `/v1/*` — canonical, fully specified in OpenAPI
@@ -59,41 +66,43 @@ One service, two protocols over the same service layer:
 ### Playback & library
 | Method | Path | Description |
 |---|---|---|
-| GET | `/v1/episodes/:id/sources` | resolved sources + mirrors + tracks + skip segments |
-| PATCH | `/v1/episodes/:id/progress` | `{positionSec, durationSec}` — write-behind |
-| GET | `/v1/me/continue-watching` | in-progress rail (Redis-cached) |
-| GET | `/v1/me/history` | watch history (cursor over partitions) |
+| ⏳ GET | `/v1/episodes/:id/sources` | resolved sources + mirrors + tracks + skip segments |
+| PATCH | `/v1/me/progress/:episodeId` | `{positionSec, durationSec, completed}` — `completed` is the client's measured verdict; without it the server falls back to position ≥ 85% |
+| GET | `/v1/me/continue-watching` | in-progress rail, with the AniList id so a client can map it back |
+| ⏳ GET | `/v1/me/history` | watch history (cursor over partitions) |
 | GET/PUT/DELETE | `/v1/me/library/:animeId` | list entry (status/progress/score) |
 | GET | `/v1/me/library` | `?status=WATCHING…` |
-| GET/POST/DELETE | `/v1/me/favorites` | hearts (`?type=anime|character|…`) |
-| GET/POST | `/v1/me/lists` + item/collection CRUD | custom lists & collections |
-| GET/POST | `/v1/me/bookmarks` | in-episode bookmarks |
-| GET | `/v1/me/stats` | profile statistics (profile_stats) |
-| GET | `/v1/me/recommendations` | personalised (Redis-cached model output) |
+| GET/PUT/DELETE | `/v1/me/favorites` · `/favorites/:animeId` | hearts; anime only so far, the table is typed for more |
+| ⏳ GET/POST | `/v1/me/lists` + item/collection CRUD | custom lists & collections |
+| ⏳ GET/POST | `/v1/me/bookmarks` | in-episode bookmarks |
+| GET | `/v1/me/stats` | profile statistics (`profile_stats`), recomputed when older than 2 min |
+| GET | `/v1/me/notifications` · POST `/notifications/read` | the account's inbox (the notify worker writes it) |
+| ⏳ GET | `/v1/me/recommendations` | personalised (Redis-cached model output) |
 
 ### Community
 | Method | Path | Description |
 |---|---|---|
 | GET/POST | `/v1/comments` | `?subjectType&subjectId`; POST validates `community.post` |
 | PATCH/DELETE | `/v1/comments/:id` · POST `/:id/like` | edit window, like toggle |
-| GET | `/v1/forums` · `/v1/forums/:id/topics` | forum tree |
-| POST | `/v1/topics` · GET `/v1/topics/:id/posts` · POST `/v1/posts` | threads |
-| GET/POST | `/v1/chats` · `/v1/chats/:id/messages` | DMs/groups (WS for live) |
-| GET/POST | `/v1/clubs` · membership subroutes | clubs |
-| POST/DELETE | `/v1/users/:id/follow` · `/v1/friends/:id` | social graph |
+| ⏳ GET | `/v1/forums` · `/v1/forums/:id/topics` | forum tree |
+| ⏳ POST | `/v1/topics` · GET `/v1/topics/:id/posts` · POST `/v1/posts` | threads |
+| ⏳ GET/POST | `/v1/chats` · `/v1/chats/:id/messages` | DMs/groups — the WS channel exists, no REST and no client |
+| ⏳ GET/POST | `/v1/clubs` · membership subroutes | clubs |
+| ⏳ POST/DELETE | `/v1/users/:id/follow` · `/v1/friends/:id` | social graph |
 | POST | `/v1/reports` | report any subject |
-| POST | `/v1/reviews` · votes subroute | long-form reviews |
+| ⏳ POST | `/v1/reviews` · votes subroute | long-form reviews |
 | POST | `/v1/w2g` · GET `/v1/w2g/:code` | watch-together rooms (sync over WS) |
 
 ### Extension store & developer portal
 | Method | Path | Description |
 |---|---|---|
 | GET | `/v1/extensions` | store browse `?type&sort=installs|rating|new` |
-| GET | `/v1/extensions/:slug` · `/versions` · `/reviews` | listing detail |
-| POST | `/v1/extensions/:slug/install` · DELETE | install/uninstall (records version) |
-| GET | `/v1/me/extensions` | installed set + pending updates |
+| GET | `/v1/extensions/:slug` | listing detail (`/reviews` ⏳) |
+| POST | `/v1/extensions/:slug/install` · PATCH · DELETE | install, configure options, uninstall |
+| GET | `/v1/extensions/installed` | installed set + permissions + option schema |
 | POST | `/v1/dev/extensions` | create listing (`extensions.publish`) |
-| POST | `/v1/dev/extensions/:slug/versions` | upload package → review pipeline |
+| POST | `/v1/dev/extensions/:slug/packages` | upload the raw source; the server hashes it |
+| POST | `/v1/dev/extensions/:slug/versions` | publish a version against an uploaded package → review pipeline |
 | GET | `/v1/dev/extensions/:slug/analytics` | installs/errors dashboards |
 | POST | `/v1/admin/extensions/:slug/versions/:id/review` | approve/reject (`extensions.review`) |
 

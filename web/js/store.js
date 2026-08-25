@@ -370,10 +370,19 @@ const Store = {
   toggleFavourite (mediaId) {
     const favs = this.favourites()
     const index = favs.indexOf(mediaId)
-    if (index === -1) favs.push(mediaId)
+    const added = index === -1
+    if (added) favs.push(mediaId)
     else favs.splice(index, 1)
     this._write(this._profileKey('favourites'), favs)
-    return index === -1
+    // Favourites used to live in one browser and nowhere else — the only part
+    // of the library that did not follow the account to a second device.
+    window.LibrarySync?.onFavourite(mediaId, added)
+    return added
+  },
+
+  /** Replace the favourites list wholesale — used by the sync pull. */
+  setFavourites (ids) {
+    this._write(this._profileKey('favourites'), [...new Set(ids)])
   },
 
   // ---- theme ----

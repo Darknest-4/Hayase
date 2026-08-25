@@ -4,6 +4,7 @@
 import { query, queryOne } from '../db.ts'
 import { enqueue } from '../lib/queue.ts'
 import { WRITE_LIMIT } from '../plugins/security.ts'
+import { recomputeProfileStats } from '../workers/stats.ts'
 
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 
@@ -126,6 +127,109 @@ const routes: FastifyPluginAsync = async fastify => {
       [profileId]
     )
     return { data }
+  })
+
+  /*
+   * Favourites.
+   *
+   * The table has existed since the profile migration with no code behind it,
+   * so a viewer's favourites lived in one browser and nowhere else — the one
+   * piece of the library that did not follow them to a second device.
+   *
+   * Keyed by the profile, like the rest of the library, and typed: the schema
+   * already anticipates favouriting a character or a studio, so the column
+   * stays rather than being collapsed to anime-only.
+   *
+   * Spelled the American way here, matching the `favorites` table and the
+   * path docs/api.md has specified all along. The client says "favourites"
+   * because that is what the interface says to the reader — the split is
+   * deliberate, and this note is here so it does not read as a typo.
+   */
+  fastify.get('/favorites', async (request, reply) => {
+    const profileId = await resolveProfile(request, reply)
+    if (!profileId) return
+
+    const data = await query(
+      `SELECT f.subject_type, f.subject_id, f.created_at, m.anilist_id
+         FROM favorites f
+         LEFT JOIN anime_mappings m ON f.subject_type = 'anime' AND m.anime_id = f.subject_id
+        WHERE f.profile_id = $1
+        ORDER BY f.created_at DESC
+        LIMIT 500`,
+      [profileId]
+    )
+    return { data }
+  })
+
+  fastify.put('/favorites/:animeId', {
+    config: WRITE_LIMIT,
+    schema: { params: { type: 'object', properties: { animeId: { type: 'string', format: 'uuid' } } } }
+  }, async (request, reply) => {
+    const profileId = await resolveProfile(request, reply)
+    if (!profileId) return
+    const { animeId } = request.params as { animeId: string }
+
+    // A favourite pointing at nothing is a broken row on somebody's profile
+    // screen, so the subject is checked rather than trusted.
+    const exists = await queryOne('SELECT 1 FROM anime WHERE id = $1', [animeId])
+    if (!exists) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    await query(
+      `INSERT INTO favorites (profile_id, subject_type, subject_id) VALUES ($1, 'anime', $2)
+       ON CONFLICT DO NOTHING`,
+      [profileId, animeId]
+    )
+    return reply.code(204).send()
+  })
+
+  fastify.delete('/favorites/:animeId', {
+    schema: { params: { type: 'object', properties: { animeId: { type: 'string', format: 'uuid' } } } }
+  }, async (request, reply) => {
+    const profileId = await resolveProfile(request, reply)
+    if (!profileId) return
+    const { animeId } = request.params as { animeId: string }
+    await query(
+      `DELETE FROM favorites WHERE profile_id = $1 AND subject_type = 'anime' AND subject_id = $2`,
+      [profileId, animeId]
+    )
+    return reply.code(204).send()
+  })
+
+  /**
+   * The profile's own numbers.
+   *
+   * The stats worker has been computing these into `profile_stats` from
+   * `watch_history` — which only started filling once the client began
+   * reporting measured completions — and nothing could read the result. The
+   * client computed its own from browser storage instead, which is why the
+   * same account showed different totals on two machines.
+   *
+   * Recomputed on demand when the row is missing or stale: the worker's own
+   * schedule is fine for aggregate reporting, but a viewer opening their
+   * profile expects the episode they finished a minute ago to be in there.
+   */
+  fastify.get('/stats', async (request, reply) => {
+    const profileId = await resolveProfile(request, reply)
+    if (!profileId) return
+
+    const stale = await queryOne<{ fresh: boolean }>(
+      `SELECT (updated_at > now() - interval '2 minutes') AS fresh FROM profile_stats WHERE profile_id = $1`,
+      [profileId]
+    )
+    if (!stale?.fresh) await recomputeProfileStats(profileId)
+
+    const row = await queryOne(
+      `SELECT xp_total, level, minutes_watched, episodes_watched, anime_completed,
+              mean_score, genre_breakdown, updated_at
+         FROM profile_stats WHERE profile_id = $1`,
+      [profileId]
+    )
+    // A profile that has watched nothing has no row until the first recompute;
+    // returning zeroes beats returning a 404 for "you are new here".
+    return row ?? {
+      xp_total: 0, level: 1, minutes_watched: 0, episodes_watched: 0,
+      anime_completed: 0, mean_score: null, genre_breakdown: {}, updated_at: null
+    }
   })
 
   /*

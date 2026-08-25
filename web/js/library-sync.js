@@ -91,7 +91,38 @@ const LibrarySync = {
       this._muted = false
     }
     await this.pullResume()
+    await this.pullFavourites()
     if (changed) window.dispatchEvent(new CustomEvent('library-synced'))
+  },
+
+  /**
+   * Bring the account's favourites down.
+   *
+   * Union rather than replace. Two devices with different favourites are two
+   * halves of one person's list, not a conflict to resolve — and picking a
+   * winner would silently delete whichever half was older. Anything only the
+   * browser knows about is pushed back up so the two ends converge.
+   */
+  async pullFavourites () {
+    let rows
+    try { ({ data: rows } = await this._req('/v1/me/favorites')) } catch (e) { return }
+    if (!Array.isArray(rows)) return
+
+    const remote = new Set(rows.map(r => Number(r.anilist_id)).filter(Boolean))
+    const local = new Set(Store.favourites().map(Number))
+
+    this._muted = true
+    try {
+      Store.setFavourites([...new Set([...remote, ...local])])
+    } finally {
+      this._muted = false
+    }
+
+    // Push what only this browser had. Deliberately after the merge, so a
+    // failure here leaves the viewer with the complete list either way.
+    for (const id of local) {
+      if (!remote.has(id)) this.onFavourite(id, true)
+    }
   },
 
   /**
@@ -215,6 +246,44 @@ const LibrarySync = {
         })
       } catch (e) { /* offline, or an anime with no episode rows yet */ }
     })()
+  },
+
+  /**
+   * A favourite was added or removed locally.
+   *
+   * Debounced per title: the star is a toggle, and somebody who taps it twice
+   * should cost one request carrying the final state, not two racing ones.
+   */
+  onFavourite (mediaId, added) {
+    if (this._muted || !this.enabled() || !mediaId) return
+    this._debounce(`fav:${mediaId}`, async () => {
+      try {
+        // Never create a catalogue row from here: this path knows the id and
+        // nothing else, so a stub made from it would be titled "Unknown". The
+        // library push resolves with the full media object; a favourite on a
+        // title that is not in the catalogue yet simply waits for that.
+        const uuid = await YumeAPI.yumeAnimeId({ id: mediaId }, { create: false })
+        if (!uuid) return
+        await this._req(`/v1/me/favorites/${uuid}`, { method: added ? 'PUT' : 'DELETE' })
+      } catch (e) { /* offline, or a title with no catalogue row yet */ }
+    }, 600)
+  },
+
+  /**
+   * The account's own numbers, computed on the server from watch history.
+   *
+   * Returns null when signed out, offline, or when the server has nothing —
+   * every caller falls back to the browser's own tally, which is what it used
+   * before this existed.
+   */
+  async stats () {
+    if (!this.enabled()) return null
+    try {
+      const row = await this._req('/v1/me/stats')
+      return row && typeof row === 'object' ? row : null
+    } catch (e) {
+      return null
+    }
   },
 
   // resolve an episode number to its server UUID (cached per anime)

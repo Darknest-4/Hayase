@@ -148,11 +148,13 @@ const PageDashboard = {
     const minutes = window.WatchTime.minutesFor(entries).totalMinutes
     const hours = Math.floor(minutes / 60)
     const cards = U.el('div', { class: 'stat-cards', style: 'margin:0;' }, [
-      [entries.length, 'In library'],
-      [entries.filter(e => e.status === 'COMPLETED').length, T('Completed')],
-      [episodes.toLocaleString(I18n.locale()), T('Episodes')],
-      [hours >= 24 ? `${Math.floor(hours / 24)}d ${hours % 24}h` : `${hours}h`, T('Watch time')]
-    ].map(([v, l]) => U.el('div', { class: 'stat-card' }, [U.el('b', { text: String(v) }), U.el('span', { text: l })])))
+      [entries.length, 'In library', null],
+      [entries.filter(e => e.status === 'COMPLETED').length, T('Completed'), 'completed'],
+      [episodes.toLocaleString(I18n.locale()), T('Episodes'), 'episodes'],
+      [hours >= 24 ? `${Math.floor(hours / 24)}d ${hours % 24}h` : `${hours}h`, T('Watch time'), 'watchTime']
+    ].map(([v, l, stat]) => U.el('div', { class: 'stat-card', 'data-stat': stat }, [U.el('b', { text: String(v) }), U.el('span', { text: l })])))
+    // Local numbers first, the account's own totals when they arrive.
+    window.ProfileStats?.hydrate(cards)
     return this._section('Quick stats', cards, { link: '#/profile?tab=analytics', linkText: 'Analytics →' })
   },
 
