@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Yume API gateway \u2014 Fastify REST/GraphQL service",
+  "description": "Yume API gateway — Fastify REST/GraphQL service",
   "scripts": {
     "dev": "node --watch --experimental-strip-types src/index.ts",
     "build": "tsc",
@@ -16,7 +16,8 @@
     "import:anilist": "node --experimental-strip-types scripts/import-anilist.ts",
     "test": "node --experimental-strip-types --test test/*.test.ts",
     "test:integration": "node --experimental-strip-types --test test/integration.test.ts",
-    "test:adversarial": "node --experimental-strip-types --test test/adversarial.test.ts test/ssrf.test.ts test/db-errors.test.ts test/client-queries.test.ts"
+    "test:adversarial": "node --experimental-strip-types --test test/adversarial.test.ts test/ssrf.test.ts test/db-errors.test.ts test/client-queries.test.ts",
+    "test:e2e": "node --experimental-strip-types --test ../web/test/e2e/*.test.mjs"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",

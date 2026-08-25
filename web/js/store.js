@@ -201,13 +201,16 @@ const Store = {
     return Number(this._resumeMap()[`${mediaId}:${episode}`]) || 0
   },
 
-  setResume (mediaId, episode, seconds) {
+  // `meta` carries what the server needs to interpret the position — the
+  // episode's runtime. Optional, because a caller that does not know it (a
+  // list screen marking progress) should still be able to save one.
+  setResume (mediaId, episode, seconds, meta = {}) {
     const map = this._resumeMap()
     const key = `${mediaId}:${episode}`
     if (seconds > 5) map[key] = Math.floor(seconds)
     else delete map[key]
     this._write(this._profileKey('resume'), map)
-    if (seconds > 5) window.LibrarySync?.onResume({ id: mediaId }, episode, seconds)
+    if (seconds > 5) window.LibrarySync?.onResume({ id: mediaId }, episode, seconds, meta)
   },
 
   clearResume (mediaId, episode) {

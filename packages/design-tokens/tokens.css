@@ -1,13 +1,13 @@
 /* ===========================================================================
-   Yume Design Tokens — single source of truth for every client surface.
-   Generated values also exist as JSON (tokens.json) for native platforms.
+   Yume Design Tokens — for surfaces that cannot read the client stylesheet.
 
-   Identity: rooted in the original Hayase look — pure black surfaces,
-   near-white type, the signature rose accent (hsl 346.6 79% 51%), Nunito.
+   GENERATED FILE. Do not edit by hand: run
+     node packages/design-tokens/build.mjs
+   The source is web/css/tokens.css, which is what the web client renders
+   from. web/test/design-tokens.test.mjs fails if this file falls behind it.
    =========================================================================== */
 
 :root {
-  /* ---- color primitives ---- */
   --ink-black: hsl(0 0% 0%);
   --ink-950: hsl(0 0% 2%);
   --ink-900: hsl(0 0% 4%);
@@ -17,20 +17,21 @@
   --ink-400: hsl(0 0% 50%);
   --ink-200: hsl(0 0% 75%);
   --ink-50: hsl(0 0% 98%);
-
-  --rose-500: hsl(346.6 79.1% 51.2%);  /* signature accent */
+  --rose-500: hsl(346.6 79.1% 51.2%);
   --rose-600: hsl(346.6 79.1% 44%);
   --green-500: hsl(142 70% 45%);
   --red-500: hsl(0 72% 51%);
   --blue-500: hsl(215 90% 60%);
   --violet-500: hsl(260 80% 65%);
   --amber-500: hsl(40 90% 55%);
-
-  /* ---- semantic: dark (default) ---- */
+  --green-400: hsl(142 68% 58%);
+  --amber-400: hsl(40 92% 66%);
+  --red-400: hsl(0 78% 66%);
+  --blue-400: hsl(215 92% 70%);
   --bg: var(--ink-black);
-  --bg-raised: var(--ink-900);          /* cards, rails */
-  --bg-overlay: var(--ink-900);         /* modals, popovers */
-  --bg-sunken: var(--ink-black);        /* player background, wells */
+  --bg-raised: var(--ink-900);
+  --bg-overlay: var(--ink-900);
+  --bg-sunken: var(--ink-black);
   --fg: var(--ink-50);
   --fg-muted: var(--ink-200);
   --fg-faint: var(--ink-400);
@@ -38,23 +39,19 @@
   --border-strong: var(--ink-700);
   --accent: var(--rose-500);
   --accent-hover: var(--rose-600);
-  --accent-fg: hsl(0 0% 100%);          /* text on accent */
+  --accent-fg: hsl(0 0% 100%);
   --accent-soft: hsl(346.6 79% 51% / .14);
-  --primary: var(--ink-50);             /* Hayase-style light primary button */
+  --primary: var(--ink-50);
   --primary-fg: hsl(0 0% 10%);
   --ok: var(--green-500);
   --danger: var(--red-500);
   --info: var(--blue-500);
   --live: var(--violet-500);
-
-  /* ---- status colors (library states) ---- */
   --status-watching: var(--green-500);
   --status-planning: var(--blue-500);
   --status-completed: var(--violet-500);
   --status-paused: var(--amber-500);
   --status-dropped: var(--red-500);
-
-  /* ---- typography ---- */
   --font-sans: 'Nunito', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --font-mono: 'Geist Mono', ui-monospace, monospace;
   --text-xs: 0.75rem;
@@ -66,12 +63,12 @@
   --text-3xl: 2.5rem;
   --weight-normal: 400;
   --weight-medium: 600;
+  --weight-semibold: 650;
   --weight-bold: 700;
+  --weight-extrabold: 780;
   --weight-black: 800;
   --leading-tight: 1.15;
   --leading-normal: 1.5;
-
-  /* ---- spacing (4px base) ---- */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -80,36 +77,26 @@
   --space-6: 2rem;
   --space-7: 3rem;
   --space-8: 4rem;
-
-  /* ---- radii (Hayase-scale: subtle) ---- */
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 10px;
+  --radius-xl: 14px;
   --radius-full: 999px;
-
-  /* ---- elevation ---- */
   --shadow-1: 0 1px 3px hsl(0 0% 0% / .6);
   --shadow-2: 0 6px 20px hsl(0 0% 0% / .55);
   --shadow-3: 0 16px 48px hsl(0 0% 0% / .7);
-
-  /* ---- motion ---- */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
   --dur-fast: 120ms;
   --dur-base: 200ms;
   --dur-slow: 350ms;
-
-  /* ---- layout ---- */
   --sidebar-w: 3.5rem;
   --sidebar-w-expanded: 3.5rem;
   --content-max: 90rem;
-  --card-w: 9.5rem;
+  --card-w: 10.5rem;
   --card-ratio: 2 / 3;
-
-  color-scheme: dark;
 }
 
-/* ---- light mode ---- */
 [data-theme='light'] {
   --bg: hsl(0 0% 100%);
   --bg-raised: hsl(0 0% 96%);
@@ -123,17 +110,11 @@
   --accent-soft: hsl(346.6 79% 51% / .12);
   --primary: hsl(0 0% 8%);
   --primary-fg: hsl(0 0% 100%);
+  --green-400: hsl(142 72% 30%);
+  --amber-400: hsl(40 95% 33%);
+  --red-400: hsl(0 74% 43%);
+  --blue-400: hsl(215 88% 44%);
   --shadow-1: 0 1px 3px hsl(0 0% 0% / .12);
   --shadow-2: 0 6px 20px hsl(0 0% 0% / .14);
   --shadow-3: 0 16px 48px hsl(0 0% 0% / .2);
-  color-scheme: light;
-}
-
-/* ---- reduced motion ---- */
-@media (prefers-reduced-motion: reduce) {
-  :root {
-    --dur-fast: 0ms;
-    --dur-base: 0ms;
-    --dur-slow: 0ms;
-  }
 }

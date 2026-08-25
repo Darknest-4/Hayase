@@ -90,7 +90,44 @@ const LibrarySync = {
     } finally {
       this._muted = false
     }
+    await this.pullResume()
     if (changed) window.dispatchEvent(new CustomEvent('library-synced'))
+  },
+
+  /**
+   * Bring back where each episode was left off.
+   *
+   * The library pull restored *which* episode you were on and never the
+   * position inside it, so opening the same episode on a second device
+   * started from zero. `/v1/me/continue-watching` has always returned exactly
+   * this and nothing called it — the resume map was written to the server and
+   * never read back.
+   *
+   * Only fills gaps: a local position always wins. It is either newer than
+   * what the server knows, or it is the same position, and overwriting a
+   * live playback position from a background sync is how a viewer gets
+   * yanked backwards mid-episode.
+   */
+  async pullResume () {
+    let rows
+    try { ({ data: rows } = await this._req('/v1/me/continue-watching')) } catch (e) { return }
+    if (!Array.isArray(rows) || !rows.length) return
+
+    // The server keys on its own anime UUIDs; the client keys on AniList ids.
+    // The library rows just pulled are the mapping, so this costs no request.
+    this._muted = true
+    try {
+      for (const row of rows) {
+        const anilistId = Number(row.anilist_id)
+        const episode = Number(row.episode)
+        const seconds = Number(row.position_sec)
+        if (!anilistId || !episode || !(seconds > 5)) continue
+        if (Store.getResume(anilistId, episode)) continue // a local position wins
+        Store.setResume(anilistId, episode, seconds)
+      }
+    } finally {
+      this._muted = false
+    }
   },
 
   // ---- push: local → server (debounced, best-effort) ----
@@ -127,15 +164,57 @@ const LibrarySync = {
   },
 
   // a resume position was saved locally (fires ~every 5s during playback)
-  onResume (media, episode, seconds) {
+  //
+  // `durationSec` is sent alongside the position because the server needs it
+  // to make sense of one: 400 seconds into a 24-minute episode and 400 into a
+  // 2-hour film are not the same progress. It was never sent, which is also
+  // why the server's own completion rule could never fire.
+  onResume (media, episode, seconds, meta = {}) {
     if (this._muted || !this.enabled() || !media || seconds <= 5) return
     this._debounce(`resume:${media.id}:${episode}`, async () => {
       try {
         const episodeId = await this._episodeId(media, episode)
         if (!episodeId) return
-        await this._req(`/v1/me/progress/${episodeId}`, { method: 'PATCH', body: { positionSec: Math.floor(seconds) } })
+        await this._req(`/v1/me/progress/${episodeId}`, {
+          method: 'PATCH',
+          body: {
+            positionSec: Math.floor(seconds),
+            ...(Number.isFinite(meta.durationSec) && meta.durationSec > 0 ? { durationSec: Math.floor(meta.durationSec) } : {})
+          }
+        })
       } catch (e) { /* stub anime without episode rows, or offline */ }
     }, 4000)
+  },
+
+  /**
+   * An episode was actually watched — the measured verdict, not a position.
+   *
+   * Sent immediately rather than through the debounce: this is the last thing
+   * that happens before somebody closes the tab, and it is the only event that
+   * writes history and XP on the server. A 4-second wait would lose it exactly
+   * when it matters.
+   */
+  onEpisodeCompleted (media, episode, seconds, durationSec) {
+    if (this._muted || !this.enabled() || !media) return
+    // Cancel a pending resume for the same episode: it carries an older
+    // position and no verdict, and arriving second it would say less.
+    const key = `resume:${media.id}:${episode}`
+    if (this._timers[key]) { clearTimeout(this._timers[key]); delete this._timers[key] }
+
+    return (async () => {
+      try {
+        const episodeId = await this._episodeId(media, episode)
+        if (!episodeId) return
+        await this._req(`/v1/me/progress/${episodeId}`, {
+          method: 'PATCH',
+          body: {
+            positionSec: Math.floor(seconds),
+            ...(Number.isFinite(durationSec) && durationSec > 0 ? { durationSec: Math.floor(durationSec) } : {}),
+            completed: true
+          }
+        })
+      } catch (e) { /* offline, or an anime with no episode rows yet */ }
+    })()
   },
 
   // resolve an episode number to its server UUID (cached per anime)

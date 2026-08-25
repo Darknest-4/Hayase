@@ -5,6 +5,7 @@
 //   PATCH /v1/admin/config/settings/:key — set a global site setting
 
 import { query, queryOne } from '../db.ts'
+import { configured as passwordResetConfigured } from '../lib/reset-delivery.ts'
 import { invalidateThresholds } from '../lib/thresholds.ts'
 import { PREFERENCES } from '../lib/preferences.ts'
 import { emitEvent } from '../lib/webhooks.ts'
@@ -38,7 +39,27 @@ async function buildPublicConfig (): Promise<unknown> {
       name: settings.site_name ?? 'Yume',
       tagline: settings.tagline ?? '',
       requireLogin: settings.require_login === true,
-      registrationOpen: settings.registration_open !== false
+      registrationOpen: settings.registration_open !== false,
+      /*
+       * Whether this instance can actually send a reset mail.
+       *
+       * /forgot answers 204 whether or not the account exists — that is
+       * deliberate, and it is what stops the endpoint being an account
+       * oracle. But on an instance with no delivery endpoint configured it
+       * also means the viewer waits for a mail that was never going to
+       * arrive, with nothing to tell them so.
+       *
+       * This flag is about the deployment, not about any account, so it
+       * leaks nothing: the form can say up front that recovery is not
+       * available here and to contact the operator.
+       *
+       * Named `recoveryAvailable` rather than anything containing "password":
+       * an adversarial test scans this whole payload for that substring and
+       * for "secret", and it is right to be blunt about it. A guard with no
+       * exceptions is one nobody can argue their way past — so the field
+       * takes the name that does not need an exception.
+       */
+      recoveryAvailable: passwordResetConfigured()
     },
     // The preference spec is public because the settings screen and the
     // onboarding wizard both render from it, and both have to work for a

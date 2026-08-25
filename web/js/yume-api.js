@@ -469,6 +469,58 @@ const YumeAPI = {
     return res.text()
   },
 
+  /**
+   * The account's server-side notifications.
+   *
+   * Written by the notify worker — a monitoring alert reaches every operator
+   * this way. Returns [] when signed out or unreachable, because the
+   * notification screen also has local signals to show and must not fail
+   * whole because the server did.
+   */
+  async notifications ({ unreadOnly = false, limit = 50 } = {}) {
+    if (!this.user()) return []
+    try {
+      const { data } = await this._request(`/v1/me/notifications?unreadOnly=${unreadOnly}&limit=${limit}`, { auth: true })
+      return data ?? []
+    } catch (e) {
+      return []
+    }
+  },
+
+  /** Mark notifications read — specific ids, or every unread one. */
+  markNotificationsRead (ids) {
+    return this._request('/v1/me/notifications/read', {
+      method: 'POST',
+      auth: true,
+      body: ids?.length ? { ids } : {}
+    }).catch(() => null)
+  },
+
+  /**
+   * Upload an extension package's bytes.
+   *
+   * The body is the raw source, not JSON: the server hashes exactly what
+   * arrives, and wrapping it would only add an encode/decode round trip to
+   * something that has to stay byte-identical. Returns { hash, size } — the
+   * only values a version may then be published against.
+   */
+  async uploadExtensionPackage (slug, source) {
+    const tokens = this._tokens()
+    if (!tokens) throw new Error('Sign in to your Yume account first')
+    const res = await fetch(`${this.base()}/v1/dev/extensions/${encodeURIComponent(slug)}/packages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/javascript',
+        Accept: 'application/json',
+        Authorization: 'Bearer ' + tokens.accessToken
+      },
+      body: source
+    })
+    const json = await res.json().catch(() => null)
+    if (!res.ok) throw new Error(json?.detail ?? json?.title ?? `Upload failed (HTTP ${res.status})`)
+    return json
+  },
+
   /** Extensions this account has installed, with the metadata the sandbox needs. */
   async installedExtensions () {
     const { data } = await this._request('/v1/extensions/installed', { auth: true })

@@ -1397,6 +1397,25 @@ svg.chart .chart-name { font-size: 12px; fill: var(--fg); dominant-baseline: mid
 .dash-editor-name { flex-grow: 1; font-weight: var(--weight-bold); font-size: var(--text-sm); }
 .dash-editor-actions { display: flex; align-items: center; gap: var(--space-2); }
 
+/* Skip link: off-screen until focused, then a normal-looking button at the
+   top-left. Never `display:none` — that would take it out of the tab order,
+   which is the one thing it exists to be in. */
+.skip-link {
+  position: fixed;
+  top: .5rem;
+  left: .5rem;
+  z-index: 200;
+  transform: translateY(-200%);
+  background: var(--accent);
+  color: var(--accent-fg);
+  padding: .5rem .9rem;
+  border-radius: var(--radius-md);
+  font-weight: var(--weight-bold);
+  text-decoration: none;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.skip-link:focus { transform: translateY(0); }
+
 /* ===== extension store ===== */
 
 .ext-grid {

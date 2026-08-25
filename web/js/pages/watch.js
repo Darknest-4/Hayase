@@ -645,12 +645,22 @@ const PageWatch = {
     // fires when *that* clears the bar. See web/js/watch-time.js.
     let historyLogged = false
     let completedFired = false
-    const save = () => { if (video.currentTime > 5) Store.setResume(media.id, episode, video.currentTime) }
+    // The runtime travels with the position: the server cannot tell 400
+    // seconds into an episode from 400 seconds into a film without it.
+    const save = () => {
+      if (video.currentTime > 5) {
+        Store.setResume(media.id, episode, video.currentTime, { durationSec: video.duration })
+      }
+    }
 
     const creditEpisode = () => {
       if (completedFired) return
       completedFired = true
       Store.setProgress(media, episode)
+      // The measurement is the verdict, and the server is told so directly.
+      // Until this call existed, `watch_history`, `xp_events` and every
+      // rollup built on them stayed empty on every deployment.
+      window.LibrarySync?.onEpisodeCompleted(media, episode, video.currentTime, video.duration)
       U.toast(I18n.f('Episode {n} marked as watched', { n: episode }))
     }
 

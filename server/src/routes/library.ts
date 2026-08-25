@@ -3,6 +3,7 @@
 
 import { query, queryOne } from '../db.ts'
 import { enqueue } from '../lib/queue.ts'
+import { WRITE_LIMIT } from '../plugins/security.ts'
 
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 
@@ -109,16 +110,90 @@ const routes: FastifyPluginAsync = async fastify => {
     const data = await query(
       `SELECT wp.episode_id, wp.anime_id, wp.position_sec, wp.duration_sec, wp.updated_at,
               e.number AS episode, e.title AS episode_title, e.thumbnail_key,
-              a.canonical_title
+              a.canonical_title,
+              -- The client keys everything on AniList ids, so without this it
+              -- cannot match a row back to the title it is holding. That is
+              -- why the resume positions this endpoint returns were written
+              -- to the server and never read back into a second device.
+              m.anilist_id
        FROM watch_progress wp
        JOIN episodes e ON e.id = wp.episode_id
        JOIN anime a ON a.id = wp.anime_id
+       LEFT JOIN anime_mappings m ON m.anime_id = a.id
        WHERE wp.profile_id = $1 AND NOT wp.completed
        ORDER BY wp.updated_at DESC
        LIMIT 20`,
       [profileId]
     )
     return { data }
+  })
+
+  /*
+   * The account's notification inbox.
+   *
+   * These rows have existed, and been written by the notify worker, since the
+   * jobs migration — a monitoring alert fans one out to every operator, for
+   * instance. Nothing could read them: the only accessor was a GraphQL field,
+   * and the web client speaks REST exclusively. So the inbox filled up and
+   * stayed invisible, which is the same as not having one.
+   *
+   * Scoped to the user rather than the profile: an alert is addressed to the
+   * person, not to whichever profile they happen to be watching under.
+   */
+  fastify.get('/notifications', {
+    schema: {
+      querystring: {
+        type: 'object',
+        properties: {
+          unreadOnly: { type: 'boolean', default: false },
+          limit: { type: 'integer', minimum: 1, maximum: 100, default: 50 }
+        }
+      }
+    }
+  }, async request => {
+    const { unreadOnly, limit } = request.query as { unreadOnly?: boolean, limit?: number }
+    const data = await query(
+      `SELECT id, type, payload, read_at, created_at
+         FROM notifications
+        WHERE user_id = $1 ${unreadOnly ? 'AND read_at IS NULL' : ''}
+        ORDER BY created_at DESC
+        LIMIT $2`,
+      [request.user.sub, limit ?? 50]
+    )
+    return { data }
+  })
+
+  /**
+   * Mark notifications read.
+   *
+   * An explicit id list, or everything when none is given — the inbox has a
+   * "mark all read" button and sending fifty ids to express that would be
+   * silly. The WHERE clause is scoped to the caller either way, so an id
+   * belonging to somebody else matches nothing rather than erroring.
+   */
+  fastify.post('/notifications/read', {
+    config: WRITE_LIMIT,
+    schema: {
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ids: { type: 'array', maxItems: 200, items: { type: 'string', format: 'uuid' } }
+        }
+      }
+    }
+  }, async request => {
+    const { ids } = (request.body ?? {}) as { ids?: string[] }
+    const rows = ids?.length
+      ? await query<{ id: string }>(
+        'UPDATE notifications SET read_at = now() WHERE user_id = $1 AND id = ANY($2::uuid[]) AND read_at IS NULL RETURNING id',
+        [request.user.sub, ids]
+      )
+      : await query<{ id: string }>(
+        'UPDATE notifications SET read_at = now() WHERE user_id = $1 AND read_at IS NULL RETURNING id',
+        [request.user.sub]
+      )
+    return { marked: rows.length }
   })
 
   fastify.patch('/progress/:episodeId', {
@@ -129,7 +204,9 @@ const routes: FastifyPluginAsync = async fastify => {
         required: ['positionSec'],
         properties: {
           positionSec: { type: 'number', minimum: 0 },
-          durationSec: { type: 'number', minimum: 0 }
+          durationSec: { type: 'number', minimum: 0 },
+          // The client's own verdict, from time actually spent playing.
+          completed: { type: 'boolean' }
         }
       }
     }
@@ -138,12 +215,36 @@ const routes: FastifyPluginAsync = async fastify => {
     if (!profileId) return
 
     const { episodeId } = request.params as { episodeId: string }
-    const { positionSec, durationSec } = request.body as { positionSec: number, durationSec?: number }
+    const body = request.body as { positionSec: number, durationSec?: number, completed?: boolean }
+    const { positionSec, durationSec } = body
 
     const episode = await queryOne<{ anime_id: string }>('SELECT anime_id FROM episodes WHERE id = $1', [episodeId])
     if (!episode) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
 
-    const completed = durationSec != null && durationSec > 0 && positionSec / durationSec >= 0.85
+    /*
+     * Who decides an episode was watched.
+     *
+     * There were two answers to that and they never met. The client measures
+     * the seconds the video actually played (web/js/watch-time.js) because
+     * position alone credits dragging the scrubber to the end. The server
+     * computed its own verdict from `positionSec / durationSec`, and the
+     * client has never sent `durationSec` — so the server's rule could not
+     * fire, and `watch_history`, `xp_events`, `watch_stats_daily` and
+     * `profile_stats` stayed empty on every deployment.
+     *
+     * The measurement is the answer, and only the client can take it. It is
+     * accepted here, with a floor: a completion claim that arrives at a
+     * position under a minute and under half the runtime is not a measurement,
+     * it is a malformed or forged call. That floor is not a security boundary
+     * — a client that lies about position can lie about anything, and XP is
+     * cosmetic — it just stops an obviously wrong call from writing history.
+     *
+     * The positional rule stays as the fallback for a caller that sends a
+     * duration and no verdict.
+     */
+    const positional = durationSec != null && durationSec > 0 && positionSec / durationSec >= 0.85
+    const plausible = positionSec >= 60 || (durationSec != null && durationSec > 0 && positionSec / durationSec >= 0.5)
+    const completed = body.completed === true ? plausible : positional
 
     // NOTE: direct write; swaps for the Redis write-behind path at scale
     // without changing this contract.

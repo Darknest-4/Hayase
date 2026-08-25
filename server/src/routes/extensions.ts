@@ -254,15 +254,28 @@ const routes: FastifyPluginAsync = async fastify => {
         `INSERT INTO extension_installs (user_id, extension_id, version_id, options)
          VALUES ($1, $2, $3, $4::jsonb)
          ON CONFLICT (user_id, extension_id) DO UPDATE SET enabled = true, version_id = $3
-         RETURNING *`,
+         RETURNING *, (xmax = 0) AS first_install`,
         [request.user.sub, latest.extension_id, latest.version_id, JSON.stringify(defaultOptions(latest.options))]
       )
-      await client.query('UPDATE extensions SET install_count = install_count + 1 WHERE id = $1', [latest.extension_id])
+      /*
+       * Count an install once per account, not once per call.
+       *
+       * The increment used to run unconditionally after an upsert, so
+       * re-installing — or pressing the button twice — added to the total
+       * every time. The store's default ranking is by install count, so the
+       * number was both wrong and trivially inflatable. `xmax = 0` is true
+       * only on the row this statement actually inserted.
+       */
+      const firstInstall = rows[0]?.first_install === true
+      if (firstInstall) {
+        await client.query('UPDATE extensions SET install_count = install_count + 1 WHERE id = $1', [latest.extension_id])
+      }
       await client.query(
         `INSERT INTO extension_events (extension_id, version_id, event) VALUES ($1, $2, 'install')`,
         [latest.extension_id, latest.version_id]
       )
-      return rows[0]
+      const { first_install: _ignored, ...install } = rows[0]
+      return install
     })
     const counts = await queryOne<{ install_count: number }>('SELECT install_count FROM extensions WHERE id = $1', [latest.extension_id])
     await emitEvent('extension.installed', { slug, action: 'install', installCount: counts?.install_count })

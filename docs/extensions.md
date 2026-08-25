@@ -77,7 +77,7 @@ enforced**. What is live today:
 | Install / uninstall / enable from the store | ✅ `web/js/pages/extensions.js` |
 | Per-install options, validated against the manifest | ✅ `PATCH /v1/extensions/:slug/install` |
 | Bundled extensions published on boot | ✅ `scripts/publish-extensions.ts` |
-| Package upload to object storage | ⏳ the portal still sends a manifest + hash, not bytes |
+| Package upload | ✅ raw source to `POST /packages`, hashed server-side; the portal sends the bytes |
 | Human review queue UI | ⏳ static checks run; the moderator screen is pending |
 | `create-yume-extension` scaffold / CLI | ⏳ not built |
 | Dev-mode side-loading with hot reload | ⏳ not built |

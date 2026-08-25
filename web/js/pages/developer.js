@@ -186,6 +186,26 @@ const PageDeveloper = {
   showUpload (body, dev, ext) {
     const version = U.el('input', { class: 'input', placeholder: '1.0.0', maxlength: '20' })
     const changelog = U.el('textarea', { class: 'input', rows: '2', placeholder: 'Changelog (optional)' })
+    // The package itself. Nothing sent this before: the form invented a hash
+    // from the manifest text, and the server — which stores the bytes and
+    // hashes them itself — rejected every submission with "No uploaded
+    // package with that hash". Publishing from this portal could not work.
+    const source = U.el('textarea', {
+      class: 'input',
+      rows: '10',
+      style: 'font-family:var(--font-mono, monospace);font-size:.78rem;',
+      placeholder: 'export default {\n  async test () { return true },\n  async single (query, options) { return [] }\n}'
+    })
+    const picker = U.el('input', {
+      type: 'file',
+      accept: '.js,.mjs,text/javascript',
+      style: 'font-size:.8rem;',
+      onchange: async e => {
+        const file = e.currentTarget.files?.[0]
+        if (!file) return
+        source.value = await file.text()
+      }
+    })
     const hosts = U.el('input', { class: 'input', placeholder: 'net:fetch hosts, comma-separated (e.g. nyaa.si)' })
     const permBoxes = ['query:ids', 'query:titles', 'query:media', 'storage:local', 'player:subtitles'].map(p => {
       const cb = U.el('input', { type: 'checkbox', value: p })
@@ -194,6 +214,7 @@ const PageDeveloper = {
 
     const modal = this.modal('Upload version', [
       field('Version (semver)', version),
+      field('Package source (index.js)', U.el('div', { style: 'display:flex;flex-direction:column;gap:.4rem;' }, [picker, source])),
       field('Changelog', changelog),
       field('net:fetch hosts', hosts),
       U.el('div', {}, [
@@ -221,21 +242,24 @@ const PageDeveloper = {
         permissions
       }
 
-      // In this build the package bytes are uploaded to object storage
-      // client-side; here we send a manifest snapshot + a content hash.
-      // We derive a stable demo hash from the manifest so the review
-      // pipeline has something to record.
-      const hash = await sha256Hex(JSON.stringify(manifest) + version.value)
+      const code = source.value.trim()
+      if (!code) return U.toast('Paste the package source, or pick the index.js file', 'error')
 
       try {
+        // Two steps, in this order, because the store is content-addressed:
+        // the server hashes the bytes it received and the version can only
+        // name a blob that already exists. A publisher never asserts what
+        // their own code hashes to.
+        const stored = await YumeAPI.uploadExtensionPackage(ext.slug, code)
+
         await YumeAPI._request(`/v1/dev/extensions/${ext.slug}/versions`, {
           method: 'POST',
           auth: true,
           body: {
             version: version.value.trim(),
-            packageKey: `packages/${ext.slug}/${version.value.trim()}.tgz`,
-            packageHash: hash,
-            packageSize: 20480,
+            packageKey: stored.hash,
+            packageHash: stored.hash,
+            packageSize: stored.size,
             changelog: changelog.value.trim() || undefined,
             manifest
           }
@@ -266,11 +290,6 @@ const PageDeveloper = {
 
 function field (label, control) {
   return U.el('div', { class: 'filter-group' }, [U.el('label', { text: label }), control])
-}
-
-async function sha256Hex (text) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
-  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
 window.PageDeveloper = PageDeveloper

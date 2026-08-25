@@ -20,6 +20,10 @@
 </head>
 
 <body>
+  <!-- Keyboard users land here first: the sidebar is a dozen links before any
+       content, and without this every page starts by tabbing through it. -->
+  <a class="skip-link" href="#page">Ugrás a tartalomra</a>
+
   <!-- ambient banner behind everything -->
   <div id="global-banner" class="global-banner"></div>
 
@@ -72,7 +76,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M17.5 13v8M13.5 17h8"/></svg>
         <span>Extensions</span>
       </a>
-      <button class="sidebar-btn sidebar-profile" id="profile-switcher" title="Profile">
+      <button class="sidebar-btn sidebar-profile" id="profile-switcher" title="Profile" aria-label="Profil váltása">
         <span class="sidebar-avatar" id="sidebar-avatar">🦊</span>
       </button>
 
@@ -96,7 +100,9 @@
     </nav>
 
     <!-- ===== Main content ===== -->
-    <main class="page" id="page"></main>
+    <!-- tabindex="-1" so the skip link can move focus here, not merely
+         scroll to it: without it the next Tab goes back to the sidebar. -->
+    <main class="page" id="page" tabindex="-1"></main>
   </div>
 
   <!-- quick search modal (Ctrl+K / S) -->
