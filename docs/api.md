@@ -102,6 +102,7 @@ One service, two protocols over the same service layer:
 | GET | `/v1/extensions/installed` | installed set + permissions + option schema |
 | POST | `/v1/dev/extensions` | create listing (`extensions.publish`) |
 | POST | `/v1/dev/extensions/:slug/packages` | upload the raw source; the server hashes it |
+| POST | `/v1/dev/repositories/import` | import an external index (`{url, dryRun}`); the server fetches and hashes each package |
 | POST | `/v1/dev/extensions/:slug/versions` | publish a version against an uploaded package → review pipeline |
 | GET | `/v1/dev/extensions/:slug/analytics` | installs/errors dashboards |
 | POST | `/v1/admin/extensions/:slug/versions/:id/review` | approve/reject (`extensions.review`) |

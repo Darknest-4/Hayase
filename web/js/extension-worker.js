@@ -12,7 +12,7 @@
 // ---------------------------------------------------------------- lockdown
 
 const REMOVED = [
-  'fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'importScripts',
+  'XMLHttpRequest', 'WebSocket', 'EventSource', 'importScripts',
   'Worker', 'SharedWorker', 'indexedDB', 'caches', 'BroadcastChannel',
   'Notification', 'navigator', 'crypto'
 ]
@@ -25,6 +25,21 @@ for (const name of REMOVED) {
     })
   } catch (e) { /* already non-configurable in this engine */ }
 }
+
+/**
+ * `fetch` is handled separately because it is the one capability a package may
+ * legitimately need under its own name.
+ *
+ * It starts as the same throwing stub as everything else, but stays
+ * *configurable* until the init message arrives — at which point it is either
+ * replaced by an alias of `yume.fetch` (compatibility mode) or sealed as-is.
+ * Sealing happens before the package is imported, so no package can ever
+ * observe it configurable, let alone redefine it.
+ */
+const denyFetch = () => {
+  throw new Error('fetch is not available to extensions — use the yume API')
+}
+Object.defineProperty(self, 'fetch', { configurable: true, get: denyFetch })
 
 // ---------------------------------------------------------------- host bridge
 
@@ -312,6 +327,23 @@ self.onmessage = async event => {
   if (message.kind === 'init') {
     try {
       options = message.options ?? {}
+
+      /*
+       * Compatibility mode.
+       *
+       * A package written for Hayase calls the bare global `fetch`, which this
+       * sandbox removed on purpose. Restoring it as an alias of `yume.fetch`
+       * relaxes nothing: the call still crosses to the host over postMessage,
+       * and the host re-checks the host allowlist regardless of what the
+       * worker claims — the lockdown above is defence in depth, not the
+       * boundary itself.
+       *
+       * Only when the manifest declared it, so a reviewer can see which
+       * packages run this way.
+       */
+      Object.defineProperty(self, 'fetch', message.compat === 'hayase'
+        ? { configurable: false, writable: false, value: (url, init) => yume.fetch(url, init) }
+        : { configurable: false, get: denyFetch })
       // The source is imported as a module from a blob the host built from the
       // hash-verified package, so the bytes executed are the bytes that were
       // reviewed. Remote imports cannot happen: the CSP allows only 'self' and

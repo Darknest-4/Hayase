@@ -115,6 +115,9 @@ const routes: FastifyPluginAsync = async fastify => {
               -- the declared option schema, so the client can draw a settings
               -- form without fetching the package and parsing its manifest
               coalesce(v.manifest->'options', '{}'::jsonb) AS option_schema,
+              -- Which API dialect the package speaks; the sandbox installs a
+              -- fetch alias for a package that declared one.
+              v.manifest->>'compat' AS compat,
               (SELECT coalesce(jsonb_agg(jsonb_build_object('permission', p.permission, 'hosts', p.hosts)), '[]')
                  FROM extension_permissions p WHERE p.version_id = v.id) AS permissions
        FROM extension_installs i

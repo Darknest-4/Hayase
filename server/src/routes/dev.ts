@@ -9,6 +9,9 @@ import { query, queryOne, transaction } from '../db.ts'
 import { escalatedPermissions, validateManifest } from '../lib/extension-manifest.ts'
 import { MAX_PACKAGE_BYTES, looksLikeSource, put, statBlob } from '../lib/package-store.ts'
 import { enqueue } from '../lib/queue.ts'
+import { fetchExternal, manifestFor, MAX_INDEX_BYTES, parseIndex, slugify } from '../lib/repository.ts'
+import { audit } from '../lib/audit.ts'
+import { WRITE_LIMIT } from '../plugins/security.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 
 import { onUniqueViolation } from '../lib/db-errors.ts'
@@ -307,6 +310,133 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   // ---------- analytics ----------
+
+  /**
+   * Import every package in an external repository index.
+   *
+   * This is how an extension gets into the store without being one of the
+   * packages that ship with the project: an operator points at an index, and
+   * the packages in it become listings they own and are answerable for.
+   *
+   * The index is treated as hostile input throughout — see lib/repository.ts
+   * for the reasoning. The part worth repeating here: the index never gets to
+   * say what its packages hash to. The bytes are fetched, hashed and stored by
+   * this server, so a lying index produces a different hash and the client
+   * rejects the package rather than running it.
+   *
+   * Imported listings are owned by the importer and marked as third-party in
+   * their description. This deployment vouches for none of them, and the
+   * operator who imported one is the person who chose to.
+   */
+  fastify.post('/repositories/import', {
+    preHandler: fastify.requirePermission('extensions.publish'),
+    config: WRITE_LIMIT,
+    schema: {
+      body: {
+        type: 'object',
+        required: ['url'],
+        additionalProperties: false,
+        properties: {
+          url: { type: 'string', maxLength: 2000 },
+          // A dry run reports what would happen and writes nothing, so an
+          // operator can look at a stranger's index before adopting it.
+          dryRun: { type: 'boolean', default: false }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const { url, dryRun } = request.body as { url: string, dryRun?: boolean }
+
+    const developer = await queryOne('SELECT 1 FROM extension_developers WHERE user_id = $1', [request.user.sub])
+    if (!developer) {
+      return reply.code(409).send({
+        type: 'about:blank', title: 'Conflict', status: 409,
+        detail: 'Enrol as a developer first — POST /v1/dev/register'
+      })
+    }
+
+    let index: unknown
+    try {
+      const bytes = await fetchExternal(url, MAX_INDEX_BYTES)
+      index = JSON.parse(bytes.toString('utf8'))
+    } catch (err) {
+      return reply.code(400).send({
+        type: 'about:blank', title: 'Bad Request', status: 400,
+        detail: `Could not read the index: ${(err as Error).message}`
+      })
+    }
+
+    const { entries, problems } = parseIndex(index)
+    const imported: Array<{ slug: string, name: string, version: string, hosts: string[], action: string }> = []
+
+    for (const entry of entries) {
+      const slug = slugify(entry.id)
+      try {
+        const bytes = await fetchExternal(entry.code, MAX_PACKAGE_BYTES)
+        if (!looksLikeSource(bytes)) throw new Error('the package is not UTF-8 source code')
+
+        const source = bytes.toString('utf8')
+        const manifest = manifestFor(entry, source, url)
+        const check = validateManifest(manifest)
+        if (!check.valid) throw new Error(check.errors.join('; '))
+
+        const hosts = check.permissions.find(p => p.permission === 'net:fetch')?.hosts ?? []
+        if (dryRun) {
+          imported.push({ slug, name: entry.name, version: entry.version, hosts, action: 'would import' })
+          continue
+        }
+
+        // The server hashes what it fetched. A publisher — or an index —
+        // never asserts what their own bytes hash to.
+        const stored = await put(bytes)
+
+        const action = await transaction(async client => {
+          const { rows: extRows } = await client.query<{ id: string, inserted: boolean }>(
+            `INSERT INTO extensions (slug, owner_id, name, summary, description, type, icon_key, accuracy, media_kind, languages, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'published')
+             ON CONFLICT (slug) DO UPDATE
+                SET name = EXCLUDED.name, summary = EXCLUDED.summary,
+                    description = EXCLUDED.description, updated_at = now()
+             RETURNING id, (xmax = 0) AS inserted`,
+            [slug, request.user.sub, manifest.name, manifest.summary, manifest.description, entry.type,
+              entry.icon ?? null, manifest.accuracy, manifest.media, entry.languages ?? []]
+          )
+          const extension = extRows[0]!
+
+          const { rows: versionRows } = await client.query<{ id: string }>(
+            `INSERT INTO extension_versions
+               (extension_id, version, package_key, package_hash, package_size, manifest, review_status, review_notes, published_at)
+             VALUES ($1, $2, $3, $3, $4, $5::jsonb, 'approved', $6, now())
+             ON CONFLICT (extension_id, version) DO UPDATE
+                SET package_key = EXCLUDED.package_key, package_hash = EXCLUDED.package_hash,
+                    package_size = EXCLUDED.package_size, manifest = EXCLUDED.manifest,
+                    review_notes = EXCLUDED.review_notes, published_at = now()
+             RETURNING id`,
+            [extension.id, entry.version, stored.hash, stored.size, JSON.stringify(manifest),
+              `imported from ${url} by ${request.user.username}`]
+          )
+          const versionId = versionRows[0]!.id
+
+          await client.query('DELETE FROM extension_permissions WHERE version_id = $1', [versionId])
+          for (const permission of check.permissions) {
+            await client.query(
+              'INSERT INTO extension_permissions (version_id, permission, hosts) VALUES ($1, $2, $3)',
+              [versionId, permission.permission, permission.hosts]
+            )
+          }
+          return extension.inserted ? 'imported' : 'updated'
+        })
+
+        await audit(request.user.sub, 'extension.imported', 'extension', slug,
+          {}, { repository: url, version: entry.version, hosts })
+        imported.push({ slug, name: entry.name, version: entry.version, hosts, action })
+      } catch (err) {
+        problems.push({ entry: entry.name, reason: (err as Error).message })
+      }
+    }
+
+    return { repository: url, dryRun: dryRun === true, imported, problems }
+  })
 
   fastify.get('/extensions/:slug/analytics', { preHandler: fastify.requirePermission('extensions.publish') }, async (request, reply) => {
     const { slug } = request.params as { slug: string }

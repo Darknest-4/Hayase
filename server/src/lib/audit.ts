@@ -26,6 +26,10 @@ export type AuditAction =
   | 'config.flag' | 'config.setting'
   | 'webhook.create' | 'webhook.update' | 'webhook.delete'
   | 'extension.review'
+  // Adopting somebody else's code into this store. Worth recording on its own:
+  // the operator who imported a repository is the person answerable for what
+  // came in with it.
+  | 'extension.imported'
 
 export type SubjectType = 'user' | 'role' | 'anime' | 'episode' | 'config' | 'webhook' | 'extension'
 
