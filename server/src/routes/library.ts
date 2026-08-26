@@ -5,6 +5,7 @@ import { query, queryOne } from '../db.ts'
 import { enqueue } from '../lib/queue.ts'
 import { WRITE_LIMIT } from '../plugins/security.ts'
 import { recomputeProfileStats } from '../workers/stats.ts'
+import { evaluate, grantNew, measure } from '../lib/achievements.ts'
 
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 
@@ -229,6 +230,55 @@ const routes: FastifyPluginAsync = async fastify => {
     return row ?? {
       xp_total: 0, level: 1, minutes_watched: 0, episodes_watched: 0,
       anime_completed: 0, mean_score: null, genre_breakdown: {}, updated_at: null
+    }
+  })
+
+  /**
+   * The achievement catalogue with this profile's progress against it.
+   *
+   * The catalogue is served rather than assumed, so the client renders one
+   * list instead of holding its own copy of the definitions — and a new
+   * achievement appears without shipping a client.
+   *
+   * Progress is measured live, and anything newly earned is granted here as
+   * well as by the stats worker.
+   *
+   * Granting from a read looks wrong until you notice the alternative: the
+   * screen would show an achievement as unlocked — because the numbers earn
+   * it — while no grant row and no XP existed until a worker happened to run.
+   * With the worker stopped that state is permanent, and it is invisible.
+   *
+   * It is safe because the grant is decided entirely by the server's own
+   * measurements: opening the screen cannot make a claim, only cause one to be
+   * checked. The insert is idempotent and the XP is keyed on the achievement,
+   * so checking twice grants once.
+   */
+  fastify.get('/achievements', async (request, reply) => {
+    const profileId = await resolveProfile(request, reply)
+    if (!profileId) return
+
+    // Before measuring, so a freshly earned one comes back already granted
+    // rather than as "unlocked, ask again later".
+    try {
+      await grantNew(profileId)
+    } catch (err) {
+      request.log.warn({ err }, 'could not grant achievements')
+    }
+
+    const [context, rows] = await Promise.all([
+      measure(profileId),
+      query<{ slug: string, unlocked_at: string }>(
+        `SELECT a.slug, pa.unlocked_at
+           FROM profile_achievements pa
+           JOIN achievements a ON a.id = pa.achievement_id
+          WHERE pa.profile_id = $1`,
+        [profileId]
+      )
+    ])
+
+    return {
+      data: evaluate(context, new Map(rows.map(r => [r.slug, r.unlocked_at]))),
+      context
     }
   })
 

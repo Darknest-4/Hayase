@@ -77,6 +77,7 @@ One service, two protocols over the same service layer:
 | ⏳ GET/POST | `/v1/me/bookmarks` | in-episode bookmarks |
 | GET | `/v1/me/stats` | profile statistics (`profile_stats`), recomputed when older than 2 min |
 | GET | `/v1/me/notifications` · POST `/notifications/read` | the account's inbox (the notify worker writes it) |
+| GET | `/v1/me/achievements` | catalogue + this profile's progress; grants anything newly earned |
 | ⏳ GET | `/v1/me/recommendations` | personalised (Redis-cached model output) |
 
 ### Community

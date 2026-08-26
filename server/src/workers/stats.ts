@@ -5,6 +5,7 @@
 //   { trending: true }    → recompute anime.trending from recent activity
 
 import { query } from '../db.ts'
+import { grantNew } from '../lib/achievements.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 
 import type { Job } from '../lib/queue.ts'
@@ -82,6 +83,20 @@ export async function recomputeProfileStats (profileId: string): Promise<void> {
      WHERE profile_id = $1`,
     [profileId]
   )
+
+  /*
+   * Anything newly earned, decided here rather than by the client.
+   *
+   * This is the right moment: the stats recompute runs when a profile's
+   * numbers changed, which is exactly when an achievement can become true.
+   * It is deliberately not awaited by the caller's critical path — a failure
+   * to grant a badge must never fail the thing that earned it.
+   */
+  try {
+    await grantNew(profileId)
+  } catch (err) {
+    console.warn('[stats] could not grant achievements:', (err as Error).message)
+  }
 }
 
 export async function rollupDay (day: string): Promise<void> {
