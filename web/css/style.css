@@ -1469,6 +1469,60 @@ svg.chart .chart-name { font-size: 12px; fill: var(--fg); dominant-baseline: mid
 .ext-option-help { font-size: var(--text-xs); color: var(--fg-faint); flex-basis: 100%; }
 .ext-option .input { width: 100%; }
 
+/* ----- store detail page ----- */
+
+.ext-name { color: inherit; text-decoration: none; }
+a.ext-name:hover { color: var(--accent); text-decoration: underline; }
+
+.ext-detail-head { display: flex; align-items: center; gap: var(--space-4); margin: var(--space-4) 0 var(--space-2); }
+.ext-detail-head h1 { font-size: var(--text-2xl); margin: 0 0 .2rem; }
+.ext-icon-lg { width: 4.5rem; height: 4.5rem; font-size: var(--text-2xl); border-radius: var(--radius-lg); }
+.ext-detail-summary { font-size: var(--text-base); color: var(--fg); max-width: 52rem; }
+.ext-detail-description { font-size: var(--text-sm); color: var(--fg-muted); max-width: 52rem; white-space: pre-wrap; }
+.ext-detail-actions { margin: var(--space-3) 0; }
+.ext-health { text-transform: capitalize; }
+.ext-deprecated { color: var(--amber-500); text-transform: uppercase; letter-spacing: .05em; }
+
+.ext-permissions, .ext-versions, .ext-reviews {
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+  max-width: 52rem;
+}
+.ext-permissions h3, .ext-versions h3, .ext-reviews h3 { font-size: var(--text-base); margin: 0 0 var(--space-3); }
+.ext-permissions ul, .ext-versions ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.ext-permissions code { font-family: var(--font-mono); font-size: var(--text-xs); background: var(--bg-sunken); border-radius: var(--radius-sm); padding: .1rem .4rem; }
+.ext-hash { font-family: var(--font-mono); font-size: .65rem; color: var(--fg-faint); }
+
+/* ----- reviews ----- */
+
+.ext-stars { display: inline-flex; gap: .1rem; color: var(--fg-faint); line-height: 1; }
+.ext-star { color: inherit; }
+.ext-stars .ext-star.on { color: var(--amber-500); }
+.ext-stars-input .ext-star {
+  background: none; border: 0; cursor: pointer; padding: 0 .1rem;
+  font-size: var(--text-xl); color: var(--fg-faint);
+}
+.ext-stars-input .ext-star:hover { color: var(--accent); }
+
+.ext-review-form {
+  display: flex; flex-direction: column; gap: var(--space-2);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.ext-review-form textarea { width: 100%; resize: vertical; font: inherit; }
+.ext-review-list { display: flex; flex-direction: column; gap: var(--space-4); }
+.ext-review { border-bottom: 1px solid var(--border); padding-bottom: var(--space-3); }
+.ext-review:last-child { border-bottom: 0; }
+.ext-review.mine { border-left: 3px solid var(--accent); padding-left: var(--space-3); }
+.ext-review-head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; font-size: var(--text-xs); }
+.ext-review-author { font-weight: var(--weight-bold); font-size: var(--text-sm); }
+.ext-review-report { margin-left: auto; }
+.ext-review-body { font-size: var(--text-sm); color: var(--fg-muted); margin: var(--space-2) 0 0; white-space: pre-wrap; }
+
 .ext-type-chip {
   background: var(--accent-soft);
   color: var(--accent);

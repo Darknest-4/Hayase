@@ -19,7 +19,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 
 function makeElement (tag) {
   const attrs = new Map()
-  return {
+  const node = {
     tagName: tag.toUpperCase(),
     nodeType: 1,
     className: '',
@@ -29,12 +29,25 @@ function makeElement (tag) {
     dataset: {},
     listeners: {},
     children: [],
+    classList: {
+      _owner: null,
+      add (name) { this._owner.className = [...new Set([...this._owner.className.split(' ').filter(Boolean), name])].join(' ') },
+      remove (name) { this._owner.className = this._owner.className.split(' ').filter(c => c && c !== name).join(' ') },
+      contains (name) { return this._owner.className.split(' ').includes(name) },
+      toggle (name, on) { (on ?? !this.contains(name)) ? this.add(name) : this.remove(name) }
+    },
+    replaceChildren (...kids) { this.children = kids.filter(k => k != null) },
+    // The stub keeps no parent links, so a replaced node records what it
+    // became and the test reads that instead.
+    replaceWith (node) { this.replacedWith = node },
     setAttribute (k, v) { attrs.set(k, String(v)) },
     getAttribute (k) { return attrs.has(k) ? attrs.get(k) : null },
     hasAttribute (k) { return attrs.has(k) },
     addEventListener (type, fn) { this.listeners[type] = fn },
     append (...kids) { this.children.push(...kids.filter(k => k != null)) }
   }
+  node.classList._owner = node
+  return node
 }
 
 const textNode = data => ({ nodeType: 3, textContent: String(data) })
@@ -105,6 +118,16 @@ describe('the icon', () => {
 
   it('falls back to the first letter when there is no icon', () => {
     assert.equal(Page._icon({ name: 'plex' }).textContent, 'P')
+  })
+
+  it('falls back to the letter when a remote icon fails to load', () => {
+    // An imported extension's icon is hosted by someone else. When that host
+    // is gone — or the viewer blocks it — a broken-image glyph on the card
+    // reads as the extension itself being broken.
+    const img = Page._icon({ name: 'Nyaa', icon_key: 'https://nyaa.si/static/favicon.png' })
+    assert.equal(img.tagName, 'IMG')
+    img.listeners.error()
+    assert.equal(img.replacedWith.textContent, 'N')
   })
 })
 
@@ -262,5 +285,132 @@ describe('the API adapter', () => {
   it('omits an unset field rather than sending null over it', () => {
     assert.match(source, /if \(enabled !== undefined\) body\.enabled = enabled/)
     assert.match(source, /if \(options !== undefined\) body\.options = options/)
+  })
+})
+
+describe('the store detail page', () => {
+  /** Render the detail view for a stubbed API and hand back the page root. */
+  async function detail ({ ext = {}, installs = [], reviews = { data: [], mine: null } } = {}) {
+    const root = makeElement('div')
+    context.YumeAPI.extension = () => Promise.resolve({
+      slug: 'aniskip',
+      name: 'AniSkip',
+      summary: 'Skips openings',
+      type: 'metadata',
+      developer: 'yume',
+      install_count: 3,
+      health: 'healthy',
+      failures_7d: 0,
+      versions: [],
+      ...ext
+    })
+    context.YumeAPI.installedExtensions = () => Promise.resolve(installs)
+    context.YumeAPI.extensionReviews = () => Promise.resolve(reviews)
+    await Page._detail(root, ext.slug ?? 'aniskip')
+    // _reviews() loads on its own microtask chain after _detail resolves.
+    await new Promise(resolve => setTimeout(resolve, 0))
+    return root
+  }
+
+  it('lists the permissions of the version an install would actually run', async () => {
+    // What an extension is allowed to reach is the one thing worth reading
+    // before pressing Install, so it is shown from the latest version rather
+    // than merged across the history.
+    const root = await detail({
+      ext: {
+        versions: [
+          { version: '2.0.0', publishedAt: '2026-01-01', packageHash: 'a'.repeat(64), permissions: [{ permission: 'network', hosts: ['api.aniskip.com'] }] },
+          { version: '1.0.0', publishedAt: '2025-01-01', packageHash: 'b'.repeat(64), permissions: [{ permission: 'storage', hosts: [] }] }
+        ]
+      }
+    })
+    const text = walk(root).map(n => n.textContent ?? '').join(' ')
+    assert.match(text, /network/)
+    assert.match(text, /api\.aniskip\.com/)
+    assert.doesNotMatch(text, /storage/, 'a permission dropped in the new version must not still be advertised')
+  })
+
+  it('says an extension asks for nothing rather than showing an empty list', async () => {
+    const root = await detail({ ext: { versions: [{ version: '1.0.0', publishedAt: '2026-01-01', permissions: [] }] } })
+    assert.ok(walk(root).some(n => /no access beyond the sandbox/.test(n.textContent ?? '')))
+  })
+
+  it('reports no ratings instead of a zero score', async () => {
+    // "★ 0.0" reads as an extension everybody hated; nobody has rated it.
+    const root = await detail({ ext: { rating_avg: null, rating_count: 0 } })
+    const text = walk(root).map(n => n.textContent ?? '').join(' ')
+    assert.match(text, /No ratings yet/)
+    assert.doesNotMatch(text, /★ 0\.0/)
+  })
+
+  it('offers the review form only to an account that installed it', async () => {
+    const withoutInstall = await detail()
+    assert.ok(walk(withoutInstall).some(n => /Install the extension to review it/.test(n.textContent ?? '')),
+      'the server refuses the review anyway; asking first is not a kindness')
+
+    const withInstall = await detail({ installs: [{ slug: 'aniskip', enabled: true, options: {}, option_schema: {} }] })
+    assert.ok(find(withInstall, 'textarea').length === 1, 'an installed extension gets the form')
+  })
+
+  it('refuses to post a review with no rating picked', async () => {
+    const sent = []
+    context.YumeAPI.reviewExtension = (slug, body) => { sent.push({ slug, body }); return Promise.resolve({}) }
+    const root = await detail({ installs: [{ slug: 'aniskip', enabled: true, options: {}, option_schema: {} }] })
+
+    const post = find(root, 'button').find(b => /Post review/.test(label(b)))
+    await post.listeners.click({ currentTarget: post })
+    assert.equal(sent.length, 0, 'a rating-less review would be stored as no opinion at all')
+    assert.ok(walk(root).some(n => /Pick a rating first/.test(n.textContent ?? '')))
+
+    const stars = find(root, 'button').filter(b => label(b) === '★')
+    assert.equal(stars.length, 5)
+    stars[3].listeners.click({ currentTarget: stars[3] })
+    await post.listeners.click({ currentTarget: post })
+    assert.equal(sent.length, 1)
+    assert.equal(sent[0].body.rating, 4)
+    delete context.YumeAPI.reviewExtension
+  })
+
+  it('pre-fills the form from the review this account already left', async () => {
+    const root = await detail({
+      installs: [{ slug: 'aniskip', enabled: true, options: {}, option_schema: {} }],
+      reviews: {
+        data: [{ id: 'r1', rating: 3, body: 'ok', author: 'me', created_at: '2026-01-01T00:00:00Z' }],
+        mine: { id: 'r1', rating: 3, body: 'ok' }
+      }
+    })
+    assert.equal(find(root, 'textarea')[0].value, 'ok')
+    assert.ok(find(root, 'button').some(b => /Update review/.test(label(b))), 'replacing, not appending')
+    assert.ok(find(root, 'button').some(b => /Delete/.test(label(b))))
+  })
+
+  it('does not offer a Report button on your own review', async () => {
+    const root = await detail({
+      installs: [{ slug: 'aniskip', enabled: true, options: {}, option_schema: {} }],
+      reviews: {
+        data: [
+          { id: 'r1', rating: 3, author: 'me', created_at: '2026-01-01T00:00:00Z' },
+          { id: 'r2', rating: 1, author: 'someone', created_at: '2026-01-02T00:00:00Z' }
+        ],
+        mine: { id: 'r1', rating: 3 }
+      }
+    })
+    assert.equal(find(root, 'button').filter(b => /Report/.test(label(b))).length, 1)
+  })
+
+  it('reports a review under its own subject type, not the anime one', async () => {
+    // `review` means an anime review and lives in a different table; sending
+    // that type would point a moderator at an id that does not exist there.
+    const sent = []
+    context.YumeAPI.report = (...args) => { sent.push(args); return Promise.resolve({}) }
+    context.window.prompt = () => 'spam'
+    context.U.toast = () => {}
+    const root = await detail({
+      reviews: { data: [{ id: 'r2', rating: 1, author: 'someone', created_at: '2026-01-02T00:00:00Z' }], mine: null }
+    })
+    const button = find(root, 'button').find(b => /Report/.test(label(b)))
+    await button.listeners.click({ currentTarget: button })
+    assert.deepEqual(plain(sent[0]), ['extension_review', 'r2', 'spam'])
+    delete context.YumeAPI.report
   })
 })

@@ -90,7 +90,7 @@ One service, two protocols over the same service layer:
 | ⏳ GET/POST | `/v1/chats` · `/v1/chats/:id/messages` | DMs/groups — the WS channel exists, no REST and no client |
 | ⏳ GET/POST | `/v1/clubs` · membership subroutes | clubs |
 | ⏳ POST/DELETE | `/v1/users/:id/follow` · `/v1/friends/:id` | social graph |
-| POST | `/v1/reports` | report any subject |
+| POST | `/v1/reports` | report a subject: `comment` · `post` · `topic` · `review` · `extension_review` · `user` · `extension` · `message` |
 | ⏳ POST | `/v1/reviews` · votes subroute | long-form reviews |
 | POST | `/v1/w2g` · GET `/v1/w2g/:code` | watch-together rooms (sync over WS) |
 
@@ -98,7 +98,10 @@ One service, two protocols over the same service layer:
 | Method | Path | Description |
 |---|---|---|
 | GET | `/v1/extensions` | store browse `?type&sort=installs|rating|new` |
-| GET | `/v1/extensions/:slug` | listing detail (`/reviews` ⏳) |
+| GET | `/v1/extensions/:slug` | listing detail: versions, permissions, health |
+| GET | `/v1/extensions/:slug/reviews` | public list; `mine` is filled in when the request carries a token |
+| PUT | `/v1/extensions/:slug/reviews` | leave or replace a review (1–5); **403 without an install** |
+| DELETE | `/v1/extensions/:slug/reviews` | withdraw it |
 | POST | `/v1/extensions/:slug/install` · PATCH · DELETE | install, configure options, uninstall |
 | GET | `/v1/extensions/installed` | installed set + permissions + option schema |
 | POST | `/v1/dev/extensions` | create listing (`extensions.publish`) |

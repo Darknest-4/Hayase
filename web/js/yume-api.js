@@ -550,6 +550,29 @@ const YumeAPI = {
   },
 
   /**
+   * The reviews on one extension, plus this account's own review if it has one.
+   *
+   * Sent with credentials when there are any and without when there are not:
+   * the list is public, but `mine` can only be answered for a signed-in
+   * caller, and asking for it must not be a reason to demand a login.
+   */
+  extensionReviews (slug, limit) {
+    const params = limit ? '?limit=' + limit : ''
+    return this._request(`/v1/extensions/${encodeURIComponent(slug)}/reviews${params}`, { auth: !!this._tokens() })
+  },
+
+  /** Leave or replace this account's review. The server requires an install. */
+  reviewExtension (slug, { rating, body }) {
+    return this._request(`/v1/extensions/${encodeURIComponent(slug)}/reviews`, {
+      method: 'PUT', auth: true, body: { rating, ...(body ? { body } : {}) }
+    })
+  },
+
+  deleteExtensionReview (slug) {
+    return this._request(`/v1/extensions/${encodeURIComponent(slug)}/reviews`, { method: 'DELETE', auth: true })
+  },
+
+  /**
    * Anonymous sandbox failure telemetry. Best-effort: a reporting failure must
    * never surface to the user or break the extension flow that triggered it.
    */

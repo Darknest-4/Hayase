@@ -23,7 +23,7 @@
 // It skips itself — rather than failing — when Playwright is not installed or
 // no database is configured, so `npm test` on a laptop stays dependency-free.
 
-/* global localStorage, window */
+/* global document, localStorage, Storage, window */
 import assert from 'node:assert/strict'
 import { dirname, join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
@@ -93,12 +93,22 @@ describe('browser smoke', { skip: REASON }, () => {
     // reason CI goes red.
     await page.route('https://**', route => route.abort())
 
+    // Onboarding is keyed by profile id, and the id changes under the test:
+    // it is 'default' before sign-in and the server's uuid once the client has
+    // pulled the account's profiles. Writing the flag under the id that is
+    // current at setup time therefore misses whenever the pull wins the race,
+    // and the welcome modal then opens over whatever the test was about to
+    // click. None of these tests are about onboarding, so the gate is answered
+    // for every key instead of guessed at.
+    await page.addInitScript(() => {
+      const getItem = Storage.prototype.getItem
+      Storage.prototype.getItem = function (key) {
+        return String(key).includes('-onboarded::') ? '1' : getItem.call(this, key)
+      }
+    })
+
     await page.goto(base + '/', { waitUntil: 'domcontentloaded' })
-    await page.evaluate(tokens => {
-      localStorage.setItem('yume-auth', JSON.stringify(tokens))
-      const id = window.Store?.activeProfileId?.() ?? 'default'
-      localStorage.setItem(`${window.Prefs.STORAGE_KEY}-onboarded::${id}`, '1')
-    }, account)
+    await page.evaluate(tokens => localStorage.setItem('yume-auth', JSON.stringify(tokens)), account)
     await page.goto(base + '/' + route, { waitUntil: 'domcontentloaded' })
     await page.waitForTimeout(600)
     return { page, errors }
@@ -151,14 +161,53 @@ describe('browser smoke', { skip: REASON }, () => {
     await page.close()
   })
 
-  it('opens the player screen and reports honestly with no source', async () => {
+  it('opens an extension\'s detail page from the store listing', async () => {
+    // The store had no detail view at all: a card's name was plain text and
+    // the description, permissions, versions and reviews were unreachable.
+    const { page, errors } = await open('#/extensions')
+    await page.waitForSelector('.ext-card, .empty-state, .callout', { timeout: 10000 })
+    if (!await page.locator('.ext-card').count()) { await page.close(); return } // empty store
+
+    await page.locator('.ext-card a.ext-name').first().click()
+    await page.waitForSelector('.ext-detail-head', { timeout: 10000 })
+    assert.deepEqual(errors, [])
+
+    // The permissions are the reason the page exists — an extension asking for
+    // a host you do not recognise is what you read before pressing Install.
+    assert.ok(await page.locator('.ext-permissions').count(), 'no permissions section')
+    assert.ok(await page.locator('.ext-reviews').count(), 'no reviews section')
+    assert.match(page.url(), /#\/extensions\/[^/]+$/, 'the detail page must be a real link')
+
+    // The account is signed in but has not installed this extension, and the
+    // server refuses a review without one — so the page must say so rather
+    // than offering a form that fails when it is submitted.
+    assert.equal(await page.locator('.ext-review-form').count(), 0)
+    await page.close()
+  })
+
+  it('opens the player screen without throwing', async () => {
     // The most fragile screen in the client, and the one with no unit test
     // that touches its DOM.
+    //
+    // This used to also assert that `#page` had text in it after 800 ms, and
+    // that assertion was unsound: `PageWatch.render` shows a spinner, awaits
+    // `Catalogue.media()`, and on success calls `root.replaceChildren()` —
+    // clearing the screen — before awaiting source resolution. So an empty
+    // `#page` is a state the player really passes through, and the old test
+    // only went green when the anime lookup *failed* fast enough to paint an
+    // error instead. Which of the two paths ran depended on the network, so
+    // the test flipped between passing and "player rendered nothing" with no
+    // change to the code at all.
+    //
+    // What is worth asserting here is what this test can actually stand
+    // behind: opening the player throws nothing, and the router is on the
+    // watch route. The blank interval itself is recorded as a finding in
+    // status.html rather than papered over here.
     const { page, errors } = await open('#/watch/1?ep=1')
-    await page.waitForTimeout(800)
-    assert.deepEqual(errors, [])
-    const text = (await page.locator('#page').innerText()).toLowerCase()
-    assert.ok(text.length > 0, 'player rendered nothing')
+    await page.waitForTimeout(1500)
+    assert.deepEqual(errors, [], 'the player threw')
+    assert.match(page.url(), /#\/watch\/1/)
+    assert.ok(await page.locator('#page').count(), 'the router did not reach the watch route')
     await page.close()
   })
 

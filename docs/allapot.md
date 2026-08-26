@@ -365,7 +365,7 @@ A pontos, forrásból ellenőrzött lista a repó gyökerében lévő `status.ht
 | Könyvtár | `library_entries`, `watch_progress`, `watch_history` | `favorites`, `bookmarks`, `custom_lists(+items)`, `collections(+lists)`, `list_likes` |
 | Közösség | `comments`, `comment_likes`, `reports`, `moderation_actions` | `reviews`, `review_votes`, `follows`, `friendships`, `clubs(+members)`, `forums`, `topics`, `chats` |
 | Gamifikáció | `profile_stats`, `xp_events`, `watch_stats_daily` | `achievements`, `badges`, `user_badges`, `profile_achievements` |
-| Bővítmények | `extensions`, `extension_versions/installs/developers/permissions` | `extension_reviews` |
+| Bővítmények | `extensions`, `extension_versions/installs/developers/permissions`, `extension_reviews` | — |
 | Rendszer | `roles`, `permissions`, `role_permissions`, `user_roles`, `notifications`, `webhooks`, `jobs`, `feature_flags`, `site_settings`, `watch_together_rooms`, `search_stats`, analitika‑particiók | — |
 
 \* Az AniSkip jelenleg a **külső** AniSkip API‑ból megy, nem a `skip_segments` tábláiból.
