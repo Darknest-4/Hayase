@@ -31,8 +31,9 @@ bővítmény‑rendszerrel.
 | **Katalógus‑adat** | Böngészéskor AniList/Jikan/ani.zip közvetlenül (localStorage cache); a saját DB 25 672 animével + 388 611 epizóddal seedelve |
 
 **Adatmennyiség most:** 25 672 anime · 388 611 epizód · 14 felhasználó ·
-295 jogosultság‑sor (ebből **18 érvényesített** a kódban) · 6 szerepkör ·
-23 feature‑flag · **99 alap tábla** (+17 havi partíció).
+389 jogosultság (ebből **18 `active`** — kód érvényesíti; a többi `planned`,
+és a Roles felület meg is jelöli) · 6 szerepkör · 23 feature‑flag ·
+**99 alap tábla** (+17 havi partíció).
 
 ---
 
@@ -56,8 +57,10 @@ bővítmény‑rendszerrel.
 - [x] **Webhook‑ok** — kimenő integrációk, Discord‑embed render, kézbesítési napló, teszt‑tüzelés
 
 ### #6 — Finomhangolt jogosultsági rendszer (RBAC)
-- [x] **295 jogosultság‑sor** 14 csoportban (`resource.action` minta) — figyelem: a
-      kód ebből 18‑at érvényesít `requirePermission()`‑nel, a többi ma nem véd semmit
+- [x] **389 jogosultság** 14 csoportban (`resource.action` minta), életciklus‑állapottal:
+      18 `active` (kód érvényesíti), a többi `planned` (katalogizált, de a modulja még
+      nincs kész). A Roles felület jelvényként mutatja a különbséget, és a
+      `permission-status.test.ts` bukik, ha az állapot elcsúszik a kódtól.
 - [x] **6 szerepkör** értelmes kiosztással: `admin` (387), `moderator` (100), `editor` (96), `developer` (48), `analyst` (23), `user` (1)
 - [x] **Roles admin UI** — szerepkör‑sín + csoportosított jogosultság‑katalógus, per‑jogosultság kapcsoló, „Grant/Revoke all" csoportonként, szűrő; az `admin` szerep védett (mindig mindent birtokol)
 
