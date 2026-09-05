@@ -183,6 +183,54 @@ const Catalogue = {
     return API.media(Number(id))
   },
 
+  /**
+   * Cast, staff and recommendations for a catalogue title, in the shape the
+   * anime page already draws.
+   *
+   * The page was written against AniList's response, so these translate rather
+   * than invent a second format: a cast entry is an `edges[]` of
+   * `{ role, node: { name: { userPreferred }, image: { large } } }`, and a
+   * recommendation is a card record like every other card on the site.
+   *
+   * Each returns an empty array when there is nothing — the caller's fallback
+   * to a metadata extension is then the same code path as "no backend".
+   */
+  async characters (yumeId) {
+    const rows = await YumeAPI.catalogueCharacters(yumeId)
+    if (!rows?.length) return []
+    return rows.map(r => ({
+      role: r.role,
+      node: {
+        id: r.id,
+        name: { userPreferred: r.name, native: r.native_name },
+        image: { large: r.image_key ?? '' }
+      },
+      // Voice credits are per language, so a dubbed show carries both actors
+      // rather than one replacing the other.
+      voiceActors: (r.voices ?? []).map(v => ({
+        id: v.id,
+        name: { userPreferred: v.name, native: v.nativeName },
+        image: { large: v.imageKey ?? '' },
+        languageV2: v.language
+      }))
+    }))
+  },
+
+  async staff (yumeId) {
+    const rows = await YumeAPI.catalogueStaff(yumeId)
+    if (!rows?.length) return []
+    return rows.map(r => ({
+      role: r.role,
+      node: { id: r.id, name: { userPreferred: r.name, native: r.native_name }, image: { large: r.image_key ?? '' } }
+    }))
+  },
+
+  async recommendations (yumeId) {
+    const rows = await YumeAPI.catalogueRecommendations(yumeId)
+    if (!rows?.length) return []
+    return rows.map(r => this.toCard(r)).filter(Boolean)
+  },
+
   // ------------------------------------------------------------- browsing
 
   /**

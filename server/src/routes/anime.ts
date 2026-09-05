@@ -516,6 +516,82 @@ const routes: FastifyPluginAsync = async fastify => {
     )
     return { data }
   })
+
+  /*
+   * Cast, staff and recommendations.
+   *
+   * These tables were filled by the AniList deep pass and then read by nobody:
+   * there was no endpoint over any of them, so the anime page fell back to
+   * "No character data." on every catalogue title however much had been
+   * imported. Three small reads rather than one wide one, because the page
+   * draws them in separate tabs and most visits open none of them.
+   */
+
+  fastify.get('/:id/characters', async request => {
+    const { id } = request.params as { id: string }
+    // Voices are aggregated per character rather than joined flat: a character
+    // with a Japanese and a Hungarian actor is one card with two credits, and
+    // a flat join would return the character twice.
+    const data = await query(
+      `SELECT c.id, c.name, c.native_name, c.image_key, ac.role,
+              (SELECT coalesce(jsonb_agg(jsonb_build_object(
+                        'id', p.id, 'name', p.name, 'nativeName', p.native_name,
+                        'imageKey', p.image_key, 'language', cv.language) ORDER BY cv.language), '[]')
+                 FROM character_voices cv
+                 JOIN people p ON p.id = cv.person_id
+                WHERE cv.character_id = c.id AND cv.anime_id = ac.anime_id) AS voices
+         FROM anime_characters ac
+         JOIN characters c ON c.id = ac.character_id
+        WHERE ac.anime_id = $1
+        -- MAIN first, then SUPPORTING, then BACKGROUND; the page shows the
+        -- top of this list and never paginates it.
+        ORDER BY CASE ac.role WHEN 'MAIN' THEN 0 WHEN 'SUPPORTING' THEN 1 ELSE 2 END, c.name`,
+      [id]
+    )
+    return { data }
+  })
+
+  fastify.get('/:id/staff', async request => {
+    const { id } = request.params as { id: string }
+    const data = await query(
+      `SELECT p.id, p.name, p.native_name, p.image_key, s.role
+         FROM anime_staff s
+         JOIN people p ON p.id = s.person_id
+        WHERE s.anime_id = $1
+        -- Director first: it is the credit anybody scanning the list wants.
+        ORDER BY CASE WHEN s.role ILIKE 'director%' THEN 0
+                      WHEN s.role ILIKE 'original creator%' THEN 1
+                      ELSE 2 END, s.role, p.name`,
+      [id]
+    )
+    return { data }
+  })
+
+  fastify.get('/:id/recommendations', {
+    schema: {
+      querystring: {
+        type: 'object',
+        properties: { limit: { type: 'integer', minimum: 1, maximum: 50, default: 20 } }
+      }
+    }
+  }, async request => {
+    const { id } = request.params as { id: string }
+    const { limit } = request.query as { limit?: number }
+    const data = await query(
+      `SELECT a.id, a.canonical_title, a.format::text, a.status::text, a.season_year,
+              a.episode_count, a.average_score, r.score,
+              img.object_key AS cover_key, m.anilist_id
+         FROM anime_recommendations r
+         JOIN anime a ON a.id = r.recommended_id
+         LEFT JOIN anime_images img ON img.anime_id = a.id AND img.kind = 'cover' AND img.is_primary
+         LEFT JOIN anime_mappings m ON m.anime_id = a.id
+        WHERE r.anime_id = $1 AND a.visibility = 'public'
+        ORDER BY r.score DESC, a.popularity DESC NULLS LAST
+        LIMIT $2`,
+      [id, limit ?? 20]
+    )
+    return { data }
+  })
 }
 
 export default routes
