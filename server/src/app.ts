@@ -33,7 +33,6 @@ import { publicConfig, adminConfig } from './routes/config.ts'
 import roleRoutes from './routes/roles.ts'
 import catalogueRoutes from './routes/catalogue.ts'
 import { publicReadiness, adminMonitoring } from './routes/monitoring.ts'
-import integrationRoutes from './routes/integrations.ts'
 import reportRoutes from './routes/reports.ts'
 import extensionRoutes from './routes/extensions.ts'
 import libraryRoutes from './routes/library.ts'
@@ -214,7 +213,6 @@ export async function buildApp (): Promise<FastifyInstance> {
   await app.register(commentRoutes, { prefix: '/v1/comments' })
   await app.register(w2gRoutes, { prefix: '/v1/w2g' })
   await app.register(reportRoutes, { prefix: '/v1/reports' })
-  await app.register(integrationRoutes, { prefix: '/v1/integrations' })
   await app.register(adminRoutes, { prefix: '/v1/admin' })
   await app.register(translationRoutes, { prefix: '/v1/admin/translations' })
   await app.register(devRoutes, { prefix: '/v1/dev' })

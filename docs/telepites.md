@@ -153,19 +153,6 @@ docker compose --profile enrich run --rm enrich
 
 ---
 
-## Discord
-
-A Yume Discord szervere egy paranccsal berendezhető — blueprint alapján,
-újrafuttathatóan, duplikátumok nélkül:
-
-```sh
-docker compose --profile discord run --rm discord-setup invite    # meghívó link
-docker compose --profile discord run --rm discord-setup plan      # mit csinálna
-docker compose --profile discord run --rm discord-setup provision # csináld meg
-```
-
-A teljes leírás: [`discord-telepites.md`](./discord-telepites.md).
-
 ## Ami magától megy
 
 | Szolgáltatás | Mit csinál |
