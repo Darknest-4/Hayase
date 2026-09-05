@@ -25,6 +25,3 @@ vite.config.ts.timestamp-*
 *.webm
 *src/routes/test/**
 dist/
-
-# the bot has no runtime dependencies; node_modules only appears for typechecking
-bot/node_modules/
