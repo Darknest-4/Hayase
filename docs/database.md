@@ -186,3 +186,58 @@ node --experimental-strip-types scripts/import-anilist.ts --retry-conflicts
 The ordinary enrich run cannot do that: it only looks at rows whose synopsis is
 still NULL, and a row that hit a collision was enriched successfully — only its
 MAL id was withheld.
+
+## Cast, staff, relations and recommendations
+
+Five tables — `characters`, `people`, `anime_characters`, `character_voices`,
+`anime_staff` — plus `anime_relations` and `anime_recommendations` have been in
+the schema since migration 0002, and every one of them was empty. Not because
+the import failed: `MEDIA_FIELDS` in the AniList enricher never asked for any
+of it. Above the tables there was nothing either — no endpoint over characters,
+staff or recommendations, and no client mapping — so an anime page served from
+the catalogue could only ever say *"No character data."*
+
+### Filling them
+
+```sh
+# scalars: title, synopsis, score — 50 titles per request, minutes
+node --experimental-strip-types scripts/import-anilist.ts
+
+# cast, staff, relations, recommendations — ~10 per request, hours
+node --experimental-strip-types scripts/import-anilist.ts --deep
+```
+
+Two passes, not one. Attaching a cast to the 50-media query multiplies the
+response by the number of characters per show and runs into AniList's query
+complexity limit, so a combined query would make the fast pass slow for
+everybody — including people who only wanted a synopsis.
+
+`--deep` is **resumable**: by default it skips titles that already have a cast,
+so an interrupted run continues rather than restarting. Add `--all` to refresh
+everything.
+
+### Why characters and people needed an external id (migration 0027)
+
+Neither table had one, and neither had a unique constraint on its name. Names
+are not unique — several characters are called "Akira", two people can share a
+name — so an import keyed on the name would merge distinct people, and one
+keyed on nothing would insert the whole cast again on every run.
+`anilist_id` is nullable and UNIQUE: imported rows upsert on it, rows created
+by hand in the admin keep NULL and coexist.
+
+### What is deliberately skipped
+
+| Case | Behaviour |
+|---|---|
+| A relation or recommendation pointing at a title not in the catalogue | skipped |
+| A relation to a manga | skipped — `anime_relations` is a foreign key into `anime` |
+| AniList relation types we have no name for (`SOURCE`, `COMPILATION`, `CONTAINS`, `CHARACTER`) | folded into `OTHER` rather than dropped |
+| A voice actor in a language outside `ja` / `en` / `hu` | skipped |
+
+Nothing is stubbed. Both id columns are foreign keys into `anime`, and
+inventing a row to satisfy one would put a title in the catalogue that nobody
+imported and nothing can play.
+
+Voice credits are stored **per language**, so a Hungarian dub is a second
+credit on the same character rather than a replacement for the Japanese one —
+which is what lets the cast list show both.

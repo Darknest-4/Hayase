@@ -3,12 +3,17 @@
 //   node --experimental-strip-types scripts/import-anilist.ts [--all] [--limit N]
 //   --all    re-fetch every mapped anime (default: only rows missing a synopsis)
 //   --limit  cap how many to process (useful for a first smoke run)
+//   --deep   fetch cast, staff, relations and recommendations instead of the
+//            scalar fields. Its own pass because it asks for far more per
+//            title: ~10 media per request against 50, so a full catalogue is
+//            hours, not minutes. Resumable — re-running skips what has a cast.
 //   --retry-conflicts  only re-attempt external ids refused on an earlier run
 //                      (run this after merging duplicates; the normal run
 //                       cannot, because those rows already have a synopsis)
 
 import { pool } from '../src/db.ts'
 import { enrichFromAniList, retryMappingConflicts } from '../src/workers/anilist.ts'
+import { enrichDeepFromAniList } from '../src/workers/anilist-deep.ts'
 
 const args = process.argv.slice(2)
 
@@ -20,6 +25,25 @@ if (args.includes('--retry-conflicts')) {
 }
 
 const onlyMissing = !args.includes('--all')
+
+if (args.includes('--deep')) {
+  const deepLimitArg = args.indexOf('--limit')
+  const deepLimit = deepLimitArg >= 0 ? Number(args[deepLimitArg + 1]) : undefined
+  console.log(`deep enrich from AniList (${onlyMissing ? 'only titles with no cast yet' : 'every mapped title'}${deepLimit ? `, limit ${deepLimit}` : ''})`)
+  const deepStarted = Date.now()
+  const deep = await enrichDeepFromAniList({
+    onlyMissing,
+    ...(deepLimit ? { limit: deepLimit } : {}),
+    onProgress: (done, total, counts) => {
+      if (done % 100 === 0 || done >= total) {
+        console.log(`  ${done}/${total} — ${counts.characters} cast, ${counts.voices} voices, ${counts.staff} staff, ${counts.relations} relations, ${counts.recommendations} recommendations`)
+      }
+    }
+  })
+  console.log(`done in ${Math.round((Date.now() - deepStarted) / 1000)}s:`, JSON.stringify(deep))
+  await pool.end()
+  process.exit(0)
+}
 const limitArg = args.indexOf('--limit')
 const limit = limitArg >= 0 ? Number(args[limitArg + 1]) : undefined
 

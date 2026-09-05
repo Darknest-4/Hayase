@@ -58,7 +58,11 @@ One service, two protocols over the same service layer:
 | GET | `/v1/anime` | browse: `?season&year&genre&tag&format&status&sort&…` |
 | GET | `/v1/anime/trending` · `/popular` · `/schedule` | curated rails; schedule takes `?from&to` |
 | GET | `/v1/anime/:id` | full detail (titles, genres, companies, stats) |
-| GET | `/v1/anime/:id/episodes` · `/relations` · `/characters` · `/staff` · `/recommendations` · `/reviews` | sub-resources |
+| GET | `/v1/anime/:id/episodes` · `/relations` | sub-resources |
+| GET | `/v1/anime/:id/characters` | cast with voice credits aggregated per character and language |
+| GET | `/v1/anime/:id/staff` | production credits, director first |
+| GET | `/v1/anime/:id/recommendations` | `?limit`, ordered by imported rating |
+| ⏳ GET | `/v1/anime/:id/reviews` | long-form reviews |
 | GET | `/v1/anime/search` | tiered search: `?q` plus `&genre&year&season&format&status&sort&limit&offset&nsfw`. Matches canonical, romaji/english/native and synonym titles; each row reports its `tier` and `matched_title`. See [`search.md`](./search.md) |
 | GET | `/v1/anime/suggest` | quick-search box: `?q&limit&nsfw`, minimal payload, no telemetry |
 | PATCH | `/v1/anime/:id` | edit metadata (`anime.edit` permission; audited) |

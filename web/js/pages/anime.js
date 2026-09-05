@@ -480,18 +480,39 @@ const PageAnime = {
   },
 
   async renderTabCharacters (wrap, media) {
-    const characters = media.characters?.edges ?? []
+    let characters = media.characters?.edges ?? []
+
+    // A catalogue title carries no cast on the record: it is fetched when this
+    // tab is opened, because most visits never open it. Before the deep
+    // AniList pass existed these tables were empty and this tab could only
+    // ever say "No character data." for a locally-served title.
+    if (!characters.length && media.yumeId) {
+      characters = await Catalogue.characters(media.yumeId)
+      if (characters.length) media.characters = { edges: characters }
+    }
+
     if (characters.length) {
       const crow = U.el('div', { class: 'hscroll', style: 'padding-left:0;padding-right:0;flex-wrap:wrap;' })
       for (const edge of characters) {
         crow.append(this._charCard(edge.node.name?.userPreferred, edge.role, edge.node.image?.large))
       }
       wrap.append(crow)
+
+      // Staff sits under the cast on the same tab: it comes from the same
+      // import and nobody looks for a director on a separate screen.
+      const staff = media.staff?.edges ?? await Catalogue.staff(media.yumeId)
+      if (staff.length) {
+        wrap.append(U.el('h3', { class: 'sec-sub', text: T('Staff') }))
+        const srow = U.el('div', { class: 'hscroll', style: 'padding-left:0;padding-right:0;flex-wrap:wrap;' })
+        for (const edge of staff) {
+          srow.append(this._charCard(edge.node.name?.userPreferred, edge.role, edge.node.image?.large))
+        }
+        wrap.append(srow)
+      }
       return
     }
 
-    // Nothing from the catalogue — the tables that would hold cast have no
-    // code path, so this tab has always been empty for locally-served titles.
+    // Still nothing: no backend, or a title the deep pass has not reached.
     // Metadata extensions are the way to fill it.
     const placeholder = U.el('div', { class: 'empty-state', text: T('No character data.') })
     wrap.append(placeholder)
@@ -525,7 +546,11 @@ const PageAnime = {
   },
 
   async renderTabRecommendations (wrap, media) {
-    const recs = (media.recommendations?.nodes ?? []).map(n => n.mediaRecommendation).filter(Boolean)
+    let recs = (media.recommendations?.nodes ?? []).map(n => n.mediaRecommendation).filter(Boolean)
+
+    // Same as the cast: fetched on open, not with the record.
+    if (!recs.length && media.yumeId) recs = await Catalogue.recommendations(media.yumeId)
+
     if (recs.length) {
       wrap.append(C.grid(recs))
       return

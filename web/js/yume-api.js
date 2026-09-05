@@ -259,6 +259,43 @@ const YumeAPI = {
     }
   },
 
+  /*
+   * Cast, staff and recommendations from the catalogue.
+   *
+   * Fetched when the tab is opened rather than with the record: most visits to
+   * an anime page never open any of them, and three extra requests on every
+   * detail load to fill tabs nobody looks at is a poor trade.
+   *
+   * Each returns null on failure rather than throwing, because every caller's
+   * answer to a failure is the same — fall back to a metadata extension.
+   */
+  async catalogueCharacters (yumeId) {
+    try {
+      const { data } = await this._request(`/v1/anime/${yumeId}/characters`)
+      return data
+    } catch (e) {
+      return null
+    }
+  },
+
+  async catalogueStaff (yumeId) {
+    try {
+      const { data } = await this._request(`/v1/anime/${yumeId}/staff`)
+      return data
+    } catch (e) {
+      return null
+    }
+  },
+
+  async catalogueRecommendations (yumeId, limit = 20) {
+    try {
+      const { data } = await this._request(`/v1/anime/${yumeId}/recommendations?limit=${limit}`)
+      return data
+    } catch (e) {
+      return null
+    }
+  },
+
   // ---- catalogue search ----
   // Tiered ranking over the Yume catalogue (canonical titles, romaji/english/
   // native titles and synonyms). The client stays usable without a backend —

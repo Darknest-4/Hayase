@@ -62,31 +62,42 @@ const MEDIA_FIELDS = `
 
 const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
 
-/** Fetch up to 50 media by AniList id, honouring rate limits (429 / retry-after). */
-export async function fetchMediaBatch (ids: number[], attempt = 0): Promise<AniListMedia[]> {
-  const query = `query ($ids: [Int]) { Page(perPage: 50) { media(id_in: $ids, type: ANIME) { ${MEDIA_FIELDS} } } }`
+/**
+ * One AniList GraphQL call, with the rate limit handled.
+ *
+ * Shared by both passes: the fast one that fetches 50 media of scalar fields,
+ * and the deep one that fetches far fewer with their whole cast attached.
+ */
+async function anilistRequest<T> (query: string, variables: Record<string, unknown>, attempt = 0): Promise<T> {
   const res = await fetch(ANILIST_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ query, variables: { ids } })
+    body: JSON.stringify({ query, variables })
   })
 
   if (res.status === 429) {
     const retry = Number(res.headers.get('retry-after') ?? 60)
     if (attempt >= 5) throw new Error('AniList rate limit: giving up after 5 retries')
     await sleep((retry + 1) * 1000)
-    return fetchMediaBatch(ids, attempt + 1)
+    return anilistRequest<T>(query, variables, attempt + 1)
   }
   if (!res.ok) throw new Error(`AniList HTTP ${res.status}`)
 
-  const body = await res.json() as { data?: { Page?: { media?: AniListMedia[] } }, errors?: Array<{ message: string }> }
+  const body = await res.json() as { data?: T, errors?: Array<{ message: string }> }
   if (body.errors?.length) throw new Error('AniList: ' + body.errors.map(e => e.message).join('; '))
 
   // stay well under the limit even when the server doesn't push back
   const remaining = Number(res.headers.get('x-ratelimit-remaining') ?? 99)
   if (remaining <= 2) await sleep(60_000)
 
-  return body.data?.Page?.media ?? []
+  return body.data as T
+}
+
+/** Fetch up to 50 media by AniList id, honouring rate limits (429 / retry-after). */
+export async function fetchMediaBatch (ids: number[]): Promise<AniListMedia[]> {
+  const query = `query ($ids: [Int]) { Page(perPage: 50) { media(id_in: $ids, type: ANIME) { ${MEDIA_FIELDS} } } }`
+  const data = await anilistRequest<{ Page?: { media?: AniListMedia[] } }>(query, { ids })
+  return data?.Page?.media ?? []
 }
 
 // ---- mapping helpers ----
