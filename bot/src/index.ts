@@ -21,6 +21,9 @@ import { Rest } from './discord/rest.ts'
 import { handlers } from './handlers.ts'
 import { InteractionType, ResponseType, verifySignature, type Interaction } from './interactions.ts'
 import { sendWebhook } from './notify.ts'
+import { syncMessage } from './messages.ts'
+import { channelMap, startSyncLoop } from './sync.ts'
+import { releaseEmbed } from './content.ts'
 
 if (!configured()) {
   console.error('[yume-bot] DISCORD_BOT_TOKEN and DISCORD_APP_ID are required. See docs/discord-telepites.md.')
@@ -99,8 +102,31 @@ const server = createServer((req, res) => {
           res.writeHead(401).end('unauthorized')
           return
         }
-        const payload = JSON.parse(await readBody(req)) as { kind?: string, embed?: unknown, content?: string }
+        const payload = JSON.parse(await readBody(req)) as {
+          kind?: string, embed?: unknown, content?: string
+          /*
+           * When present, the message is *managed*: posted the first time and
+           * edited every time after. That is what makes a release that gains a
+           * 1080p encode update in place instead of appearing twice, with no
+           * way to tell which one is current.
+           */
+          key?: string, channel?: string, release?: Parameters<typeof releaseEmbed>[0]
+        }
         if (!payload.kind) return json(400, { error: 'kind is required' })
+
+        if (payload.key) {
+          const guildId = config.guildId
+          if (!guildId) return json(503, { error: 'DISCORD_GUILD_ID is not set; managed messages need it' })
+          const channels = await channelMap(rest, guildId)
+          const channelId = channels.get(payload.channel ?? 'new_releases')
+          if (!channelId) return json(404, { error: `no channel for ${payload.channel ?? 'new_releases'}` })
+          const body = payload.release
+            ? releaseEmbed(payload.release)
+            : { ...(payload.content ? { content: payload.content } : {}), ...(payload.embed ? { embeds: [payload.embed] } : {}) }
+          const outcome = await syncMessage(rest, payload.key, channelId, body, guildId)
+          return json(outcome === 'failed' ? 502 : 202, { outcome })
+        }
+
         const delivered = await sendWebhook(payload.kind, { embeds: payload.embed ? [payload.embed] : undefined, content: payload.content })
         return json(delivered ? 202 : 503, { delivered })
       }
@@ -117,11 +143,16 @@ server.listen(config.port, '0.0.0.0', () => {
   console.log(`[yume-bot] listening on :${config.port} — interactions and notifications`)
 })
 
+// Static pages and live boards, posted once and edited thereafter. Started
+// after listen so a slow first pass cannot delay the health check.
+const stopSync = startSyncLoop(rest)
+
 // Compose sends SIGTERM on `down` and on a redeploy. Finishing in-flight
 // requests keeps a deploy from showing up as failed interactions.
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.on(signal, () => {
     console.log(`[yume-bot] ${signal} — shutting down`)
+    stopSync()
     server.close(() => process.exit(0))
     setTimeout(() => process.exit(0), 10_000).unref()
   })

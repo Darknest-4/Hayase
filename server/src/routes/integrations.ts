@@ -13,10 +13,11 @@
 
 import { timingSafeEqual } from 'node:crypto'
 
+import { query, queryOne } from '../db.ts'
 import { audit, type AuditAction } from '../lib/audit.ts'
 import { WRITE_LIMIT } from '../plugins/security.ts'
 
-import type { FastifyPluginAsync } from 'fastify'
+import type { FastifyPluginAsync, preValidationHookHandler } from 'fastify'
 
 /** Constant-time compare that does not leak the secret's length either. */
 function tokenMatches (presented: string, expected: string): boolean {
@@ -41,8 +42,24 @@ const DISCORD_ACTIONS = new Set<string>([
 ])
 
 const routes: FastifyPluginAsync = async fastify => {
+  /**
+   * The service-token gate.
+   *
+   * `preValidation`, not the handler body: Fastify validates the request
+   * schema before the handler runs, so an in-handler check answered an
+   * unauthenticated caller with 400 and a description of the schema. The
+   * order matters — say "no" before saying anything else.
+   */
+  const requireServiceToken: preValidationHookHandler = async (request, reply) => {
+    const presented = String(request.headers['x-service-token'] ?? '')
+    if (!tokenMatches(presented, process.env.YUME_SERVICE_TOKEN ?? '')) {
+      return await reply.code(401).send({ type: 'about:blank', title: 'Unauthorized', status: 401 })
+    }
+  }
+
   fastify.post('/discord/audit', {
     config: WRITE_LIMIT,
+    preValidation: requireServiceToken,
     schema: {
       body: {
         type: 'object',
@@ -57,12 +74,6 @@ const routes: FastifyPluginAsync = async fastify => {
       }
     }
   }, async (request, reply) => {
-    const expected = process.env.YUME_SERVICE_TOKEN ?? ''
-    const presented = String(request.headers['x-service-token'] ?? '')
-    if (!tokenMatches(presented, expected)) {
-      return reply.code(401).send({ type: 'about:blank', title: 'Unauthorized', status: 401 })
-    }
-
     const { action, actor, subject, detail } = request.body as {
       action: string, actor: string, subject: string, detail?: Record<string, unknown>
     }
@@ -86,6 +97,77 @@ const routes: FastifyPluginAsync = async fastify => {
     })
 
     return reply.code(202).send({ recorded: true })
+  })
+
+  /*
+   * Message identity.
+   *
+   * The bot has no database of its own — deliberately, so it carries no `pg`
+   * dependency and no credential for one. But it needs to remember which
+   * Discord message is "the status board", or every refresh posts a new one.
+   *
+   * So it asks here. Three operations, all of them boring: read a key, write a
+   * key, forget a key. Nothing secret passes through — a channel id and a
+   * message id are public inside the server.
+   */
+
+  const KEY = { type: 'object', properties: { key: { type: 'string', maxLength: 200 } } }
+
+  fastify.get('/discord/messages/:key', { preValidation: requireServiceToken, schema: { params: KEY } }, async (request, reply) => {
+    const { key } = request.params as { key: string }
+    const row = await queryOne(
+      'SELECT key, guild_id, channel_id, message_id, content_hash, edit_count FROM discord_messages WHERE key = $1',
+      [key]
+    )
+    if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    return row
+  })
+
+  fastify.put('/discord/messages/:key', {
+    config: WRITE_LIMIT,
+    preValidation: requireServiceToken,
+    schema: {
+      params: KEY,
+      body: {
+        type: 'object',
+        required: ['guildId', 'channelId', 'messageId', 'contentHash'],
+        additionalProperties: false,
+        properties: {
+          guildId: { type: 'string', maxLength: 40 },
+          channelId: { type: 'string', maxLength: 40 },
+          messageId: { type: 'string', maxLength: 40 },
+          contentHash: { type: 'string', maxLength: 64 },
+          // False when the row is only being recorded for the first time, so a
+          // fresh post does not read as an edit.
+          edited: { type: 'boolean', default: false }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const { key } = request.params as { key: string }
+    const body = request.body as { guildId: string, channelId: string, messageId: string, contentHash: string, edited?: boolean }
+    const row = await queryOne(
+      `INSERT INTO discord_messages (key, guild_id, channel_id, message_id, content_hash, edit_count)
+       VALUES ($1, $2, $3, $4, $5, 0)
+       ON CONFLICT (key) DO UPDATE
+          SET guild_id = excluded.guild_id,
+              channel_id = excluded.channel_id,
+              message_id = excluded.message_id,
+              content_hash = excluded.content_hash,
+              updated_at = now(),
+              -- Counted only when the content actually moved. A board that
+              -- rewrites itself every tick is a bug, and this is where it shows.
+              edit_count = discord_messages.edit_count + CASE WHEN $6 THEN 1 ELSE 0 END
+       RETURNING key, message_id, edit_count`,
+      [key, body.guildId, body.channelId, body.messageId, body.contentHash, body.edited === true]
+    )
+    return reply.code(200).send(row)
+  })
+
+  fastify.delete('/discord/messages/:key', { preValidation: requireServiceToken, schema: { params: KEY } }, async (request, reply) => {
+    const { key } = request.params as { key: string }
+    await query('DELETE FROM discord_messages WHERE key = $1', [key])
+    return reply.code(204).send()
   })
 }
 

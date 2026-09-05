@@ -160,6 +160,9 @@ services:
       YUME_SITE_URL: ${YUME_SITE_URL:-http://localhost}
       # Shared secret for API -> bot calls. Not a user credential.
       YUME_SERVICE_TOKEN: ${YUME_SERVICE_TOKEN:-}
+      # How often managed messages are re-checked. An unchanged render costs
+      # nothing: the content is hashed and nothing is sent when it matches.
+      SYNC_INTERVAL_MS: ${SYNC_INTERVAL_MS:-60000}
       NODE_ENV: production
     expose: ['4100']
     healthcheck:

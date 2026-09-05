@@ -39,6 +39,22 @@ export const COLORS = {
 /** True when there is a bot to talk to. Callers use it to skip work entirely. */
 export const discordEnabled = (): boolean => Boolean(SERVICE_TOKEN)
 
+/** One POST to the bot. Never throws: Discord is not on any critical path. */
+async function postToBot (body: Record<string, unknown>): Promise<boolean> {
+  if (!discordEnabled()) return false
+  try {
+    const res = await fetch(`${BOT_URL}/notify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Service-Token': SERVICE_TOKEN },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(5000)
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 /**
  * Hand one event to the bot.
  *
@@ -61,8 +77,9 @@ export async function notifyDiscord (channel: DiscordChannel, embed: DiscordEmbe
   }
 }
 
-/** A new episode is available. The button points at the player. */
-export async function announceRelease (release: {
+export interface Release {
+  /** Stable identity for this release — the same episode must produce the same id. */
+  id: string
   title: string
   episode: number | string
   season?: string | null
@@ -71,20 +88,34 @@ export async function announceRelease (release: {
   status?: string | null
   url: string
   coverUrl?: string | null
-}): Promise<boolean> {
-  return notifyDiscord('release', {
-    title: '🎬 NEW RELEASE',
-    description: `**[${release.title}](${release.url})**`,
-    color: COLORS.brand,
-    url: release.url,
-    fields: [
-      { name: 'Episode', value: String(release.episode), inline: true },
-      ...(release.season ? [{ name: 'Season', value: release.season, inline: true }] : []),
-      ...(release.quality ? [{ name: 'Quality', value: release.quality, inline: true }] : []),
-      ...(release.subtitles ? [{ name: 'Subtitles', value: release.subtitles, inline: true }] : []),
-      ...(release.status ? [{ name: 'Status', value: release.status, inline: true }] : [])
-    ]
-  })
+}
+
+/**
+ * Announce a release, or update the announcement that is already there.
+ *
+ * Keyed by `release.id`, so the *same* episode always lands on the same
+ * Discord message. An episode that gains a 1080p encode, or moves from
+ * "processing" to "available", edits the post it already has rather than
+ * appearing a second time — which is the difference between a channel people
+ * can read and one with three entries for one episode and no way to tell which
+ * is current.
+ *
+ * Announcing an unchanged release again is free: the bot hashes the rendered
+ * message and does nothing when it matches.
+ */
+export async function announceRelease (release: Release): Promise<boolean> {
+  return postToBot({ kind: 'release', key: `release:${release.id}`, channel: 'new_releases', release })
+}
+
+/**
+ * A managed message of any other kind.
+ *
+ * `key` is its identity; posting twice under one key edits rather than
+ * duplicates. `channel` is a blueprint channel key, not a Discord id, so the
+ * caller need not know how the server is laid out.
+ */
+export async function upsertDiscordMessage (key: string, channel: string, embed: DiscordEmbed): Promise<boolean> {
+  return postToBot({ kind: 'content', key, channel, embed })
 }
 
 /**

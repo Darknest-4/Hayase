@@ -164,6 +164,61 @@ Discordban:
 
 ---
 
+## Automatikus üzenetek — egyszer posztol, utána szerkeszt
+
+A bot nem csak *küld*, hanem **karbantart**. Minden kezelt üzenetnek van egy
+kulcsa, és a bot megjegyzi, melyik Discord üzenet tartozik hozzá.
+
+| Eset | Mit tesz |
+|---|---|
+| Nincs róla feljegyzés | Kiposztolja, elmenti az azonosítót |
+| Van, és a tartalom ugyanaz | **Semmit.** Nem szerkeszt, nem hív API-t. |
+| Van, és a tartalom változott | **Szerkeszti** azt az üzenetet |
+| Van, de az üzenetet törölték | Újraposztolja, és az új azonosítót jegyzi meg |
+
+A harmadik sor a lényeg, de a **második** teszi használhatóvá: a táblák percenként
+újrarajzolódnak, és a legtöbb ciklusban semmi nem változik. Hash-ellenőrzés
+nélkül minden perc egy API-hívás lenne, és minden üzenetre rákerülne a
+`(szerkesztve)` jelölés. Így egy csendes óra **nulla** Discord-kérés.
+
+### Amit így tart karban
+
+| Kulcs | Csatorna | Mikor változik |
+|---|---|---|
+| `static:welcome`, `static:rules`, `static:faq` | #welcome, #rules, #faq | Ha a repóban változik a szöveg |
+| `board:status` | #server-status | Ha egy szolgáltatás állapota változik |
+| `board:blueprint` | #server-status | Ha a blueprint változik |
+| `board:video` | #video-monitor | Ha egy szolgáltató állapota változik |
+| `release:<id>` | #new-releases | Ha az adott epizód adata változik |
+
+A `release:<id>` az, ami a te kérésedet közvetlenül megvalósítja: **ugyanaz az
+epizód mindig ugyanarra az üzenetre kerül**. Ha egy release kap 1080p-t, vagy
+„feldolgozás alatt"-ból „elérhető"-be lép, a **meglévő poszt módosul** — nem
+jelenik meg másodszor, és nem kell találgatni, melyik az aktuális.
+
+### Miért nincs időbélyeg egyik üzenet törzsében sem
+
+Mert a hash a kirajzolt tartalomból készül. Egy `most()` az üzenetben minden
+másodpercben más hasht adna, tehát az üzenet **örökké újraírná magát**. A
+Discord amúgy is kiírja, mikor szerkesztették utoljára.
+
+### Beállítás
+
+```dotenv
+# Milyen gyakran nézze meg, változott-e valami. Alapértelmezés: 60 mp.
+# 15 mp alá nem megy, akkor sem, ha kisebbre állítod.
+SYNC_INTERVAL_MS=60000
+```
+
+Ehhez `YUME_SERVICE_TOKEN` és `DISCORD_GUILD_ID` kell — enélkül a bot nem tudja
+megjegyezni, melyik üzenet melyik, és visszaesik sima posztolásra. A log
+megmondja, melyik módban van.
+
+Ha egy kezelt üzenetet szándékosan újra akarsz kezdetni: töröld a Discordban, és
+a következő ciklusban újraposztolja.
+
+---
+
 ## Ha a bot nem indul
 
 **78-as kilépési kód** — hiányzik egy kötelező változó. A log megmondja,
