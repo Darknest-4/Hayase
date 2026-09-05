@@ -108,6 +108,65 @@ export async function loadCaches (client: pg.PoolClient): Promise<EnrichCaches> 
   return { genreIds: new Map(g.rows.map(r => [r.slug, r.id])), tagIds: new Map(t.rows.map(r => [r.slug, r.id])), companyIds: new Map() }
 }
 
+/**
+ * Attach a MAL id to an anime, or record why it could not be.
+ *
+ * `anime_mappings.mal_id` is UNIQUE, so this is not a write that can simply be
+ * retried: another anime may already hold the id. The previous version issued
+ * a blind `UPDATE ... SET mal_id = coalesce(mal_id, $2)`, which raised on
+ * exactly that case — and since the enricher wraps 50 rows in one
+ * transaction, one collision took all fifty down with it.
+ *
+ * **On a collision the existing mapping wins and the new one is recorded.**
+ * Two reasons, and the second is the one that decides it:
+ *
+ *   1. `anilist_id` is the identity this importer works from — it is how the
+ *      anime row was found in the first place. `mal_id` is a cross-reference,
+ *      and nothing about arriving second makes a cross-reference more correct
+ *      than the one already there.
+ *   2. Overwriting does not add a mapping, it *moves* one. Every extension
+ *      that resolves by MAL id would silently start returning a different
+ *      anime, with no event anywhere saying so. Refusing the write leaves the
+ *      catalogue exactly as it was and puts the disagreement in a table.
+ *
+ * The usual cause is not corruption: AniList splits a show into separate
+ * entries far more readily than MyAnimeList does, so two AniList ids pointing
+ * at one MAL entry is the normal shape of a multi-season show. Some are real
+ * duplicates in our own catalogue, which is why the pair is written down.
+ *
+ * Never throws. A telemetry write must not be able to fail an import.
+ */
+export async function writeMalId (client: pg.PoolClient, animeId: string, malId: number): Promise<'written' | 'unchanged' | 'conflict'> {
+  // One statement, no exception: the guard makes the row invisible to the
+  // UPDATE when another anime holds the id, so there is nothing for the unique
+  // index to reject.
+  const written = await client.query(
+    `UPDATE anime_mappings SET mal_id = $2, updated_at = now()
+      WHERE anime_id = $1
+        AND mal_id IS NULL
+        AND NOT EXISTS (SELECT 1 FROM anime_mappings WHERE mal_id = $2)`,
+    [animeId, malId]
+  )
+  if (written.rowCount) return 'written'
+
+  // Nothing was written. Either this row already had the id (the common case,
+  // and not worth a word), or somebody else has it.
+  const holder = await client.query<{ anime_id: string }>(
+    'SELECT anime_id FROM anime_mappings WHERE mal_id = $1', [malId]
+  )
+  const heldBy = holder.rows[0]?.anime_id
+  if (!heldBy || heldBy === animeId) return 'unchanged'
+
+  await client.query(
+    `INSERT INTO mapping_conflicts (anime_id, provider, external_id, held_by, source)
+     VALUES ($1, 'mal', $2, $3, 'anilist-enrich')
+     ON CONFLICT (anime_id, provider, external_id) DO UPDATE
+        SET last_seen = now(), seen_count = mapping_conflicts.seen_count + 1, held_by = excluded.held_by`,
+    [animeId, String(malId), heldBy]
+  )
+  return 'conflict'
+}
+
 /** Write one AniList media onto its existing anime row (matched by anilist_id). */
 export async function upsertMedia (client: pg.PoolClient, media: AniListMedia, caches: EnrichCaches): Promise<boolean> {
   const found = await client.query<{ anime_id: string }>(
@@ -142,9 +201,7 @@ export async function upsertMedia (client: pg.PoolClient, media: AniListMedia, c
   }, 'anilist')
   await applyResolution(client, animeId, resolution)
 
-  if (media.idMal) {
-    await client.query('UPDATE anime_mappings SET mal_id = coalesce(mal_id, $2), updated_at = now() WHERE anime_id = $1', [animeId, media.idMal])
-  }
+  if (media.idMal) await writeMalId(client, animeId, media.idMal)
 
   // localised titles
   for (const [kind, value] of [['romaji', title.romaji], ['english', title.english], ['native', title.native], ['preferred', title.userPreferred]] as const) {
@@ -231,11 +288,44 @@ export async function upsertMedia (client: pg.PoolClient, media: AniListMedia, c
   return true
 }
 
+/**
+ * Re-attempt the external ids that were refused earlier.
+ *
+ * The ordinary run cannot do this. It selects rows whose synopsis is still
+ * NULL, and a row that hit a collision was enriched successfully — only its
+ * MAL id was withheld. So once the collision is actually resolved (the
+ * duplicate merged, the holder deleted) nothing would ever go back and attach
+ * the id, and the mapping would stay missing forever.
+ *
+ * Cheap enough to run after any merge: it touches only the recorded conflicts,
+ * and one that still collides simply stays recorded.
+ */
+export async function retryMappingConflicts (): Promise<{ retried: number, attached: number }> {
+  const { rows } = await pool.query<{ id: string, anime_id: string, external_id: string }>(
+    `SELECT id, anime_id, external_id FROM mapping_conflicts
+      WHERE provider = 'mal' AND resolved_at IS NULL
+      ORDER BY last_seen DESC`
+  )
+  let attached = 0
+  for (const row of rows) {
+    const outcome = await transaction(async client => writeMalId(client, row.anime_id, Number(row.external_id)))
+    if (outcome === 'written' || outcome === 'unchanged') {
+      attached++
+      await pool.query(
+        `UPDATE mapping_conflicts SET resolved_at = now(), resolution = $2 WHERE id = $1`,
+        [row.id, outcome === 'written' ? 'attached on retry' : 'already attached']
+      )
+    }
+  }
+  return { retried: rows.length, attached }
+}
+
 /** Drive the enrichment across every anime that has an anilist_id. */
 export async function enrichFromAniList (
   opts: { limit?: number, onlyMissing?: boolean, onProgress?: (done: number, total: number, updated: number) => void } = {}
-): Promise<{ processed: number, updated: number, failed: number }> {
+): Promise<{ processed: number, updated: number, failed: number, rowFailures: number, conflicts: number }> {
   const onlyMissing = opts.onlyMissing ?? true
+  const startedAt = new Date()
   const rows = await pool.query<{ anilist_id: number }>(
     `SELECT m.anilist_id FROM anime_mappings m JOIN anime a ON a.id = m.anime_id
      WHERE m.anilist_id IS NOT NULL ${onlyMissing ? 'AND a.synopsis IS NULL' : ''}
@@ -247,6 +337,7 @@ export async function enrichFromAniList (
   let processed = 0
   let updated = 0
   let failed = 0
+  let rowFailures = 0
 
   for (let i = 0; i < ids.length; i += 50) {
     const batch = ids.slice(i, i + 50)
@@ -254,9 +345,34 @@ export async function enrichFromAniList (
       const media = await fetchMediaBatch(batch)
       await transaction(async client => {
         const caches = await loadCaches(client)
-        for (const m of media) { if (await upsertMedia(client, m, caches)) updated++ }
+        for (const m of media) {
+          // A savepoint per row, so a row that fails costs one row.
+          //
+          // Without this the batch is all-or-nothing, and it was: a single
+          // duplicate MAL id raised inside the transaction, Postgres marked
+          // the whole thing aborted, and 49 rows that had already been written
+          // correctly were rolled back with it. Over one run that turned
+          // ~200 genuine collisions into 9 650 rows not imported.
+          //
+          // The savepoint is released on success and rolled back to on
+          // failure, which leaves the surrounding transaction usable either
+          // way — that is the property the old code did not have.
+          await client.query('SAVEPOINT row')
+          try {
+            if (await upsertMedia(client, m, caches)) updated++
+            await client.query('RELEASE SAVEPOINT row')
+          } catch (err) {
+            await client.query('ROLLBACK TO SAVEPOINT row')
+            rowFailures++
+            // Identify it by the id we asked for; the local row may be exactly
+            // what could not be read.
+            console.error(`  anilist_id ${m.id}: ${(err as Error).message}`)
+          }
+        }
       })
     } catch (err) {
+      // Still possible: the fetch failed, or the connection dropped. That is a
+      // whole-batch problem and stays counted as one.
       failed += batch.length
       console.error(`batch ${i / 50 + 1} failed:`, (err as Error).message)
     }
@@ -264,5 +380,10 @@ export async function enrichFromAniList (
     opts.onProgress?.(processed, total, updated)
     if (i + 50 < ids.length) await sleep(DELAY_MS)
   }
-  return { processed, updated, failed }
+
+  const { rows: conflicts } = await pool.query<{ n: string }>(
+    `SELECT count(*) AS n FROM mapping_conflicts
+      WHERE source = 'anilist-enrich' AND resolved_at IS NULL AND last_seen >= $1`, [startedAt]
+  )
+  return { processed, updated, failed, rowFailures, conflicts: Number(conflicts[0]?.n ?? 0) }
 }

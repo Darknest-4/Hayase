@@ -117,3 +117,72 @@ for f in db/migrations/*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
 Migrations are plain, ordered SQL by design: reviewable in a diff, no ORM
 lock-in, runnable by any migration runner (the server ships a tiny one:
 `node --run migrate`).
+
+## External id collisions (`mapping_conflicts`)
+
+`anime_mappings` gives each anime at most one id per provider, and `anilist_id`,
+`mal_id` and `anidb_id` are each UNIQUE. Two anime therefore cannot share a MAL
+id — and they try to, often.
+
+The cause is not corruption. **AniList splits a show into separate entries far
+more readily than MyAnimeList does**: seasons, cours, and recap or compilation
+releases frequently get their own AniList id while MAL keeps one entry. Two
+AniList ids pointing at one MAL id is the normal shape of a multi-season show.
+Some collisions *are* real duplicates in our own catalogue — the seed skipped
+9 147 of 41 537 entries as duplicates — which is exactly why the pair is worth
+recording rather than discarding.
+
+### The rule: the existing mapping wins
+
+On a collision the importer **keeps the mapping already stored**, does not
+write the new one, and records the pair in `mapping_conflicts`. Two reasons:
+
+1. `anilist_id` is the identity the enricher works from — it is how the anime
+   row is found at all. `mal_id` is a cross-reference, and nothing about
+   arriving second makes a cross-reference more correct than the one there.
+2. Overwriting would not add a mapping, it would **move** one. Every extension
+   that resolves by MAL id would silently start returning a different anime,
+   with no event anywhere saying so. Refusing leaves the catalogue as it was
+   and puts the disagreement somewhere a person can look at it.
+
+### Why it used to lose 9 650 rows
+
+The enricher wrote the id with a blind `UPDATE ... SET mal_id = coalesce(...)`,
+which raised on a duplicate. Because it wraps 50 rows in one transaction and
+Postgres marks an errored transaction unusable, **one collision discarded all
+fifty** — the 49 rows already written correctly included. A run over 11 363
+rows updated 8 326 and lost 9 650 to roughly two hundred genuine collisions.
+
+Both halves are now closed: the write cannot raise, and each row runs inside
+its own `SAVEPOINT`, so anything else that fails costs one row rather than
+fifty.
+
+### Working through them
+
+```sql
+-- what is open, most persistent first
+SELECT c.external_id, a.canonical_title, h.canonical_title AS held_by, c.seen_count
+  FROM mapping_conflicts c
+  JOIN anime a ON a.id = c.anime_id
+  LEFT JOIN anime h ON h.id = c.held_by
+ WHERE c.resolved_at IS NULL
+ ORDER BY c.seen_count DESC;
+```
+
+An unresolved row is **not** an error — most are legitimate season splits. Mark
+one once you have looked:
+
+```sql
+UPDATE mapping_conflicts SET resolved_at = now(), resolution = 'season split, expected'
+ WHERE id = 42;
+```
+
+If the resolution was to merge a duplicate, the freed id can be attached with:
+
+```sh
+node --experimental-strip-types scripts/import-anilist.ts --retry-conflicts
+```
+
+The ordinary enrich run cannot do that: it only looks at rows whose synopsis is
+still NULL, and a row that hit a collision was enriched successfully — only its
+MAL id was withheld.
