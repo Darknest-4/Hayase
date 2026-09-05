@@ -30,8 +30,16 @@ export type AuditAction =
   // the operator who imported a repository is the person answerable for what
   // came in with it.
   | 'extension.imported'
+  // Moderation performed through Discord slash commands. In this trail rather
+  // than a second one, because a moderation system with two audit trails has
+  // none — "who banned this account" must have one answer.
+  | 'discord.warn' | 'discord.timeout' | 'discord.kick' | 'discord.ban'
+  | 'discord.purge' | 'discord.slowmode'
+  // Server provisioning: each role, channel and webhook the blueprint creates.
+  | 'discord.role.create' | 'discord.role.update' | 'discord.category.create'
+  | 'discord.channel.create' | 'discord.channel.update' | 'discord.webhook.create'
 
-export type SubjectType = 'user' | 'role' | 'anime' | 'episode' | 'config' | 'webhook' | 'extension'
+export type SubjectType = 'user' | 'role' | 'anime' | 'episode' | 'config' | 'webhook' | 'extension' | 'discord'
 
 /**
  * Record one administrative action.
@@ -41,7 +49,11 @@ export type SubjectType = 'user' | 'role' | 'anime' | 'episode' | 'config' | 'we
  * tables end up holding a second, stale copy of the database.
  */
 export async function audit (
-  actorId: string,
+  // Null for an actor with no Yume account — a system job, or the Discord bot
+  // acting on a Discord user who has never linked one. `actor_id` is a uuid
+  // referencing `users`, so a Discord id cannot go in it; it travels in the
+  // payload instead, labelled.
+  actorId: string | null,
   action: AuditAction,
   subjectType: SubjectType,
   subjectId: string | null,
