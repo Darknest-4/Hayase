@@ -163,6 +163,12 @@ services:
       # How often managed messages are re-checked. An unchanged render costs
       # nothing: the content is hashed and nothing is sent when it matches.
       SYNC_INTERVAL_MS: ${SYNC_INTERVAL_MS:-60000}
+      # Greeting new members needs a gateway connection and the privileged
+      # Server Members Intent, so it is off until both are deliberate.
+      DISCORD_WELCOME: ${DISCORD_WELCOME:-false}
+      # Give the Member role on join. Off by default: handing out a role
+      # automatically is a moderation decision, not a default.
+      WELCOME_ROLE: ${WELCOME_ROLE:-false}
       NODE_ENV: production
     expose: ['4100']
     healthcheck:

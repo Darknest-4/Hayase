@@ -23,6 +23,8 @@ import { InteractionType, ResponseType, verifySignature, type Interaction } from
 import { sendWebhook } from './notify.ts'
 import { syncMessage } from './messages.ts'
 import { channelMap, startSyncLoop } from './sync.ts'
+import { gatewayConfigured, startGateway } from './gateway.ts'
+import { onMemberJoin } from './welcome.ts'
 import { releaseEmbed } from './content.ts'
 
 if (!configured()) {
@@ -147,12 +149,24 @@ server.listen(config.port, '0.0.0.0', () => {
 // after listen so a slow first pass cannot delay the health check.
 const stopSync = startSyncLoop(rest)
 
+// The gateway exists for one event: a member joining. Everything else this bot
+// does arrives over HTTP. Off unless DISCORD_WELCOME is on, because a bot that
+// starts greeting strangers the moment it is installed is not a good first
+// impression — and because the intent it needs must be granted deliberately.
+const stopGateway = process.env.DISCORD_WELCOME === 'true' && gatewayConfigured()
+  ? startGateway({ token: config.token, rest, onMemberJoin: member => onMemberJoin(rest, member) })
+  : (() => {
+      if (process.env.DISCORD_WELCOME === 'true') console.warn('[yume-bot] DISCORD_WELCOME is on but DISCORD_GUILD_ID is not set — welcome is off')
+      return () => {}
+    })()
+
 // Compose sends SIGTERM on `down` and on a redeploy. Finishing in-flight
 // requests keeps a deploy from showing up as failed interactions.
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.on(signal, () => {
     console.log(`[yume-bot] ${signal} — shutting down`)
     stopSync()
+    stopGateway()
     server.close(() => process.exit(0))
     setTimeout(() => process.exit(0), 10_000).unref()
   })

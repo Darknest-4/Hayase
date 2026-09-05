@@ -97,7 +97,17 @@ export class Rest {
 
 export interface Guild { id: string, name: string, owner_id: string }
 export interface Role { id: string, name: string, position: number, permissions: string, color: number, managed?: boolean }
-export interface Channel { id: string, name: string, type: number, parent_id?: string | null, position?: number, topic?: string | null }
+export interface Channel {
+  id: string
+  name: string
+  type: number
+  parent_id?: string | null
+  position?: number
+  topic?: string | null
+  nsfw?: boolean
+  /** Slowmode, in seconds. Discord's name for it. */
+  rate_limit_per_user?: number
+}
 export interface Webhook { id: string, name: string, url?: string, channel_id: string, token?: string }
 
 /** Discord channel type numbers, named. */
