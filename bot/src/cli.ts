@@ -15,6 +15,7 @@ import { commandPayload } from './commands.ts'
 import { Rest } from './discord/rest.ts'
 import { inviteUrl, provision, type ProvisionReport } from './provision.ts'
 import { WEBHOOK_ENV } from './notify.ts'
+import { syncAll } from './sync.ts'
 
 const command = process.argv[2] ?? 'plan'
 
@@ -89,6 +90,13 @@ if (Object.keys(report.webhooks).length) {
   for (const [kind, url] of Object.entries(report.webhooks)) {
     console.log(`  ${WEBHOOK_ENV[kind] ?? kind.toUpperCase()}=${url}`)
   }
+}
+
+// The static pages are part of a provisioned server, not a separate chore.
+// Boards are left to the running bot, which has live data to put in them.
+if (!dryRun && report.ready) {
+  const synced = await syncAll(rest, config.guildId, { staticOnly: true })
+  console.log(`\n  Messages     ${synced.created} posted, ${synced.edited} edited, ${synced.unchanged} already current`)
 }
 
 console.log(`\nStatus: ${report.ready ? 'READY' : 'INCOMPLETE'}`)

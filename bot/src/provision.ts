@@ -218,8 +218,32 @@ export async function provision (options: ProvisionOptions): Promise<ProvisionRe
       (parentId?.startsWith('(new:') ? true : c.parent_id === parentId))
 
     if (found) {
-      report.skipped++
       if (channel.webhook) webhookChannels.push({ kind: channel.webhook, channelId: found.id, channelName: channel.name })
+
+      // A channel that exists is not necessarily a channel that is right.
+      // Slowmode gets turned off during a quiet week and never turned back on;
+      // a topic gets cleared by an edit. Creating it once and never looking
+      // again means the blueprint describes only the day it was applied.
+      //
+      // Only settings the blueprint actually states are compared. A channel
+      // with no declared slowmode is left alone rather than forced to zero —
+      // silence in the blueprint is "not my business", not "must be default".
+      const drift: Record<string, unknown> = {}
+      const wantedSlowmode = channel.slowmodeSeconds ?? 0
+      if ((found.rate_limit_per_user ?? 0) !== wantedSlowmode && (channel.slowmodeSeconds !== undefined || (found.rate_limit_per_user ?? 0) !== 0)) {
+        if (channel.slowmodeSeconds !== undefined) drift.rate_limit_per_user = wantedSlowmode
+      }
+      if (channel.topic && (found.topic ?? '') !== channel.topic) drift.topic = channel.topic
+      if (channel.nsfw !== undefined && (found.nsfw ?? false) !== channel.nsfw) drift.nsfw = channel.nsfw
+
+      if (Object.keys(drift).length) {
+        const what = Object.keys(drift).map(k => k === 'rate_limit_per_user' ? `slowmode ${String(drift[k])}s` : k).join(', ')
+        await record({ kind: 'channel.update', key: channel.key, name: channel.name, reason: `differs from the blueprint: ${what}` }, async () => {
+          await rest.patch(`/channels/${found.id}`, drift)
+        })
+      } else {
+        report.skipped++
+      }
       continue
     }
 

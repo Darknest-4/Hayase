@@ -145,21 +145,31 @@ export const BLUEPRINT: Blueprint = {
         { key: 'new_releases', name: 'new-releases', kind: 'text', topic: 'Every new release, posted automatically', postableBy: ['bot', ...STAFF_ROLES], webhook: 'release' },
         { key: 'release_updates', name: 'release-updates', kind: 'text', topic: 'Re-encodes, fixes and batch updates', postableBy: ['bot', ...STAFF_ROLES], webhook: 'content' },
         { key: 'watch_now', name: 'watch-now', kind: 'text', topic: 'What to watch right now' },
-        { key: 'recommendations', name: 'recommendations', kind: 'text', topic: 'Recommend something' },
-        { key: 'watch_together', name: 'watch-together', kind: 'text', topic: 'Find people to watch with' }
+        { key: 'recommendations', name: 'recommendations', kind: 'text', topic: 'Recommend something', slowmodeSeconds: 5 },
+        { key: 'watch_together', name: 'watch-together', kind: 'text', topic: 'Find people to watch with', slowmodeSeconds: 5 }
       ]
     },
     {
       key: 'community',
       name: '💬 COMMUNITY',
       channels: [
-        { key: 'general', name: 'general', kind: 'text', topic: 'General chat' },
-        { key: 'anime_chat', name: 'anime-chat', kind: 'text', topic: 'Anime discussion' },
+        // Slowmode is stated where it earns its place and left out everywhere
+        // else. Two seconds is invisible to somebody typing a sentence and
+        // ruinous to a script posting in a loop, which is the whole point —
+        // it is a raid brake, not a conversation tax.
+        //
+        // A channel with no value here is left exactly as the moderators set
+        // it: silence in the blueprint means "not my business", and the
+        // provisioner treats it that way rather than forcing it to zero.
+        { key: 'general', name: 'general', kind: 'text', topic: 'General chat', slowmodeSeconds: 2 },
+        { key: 'anime_chat', name: 'anime-chat', kind: 'text', topic: 'Anime discussion', slowmodeSeconds: 2 },
         { key: 'manga', name: 'manga', kind: 'text', topic: 'Manga discussion' },
-        { key: 'memes', name: 'memes', kind: 'text', topic: 'Memes' },
-        { key: 'off_topic', name: 'off-topic', kind: 'text', topic: 'Anything else' },
-        // Slowmode here rather than everywhere: this is the channel people
-        // hammer, and a three-second gap costs a human nothing.
+        // Image channels attract the fastest spam and nobody posts two memes
+        // in five seconds on purpose.
+        { key: 'memes', name: 'memes', kind: 'text', topic: 'Memes', slowmodeSeconds: 5 },
+        { key: 'off_topic', name: 'off-topic', kind: 'text', topic: 'Anything else', slowmodeSeconds: 2 },
+        // The channel people hammer hardest, and a bot reply takes longer than
+        // this anyway.
         { key: 'bot_commands', name: 'bot-commands', kind: 'text', topic: 'Bot commands', slowmodeSeconds: 3 }
       ]
     },
@@ -167,7 +177,7 @@ export const BLUEPRINT: Blueprint = {
       key: 'support',
       name: '💻 SUPPORT',
       channels: [
-        { key: 'help', name: 'help', kind: 'text', topic: 'Ask for help' },
+        { key: 'help', name: 'help', kind: 'text', topic: 'Ask for help', slowmodeSeconds: 5 },
         { key: 'bug_reports', name: 'bug-reports', kind: 'text', topic: 'Report a bug', slowmodeSeconds: 30 },
         { key: 'feature_requests', name: 'feature-requests', kind: 'text', topic: 'Suggest a feature', slowmodeSeconds: 30 },
         { key: 'feedback', name: 'feedback', kind: 'text', topic: 'Tell us what you think' }

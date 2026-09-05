@@ -17,12 +17,18 @@ export const config = {
   token: process.env.DISCORD_BOT_TOKEN ?? '',
   applicationId: process.env.DISCORD_APP_ID ?? '',
   publicKey: process.env.DISCORD_PUBLIC_KEY ?? '',
-  guildId: process.env.DISCORD_GUILD_ID ?? '',
+  get guildId (): string { return process.env.DISCORD_GUILD_ID ?? '' },
 
   /** Where the bot reaches the Yume API. Inside compose this is the service name. */
   apiUrl: process.env.YUME_API_URL ?? 'http://app:4000',
-  /** Shared secret for the bot→API and API→bot calls. Not a user credential. */
-  serviceToken: process.env.YUME_SERVICE_TOKEN ?? '',
+  /**
+   * Shared secret for the bot→API and API→bot calls. Not a user credential.
+   *
+   * A getter rather than a captured value: read at use, so a test can set it
+   * and so a value that arrives late (an env file loaded after import) is not
+   * silently frozen as empty.
+   */
+  get serviceToken (): string { return process.env.YUME_SERVICE_TOKEN ?? '' },
   /** Public site URL, used in embeds and buttons. */
   siteUrl: process.env.YUME_SITE_URL ?? 'http://localhost',
 
