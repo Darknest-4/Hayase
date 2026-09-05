@@ -3,6 +3,7 @@
 
 import { query, queryOne, transaction } from '../db.ts'
 import { coerceOptions, defaultOptions, EXTENSION_TYPES } from '../lib/extension-manifest.ts'
+import { recomputeRating } from '../lib/extension-rating.ts'
 import { get as getPackage } from '../lib/package-store.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 import { WRITE_LIMIT } from '../plugins/security.ts'
@@ -115,6 +116,9 @@ const routes: FastifyPluginAsync = async fastify => {
               -- the declared option schema, so the client can draw a settings
               -- form without fetching the package and parsing its manifest
               coalesce(v.manifest->'options', '{}'::jsonb) AS option_schema,
+              -- Which API dialect the package speaks; the sandbox installs a
+              -- fetch alias for a package that declared one.
+              v.manifest->>'compat' AS compat,
               (SELECT coalesce(jsonb_agg(jsonb_build_object('permission', p.permission, 'hosts', p.hosts)), '[]')
                  FROM extension_permissions p WHERE p.version_id = v.id) AS permissions
        FROM extension_installs i
@@ -224,6 +228,139 @@ const routes: FastifyPluginAsync = async fastify => {
       .send(bytes)
   })
 
+  /*
+   * Reviews.
+   *
+   * `extension_reviews` has existed since the store's first migration with no
+   * code touching it, and `extensions.rating_avg` / `rating_count` were
+   * denormalised columns nothing ever wrote — so every card in the store has
+   * been showing a blank rating since the day it was built.
+   *
+   * One review per account per extension, replaced rather than appended: a
+   * rating is a current opinion, not a history of them.
+   */
+  fastify.get('/:slug/reviews', {
+    schema: {
+      params: { type: 'object', properties: { slug: { type: 'string', maxLength: 64 } } },
+      querystring: {
+        type: 'object',
+        properties: { limit: { type: 'integer', minimum: 1, maximum: 50, default: 20 } }
+      }
+    }
+  }, async (request, reply) => {
+    const { slug } = request.params as { slug: string }
+    const { limit } = request.query as { limit?: number }
+
+    const extension = await queryOne<{ id: string }>('SELECT id FROM extensions WHERE slug = $1', [slug])
+    if (!extension) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    // Hidden reviews stay out of the list entirely rather than appearing as a
+    // "removed" placeholder: a moderator hid it because nobody should read it.
+    const data = await query(
+      `SELECT r.id, r.rating, r.body, r.created_at, u.username AS author,
+              v.version AS reviewed_version
+         FROM extension_reviews r
+         JOIN users u ON u.id = r.user_id
+         LEFT JOIN extension_versions v ON v.id = r.version_id
+        WHERE r.extension_id = $1 AND r.hidden_at IS NULL AND u.deleted_at IS NULL
+        ORDER BY r.created_at DESC
+        LIMIT $2`,
+      [extension.id, limit ?? 20]
+    )
+
+    // The caller's own review comes back separately so the form can be
+    // pre-filled without hunting for it in a paginated list.
+    let mine = null
+    const auth = request.headers.authorization
+    if (auth?.startsWith('Bearer ')) {
+      try {
+        const payload = fastify.jwt.verify<{ sub: string }>(auth.slice(7))
+        mine = await queryOne(
+          'SELECT id, rating, body, created_at FROM extension_reviews WHERE extension_id = $1 AND user_id = $2',
+          [extension.id, payload.sub]
+        )
+      } catch { /* an unreadable token is simply an anonymous request here */ }
+    }
+
+    return { data, mine }
+  })
+
+  /**
+   * Leave or replace a review.
+   *
+   * Only from an account that has the extension installed. A store where
+   * anybody can rate anything collects opinions from people who never ran the
+   * thing, and the rating is meant to answer "does this work", which only a
+   * user can say.
+   */
+  fastify.put('/:slug/reviews', {
+    preHandler: fastify.authenticate,
+    config: WRITE_LIMIT,
+    schema: {
+      params: { type: 'object', properties: { slug: { type: 'string', maxLength: 64 } } },
+      body: {
+        type: 'object',
+        required: ['rating'],
+        additionalProperties: false,
+        properties: {
+          rating: { type: 'integer', minimum: 1, maximum: 5 },
+          body: { type: 'string', maxLength: 5000 }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const { slug } = request.params as { slug: string }
+    const { rating, body } = request.body as { rating: number, body?: string }
+
+    const install = await queryOne<{ extension_id: string, version_id: string }>(
+      `SELECT i.extension_id, i.version_id
+         FROM extension_installs i
+         JOIN extensions e ON e.id = i.extension_id
+        WHERE e.slug = $1 AND i.user_id = $2`,
+      [slug, request.user.sub]
+    )
+    if (!install) {
+      return reply.code(403).send({
+        type: 'about:blank', title: 'Forbidden', status: 403,
+        detail: 'Install the extension before reviewing it'
+      })
+    }
+
+    const review = await transaction(async client => {
+      const { rows } = await client.query(
+        `INSERT INTO extension_reviews (extension_id, user_id, rating, body, version_id)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (extension_id, user_id) DO UPDATE
+            SET rating = EXCLUDED.rating, body = EXCLUDED.body,
+                version_id = EXCLUDED.version_id, created_at = now(), hidden_at = NULL
+         RETURNING id, rating, body, created_at`,
+        [install.extension_id, request.user.sub, rating, body?.trim() || null, install.version_id]
+      )
+      await recomputeRating(client, install.extension_id)
+      return rows[0]
+    })
+
+    return reply.code(200).send(review)
+  })
+
+  fastify.delete('/:slug/reviews', {
+    preHandler: fastify.authenticate,
+    schema: { params: { type: 'object', properties: { slug: { type: 'string', maxLength: 64 } } } }
+  }, async (request, reply) => {
+    const { slug } = request.params as { slug: string }
+    const extension = await queryOne<{ id: string }>('SELECT id FROM extensions WHERE slug = $1', [slug])
+    if (!extension) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    await transaction(async client => {
+      await client.query(
+        'DELETE FROM extension_reviews WHERE extension_id = $1 AND user_id = $2',
+        [extension.id, request.user.sub]
+      )
+      await recomputeRating(client, extension.id)
+    })
+    return reply.code(204).send()
+  })
+
   fastify.post('/:slug/install', { preHandler: fastify.authenticate }, async (request, reply) => {
     const { slug } = request.params as { slug: string }
 
@@ -254,15 +391,28 @@ const routes: FastifyPluginAsync = async fastify => {
         `INSERT INTO extension_installs (user_id, extension_id, version_id, options)
          VALUES ($1, $2, $3, $4::jsonb)
          ON CONFLICT (user_id, extension_id) DO UPDATE SET enabled = true, version_id = $3
-         RETURNING *`,
+         RETURNING *, (xmax = 0) AS first_install`,
         [request.user.sub, latest.extension_id, latest.version_id, JSON.stringify(defaultOptions(latest.options))]
       )
-      await client.query('UPDATE extensions SET install_count = install_count + 1 WHERE id = $1', [latest.extension_id])
+      /*
+       * Count an install once per account, not once per call.
+       *
+       * The increment used to run unconditionally after an upsert, so
+       * re-installing — or pressing the button twice — added to the total
+       * every time. The store's default ranking is by install count, so the
+       * number was both wrong and trivially inflatable. `xmax = 0` is true
+       * only on the row this statement actually inserted.
+       */
+      const firstInstall = rows[0]?.first_install === true
+      if (firstInstall) {
+        await client.query('UPDATE extensions SET install_count = install_count + 1 WHERE id = $1', [latest.extension_id])
+      }
       await client.query(
         `INSERT INTO extension_events (extension_id, version_id, event) VALUES ($1, $2, 'install')`,
         [latest.extension_id, latest.version_id]
       )
-      return rows[0]
+      const { first_install: _ignored, ...install } = rows[0]
+      return install
     })
     const counts = await queryOne<{ install_count: number }>('SELECT install_count FROM extensions WHERE id = $1', [latest.extension_id])
     await emitEvent('extension.installed', { slug, action: 'install', installCount: counts?.install_count })

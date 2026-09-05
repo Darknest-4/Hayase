@@ -14,6 +14,7 @@ URL-pasted plugins. Two ideas are inherited and kept sacred:
 
 ```
 ├─ docs/                  Architecture, database, API and operations docs
+│  ├─ telepites.md        Deploying to an Ubuntu VPS with Docker (Hungarian)
 │  ├─ architecture.md     Services, queue, search, catalogue precedence,
 │  │                      publishing workflow, scaling, ADRs
 │  ├─ database.md         Schema guide: domains, ER, indexing, partitioning
@@ -425,6 +426,13 @@ for reproducible shots. Click any section below to expand it. Full gallery in
 </details>
 
 ## Quick start
+
+Deploying to a server rather than hacking on it? The whole stack — API, web
+client, Postgres, worker, HTTPS and verified daily backups — comes up with
+`docker compose up -d --build` once `.env` has a `JWT_SECRET` and a
+`POSTGRES_PASSWORD`. Step by step, in Hungarian: [`docs/telepites.md`](docs/telepites.md).
+
+The rest of this section is the local development loop.
 
 ```sh
 docker compose up -d                 # postgres (app/worker/caddy optional)

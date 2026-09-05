@@ -134,3 +134,70 @@ jobs:
       # fails here instead.
       - name: Client tests
         run: node --experimental-strip-types --test web/test/*.test.mjs
+
+  # The client's unit tests run against a DOM stub, which left the router, the
+  # layout, the sign-in modal and the player with no automated coverage at all:
+  # a change that threw on boot passed every test in the repository. This job
+  # drives the assembled application in a real browser.
+  #
+  # Playwright is installed here rather than added to package.json: nothing
+  # the application ships needs it, and a dependency that only CI uses is a
+  # dependency the deployment still has to carry.
+  e2e:
+    name: Browser smoke test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: yume
+          POSTGRES_PASSWORD: yume
+          POSTGRES_DB: yume
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U yume"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install server dependencies
+        run: npm ci
+        working-directory: server
+
+      - name: Install Playwright
+        # At the repository root: the test lives under web/, so this is where
+        # its import resolves from.
+        run: |
+          npm install --no-save playwright@1.56
+          npx playwright install --with-deps chromium
+
+      - name: Apply migrations
+        run: npm run migrate
+        working-directory: server
+        env:
+          DATABASE_URL: postgres://yume:yume@localhost:5432/yume
+
+      - name: Publish the bundled extensions
+        run: node --experimental-strip-types scripts/publish-extensions.ts || true
+        working-directory: server
+        env:
+          DATABASE_URL: postgres://yume:yume@localhost:5432/yume
+          PACKAGE_DIR: /tmp/yume-packages
+
+      - name: Browser smoke test
+        run: npm run test:e2e
+        working-directory: server
+        env:
+          DATABASE_URL: postgres://yume:yume@localhost:5432/yume
+          JWT_SECRET: ci-secret-not-used-for-anything-real-0123456789
+          PACKAGE_DIR: /tmp/yume-packages
+          LOG_LEVEL: warn

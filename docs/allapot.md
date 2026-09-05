@@ -2,7 +2,8 @@
 
 > Részletes, naprakész leírás arról, **mi van kész**, **mi van hátra**,
 > **milyen táblák**, **milyen funkciók**, és **miket használunk**.
-> Frissítve: 2026‑07‑21.
+> Frissítve: 2026‑08‑25. A számokat a `status.html` generálja forrásból —
+> ha ez a dokumentum és az eltér, a `status.html` a helyes.
 
 A magas szintű, elrendezés‑központú áttekintés a [`attekintes.md`](./attekintes.md)‑ben van;
 ez a dokumentum a **műszaki állapotot** és a **teljes leltárt** tartja számon.
@@ -30,7 +31,9 @@ bővítmény‑rendszerrel.
 | **Katalógus‑adat** | Böngészéskor AniList/Jikan/ani.zip közvetlenül (localStorage cache); a saját DB 25 672 animével + 388 611 epizóddal seedelve |
 
 **Adatmennyiség most:** 25 672 anime · 388 611 epizód · 14 felhasználó ·
-387 jogosultság · 6 szerepkör · 23 feature‑flag · **107 tábla**.
+389 jogosultság (ebből **18 `active`** — kód érvényesíti; a többi `planned`,
+és a Roles felület meg is jelöli) · 6 szerepkör · 23 feature‑flag ·
+**99 alap tábla** (+17 havi partíció).
 
 ---
 
@@ -54,7 +57,10 @@ bővítmény‑rendszerrel.
 - [x] **Webhook‑ok** — kimenő integrációk, Discord‑embed render, kézbesítési napló, teszt‑tüzelés
 
 ### #6 — Finomhangolt jogosultsági rendszer (RBAC)
-- [x] **387 jogosultság** 14 csoportban (`resource.action` minta)
+- [x] **389 jogosultság** 14 csoportban (`resource.action` minta), életciklus‑állapottal:
+      18 `active` (kód érvényesíti), a többi `planned` (katalogizált, de a modulja még
+      nincs kész). A Roles felület jelvényként mutatja a különbséget, és a
+      `permission-status.test.ts` bukik, ha az állapot elcsúszik a kódtól.
 - [x] **6 szerepkör** értelmes kiosztással: `admin` (387), `moderator` (100), `editor` (96), `developer` (48), `analyst` (23), `user` (1)
 - [x] **Roles admin UI** — szerepkör‑sín + csoportosított jogosultság‑katalógus, per‑jogosultság kapcsoló, „Grant/Revoke all" csoportonként, szűrő; az `admin` szerep védett (mindig mindent birtokol)
 
@@ -207,7 +213,7 @@ A felhasználó által kért sorrend (a #6 és #1 kész, ezek jönnek „folytas
 
 ---
 
-## 4. Adatbázis — teljes tábla‑leltár (107 tábla)
+## 4. Adatbázis — teljes tábla‑leltár (99 alap tábla + 17 partíció)
 
 Migrációk: `0001`…`0017` (a `db/migrations/`‑ben, filename szerint követve a `schema_migrations`‑ben).
 
@@ -347,8 +353,9 @@ a státusza `active`‑ra vált (a `0014` UPDATE‑listáját bővítve).
 > Őszinte leltár: a séma előre ki van építve, hogy a következő modulok gyorsan
 > ráüljenek. Semmi sem „felesleges" — mindennek megvan a gazda‑modulja és státusza.
 
-**Táblák:** 90 logikai tábla (107 fizikai a havi particiókkal) — **55 használt
-(van rá szerver‑kód), 35 séma‑szintű**.
+**Táblák:** 99 alap tábla (116 fizikai a havi particiókkal) — **71 használt
+(van rá szerver‑kód), 28 séma‑szintű** (nulla kódhivatkozás).
+A pontos, forrásból ellenőrzött lista a repó gyökerében lévő `status.html`‑ben van.
 
 | Réteg | Élő táblák (használt) | Séma‑szintű (jövőbeli modul) |
 |-------|----------------------|------------------------------|
@@ -358,7 +365,7 @@ a státusza `active`‑ra vált (a `0014` UPDATE‑listáját bővítve).
 | Könyvtár | `library_entries`, `watch_progress`, `watch_history` | `favorites`, `bookmarks`, `custom_lists(+items)`, `collections(+lists)`, `list_likes` |
 | Közösség | `comments`, `comment_likes`, `reports`, `moderation_actions` | `reviews`, `review_votes`, `follows`, `friendships`, `clubs(+members)`, `forums`, `topics`, `chats` |
 | Gamifikáció | `profile_stats`, `xp_events`, `watch_stats_daily` | `achievements`, `badges`, `user_badges`, `profile_achievements` |
-| Bővítmények | `extensions`, `extension_versions/installs/developers/permissions` | `extension_reviews` |
+| Bővítmények | `extensions`, `extension_versions/installs/developers/permissions`, `extension_reviews` | — |
 | Rendszer | `roles`, `permissions`, `role_permissions`, `user_roles`, `notifications`, `webhooks`, `jobs`, `feature_flags`, `site_settings`, `watch_together_rooms`, `search_stats`, analitika‑particiók | — |
 
 \* Az AniSkip jelenleg a **külső** AniSkip API‑ból megy, nem a `skip_segments` tábláiból.

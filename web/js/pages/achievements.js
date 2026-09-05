@@ -1,8 +1,14 @@
 /* global window, document, U, Store, T, I18n */
-// Achievements & Badges — a catalogue of unlockable achievements whose
-// conditions are evaluated on the client against the active profile's
-// library and watch history. Mirrors the backend `achievements` table; the
-// same slugs are used so a signed-in profile can reconcile server unlocks.
+// Achievements & Badges.
+//
+// Signed in, the server decides: it measures the profile against its own
+// watch history, library and favourites, and the grants are recorded there.
+// Nothing is reported by this screen, so nothing here can be forged.
+//
+// Signed out — or offline — the same catalogue is evaluated locally against
+// browser storage, which is what this screen always did. The definitions below
+// are a copy of the server's, and web/test/achievements.test.mjs fails if the
+// two drift apart.
 
 const PageAchievements = {
   // Each achievement: { slug, name, desc, icon, tier, target, value(ctx) }
@@ -35,16 +41,58 @@ const PageAchievements = {
   },
 
   body (pad) {
-    const ctx = this._context()
+    // Local first so the screen is never blank, then the account's own answer
+    // if there is one. It replaces rather than merges: a grant is a fact the
+    // server recorded, and a local near-miss must not un-unlock it.
+    this._draw(pad, this._evaluateLocally(), this._context())
 
-    const evaluated = this.CATALOG.map(a => {
+    this._fromServer().then(server => {
+      if (!server || !pad.isConnected) return
+      pad.replaceChildren()
+      this._draw(pad, server.list, server.context)
+    })
+  },
+
+  /** Ask the server for the catalogue and this profile's progress. */
+  async _fromServer () {
+    if (!window.YumeAPI?.user?.() || !window.LibrarySync?.enabled?.()) return null
+    try {
+      const { data, context } = await window.LibrarySync._req('/v1/me/achievements')
+      if (!Array.isArray(data) || !data.length) return null
+      return {
+        context: context ?? {},
+        list: data.map(a => ({
+          slug: a.slug,
+          name: a.name,
+          desc: a.description,
+          icon: a.icon,
+          tier: a.tier,
+          target: a.target,
+          current: Math.min(Number(a.current) || 0, a.target),
+          unlocked: a.unlocked === true,
+          pct: Math.min(100, Math.round((Number(a.current) || 0) / a.target * 100))
+        }))
+      }
+    } catch (e) {
+      return null
+    }
+  },
+
+  _evaluateLocally () {
+    const ctx = this._context()
+    return this.CATALOG.map(a => {
       const value = Math.max(0, Math.floor(a.value(ctx)))
       return { ...a, current: Math.min(value, a.target), unlocked: value >= a.target, pct: Math.min(100, Math.round(value / a.target * 100)) }
     })
+  },
+
+  _draw (pad, evaluated, ctx) {
     const unlockedCount = evaluated.filter(a => a.unlocked).length
 
-    // level from XP (same model as profile page/backend)
-    const xp = ctx.episodes * 10 + ctx.completed * 100 + unlockedCount * 50
+    // Level from XP. The same shape as the server's ledger, computed from
+    // whichever context this render was given — the server's measurements
+    // when signed in, the browser's when not.
+    const xp = (Number(ctx.episodes) || 0) * 10 + (Number(ctx.completed) || 0) * 100 + unlockedCount * 50
     const level = Math.floor(Math.sqrt(xp / 100)) + 1
     const levelFloor = Math.pow(level - 1, 2) * 100
     const levelCeil = Math.pow(level, 2) * 100

@@ -58,7 +58,10 @@ const noIntrospection: ValidationRule = context => ({
 
 export async function buildApp (): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: { level: config.isProd ? 'info' : 'debug' },
+    // LOG_LEVEL is honoured so a test run can silence request logging: the
+    // browser smoke test loads ~40 static files per page and the noise buries
+    // the assertions it is there to report.
+    logger: { level: process.env.LOG_LEVEL ?? (config.isProd ? 'info' : 'debug') },
     // A stable id per request, echoed back on every response. Without it a
     // user reporting "it failed at 14:03" cannot be tied to a log line, and a
     // 500 gives them nothing to quote.

@@ -173,6 +173,64 @@ and the benefit is not.
 
 ---
 
+### Why search runs the query twice (and usually doesn't)
+
+The endpoint was ~28x slower than plain catalogue listing — median 168 ms,
+p95 765 ms on a 4-vCPU VPS with 32k anime. It was not a sequential scan and
+not the telemetry. It was one operator.
+
+`%` (trigram similarity) asks a GIN index for every row that shares *enough*
+trigrams to clear the similarity threshold. The index answers that by OR-ing
+the posting lists of all of the query's trigrams and rechecking each candidate
+against the heap. `ILIKE '%q%'` uses the **same index** and is far cheaper,
+because `LIKE` needs *every* trigram — an AND, which is selective.
+
+Measured on 25 703 anime / 149 605 synonyms, `q=naruto`:
+
+| | planning | execution | index rows on `anime_synonyms` |
+|---|---|---|---|
+| with `%` | 3.6 ms | 17.8 ms | 1449, of which 1028 discarded at recheck |
+| without `%` | 0.4 ms | 0.5 ms | — |
+
+So `searchAnime` runs the cheap predicates first — exact, prefix, substring,
+full-text — and only pays for `%` when that leaves the page short.
+
+**Why that is not a behaviour change.** The `%` predicates can only produce
+tier-20 rows, the typo-tolerant tail. Under the default `relevance` order
+(`tier DESC, sim DESC, …`) a tier-20 row sits below every exact, prefix,
+substring and full-text match there is. If the cheap pass already filled the
+page, no tier-20 row could have appeared on it. An **explicit sort is excluded
+on purpose**: ordering by popularity or score makes `tier` a tiebreak rather
+than the primary key, so a fuzzy-only row *can* outrank an exact one, and that
+path keeps the single full query it always had.
+
+`server/test/search-performance.test.ts` asserts the mechanism — which query
+gets issued, and that the planner uses an index for it — rather than a wall
+clock, which would fail on a loaded CI box whatever the code did.
+
+### The remaining slow case: queries under three characters
+
+`pg_trgm` needs three characters to form a trigram, so a one- or two-character
+query cannot use any of the trigram indexes and Postgres falls back to a
+sequential scan:
+
+| `q` | plan | warm |
+|---|---|---|
+| `ILIKE '%na%'` on `anime` | **Seq Scan** | 3.8 ms |
+| `ILIKE '%na%'` on `anime_synonyms` | **Seq Scan** | 16.1 ms |
+| `lower(x) LIKE 'na%'` on `anime` | Index Scan (`anime_canonical_lower_idx`) | 0.16 ms |
+| `lower(x) LIKE 'na%'` on `anime_synonyms` | Bitmap Index Scan (`anime_synonyms_lower_idx`) | 0.65 ms |
+
+This matters more than it looks: `/suggest` fires on every keystroke, so `n`
+and `na` are among the most frequent queries a running instance sees.
+
+Switching short queries from substring to **prefix** matching would use the
+btree indexes that migration 0017 already added and is ~25x faster. It is not
+done here because it *changes what those queries return* — `q=k` would stop
+matching "Blac**k** Lagoon" — and that is a ranking decision, not a
+performance fix. The measurement is recorded so the decision can be made on
+evidence.
+
 ## Indexes (migration 0017)
 
 | Index | Serves |

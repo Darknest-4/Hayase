@@ -108,7 +108,15 @@ const ExtensionHost = {
       instance.onReady = resolve
       instance.onInitFailed = reject
     })
-    worker.postMessage({ kind: 'init', source: ext.source, options: ext.options ?? {} })
+    worker.postMessage({
+      kind: 'init',
+      source: ext.source,
+      options: ext.options ?? {},
+      // Declared in the manifest, not chosen here: a package written for
+      // another client's API needs `fetch` under its own name. It still goes
+      // through this host and the same allowlist — see extension-worker.js.
+      compat: ext.compat ?? null
+    })
 
     const timer = setTimeout(() => instance.onInitFailed?.(new Error('extension did not initialise in time')), this.CALL_TIMEOUT_MS)
     try {
@@ -408,6 +416,7 @@ const ExtensionHost = {
           minAppVersion: ext.min_app_version,
           permissions: ext.permissions,
           options: ext.options,
+          compat: ext.compat,
           source
         })
         loaded.push(ext.slug)

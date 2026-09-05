@@ -201,13 +201,16 @@ const Store = {
     return Number(this._resumeMap()[`${mediaId}:${episode}`]) || 0
   },
 
-  setResume (mediaId, episode, seconds) {
+  // `meta` carries what the server needs to interpret the position — the
+  // episode's runtime. Optional, because a caller that does not know it (a
+  // list screen marking progress) should still be able to save one.
+  setResume (mediaId, episode, seconds, meta = {}) {
     const map = this._resumeMap()
     const key = `${mediaId}:${episode}`
     if (seconds > 5) map[key] = Math.floor(seconds)
     else delete map[key]
     this._write(this._profileKey('resume'), map)
-    if (seconds > 5) window.LibrarySync?.onResume({ id: mediaId }, episode, seconds)
+    if (seconds > 5) window.LibrarySync?.onResume({ id: mediaId }, episode, seconds, meta)
   },
 
   clearResume (mediaId, episode) {
@@ -367,10 +370,19 @@ const Store = {
   toggleFavourite (mediaId) {
     const favs = this.favourites()
     const index = favs.indexOf(mediaId)
-    if (index === -1) favs.push(mediaId)
+    const added = index === -1
+    if (added) favs.push(mediaId)
     else favs.splice(index, 1)
     this._write(this._profileKey('favourites'), favs)
-    return index === -1
+    // Favourites used to live in one browser and nowhere else — the only part
+    // of the library that did not follow the account to a second device.
+    window.LibrarySync?.onFavourite(mediaId, added)
+    return added
+  },
+
+  /** Replace the favourites list wholesale — used by the sync pull. */
+  setFavourites (ids) {
+    this._write(this._profileKey('favourites'), [...new Set(ids)])
   },
 
   // ---- theme ----

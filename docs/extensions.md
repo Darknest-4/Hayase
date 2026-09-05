@@ -77,7 +77,9 @@ enforced**. What is live today:
 | Install / uninstall / enable from the store | ✅ `web/js/pages/extensions.js` |
 | Per-install options, validated against the manifest | ✅ `PATCH /v1/extensions/:slug/install` |
 | Bundled extensions published on boot | ✅ `scripts/publish-extensions.ts` |
-| Package upload to object storage | ⏳ the portal still sends a manifest + hash, not bytes |
+| Import from an external repository index | ✅ `POST /v1/dev/repositories/import` |
+| Compatibility mode for Hayase-format packages | ✅ `compat: "hayase"` in the manifest |
+| Package upload | ✅ raw source to `POST /packages`, hashed server-side; the portal sends the bytes |
 | Human review queue UI | ⏳ static checks run; the moderator screen is pending |
 | `create-yume-extension` scaffold / CLI | ⏳ not built |
 | Dev-mode side-loading with hot reload | ⏳ not built |
@@ -111,6 +113,59 @@ Three rules it will not break:
   are immutable, which is what makes the recorded hash worth verifying; changed
   code needs a version bump in `manifest.json`. `--force` overrides this for
   local development.
+
+## Repositories
+
+A repository is a JSON index listing packages and where their source lives.
+It is how an extension reaches a store it was not shipped with — before this,
+`scripts/publish-extensions.ts` was the only way anything could get in, so an
+operator could not host their own set and neither could anybody else.
+
+```
+POST /v1/dev/repositories/import   { "url": "...", "dryRun": true }
+```
+
+`dryRun` reports what would be imported, and which hosts each package would be
+allowed to reach, without writing anything. The developer portal always
+previews first — an operator importing a stranger's index becomes the listed
+owner of what comes in, and should see it before that happens.
+
+**The index never says what its packages hash to.** The bytes are fetched,
+hashed and stored by this server, exactly as the publish endpoint does, and for
+the same reason: a recorded hash is worth checking only if the recorder
+produced it. An index that lies about a hash cannot make a client run
+unreviewed code — the hash simply comes out different and the client rejects
+the package.
+
+Everything else follows from treating the index as hostile input:
+
+* every URL goes through the SSRF guard, so an index cannot make the server
+  fetch `169.254.169.254` or `localhost`;
+* the index and each package are size-capped;
+* `net:fetch` hosts are derived from URL literals in the **fetched source**,
+  not from anything the index claimed. A package that builds a URL dynamically
+  therefore fails to reach it rather than escaping the allowlist — an
+  under-declared host breaks the extension, an over-declared one would widen
+  the sandbox, and this fails in the safe direction;
+* nothing is executed on the server;
+* imported listings are owned by the importer, recorded in the audit log, and
+  marked in their description as third-party. This deployment vouches for none
+  of them.
+
+### Compatibility mode
+
+A package written for another client calls the bare global `fetch`, which this
+sandbox removed. `compat: "hayase"` installs `fetch` as an alias of
+`yume.fetch`.
+
+Nothing is relaxed by it. The call still crosses to the host over
+`postMessage`, and the host re-checks the manifest's host allowlist regardless
+of what the worker claims — the capability removal inside the worker is defence
+in depth, not the boundary. `fetch` is sealed before any package is imported,
+so no package can observe it configurable or swap in its own.
+
+It is declared in the manifest rather than applied silently, so a reviewer can
+see which packages are running this way.
 
 ## Installing and configuring
 

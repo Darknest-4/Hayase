@@ -41,17 +41,20 @@ const PageAnalytics = {
     const hours = Math.floor(minutes / 60)
     const watchTime = hours >= 24 ? `${Math.floor(hours / 24)}d ${hours % 24}h` : `${hours}h ${minutes % 60}m`
 
-    pad.append(U.el('div', { class: 'stat-cards' }, [
-      ['Watch time', watchTime],
-      ['Episodes', episodesWatched.toLocaleString(I18n.locale())],
-      ['In library', String(entries.length)],
-      ['Completed', String(completed)],
-      ['Mean score', mean],
-      ['Days active', String(this._activeDays(history))]
-    ].map(([label, value]) => U.el('div', { class: 'stat-card' }, [
+    const cards = U.el('div', { class: 'stat-cards' }, [
+      ['Watch time', watchTime, 'watchTime'],
+      ['Episodes', episodesWatched.toLocaleString(I18n.locale()), 'episodes'],
+      ['In library', String(entries.length), null],
+      ['Completed', String(completed), 'completed'],
+      ['Mean score', mean, 'meanScore'],
+      ['Days active', String(this._activeDays(history)), null]
+    ].map(([label, value, stat]) => U.el('div', { class: 'stat-card', 'data-stat': stat }, [
       U.el('b', { text: value }),
       U.el('span', { text: label })
-    ]))))
+    ])))
+    pad.append(cards)
+    // Local numbers first, the account's own totals when they arrive.
+    window.ProfileStats?.hydrate(cards)
 
     // ---- weekly activity (episodes watched per day, last 14 days) ----
     this._section(pad, 'Activity', 'Episodes watched per day over the last two weeks.')

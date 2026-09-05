@@ -89,7 +89,30 @@ export function normaliseQuery (raw: string): string {
  * layout and filter composition can be asserted in unit tests without a
  * database connection.
  */
-export function buildSearchSql (filters: SearchFilters): { sql: string, params: unknown[] } {
+export interface SearchSqlOptions {
+  /**
+   * Include the trigram-similarity (`%`) predicates — the typo-tolerant tier.
+   *
+   * They are the entire cost of this endpoint. `%` asks the GIN trigram index
+   * for every row that shares *enough* trigrams to clear the similarity
+   * threshold, which the index answers by OR-ing the posting lists of all of
+   * them and rechecking each candidate against the heap. Measured on 25k
+   * anime / 150k synonyms, `q=naruto`:
+   *
+   *   with `%`      planning 3.6 ms + execution 17.8 ms   (1449 index rows on
+   *                                                        synonyms alone, of
+   *                                                        which 1028 are then
+   *                                                        thrown away)
+   *   without `%`   planning 0.4 ms + execution  0.5 ms
+   *
+   * `ILIKE '%q%'` uses the *same* index and is 25x cheaper, because LIKE
+   * requires every trigram (an AND) instead of enough of them.
+   */
+  fuzzy?: boolean
+}
+
+export function buildSearchSql (filters: SearchFilters, options: SearchSqlOptions = {}): { sql: string, params: unknown[] } {
+  const fuzzy = options.fuzzy ?? true
   const params: unknown[] = []
   const push = (v: unknown): string => { params.push(v); return `$${params.length}` }
 
@@ -131,8 +154,7 @@ export function buildSearchSql (filters: SearchFilters): { sql: string, params: 
              similarity(a.canonical_title, $1) AS sim,
              a.canonical_title AS matched_title
         FROM anime a
-       WHERE a.canonical_title % $1
-          OR a.canonical_title ILIKE '%' || $1 || '%'
+       WHERE ${fuzzy ? 'a.canonical_title % $1 OR ' : ''}a.canonical_title ILIKE '%' || $1 || '%'
           OR a.search @@ websearch_to_tsquery('simple', $1)
 
       UNION ALL
@@ -144,7 +166,7 @@ export function buildSearchSql (filters: SearchFilters): { sql: string, params: 
                   ELSE 20 END,
              similarity(t.title, $1), t.title
         FROM anime_titles t
-       WHERE t.title % $1 OR t.title ILIKE '%' || $1 || '%'
+       WHERE ${fuzzy ? 't.title % $1 OR ' : ''}t.title ILIKE '%' || $1 || '%'
 
       UNION ALL
 
@@ -155,7 +177,7 @@ export function buildSearchSql (filters: SearchFilters): { sql: string, params: 
                   ELSE 20 END,
              similarity(s.synonym, $1), s.synonym
         FROM anime_synonyms s
-       WHERE s.synonym % $1 OR s.synonym ILIKE '%' || $1 || '%'
+       WHERE ${fuzzy ? 's.synonym % $1 OR ' : ''}s.synonym ILIKE '%' || $1 || '%'
     ),
     best AS (
       SELECT DISTINCT ON (id) id, tier, sim, matched_title
@@ -177,7 +199,29 @@ export function buildSearchSql (filters: SearchFilters): { sql: string, params: 
   return { sql, params }
 }
 
-/** Run a tiered catalogue search. */
+/**
+ * Run a tiered catalogue search.
+ *
+ * Two passes, and the second one usually does not happen.
+ *
+ * The fuzzy (`%`) predicates cost ~25x what the rest of the query costs, and
+ * they only ever produce tier-20 rows — the typo-tolerant tail. Under the
+ * default `relevance` order (`tier DESC, sim DESC, …`) a tier-20 row sits
+ * below every exact, prefix, substring and full-text match there is. So when
+ * the cheap pass already fills the requested page, no tier-20 row could have
+ * appeared on it, and running the expensive predicates would have changed
+ * nothing but the response time. `q=naruto` is exactly that case, and so is
+ * every query a viewer spells correctly.
+ *
+ * The fallback is not an optimisation of the typo case, only of the common
+ * one: a short page from the cheap pass means the fuzzy pass runs in full and
+ * its result — not the partial one — is returned.
+ *
+ * An explicit sort is excluded on purpose. Ordering by popularity or score
+ * makes `tier` a tiebreak rather than the primary key, so a fuzzy-only row
+ * *can* outrank an exact one, and skipping it would change the answer. That
+ * path keeps the single full query it always had.
+ */
 export async function searchAnime (
   db: { query: pg.Pool['query'] },
   rawQuery: string,
@@ -185,6 +229,18 @@ export async function searchAnime (
 ): Promise<SearchRow[]> {
   const q = prepareQuery(rawQuery)
   if (!q) return []
+
+  const limit = Math.min(50, Math.max(1, filters.limit ?? 20))
+  const rankedByRelevance = !filters.sort || filters.sort === 'relevance'
+
+  if (rankedByRelevance) {
+    const cheap = buildSearchSql(filters, { fuzzy: false })
+    cheap.params[0] = q
+    const { rows } = await db.query(cheap.sql, cheap.params)
+    // A full page cannot be improved on by rows that rank below all of it.
+    if (rows.length >= limit) return rows as SearchRow[]
+  }
+
   const { sql, params } = buildSearchSql(filters)
   params[0] = q
   const { rows } = await db.query(sql, params)

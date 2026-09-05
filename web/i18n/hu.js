@@ -292,6 +292,30 @@ I18n.register('hu', {
   'This extension has nothing to configure.':
     'Ehhez a kiegészítőhöz nincs mit beállítani.',
   'Failed to load the store: ': 'A bolt betöltése nem sikerült: ',
+  'Failed to load this extension: ': 'A kiegészítő betöltése nem sikerült: ',
+  '← Extension Store': '← Kiegészítő-áruház',
+  'Requested permissions': 'Kért jogosultságok',
+  'None — this extension runs with no access beyond the sandbox.':
+    'Semmit — ez a kiegészítő a sandboxon kívül semmihez nem fér hozzá.',
+  Versions: 'Verziók',
+  'No published versions.': 'Nincs közzétett verzió.',
+  'No ratings yet': 'Még nincs értékelés',
+  deprecated: 'elavult',
+  '%n failures in the last 7 days': '%n hiba az elmúlt 7 napban',
+  Reviews: 'Értékelések',
+  Delete: 'Törlés',
+  'No reviews yet.': 'Még nincs értékelés.',
+  'Sign in to leave a review.': 'Jelentkezz be az értékeléshez.',
+  'Install the extension to review it.': 'Telepítsd a kiegészítőt, hogy értékelhesd.',
+  'What worked, what did not (optional)': 'Mi működött, mi nem (nem kötelező)',
+  'Post review': 'Értékelés küldése',
+  'Update review': 'Értékelés módosítása',
+  'Pick a rating first.': 'Előbb válassz csillagot.',
+  '%s stars': '%s csillag',
+  'Failed to load the reviews: ': 'Az értékelések betöltése nem sikerült: ',
+  'Why are you reporting this review? (spam, harassment, nsfw, spoiler, illegal, other)':
+    'Miért jelented ezt az értékelést? (spam, harassment, nsfw, spoiler, illegal, other)',
+  'Thanks — a moderator will look at it.': 'Köszönjük — egy moderátor megnézi.',
   'Developer Portal →': 'Fejlesztői portál →',
 
   // ---------------------------------------------------------------- általános

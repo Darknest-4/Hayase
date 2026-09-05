@@ -147,8 +147,11 @@ const PageAnime = {
     ])
     actions.append(playGroup)
 
+    // `title` shows a tooltip; `aria-label` is what a screen reader reads.
+    // These buttons have no text at all, so without the second one they are
+    // announced as "button" and nothing else.
     const iconBtn = (content, title, onclick, active = false) => {
-      const btn = U.el('button', { class: 'detail-icon-btn' + (active ? ' active' : ''), title, onclick })
+      const btn = U.el('button', { class: 'detail-icon-btn' + (active ? ' active' : ''), title, 'aria-label': title, onclick })
       btn.append(content)
       return btn
     }

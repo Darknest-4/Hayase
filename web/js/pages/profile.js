@@ -73,19 +73,26 @@ const PageProfile = {
     const meanScore = scored.length ? (scored.reduce((sum, e) => sum + e.score, 0) / scored.length).toFixed(1) : null
 
     const hours = Math.floor(minutesWatched / 60)
+    // `stat` marks which figure a card holds. The numbers render from local
+    // data immediately; ProfileStats replaces the watched ones with the
+    // account's own totals when the server answers — so the same account
+    // shows the same numbers on every device, and a signed-out viewer sees
+    // exactly what they saw before.
     const statDefs = [
-      [String(entries.length), T('Anime in library')],
-      [String(completed.length), T('Completed')],
-      [episodesWatched.toLocaleString(I18n.locale()), T('Episodes watched')],
-      [hours >= 24 ? `${Math.floor(hours / 24)}d ${hours % 24}h` : `${hours}h`, T('Watch time')],
-      [meanScore ?? '—', T('Mean score')],
-      [String(favs.length), T('Favourites')]
+      [String(entries.length), T('Anime in library'), null],
+      [String(completed.length), T('Completed'), 'completed'],
+      [episodesWatched.toLocaleString(I18n.locale()), T('Episodes watched'), 'episodes'],
+      [hours >= 24 ? `${Math.floor(hours / 24)}d ${hours % 24}h` : `${hours}h`, T('Watch time'), 'watchTime'],
+      [meanScore ?? '—', T('Mean score'), 'meanScore'],
+      [String(favs.length), T('Favourites'), null]
     ]
-    pad.append(U.el('div', { class: 'stat-cards', style: 'margin-top:0;' },
-      statDefs.map(([value, label]) => U.el('div', { class: 'stat-card' }, [
+    const cards = U.el('div', { class: 'stat-cards', style: 'margin-top:0;' },
+      statDefs.map(([value, label, stat]) => U.el('div', { class: 'stat-card', 'data-stat': stat }, [
         U.el('b', { text: value }),
         U.el('span', { text: label })
-      ]))))
+      ])))
+    pad.append(cards)
+    window.ProfileStats?.hydrate(cards)
 
     // ---- status breakdown ----
     pad.append(U.el('h2', { class: 'detail-section-title', text: T('Library breakdown') }))

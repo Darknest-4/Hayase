@@ -15,7 +15,7 @@ const App = {
     community: (root, params) => PageCommunity.render(root, params),
     w2g: (root, params, arg) => PageW2G.render(root, params, arg),
     watch: (root, params, arg) => PageWatch.render(root, params, arg),
-    extensions: (root, params) => PageExtensions.render(root, params),
+    extensions: (root, params, arg) => PageExtensions.render(root, params, arg),
     developer: (root, params) => PageDeveloper.render(root, params),
     admin: (root, params) => PageAdmin.render(root, params),
     settings: (root, params) => PageSettings.render(root, params),
@@ -326,13 +326,28 @@ const App = {
     if (el && p) el.textContent = p.avatar ?? p.name.slice(0, 1).toUpperCase()
   },
 
+  /**
+   * The unread count in the sidebar.
+   *
+   * Local signals are counted synchronously so the badge is never blank while
+   * a request is in flight; the account's server-side notifications — a
+   * monitoring alert, say — are added when they arrive. Signed out or offline,
+   * the second half resolves to nothing and the badge is what it always was.
+   */
   refreshNotifBadge () {
     const badge = document.getElementById('notif-badge')
     if (!badge) return
-    let count = 0
-    try { count = Store.unreadCount() } catch (e) { /* no data */ }
-    badge.textContent = count > 9 ? '9+' : String(count)
-    badge.classList.toggle('hidden', count === 0)
+    const paint = count => {
+      badge.textContent = count > 9 ? '9+' : String(count)
+      badge.classList.toggle('hidden', count === 0)
+    }
+    let local = 0
+    try { local = Store.unreadCount() } catch (e) { /* no data */ }
+    paint(local)
+
+    window.YumeAPI?.notifications?.({ unreadOnly: true, limit: 100 })
+      .then(rows => paint(local + rows.length))
+      .catch(() => {})
   },
 
   initProfileSwitcher () {

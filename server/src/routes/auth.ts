@@ -321,6 +321,96 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   /**
+   * Delete this account.
+   *
+   * The schema has anticipated this since the first migration — `deleted_at`,
+   * and a comment saying the unique email and username are freed by an app
+   * rename on delete — and no code ever performed it. A deletion request could
+   * only be honoured by hand-written SQL, which is not a process anybody
+   * should have to run under time pressure.
+   *
+   * Soft delete, and the reasons are not squeamishness:
+   *
+   *   * Moderation history has to survive. A hard delete would either cascade
+   *     away the reports and audit entries that explain why an account was
+   *     banned, or leave them pointing at nothing.
+   *   * Content the person wrote is other people's context. Comments are kept
+   *     and detached, not vanished mid-thread.
+   *
+   * What is actually erased is the identifying part: the email and username
+   * are replaced with an irreversible per-account placeholder, so the address
+   * cannot be recovered from the row, and both are freed for reuse. The
+   * password hash goes, and every session with it.
+   *
+   * The password is required. Deleting an account is the most destructive
+   * thing this API can do to a person, and a stolen access token must not be
+   * enough to do it.
+   */
+  fastify.delete('/me', {
+    config: AUTH_LIMIT,
+    preHandler: fastify.authenticate,
+    schema: {
+      body: {
+        type: 'object',
+        required: ['password'],
+        properties: { password: { type: 'string', minLength: 1, maxLength: 200 } }
+      }
+    }
+  }, async (request, reply) => {
+    const { password } = request.body as { password: string }
+    const userId = request.user.sub
+
+    const user = await queryOne<{ password_hash: string | null, username: string }>(
+      'SELECT password_hash, username FROM users WHERE id = $1 AND deleted_at IS NULL',
+      [userId]
+    )
+    if (!user) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    // An account with no password (OAuth-only, once that exists) cannot prove
+    // ownership this way, so it is refused rather than deleted on a weaker
+    // check than everybody else's.
+    if (!user.password_hash || !await verifyPassword(password, user.password_hash)) {
+      await query('INSERT INTO security_logs (user_id, event, ip) VALUES ($1, $2, $3)',
+        [userId, 'account_delete_failed', request.ip])
+      return reply.code(401).send({ type: 'about:blank', title: 'Unauthorized', status: 401, detail: 'Password is incorrect' })
+    }
+
+    await transaction(async client => {
+      // A placeholder derived from the id: stable, unique, and reveals nothing
+      // about who the account belonged to.
+      const tag = sha256(userId).slice(0, 16)
+      await client.query(
+        `UPDATE users
+            SET email = $2, username = $3, password_hash = NULL, mfa_secret = NULL,
+                status = 'deleted', deleted_at = now(), updated_at = now()
+          WHERE id = $1`,
+        [userId, `deleted+${tag}@invalid`, `deleted_${tag}`]
+      )
+      await client.query('UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [userId])
+      // Everything that is only ever about this person and useful to nobody
+      // else goes with the account.
+      await client.query('DELETE FROM user_settings WHERE user_id = $1', [userId])
+      await client.query('DELETE FROM extension_installs WHERE user_id = $1', [userId])
+      await client.query('DELETE FROM password_resets WHERE user_id = $1', [userId])
+      await client.query('DELETE FROM ws_tickets WHERE user_id = $1', [userId])
+      await client.query(
+        `INSERT INTO audit_logs (actor_id, action, subject_type, subject_id, before, after)
+         VALUES ($1::uuid, 'user.deleted', 'user', $1::text, $2::jsonb, '{}'::jsonb)`,
+        [userId, JSON.stringify({ username: user.username, reason: 'self-service deletion' })]
+      )
+    })
+
+    // Outside the transaction: the token version bump is what makes every
+    // outstanding access token stop working immediately.
+    await revokeTokens(userId)
+    await query('INSERT INTO security_logs (user_id, event, ip, user_agent) VALUES ($1, $2, $3, $4)',
+      [userId, 'account_deleted', request.ip, request.headers['user-agent'] ?? null])
+    await emitEvent('user.deleted', { username: user.username })
+
+    return reply.code(204).send()
+  })
+
+  /**
    * Change a password.
    *
    * The current password is required even though the caller is already

@@ -67,7 +67,10 @@ const PageDeveloper = {
         ]),
         U.el('div', { class: 'list-row-sub', text: dev.website || 'Extension developer' })
       ]),
-      U.el('button', { class: 'btn btn-primary btn-sm', onclick: () => this.showCreate(body, dev) }, [document.createTextNode('+ New extension')])
+      U.el('div', { style: 'display:flex;gap:.5rem;' }, [
+        U.el('button', { class: 'btn btn-secondary btn-sm', onclick: () => this.showImport(body, dev) }, [document.createTextNode('Import repository')]),
+        U.el('button', { class: 'btn btn-primary btn-sm', onclick: () => this.showCreate(body, dev) }, [document.createTextNode('+ New extension')])
+      ])
     ])
     body.append(head)
 
@@ -183,9 +186,109 @@ const PageDeveloper = {
     }
   },
 
+  /**
+   * Import every package in an external repository index.
+   *
+   * Preview first, always: the operator is adopting somebody else's code into
+   * their own store and becomes the listed owner of it, so they should see
+   * what would come in — and which hosts each package would be allowed to
+   * reach — before anything is written.
+   */
+  showImport (body, dev) {
+    const url = U.el('input', {
+      class: 'input',
+      type: 'url',
+      placeholder: 'https://example.com/extensions/index.json'
+    })
+    const report = U.el('div', { style: 'margin-top:.6rem;' })
+
+    const run = async dryRun => {
+      const value = url.value.trim()
+      if (!value) return U.toast('Paste the index URL first', 'error')
+      report.replaceChildren(U.el('div', { class: 'spinner' }))
+      try {
+        const result = await YumeAPI._request('/v1/dev/repositories/import', {
+          method: 'POST',
+          auth: true,
+          body: { url: value, dryRun }
+        })
+        report.replaceChildren(this._importReport(result))
+        if (!dryRun) {
+          U.toast(`${result.imported.length} package${result.imported.length === 1 ? '' : 's'} imported`)
+          this.render(body.parentElement ?? body, new URLSearchParams())
+        }
+      } catch (e) {
+        report.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+      }
+    }
+
+    const modal = this.modal('Import a repository', [
+      field('Index URL', url),
+      U.el('p', { class: 'ext-option-help', text: 'A JSON index listing packages and where their source lives. The bytes are fetched and hashed by this server — an index cannot assert what its own packages hash to.' }),
+      report
+    ], null)
+
+    // The modal's own submit is replaced by two buttons: previewing and
+    // importing are different acts and should not share one.
+    const foot = modal.querySelector('.modal-actions')
+    foot.prepend(
+      U.el('button', { class: 'btn btn-secondary btn-sm', onclick: () => run(true) }, [document.createTextNode('Preview')]),
+      U.el('button', { class: 'btn btn-primary btn-sm', onclick: () => run(false) }, [document.createTextNode('Import')])
+    )
+  },
+
+  /** What came in, what would come in, and what did not. */
+  _importReport (result) {
+    const wrap = U.el('div', { style: 'display:flex;flex-direction:column;gap:.5rem;' })
+
+    if (result.imported.length) {
+      wrap.append(U.el('div', { class: 'ext-option-label', text: result.dryRun ? 'Would import' : 'Imported' }))
+      for (const row of result.imported) {
+        wrap.append(U.el('div', { class: 'list-row', style: 'cursor:default;' }, [
+          U.el('div', { class: 'list-row-grow' }, [
+            U.el('div', { class: 'list-row-title', text: `${row.name} v${row.version}` }),
+            U.el('div', { class: 'list-row-sub', text: row.hosts.length ? `may reach: ${row.hosts.join(', ')}` : 'reaches no network host' })
+          ])
+        ]))
+      }
+    }
+
+    if (result.problems.length) {
+      wrap.append(U.el('div', { class: 'ext-option-label', style: 'margin-top:.4rem;', text: 'Skipped' }))
+      for (const problem of result.problems) {
+        wrap.append(U.el('div', { class: 'ext-option-help', text: `${problem.entry} — ${problem.reason}` }))
+      }
+    }
+
+    if (!result.imported.length && !result.problems.length) {
+      wrap.append(U.el('div', { class: 'empty-state', text: 'The index listed nothing this store can hold.' }))
+    }
+    return wrap
+  },
+
   showUpload (body, dev, ext) {
     const version = U.el('input', { class: 'input', placeholder: '1.0.0', maxlength: '20' })
     const changelog = U.el('textarea', { class: 'input', rows: '2', placeholder: 'Changelog (optional)' })
+    // The package itself. Nothing sent this before: the form invented a hash
+    // from the manifest text, and the server — which stores the bytes and
+    // hashes them itself — rejected every submission with "No uploaded
+    // package with that hash". Publishing from this portal could not work.
+    const source = U.el('textarea', {
+      class: 'input',
+      rows: '10',
+      style: 'font-family:var(--font-mono, monospace);font-size:.78rem;',
+      placeholder: 'export default {\n  async test () { return true },\n  async single (query, options) { return [] }\n}'
+    })
+    const picker = U.el('input', {
+      type: 'file',
+      accept: '.js,.mjs,text/javascript',
+      style: 'font-size:.8rem;',
+      onchange: async e => {
+        const file = e.currentTarget.files?.[0]
+        if (!file) return
+        source.value = await file.text()
+      }
+    })
     const hosts = U.el('input', { class: 'input', placeholder: 'net:fetch hosts, comma-separated (e.g. nyaa.si)' })
     const permBoxes = ['query:ids', 'query:titles', 'query:media', 'storage:local', 'player:subtitles'].map(p => {
       const cb = U.el('input', { type: 'checkbox', value: p })
@@ -194,6 +297,7 @@ const PageDeveloper = {
 
     const modal = this.modal('Upload version', [
       field('Version (semver)', version),
+      field('Package source (index.js)', U.el('div', { style: 'display:flex;flex-direction:column;gap:.4rem;' }, [picker, source])),
       field('Changelog', changelog),
       field('net:fetch hosts', hosts),
       U.el('div', {}, [
@@ -221,21 +325,24 @@ const PageDeveloper = {
         permissions
       }
 
-      // In this build the package bytes are uploaded to object storage
-      // client-side; here we send a manifest snapshot + a content hash.
-      // We derive a stable demo hash from the manifest so the review
-      // pipeline has something to record.
-      const hash = await sha256Hex(JSON.stringify(manifest) + version.value)
+      const code = source.value.trim()
+      if (!code) return U.toast('Paste the package source, or pick the index.js file', 'error')
 
       try {
+        // Two steps, in this order, because the store is content-addressed:
+        // the server hashes the bytes it received and the version can only
+        // name a blob that already exists. A publisher never asserts what
+        // their own code hashes to.
+        const stored = await YumeAPI.uploadExtensionPackage(ext.slug, code)
+
         await YumeAPI._request(`/v1/dev/extensions/${ext.slug}/versions`, {
           method: 'POST',
           auth: true,
           body: {
             version: version.value.trim(),
-            packageKey: `packages/${ext.slug}/${version.value.trim()}.tgz`,
-            packageHash: hash,
-            packageSize: 20480,
+            packageKey: stored.hash,
+            packageHash: stored.hash,
+            packageSize: stored.size,
             changelog: changelog.value.trim() || undefined,
             manifest
           }
@@ -247,13 +354,18 @@ const PageDeveloper = {
     })
   },
 
+  // `onSubmit` is optional: a dialog whose actions are not one button — the
+  // repository import has a preview and an import — supplies its own, and the
+  // actions row is classed so it can be reached.
   modal (title, fields, onSubmit) {
-    const submit = U.el('button', { class: 'btn btn-primary btn-sm', onclick: onSubmit }, [document.createTextNode('Submit')])
+    const submit = typeof onSubmit === 'function'
+      ? U.el('button', { class: 'btn btn-primary btn-sm', onclick: onSubmit }, [document.createTextNode('Submit')])
+      : null
     const backdrop = U.el('div', { class: 'modal-backdrop', onclick: e => { if (e.target === backdrop) backdrop.remove() } }, [
       U.el('div', { class: 'search-modal', style: 'padding:1.25rem;max-width:32rem;' }, [
         U.el('h3', { style: 'margin:0 0 1rem;font-size:1.1rem;font-weight:800;', text: title }),
         U.el('div', { style: 'display:flex;flex-direction:column;gap:.85rem;' }, fields),
-        U.el('div', { style: 'display:flex;gap:.6rem;margin-top:1.25rem;' }, [
+        U.el('div', { class: 'modal-actions', style: 'display:flex;gap:.6rem;margin-top:1.25rem;flex-wrap:wrap;' }, [
           submit,
           U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => backdrop.remove() }, [document.createTextNode('Cancel')])
         ])
@@ -266,11 +378,6 @@ const PageDeveloper = {
 
 function field (label, control) {
   return U.el('div', { class: 'filter-group' }, [U.el('label', { text: label }), control])
-}
-
-async function sha256Hex (text) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
-  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
 window.PageDeveloper = PageDeveloper

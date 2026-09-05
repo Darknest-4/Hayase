@@ -25,6 +25,22 @@ const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
 const HOSTNAME = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
 const OPTION_TYPES = ['boolean', 'string', 'number', 'select'] as const
 
+/**
+ * Compatibility modes for packages written against another client's API.
+ *
+ * The sandbox removes the global `fetch` and offers `yume.fetch`, which the
+ * host re-checks against the manifest's host allowlist. A package written for
+ * Hayase calls the bare global, so it throws immediately — not because it is
+ * doing anything forbidden, but because it learned a different name.
+ *
+ * `compat: 'hayase'` installs `fetch` as an alias of `yume.fetch`. Nothing is
+ * relaxed by it: the same proxy, the same allowlist, the same host-side check
+ * that treats the worker as untrusted regardless of what it claims. It is
+ * declared in the manifest rather than applied silently so a reviewer can see
+ * which packages are running in a compatibility mode.
+ */
+const COMPAT_MODES = ['hayase'] as const
+
 export interface OptionSpec {
   type: typeof OPTION_TYPES[number]
   default?: unknown
@@ -45,6 +61,8 @@ export interface ExtensionManifest {
   media?: typeof MEDIA_KINDS[number]
   languages?: string[]
   minAppVersion?: string
+  /** API dialect this package was written against; see COMPAT_MODES. */
+  compat?: typeof COMPAT_MODES[number]
   permissions?: Partial<Record<Permission, { hosts?: string[] }>>
   options?: Record<string, OptionSpec>
 }
@@ -108,6 +126,10 @@ export function validateManifest (input: unknown): ValidationResult {
   }
   if (m.minAppVersion !== undefined && (typeof m.minAppVersion !== 'string' || !SEMVER.test(m.minAppVersion))) {
     errors.push('minAppVersion must be semver')
+  }
+
+  if (m.compat !== undefined && !(COMPAT_MODES as readonly string[]).includes(m.compat as string)) {
+    errors.push(`compat must be one of: ${COMPAT_MODES.join(', ')}`)
   }
 
   // ---- permissions ----

@@ -21,6 +21,23 @@ const PARTITIONED = [
   { table: 'system_metrics', column: 'created_at', retentionMonths: 1 }
 ] as const
 
+/**
+ * Tables that are not partitioned but still must not grow forever.
+ *
+ * `security_logs` is the one that matters: it records an IP address and a
+ * user-agent for every sign-in, failed password and ban, and nothing ever
+ * deleted a row. Keeping years of them is a liability, not an asset — the
+ * questions they answer ("was this account attacked last week") are all
+ * recent ones.
+ *
+ * A DELETE rather than a partition drop, because this table is small enough
+ * that the simpler thing is the right thing, and partitioning it now would
+ * mean a migration that moves live security data.
+ */
+const PRUNED = [
+  { table: 'security_logs', column: 'created_at', retentionDays: Number(process.env.SECURITY_LOG_RETENTION_DAYS ?? 90) }
+] as const
+
 function monthStart (offsetMonths: number): Date {
   const now = new Date()
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + offsetMonths, 1))
@@ -75,6 +92,22 @@ export async function pruneExpired (): Promise<string[]> {
   return dropped
 }
 
+/** Delete expired rows from the tables that are pruned rather than partitioned. */
+export async function pruneRows (): Promise<Array<{ table: string, deleted: number }>> {
+  const results: Array<{ table: string, deleted: number }> = []
+  for (const { table, column, retentionDays } of PRUNED) {
+    // 0 disables pruning, for an operator who must keep everything for their
+    // own compliance reasons. A deliberate choice, not the default.
+    if (!Number.isFinite(retentionDays) || retentionDays <= 0) continue
+    const rows = await query<{ id: number }>(
+      `DELETE FROM ${table} WHERE ${column} < now() - ($1 || ' days')::interval RETURNING 1 AS id`,
+      [String(Math.floor(retentionDays))]
+    )
+    if (rows.length) results.push({ table, deleted: rows.length })
+  }
+  return results
+}
+
 export async function handleMaintenanceJob (_job: Job): Promise<void> {
   // Spent and expired handshake tickets. Short-lived by design, so this only
   // stops the table growing without bound.
@@ -82,5 +115,6 @@ export async function handleMaintenanceJob (_job: Job): Promise<void> {
 
   await ensurePartitions()
   await pruneExpired()
+  await pruneRows()
   await pruneDoneJobs()
 }
