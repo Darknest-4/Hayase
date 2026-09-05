@@ -1,0 +1,22 @@
+{
+  "name": "@yume/bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Yume Discord bot: server provisioning, slash commands and notification delivery",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node --experimental-strip-types src/index.ts",
+    "provision": "node --experimental-strip-types src/cli.ts provision",
+    "plan": "node --experimental-strip-types src/cli.ts plan",
+    "invite": "node --experimental-strip-types src/cli.ts invite",
+    "deploy-commands": "node --experimental-strip-types src/cli.ts deploy-commands",
+    "check": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test test/*.test.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "typescript": "^5.7.2"
+  }
+}
