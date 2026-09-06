@@ -268,9 +268,14 @@ const routes: FastifyPluginAsync = async fastify => {
     // Deliberately unfiltered: the admin list exists to show staff what is
     // NOT published, so filtering it would hide exactly what they came for.
     const data = await query(
-      `SELECT id, number, absolute_number, title, synopsis, thumbnail_key,
-              air_date, duration, is_filler, is_recap, visibility
-       FROM episodes WHERE anime_id = $1 ORDER BY number`,
+      `SELECT e.id, e.number, e.absolute_number, e.title, e.synopsis, e.thumbnail_key,
+              e.air_date, e.duration, e.is_filler, e.is_recap, e.visibility,
+              -- Both counts: an episode with three sources of which none is
+              -- enabled is not the same problem as one with no sources at all,
+              -- and the row has to be able to say which it is.
+              (SELECT count(*) FROM video_sources v WHERE v.episode_id = e.id)::int AS source_total,
+              (SELECT count(*) FROM video_sources v WHERE v.episode_id = e.id AND v.enabled)::int AS source_count
+       FROM episodes e WHERE e.anime_id = $1 ORDER BY e.number`,
       [id]
     )
     return { data }

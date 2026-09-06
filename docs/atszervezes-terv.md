@@ -123,8 +123,17 @@ A legfontosabb, mert ma **félrevezeti a felhasználót**.
     értéknél a fordított alapértelmezéssel.
   - a beállítás-cache íráskor ürül, tehát a „Mentve" azt jelenti, hogy már
     érvényes is, nem azt, hogy fél perc múlva az lesz.
-- ⛔ URL nélküli epizód: letiltott állapot + route-védelem — **K1-re vár**, mert
-  a kiegészítők törlése után ma egyetlen epizódnak sem lenne forrása
+- ✅ URL nélküli epizód: **K1 megválaszolva** — a `video_sources` táblát
+  használjuk, tetszőleges providerrel. Az epizódlista letiltott állapotban
+  mutatja azt, aminek nincs engedélyezett forrása („nincs forrás" jelölés,
+  nem kattintható). A kapu három állapotot különböztet meg, nem kettőt:
+  *van forrás* → kattintható; *nincs forrás, de van betöltött forrás-kiegészítő*
+  → kattintható (a kiegészítő még válaszolhat); *nincs forrás és nincs
+  kiegészítő* → letiltva. A 3. kör után a középső eset magától megszűnik,
+  további változtatás nélkül.
+  Amit az `undefined` jelent: ha az epizódlista az ani.zip-ből jött, nem
+  tudjuk, hány forrás van — a „nem tudjuk" nem ugyanaz, mint a „nincs", és nem
+  is tilthat ugyanúgy.
 
 ### 2. kör — Admin panel (≈ 1–1,5 nap)
 - ✅ külön layout: az `admin-route` osztály a `<body>`-n elveszi az oldal
@@ -211,10 +220,18 @@ kell, ahonnan elérhetők.
 
 ## 6. Kérdések
 
-**K1 — Lejátszás.** A 0. szakasz miatt: a kiegészítők törlése után mi legyen a
-videóforrás? (a) beépített, szerveroldali forrás-provider réteg; (b) egyelőre
-nincs lejátszás, csak katalógus; (c) a sandbox marad *csak* forrásoknak, minden
-más kiegészítő megy.
+**K1 — Lejátszás. ✅ MEGVÁLASZOLVA: a `video_sources` tábla, tetszőleges
+providerrel.** Az operátor epizódonként vesz fel forrásokat (típus, provider
+neve, hivatkozás, felbontás, sub/dub, prioritás); a lejátszó ezeket kapja meg
+elsőként, a kiegészítők ranglistája mögé. A provider neve szabad szöveg: a
+providerek halmaza nem a miénk felsorolni, egy enum meg minden új tükörnél
+migrációt kérne.
+
+Amit ez eldöntött, és amit nem: a lejátszás innentől nem függ attól, hogy
+telepítve van-e bármi, tehát a 3. kör (kiegészítők lebontása) elindítható. Amit
+**nem** csinálok meg hozzá: link-kereső vagy -kinyerő providerek oldalairól.
+A tábla hivatkozásokat tárol, amiket valaki felvett; a keresést nem
+automatizálom.
 
 **K2 — Külső API.** Korábban azt kérted, ne kérje le AniListről, ha nincs meg
 nálunk. A 2.4 pont viszont pont ezt engedné. Melyik? (a) kérés közben soha, csak

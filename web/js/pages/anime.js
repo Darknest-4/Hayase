@@ -689,8 +689,22 @@ const PageAnime = {
         ? episodes.filter(ep => ep.episode >= rangeStart && ep.episode < rangeStart + RANGE)
         : episodes
 
+      /*
+       * Can this episode be played at all?
+       *
+       * `sourceCount` is undefined when the episode list came from ani.zip —
+       * we do not hold the episode, so we do not know, and "unknown" must not
+       * gate the same way as "none". A loaded provider extension can answer
+       * for an episode the catalogue has nothing registered for, so it counts
+       * too; once nothing is installed, the gate is the catalogue's own
+       * sources and nothing else.
+       */
+      const providers = window.StreamEngine?.hasProviders?.() ?? false
+      const playable = ep => ep.sourceCount === undefined || ep.sourceCount > 0 || providers
+
       for (const ep of visible) {
         const watched = progress >= ep.episode
+        const canPlay = playable(ep)
         const thumb = U.el('div', { class: 'episode-thumb' }, [
           ep.image ? U.el('img', { src: ep.image, loading: 'lazy', alt: `Episode ${ep.episode}` }) : null,
           U.el('div', { class: 'ep-num', text: T('Ep ') + ep.episode }),
@@ -703,14 +717,17 @@ const PageAnime = {
         const metaText = [ep.airdate ? U.airDate(ep.airdate) : null, ep.runtime ? `${ep.runtime} min` : null, ep.rating ? `★ ${ep.rating}` : null].filter(Boolean).join(' • ')
 
         wrap.append(U.el('div', {
-          class: 'episode',
-          title: `Watch episode ${ep.episode}`,
-          onclick: () => { window.location.hash = `#/watch/${media.id}:${ep.episode}` }
+          class: 'episode' + (canPlay ? '' : ' episode-unplayable'),
+          title: canPlay ? `Watch episode ${ep.episode}` : T('Nothing to play this episode from yet.'),
+          // No handler rather than a handler that refuses: an episode that
+          // cannot play should not look like a button at all.
+          ...(canPlay ? { onclick: () => { window.location.hash = `#/watch/${media.id}:${ep.episode}` } } : {})
         }, [
           thumb,
           U.el('div', { class: 'episode-body' }, [
             U.el('div', { style: 'display:flex;align-items:center;gap:.5rem;' }, [
               U.el('div', { class: 'episode-title', style: 'flex-grow:1;', text: ep.title ?? `Episode ${ep.episode}` }),
+              canPlay ? null : U.el('span', { class: 'episode-nosource', text: T('No source') }),
               U.el('button', {
                 class: 'icon-btn',
                 title: watched ? 'Mark as unwatched' : 'Mark as watched',

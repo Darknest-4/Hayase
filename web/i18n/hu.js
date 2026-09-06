@@ -135,6 +135,9 @@ I18n.register('hu', {
   // show and a broadcast season are different words in Hungarian, and this is
   // the first one.
   'Watch order': 'Nézési sorrend',
+  // Forrásállapot az epizódlistán.
+  'No source': 'Nincs forrás',
+  'Nothing to play this episode from yet.': 'Ehhez az epizódhoz még nincs lejátszható forrás.',
   Related: 'Kapcsolódó címek',
   Seasons: 'Évadok',
   Films: 'Filmek',

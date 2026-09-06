@@ -1121,6 +1121,19 @@ const PageAdmin = {
                 }
               }, [document.createTextNode(ep.visibility === 'public' ? 'Unpublish' : 'Publish')])
               : null,
+            // Published with nowhere to play from is the state worth shouting
+            // about: from a viewer's side it is a broken link, and from here
+            // it is invisible unless the row says so.
+            ep.visibility === 'public' && !ep.source_count
+              ? U.el('span', { class: 'cat-badge cat-badge-warn', title: 'This episode is published but has no enabled source.', text: 'no source' })
+              : null,
+            can('episode.edit')
+              ? U.el('button', {
+                class: 'btn btn-ghost btn-sm',
+                title: 'Where this episode plays from',
+                onclick: () => this.sourcesModal(anime, ep, () => load())
+              }, [document.createTextNode(`Sources${ep.source_total ? ` (${ep.source_count}/${ep.source_total})` : ''}`)])
+              : null,
             can('episode.edit') ? U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => this.episodeModal(anime, ep, () => load()) }, [document.createTextNode('Edit')]) : null,
             can('episode.delete')
               ? U.el('button', {
@@ -1136,6 +1149,124 @@ const PageAdmin = {
       } catch (e) { wrap.replaceChildren(U.el('div', { class: 'error-state', text: e.message })) }
     }
     load()
+  },
+
+  /**
+   * Where one episode plays from.
+   *
+   * `video_sources` has been in the schema since the beginning and nothing
+   * ever wrote to it — it was built for an extension to fill. This is the
+   * operator's side of it: any provider, in the order they choose, and a
+   * switch that takes a dead link out of playback without losing the record
+   * of which episode it belonged to.
+   *
+   * The platform stores references, never media.
+   */
+  SOURCE_KINDS: [
+    ['http', 'Direct / HLS — an .mp4 or .m3u8 URL'],
+    ['embed', 'Embed — a provider\u2019s player page'],
+    ['torrent', 'Torrent — magnet link or info hash'],
+    ['nzb', 'NZB']
+  ],
+
+  sourcesModal (anime, ep, onDone) {
+    const list = U.el('div', { class: 'src-list' })
+    const draft = { kind: 'http', ref: '', provider: '', resolution: '', variant: '', priority: '' }
+
+    const field = (label, node) => U.el('label', { class: 'cat-field' }, [
+      U.el('span', { class: 'cat-field-label', text: label }), node
+    ])
+    const select = (key, options) => U.el('select', {
+      class: 'select',
+      onchange: e => { draft[key] = e.target.value }
+    }, options.map(([value, text]) => U.el('option', { value, text })))
+
+    const refInput = U.el('input', {
+      class: 'input',
+      placeholder: 'https://…',
+      oninput: e => { draft.ref = e.target.value }
+    })
+
+    const load = async () => {
+      list.replaceChildren(U.el('div', { class: 'spinner' }))
+      try {
+        const { data } = await YumeAPI.admin.catalogue.sources(ep.id)
+        list.replaceChildren()
+        if (!data.length) {
+          list.append(U.el('div', { class: 'empty-state', style: 'padding:.75rem;', text: 'No sources yet — this episode cannot be played.' }))
+          return
+        }
+        for (const src of data) {
+          list.append(U.el('div', { class: 'src-row' + (src.enabled ? '' : ' src-row-off') }, [
+            U.el('div', { class: 'src-main' }, [
+              U.el('div', { class: 'src-provider', text: src.provider || src.title || 'Unnamed source' }),
+              // The reference itself, truncated by CSS rather than by JS: an
+              // operator checking a link needs to see enough of it to
+              // recognise it, and how much fits is the column's business.
+              U.el('div', { class: 'src-ref', title: src.ref, text: src.ref })
+            ]),
+            U.el('span', { class: 'src-tag', text: [src.kind, src.resolution ? src.resolution + 'p' : null, src.variant].filter(Boolean).join(' · ') }),
+            U.el('button', {
+              class: 'btn btn-ghost btn-sm',
+              title: src.enabled ? 'Take this source out of playback' : 'Put it back into playback',
+              onclick: async () => {
+                try {
+                  await YumeAPI.admin.catalogue.updateSource(src.id, { enabled: !src.enabled })
+                  await load()
+                  onDone?.()
+                } catch (e) { U.toast(e.message, 'error') }
+              }
+            }, [document.createTextNode(src.enabled ? 'Disable' : 'Enable')]),
+            U.el('button', {
+              class: 'btn btn-ghost btn-sm cat-ep-del',
+              onclick: async () => {
+                if (!confirm('Remove this source?')) return
+                try {
+                  await YumeAPI.admin.catalogue.removeSource(src.id)
+                  await load()
+                  onDone?.()
+                } catch (e) { U.toast(e.message, 'error') }
+              }
+            }, [document.createTextNode('✕')])
+          ]))
+        }
+      } catch (e) {
+        list.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+      }
+    }
+
+    const backdrop = C.modalShell(`Sources — ${anime.canonical_title}, episode ${Number(ep.number)}`, [
+      list,
+      U.el('h4', { class: 'src-add-title', text: 'Add a source' }),
+      field('Type', select('kind', this.SOURCE_KINDS)),
+      field('Reference', refInput),
+      U.el('div', { class: 'src-add-grid' }, [
+        field('Provider', U.el('input', { class: 'input', placeholder: 'Shown to viewers', oninput: e => { draft.provider = e.target.value } })),
+        field('Resolution', select('resolution', [['', '—'], ['2160', '2160p'], ['1080', '1080p'], ['720', '720p'], ['540', '540p'], ['480', '480p']])),
+        field('Audio', select('variant', [['', '—'], ['sub', 'Subbed'], ['dub', 'Dubbed'], ['raw', 'Raw']])),
+        field('Priority', U.el('input', { class: 'input', type: 'number', placeholder: '0', oninput: e => { draft.priority = e.target.value } }))
+      ]),
+      U.el('p', { class: 'src-note', text: 'Lower priority is tried first. The platform stores the reference only — never the video.' })
+    ], async () => {
+      if (!draft.ref.trim()) { U.toast('A reference is required', 'error'); return }
+      try {
+        await YumeAPI.admin.catalogue.addSource(ep.id, {
+          kind: draft.kind,
+          ref: draft.ref.trim(),
+          ...(draft.provider.trim() ? { provider: draft.provider.trim() } : {}),
+          ...(draft.resolution ? { resolution: draft.resolution } : {}),
+          ...(draft.variant ? { variant: draft.variant } : {}),
+          ...(draft.priority !== '' ? { priority: Number(draft.priority) } : {})
+        })
+        U.toast('Source added')
+        draft.ref = ''
+        refInput.value = ''
+        await load()
+        onDone?.()
+      } catch (e) { U.toast(e.message, 'error') }
+    })
+    load()
+    return backdrop
   },
 
   episodeModal (anime, ep, onDone) {

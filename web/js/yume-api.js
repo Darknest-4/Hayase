@@ -259,6 +259,16 @@ const YumeAPI = {
     }
   },
 
+  /** The registered, enabled sources of one episode. */
+  async episodeSources (episodeId) {
+    try {
+      const { data } = await this._request(`/v1/anime/episodes/${episodeId}/sources`)
+      return data
+    } catch (e) {
+      return null
+    }
+  },
+
   /**
    * The franchise this title belongs to, in release order.
    *
@@ -476,7 +486,13 @@ const YumeAPI = {
       unlock: (id, fields) => YumeAPI._request(`/v1/admin/catalogue/${id}/unlock`, { method: 'POST', auth: true, body: { fields } }),
       duplicates: (threshold = 0.86, limit = 50) =>
         YumeAPI._request(`/v1/admin/catalogue/duplicates?threshold=${threshold}&limit=${limit}`, { auth: true }),
-      merge: (id, sourceId) => YumeAPI._request(`/v1/admin/catalogue/${id}/merge`, { method: 'POST', auth: true, body: { sourceId } })
+      merge: (id, sourceId) => YumeAPI._request(`/v1/admin/catalogue/${id}/merge`, { method: 'POST', auth: true, body: { sourceId } }),
+
+      // where an episode plays from — registered by an operator, any provider
+      sources: eid => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}/sources`, { auth: true }),
+      addSource: (eid, body) => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}/sources`, { method: 'POST', auth: true, body }),
+      updateSource: (sid, body) => YumeAPI._request(`/v1/admin/catalogue/sources/${sid}`, { method: 'PATCH', auth: true, body }),
+      removeSource: sid => YumeAPI._request(`/v1/admin/catalogue/sources/${sid}`, { method: 'DELETE', auth: true })
     },
 
     // metadata synchronisation — coverage, runs, and the id collisions the

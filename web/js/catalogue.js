@@ -232,6 +232,39 @@ const Catalogue = {
   },
 
   /**
+   * Where one episode can be played from.
+   *
+   * References an operator registered, in the order they chose. Only the
+   * catalogue can answer this — an external metadata provider knows what an
+   * episode is, not where this deployment plays it from.
+   */
+  async episodeSources (episodeId) {
+    const rows = await YumeAPI.episodeSources(episodeId)
+    if (!rows?.length) return []
+    return rows.map(row => ({
+      // The engine's own shape: `url` is what it normalises from, and the
+      // source block is what the player shows as the provider's name.
+      url: row.ref,
+      title: row.title ?? row.provider ?? 'Registered source',
+      quality: row.resolution ? Number(row.resolution) : null,
+      variant: row.variant ?? null,
+      audioLang: row.language ?? null,
+      isBatch: Boolean(row.is_batch),
+      seeders: row.seeders ?? null,
+      size: row.size_bytes ?? null,
+      source: {
+        slug: 'catalogue:' + row.id,
+        name: row.provider ?? 'Catalogue',
+        // Registered by hand by somebody who runs this deployment — that is a
+        // stronger claim about "this is the right episode" than a search
+        // result, and the engine ranks on it.
+        accuracy: 'high',
+        health: 'unknown'
+      }
+    }))
+  },
+
+  /**
    * The franchise this title belongs to, in release order.
    *
    * Only the catalogue can answer it: it needs a walk over our own relation
@@ -429,7 +462,13 @@ const Catalogue = {
           airdate: e.air_date ?? null,
           runtime: e.duration ?? null,
           rating: null,
-          filler: Boolean(e.is_filler)
+          filler: Boolean(e.is_filler),
+          // The episode's row id, so the player can ask for its sources.
+          yumeId: e.id,
+          // How many registered sources this episode has. Undefined — not
+          // zero — when the episodes came from ani.zip: we do not know, and
+          // "unknown" and "none" must not gate the same way.
+          sourceCount: Number(e.source_count ?? 0)
         }))
       }
     }

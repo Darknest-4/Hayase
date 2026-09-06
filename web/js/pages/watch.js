@@ -405,6 +405,29 @@ const PageWatch = {
   },
 
   /**
+   * The catalogue's own sources for one episode number.
+   *
+   * Two requests rather than one: the episode list is the only thing that maps
+   * a number to the row the sources hang off, and it is already fetched and
+   * cached by the time playback starts. Returns [] for anything the catalogue
+   * does not hold — an AniList title we have never imported has no episode row
+   * to attach a source to, and that is not an error.
+   */
+  async registeredSources (media, episode) {
+    if (!media?.yumeId) return []
+    try {
+      const list = await Catalogue.episodes(media)
+      const row = list.find(e => e.episode === episode)
+      if (!row?.yumeId) return []
+      return await Catalogue.episodeSources(row.yumeId)
+    } catch (error) {
+      // A failure here must not stop the extensions being asked.
+      console.warn('[stream] registered sources unavailable:', error.message)
+      return []
+    }
+  },
+
+  /**
    * Build the candidate list for this episode and hand it to the engine.
    *
    * Candidates come from the URL(s) the user picked plus every extension the
@@ -416,6 +439,18 @@ const PageWatch = {
     const manual = String(src ?? '')
       .split('\n').map(u => u.trim()).filter(Boolean)
       .map(url => ({ url, title: T('Manual source'), source: { slug: 'manual', name: 'Manual URL', accuracy: 'low', health: 'unknown' } }))
+
+    /*
+     * What this deployment says the episode plays from.
+     *
+     * First in the candidate list, and ranked above a search result: somebody
+     * who runs this site attached these to this episode by hand, which is a
+     * stronger claim about "this is the right video" than anything matched by
+     * title. Extensions still answer — they are the way to find something the
+     * catalogue does not have — but they no longer have to be installed for
+     * anything to play at all.
+     */
+    const registered = await this.registeredSources(media, episode)
 
     if (!engine) { // engine unavailable → behave like the old direct player
       if (manual[0]) { video.src = manual[0].url; video.load() }
@@ -433,7 +468,7 @@ const PageWatch = {
       subtitles: window.Prefs?.get('playback.subtitles') ?? null
     }
 
-    const { results, errors } = await engine.candidates(media, episode, { sources: manual, extensions: loaded, prefs })
+    const { results, errors } = await engine.candidates(media, episode, { sources: [...registered, ...manual], extensions: loaded, prefs })
     for (const error of errors) console.warn('[stream] extension failed:', error)
 
     if (!results.length) { giveUp(T('No sources were offered for this episode.')); return }

@@ -2722,6 +2722,61 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
   .audit-subject, .audit-detail { display: none; }
 }
 
+/* An episode with nowhere to play from. Dimmed and inert rather than hidden:
+   the episode exists, it aired, and pretending otherwise would make the list
+   disagree with the episode count above it. */
+.episode-unplayable { opacity: .55; cursor: default; }
+.episode-unplayable:hover { background: none; border-color: var(--border); }
+.episode-nosource {
+  flex-shrink: 0;
+  font-size: .55rem; font-weight: var(--weight-bold);
+  text-transform: uppercase; letter-spacing: .05em;
+  padding: .12rem .4rem; border-radius: var(--radius-sm);
+  color: var(--fg-faint); background: color-mix(in oklab, var(--fg-faint) 14%, transparent);
+}
+
+/* ===== admin: an episode's video sources ===== */
+
+/* The catalogue rows have been asking for `.cat-badge` since they were
+   written; only the colour half (.vis-*) was ever defined, so the badges had
+   the right colour and none of the shape. */
+.cat-badge {
+  flex-shrink: 0;
+  font-size: .6rem; font-weight: var(--weight-bold);
+  text-transform: uppercase; letter-spacing: .04em;
+  padding: .18rem .4rem; border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+/* Published with nowhere to play from. From a viewer's side that is a broken
+   link, so it is stated where the operator is already looking. */
+.cat-badge-warn { color: var(--warn); background: color-mix(in oklab, var(--warn) 16%, transparent); }
+
+.src-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: clip; }
+.src-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: .6rem; align-items: center;
+  padding: .5rem .7rem;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-xs);
+}
+.src-row:last-child { border-bottom: none; }
+/* Disabled, not deleted: still legible, plainly not in play. */
+.src-row-off { opacity: .55; }
+.src-main { min-width: 0; }
+.src-provider { font-weight: var(--weight-bold); font-size: var(--text-sm); }
+.src-ref {
+  font-family: var(--font-mono); color: var(--fg-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.src-tag {
+  font-family: var(--font-mono); font-size: .6rem; color: var(--fg-faint);
+  white-space: nowrap;
+}
+.src-add-title { margin: var(--space-3) 0 0; font-size: var(--text-sm); font-weight: var(--weight-extrabold); }
+.src-add-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .6rem; }
+.src-note { font-size: var(--text-xs); color: var(--fg-faint); margin: 0; }
+
 /* ===== anime detail: franchise / watch order ===== */
 
 .franchise { margin-bottom: var(--space-5); }
