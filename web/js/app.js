@@ -52,6 +52,21 @@ const App = {
     // banner only persists on home; pages set their own
     if (route !== 'home') U.setBanner(null)
 
+    /*
+     * The administration panel gets the window to itself.
+     *
+     * It was rendering inside the ordinary site chrome — the icon rail on the
+     * left, the mobile tab bar at the bottom, the marketing footer under a
+     * table of user accounts — with its own section rail beside it. Two navs
+     * competing for the same edge, and on a phone a bottom bar covering the
+     * panel's own controls. An operator screen and a viewer screen are not the
+     * same product and should not wear the same frame.
+     *
+     * The class is what the stylesheet keys off; the page module builds the
+     * panel's own rail.
+     */
+    document.body.classList.toggle('admin-route', route === 'admin')
+
     document.querySelectorAll('.sidebar-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.route === route || ((route === 'anime' || route === 'watch') && btn.dataset.route === 'home') || (route === 'developer' && btn.dataset.route === 'extensions'))
     })
@@ -65,7 +80,7 @@ const App = {
     const gate = this._gateCheck(route)
     if (!gate.ok) {
       this._renderGate(page, gate, route)
-      if (!['watch', 'w2g', 'profiles'].includes(route)) page.append(C.footer())
+      if (!this.CHROMELESS.includes(route)) page.append(C.footer())
       return
     }
 
@@ -79,8 +94,9 @@ const App = {
     // a newer navigation superseded us while an async handler was in flight
     if (gen !== this._navGen) return
 
-    // site footer on standard content pages (not on immersive / picker screens)
-    if (!['watch', 'w2g', 'profiles'].includes(route)) page.append(C.footer())
+    // site footer on standard content pages (not on immersive / picker
+    // screens, and not under the admin panel — see CHROMELESS)
+    if (!this.CHROMELESS.includes(route)) page.append(C.footer())
   },
 
   // ---- feature-flag / access gate ----
@@ -88,21 +104,87 @@ const App = {
   config: null, // effective site config from /v1/config
   perms: [], // the signed-in user's permission slugs
 
+  /**
+   * Routes that carry no site footer.
+   *
+   * The immersive screens (the player, watch-together, the profile picker)
+   * plus the admin panel, which brings its own frame entirely.
+   */
+  CHROMELESS: ['watch', 'w2g', 'profiles', 'admin'],
+
   // routes always reachable so users can configure the server / sign in
   _gateExempt: ['settings', 'profiles'],
 
+  /**
+   * Routes that must never be reachable by accident.
+   *
+   * Everything else fails *open* on purpose: an unreachable backend should
+   * leave the catalogue browsable rather than blank the site. That default is
+   * wrong for the admin panel, where "we could not check" must mean "no".
+   */
+  PRIVILEGED: ['admin', 'developer'],
+
+  /**
+   * Does this account hold any permission the admin panel actually uses?
+   *
+   * Read from `PageAdmin.SECTIONS` rather than from a feature flag, because
+   * that list is what the panel itself gates on — and the two disagreeing is
+   * the bug this replaces. `page.admin` required `analytics.view`, while every
+   * section requires something else, so:
+   *
+   *   analyst    held `analytics.view`  → saw the link, then a wall
+   *   moderator  held `community.moderate`, a real section → saw no link at all
+   *
+   * One rule, asked in one place, and both directions stop being wrong.
+   */
+  _adminSectionPermissions () {
+    const sections = window.PageAdmin?.SECTIONS
+    // Not loaded yet is not a reason to open the door.
+    if (!Array.isArray(sections)) return null
+    return [...new Set(sections.map(section => section.perm).filter(Boolean))]
+  },
+
   _gateCheck (route) {
     const cfg = this.config
-    if (!cfg) return { ok: true } // backend unreachable → everything on
     const signedIn = !!window.YumeAPI.user()
+    const privileged = this.PRIVILEGED.includes(route)
+
+    /*
+     * A privileged route is authorised by the permissions we hold, and only
+     * by those. The feature flag stays a kill switch — an administrator can
+     * turn the panel off — but it is not the authorisation, which is what it
+     * had accidentally become.
+     *
+     * That separation matters in both directions. A missing flag row must not
+     * lock out someone who legitimately holds the permission, and it must not
+     * let in someone who does not.
+     */
+    if (privileged) {
+      if (!signedIn) return { ok: false, kind: 'auth' }
+      if (route === 'admin') {
+        const needed = this._adminSectionPermissions()
+        if (!needed) return { ok: false, kind: 'permission' }
+        if (!needed.some(perm => this.perms.includes(perm))) return { ok: false, kind: 'permission' }
+      }
+    }
+
+    // Backend unreachable: the rest of the site stays usable, the privileged
+    // routes above have already been refused.
+    if (!cfg) return privileged ? { ok: false, kind: 'permission' } : { ok: true }
 
     if (cfg.site.requireLogin && !signedIn && !this._gateExempt.includes(route)) {
       return { ok: false, kind: 'site-login' }
     }
 
     const flag = cfg.flags['page.' + route]
+    // A missing flag row means "nobody configured this page", which for an
+    // ordinary page is the right reason to allow it. A privileged route has
+    // already been authorised above, so a missing row cannot let anybody in
+    // who was not already permitted — and must not lock out anybody who was.
     if (!flag) return { ok: true }
+    // The kill switch still applies to everything, privileged included.
     if (!flag.enabled) return { ok: false, kind: 'disabled', flag }
+    if (privileged) return { ok: true }
     if (flag.access === 'auth' && !signedIn) return { ok: false, kind: 'auth', flag }
     if (flag.access === 'permission') {
       if (!signedIn) return { ok: false, kind: 'auth', flag }
@@ -141,11 +223,28 @@ const App = {
         U.el('p', { class: 'gate-sub', text: T('This section needs a signed-in account.') }),
         C.authCard(() => { this.afterAuth() })
       )
+    } else if (gate.kind === 'permission' && this.PRIVILEGED.includes(route)) {
+      // Deliberately indistinguishable from a route that does not exist. Naming
+      // the missing permission here would confirm the panel exists and say
+      // exactly which grant to go after — a 403 wearing a friendlier face.
+      wrap.append(
+        U.el('div', { class: 'gate-icon', text: '🔍' }),
+        U.el('h1', { class: 'gate-title', text: T('Page not found') }),
+        U.el('p', { class: 'gate-sub', text: T('There is nothing at this address.') }),
+        U.el('a', { class: 'btn btn-secondary', href: '#/home' }, [document.createTextNode(T('Back home'))])
+      )
     } else if (gate.kind === 'permission') {
+      // An ordinary gated page says what it needs: a viewer who cannot open
+      // Watch Together should be able to ask for the grant by name.
       wrap.append(
         U.el('div', { class: 'gate-icon', text: '⛔' }),
         U.el('h1', { class: 'gate-title', text: T('No access') }),
-        U.el('p', { class: 'gate-sub', text: `${gate.flag.label} requires the “${gate.flag.permission}” permission.` }),
+        U.el('p', {
+          class: 'gate-sub',
+          text: gate.flag
+            ? `${gate.flag.label} requires the “${gate.flag.permission}” permission.`
+            : T('You do not have access to this section.')
+        }),
         U.el('a', { class: 'btn btn-secondary', href: '#/home' }, [document.createTextNode(T('Back home'))])
       )
     } else { // disabled

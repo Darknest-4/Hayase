@@ -36,6 +36,19 @@ const PageAdmin = {
     { key: 'config', group: 'system', label: 'Site config', sub: 'Feature flags & settings', perm: 'settings.system', render: 'renderConfig', icon: '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>' }
   ],
 
+  /**
+   * Read or write the collapsed state of the section rail.
+   *
+   * localStorage rather than the account's preferences: it describes this
+   * browser's window, not the person, and a preference that has to survive a
+   * sign-out is the wrong shape for a server round trip.
+   */
+  _navCollapsed (value) {
+    if (value === undefined) return window.localStorage?.getItem('yume-admin-nav') === 'collapsed'
+    try { window.localStorage?.setItem('yume-admin-nav', value ? 'collapsed' : 'open') } catch (e) { /* private mode */ }
+    return value
+  },
+
   async render (root, params) {
     const perms = await YumeAPI.myPermissions()
     const available = this.SECTIONS.filter(s => perms.includes(s.perm))
@@ -52,17 +65,46 @@ const PageAdmin = {
     const state = { section: start }
 
     // ---- shell: admin nav rail + content ----
-    const shell = U.el('div', { class: 'admin-shell' })
+    //
+    // The panel owns the window here: App.navigate() puts `admin-route` on
+    // <body>, which takes away the site's icon rail, its mobile tab bar and
+    // its footer. What is left is this rail and the section beside it.
+    const shell = U.el('div', { class: 'admin-shell' + (this._navCollapsed() ? ' nav-collapsed' : '') })
     root.append(shell)
 
-    const nav = U.el('aside', { class: 'admin-nav' })
+    const nav = U.el('aside', { class: 'admin-nav', id: 'admin-nav' })
+
+    /*
+     * Collapse the rail to icons.
+     *
+     * Worth having because the panel is now the whole window: the tables it
+     * shows — audit rows, permission grids, flag lists — are the widest thing
+     * in the app, and a 15rem rail is 15rem those tables do not get. The
+     * choice is remembered per browser; it is a viewing preference, not
+     * account data worth a round trip.
+     */
+    const collapseBtn = U.el('button', {
+      class: 'admin-nav-collapse',
+      type: 'button',
+      title: 'Collapse the menu',
+      'aria-label': 'Collapse the menu',
+      onclick: () => {
+        const collapsed = !shell.classList.contains('nav-collapsed')
+        shell.classList.toggle('nav-collapsed', collapsed)
+        this._navCollapsed(collapsed)
+        collapseBtn.title = collapsed ? 'Expand the menu' : 'Collapse the menu'
+        collapseBtn.setAttribute('aria-label', collapseBtn.title)
+      }
+    }, [U.svg('<path d="m15 18-6-6 6-6"/>', 15)])
+
     nav.append(U.el('div', { class: 'admin-nav-head' }, [
       U.svg('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>', 17),
-      U.el('span', { text: 'Admin' }),
+      U.el('span', { class: 'admin-nav-brand', text: 'Admin' }),
       // What this account can actually reach. A permission set is invisible
       // until something goes wrong with it, and "why can't I see Roles" is a
       // question worth answering before it is asked.
-      U.el('span', { class: 'admin-nav-count', text: String(available.length) })
+      U.el('span', { class: 'admin-nav-count', text: String(available.length) }),
+      collapseBtn
     ]))
 
     const navItems = {}
@@ -74,7 +116,9 @@ const PageAdmin = {
       for (const s of inGroup) {
         const item = U.el('button', {
           class: 'admin-nav-item' + (s.key === state.section.key ? ' active' : ''),
-          title: s.sub,
+          type: 'button',
+          // Doubles as the tooltip when the rail is collapsed to icons.
+          title: `${s.label} — ${s.sub}`,
           onclick: () => select(s)
         }, [
           U.svg(s.icon, 17),
@@ -84,9 +128,64 @@ const PageAdmin = {
         nav.append(item)
       }
     }
+
+    // The way out. With the site's own rail hidden there is otherwise no link
+    // back to the app from inside the panel — only the browser's Back button,
+    // which is not a navigation design.
+    nav.append(U.el('div', { class: 'admin-nav-foot' }, [
+      U.el('a', { class: 'admin-nav-item admin-nav-back', href: '#/home', title: 'Back to the site' }, [
+        U.svg('<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>', 17),
+        U.el('span', { class: 'admin-nav-label', text: 'Back to the site' })
+      ])
+    ]))
+
     shell.append(nav)
 
     const main = U.el('div', { class: 'admin-content' })
+
+    /*
+     * The phone header.
+     *
+     * On a narrow screen the rail becomes a drawer, so something has to open
+     * it and something has to say where you are. The previous arrangement
+     * turned the rail into a horizontally scrolling strip of eleven buttons,
+     * which put most of the panel off the edge of the screen and gave no hint
+     * that it was there.
+     */
+    const closeDrawer = () => {
+      shell.classList.remove('nav-open')
+      menuBtn.setAttribute('aria-expanded', 'false')
+    }
+    const menuBtn = U.el('button', {
+      class: 'admin-menu-btn',
+      type: 'button',
+      'aria-label': 'Sections',
+      'aria-controls': 'admin-nav',
+      'aria-expanded': 'false',
+      onclick: () => {
+        const open = !shell.classList.contains('nav-open')
+        shell.classList.toggle('nav-open', open)
+        menuBtn.setAttribute('aria-expanded', String(open))
+      }
+    }, [U.svg('<line x1="3" x2="21" y1="6" y2="6"/><line x1="3" x2="21" y1="12" y2="12"/><line x1="3" x2="21" y1="18" y2="18"/>', 18)])
+
+    // Title and sub-line both live here on a phone; the heading block below is
+    // hidden at that width, so the same words are not printed twice.
+    const topTitle = U.el('span', { class: 'admin-topbar-title', text: state.section.label })
+    const topSub = U.el('span', { class: 'admin-topbar-sub', text: state.section.sub })
+    main.append(U.el('div', { class: 'admin-topbar' }, [
+      menuBtn,
+      U.el('div', { class: 'admin-topbar-text' }, [topTitle, topSub]),
+      U.el('a', { class: 'admin-topbar-back', href: '#/home', title: 'Back to the site' }, [
+        U.svg('<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>', 16)
+      ])
+    ]))
+
+    // Tapping the dimmed page closes the drawer, which is what every drawer
+    // does and what a thumb reaches for first.
+    const backdrop = U.el('div', { class: 'admin-backdrop', onclick: closeDrawer })
+    shell.append(backdrop)
+
     const head = U.el('div', { class: 'admin-content-head' })
     const body = U.el('div', { class: 'admin-content-body' })
     main.append(head, body)
@@ -96,6 +195,9 @@ const PageAdmin = {
       state.section = s
       Object.values(navItems).forEach(i => i.classList.remove('active'))
       navItems[s.key]?.classList.add('active')
+      closeDrawer() // picking a section is the drawer's whole purpose
+      topTitle.textContent = s.label
+      topSub.textContent = s.sub
       history.replaceState(null, '', `#/admin?s=${s.key}`) // deep-link without a re-render
       head.replaceChildren(
         U.el('div', { class: 'admin-content-heading' }, [

@@ -68,6 +68,8 @@ bővítmény‑rendszerrel.
 - [x] **Oldalanként és funkciónként ki/be kapcsolható** minden a DB‑ből (`feature_flags`)
 - [x] **Hozzáférési szint flagenként**: `public` / `auth` (bejelentkezés) / `permission` (adott jogosultság)
 - [x] **Az egész oldal bejelentkezéshez köthető** (`site_settings.require_login`), a Settings mindig elérhető marad
+- [x] **A `require_login` a szerveren is érvényes** — globális `onRequest` hook a `/v1/*` és `/graphql` felületen; kivétel a `/v1/health`, `/v1/config` és `/v1/auth/*`, mert ezek nélkül nem lehetne belépni. Korábban csak a kliens kapuja nézte, az API bárkinek válaszolt.
+- [x] **A `registration_open` a szerveren is érvényes** — zárt regisztrációnál a `POST /v1/auth/register` 403‑at ad, nem csak az űrlap tűnik el
 - [x] **Admin Site Config UI** — globális kapcsolók (require_login, registration_open), szövegek (site_name, tagline), per‑oldal/funkció flag‑sorok access‑dropdownnal + kapcsolóval
 - [x] **Kliens‑oldali gate** — `App._gateCheck()` letiltott/zárolt oldalnál gate‑képernyőt mutat és elrejti a nav‑elemet
 

@@ -20,7 +20,7 @@ const routes: FastifyPluginAsync = async fastify => {
   // ---------- users ----------
 
   fastify.get('/users', {
-    preHandler: fastify.requirePermission('admin.users.manage'),
+    preHandler: fastify.requirePermission('admin.users.manage', { hide: true }),
     schema: {
       querystring: {
         type: 'object',
@@ -61,7 +61,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.post('/users/:id/status', {
-    preHandler: fastify.requirePermission('admin.users.manage'),
+    preHandler: fastify.requirePermission('admin.users.manage', { hide: true }),
     schema: {
       params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } },
       body: {
@@ -117,7 +117,7 @@ const routes: FastifyPluginAsync = async fastify => {
   // ---------- moderation queue ----------
 
   fastify.get('/reports', {
-    preHandler: fastify.requirePermission('community.moderate'),
+    preHandler: fastify.requirePermission('community.moderate', { hide: true }),
     schema: {
       querystring: {
         type: 'object',
@@ -150,7 +150,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.post('/reports/:id/resolve', {
-    preHandler: fastify.requirePermission('community.moderate'),
+    preHandler: fastify.requirePermission('community.moderate', { hide: true }),
     schema: {
       params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } },
       body: {
@@ -206,7 +206,7 @@ const routes: FastifyPluginAsync = async fastify => {
   // ---------- analytics ----------
 
   fastify.get('/analytics/overview', {
-    preHandler: fastify.requirePermission('admin.analytics.view')
+    preHandler: fastify.requirePermission('admin.analytics.view', { hide: true })
   }, async () => {
     const [users, content, watch, top, jobs, errors] = await Promise.all([
       queryOne(`SELECT count(*) AS total,
@@ -243,7 +243,7 @@ const routes: FastifyPluginAsync = async fastify => {
   // set a status to 'resolved', so that branch was unreachable.
 
   fastify.get('/errors', {
-    preHandler: fastify.requirePermission('admin.analytics.view'),
+    preHandler: fastify.requirePermission('admin.analytics.view', { hide: true }),
     schema: {
       querystring: {
         type: 'object',
@@ -259,7 +259,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.get('/errors/:id', {
-    preHandler: fastify.requirePermission('admin.analytics.view'),
+    preHandler: fastify.requirePermission('admin.analytics.view', { hide: true }),
     schema: {
       params: { type: 'object', required: ['id'], properties: { id: { type: 'string', format: 'uuid' } } },
       querystring: {
@@ -282,7 +282,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.patch('/errors/:id', {
-    preHandler: fastify.requirePermission('admin.analytics.view'),
+    preHandler: fastify.requirePermission('admin.analytics.view', { hide: true }),
     schema: {
       params: { type: 'object', required: ['id'], properties: { id: { type: 'string', format: 'uuid' } } },
       body: {
@@ -309,7 +309,7 @@ const routes: FastifyPluginAsync = async fastify => {
   // asks for after an incident.
 
   fastify.get('/audit', {
-    preHandler: fastify.requirePermission('admin.users.manage'),
+    preHandler: fastify.requirePermission('admin.users.manage', { hide: true }),
     schema: {
       querystring: {
         type: 'object',

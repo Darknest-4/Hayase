@@ -17,9 +17,10 @@ import { GraphQLError, type ValidationRule } from 'graphql'
 import { config } from './config.ts'
 import { query } from './db.ts'
 import { recordError } from './lib/errors.ts'
+import { settings as siteSettings } from './lib/site-settings.ts'
 import { schema, resolvers, loaders } from './graphql/schema.ts'
 import wsPlugin from './lib/ws.ts'
-import authPlugin from './plugins/auth.ts'
+import authPlugin, { tokenIsCurrent } from './plugins/auth.ts'
 import securityPlugin from './plugins/security.ts'
 import animeRoutes from './routes/anime.ts'
 import authRoutes from './routes/auth.ts'
@@ -199,6 +200,47 @@ export async function buildApp (): Promise<FastifyInstance> {
           detail: 'GraphQL query is too long'
         })
       }
+    }
+  })
+
+  /*
+   * Private instances: the whole API needs a signed-in caller.
+   *
+   * `require_login` was stored, echoed back in /v1/config, and enforced only
+   * by the web client's route gate — which is a suggestion, not a lock. An
+   * operator who switched their instance to private still served the entire
+   * catalogue, and every other read endpoint, to anyone who called the API
+   * directly or simply opened it in a second browser.
+   *
+   * Three paths stay open, because they are what a signed-out caller needs in
+   * order to stop being signed out: the readiness probes (a private instance
+   * must still be monitorable), the config document that tells the client the
+   * site is private in the first place, and the auth endpoints themselves.
+   * Everything else under /v1 and /graphql needs a live token.
+   *
+   * The setting is read through the cached reader, so the common case — a
+   * public instance — costs one map lookup per request, not a query.
+   */
+  const loginExempt = /^\/v1\/(health|config|auth)\b/
+  app.addHook('onRequest', async (request, reply) => {
+    if (!/^\/(v1|graphql)\b/.test(request.url)) return
+    if (loginExempt.test(request.url)) return
+    if (!await siteSettings.requiresLogin()) return
+    try {
+      await request.jwtVerify()
+    } catch {
+      return reply.code(401).send({
+        type: 'about:blank', title: 'Unauthorized', status: 401,
+        detail: 'This instance is private — sign in to continue'
+      })
+    }
+    // A banned account or a revoked session must not keep the door open on an
+    // instance whose whole point is that it is closed.
+    if (!await tokenIsCurrent(request.user)) {
+      return reply.code(401).send({
+        type: 'about:blank', title: 'Unauthorized', status: 401,
+        detail: 'This session has been revoked — sign in again'
+      })
     }
   })
 

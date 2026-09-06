@@ -101,7 +101,11 @@ const C = {
             U.svg('<path d="M18 3.5A10 10 0 1 0 21 16 8 8 0 0 1 18 3.5Z" fill="currentColor" stroke="none"/>', 22),
             U.el('span', { text: T('yume') })
           ]),
-          U.el('p', { class: 'footer-tagline', text: T('footer.tagline') })
+          // The operator's tagline, if they set one in the admin panel — the
+          // setting existed and was rendered nowhere, so the field silently did
+          // nothing. An empty value falls back to the translated default rather
+          // than leaving a blank line.
+          U.el('p', { class: 'footer-tagline', text: window.App?.config?.site?.tagline?.trim() || T('footer.tagline') })
         ]),
         col(T('footer.discover'), [[T('nav.home'), '#/home'], [T('nav.search'), '#/search'], [T('nav.schedule'), '#/schedule'], [T('nav.dashboard'), '#/dashboard']]),
         col(T('footer.library'), [[T('footer.myLibrary'), '#/list'], [T('footer.profile'), '#/profile'], [T('footer.watchHistory'), '#/profile?tab=history'], [T('footer.analytics'), '#/profile?tab=analytics']]),
