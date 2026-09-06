@@ -131,6 +131,17 @@ I18n.register('hu', {
   // ---------------------------------------------------------------- adatlap
   'Also known as': 'Egyéb címei',
   'No known relations.': 'Nincs ismert kapcsolódó cím.',
+  // Franchise / watch order. "Évadok" rather than "Szezonok": a season of a
+  // show and a broadcast season are different words in Hungarian, and this is
+  // the first one.
+  'Watch order': 'Nézési sorrend',
+  Related: 'Kapcsolódó címek',
+  Seasons: 'Évadok',
+  Films: 'Filmek',
+  'Specials & OVAs': 'Speciálok és OVA-k',
+  'you are here': 'itt tartasz',
+  'Only the closest entries are shown — this franchise is larger.':
+    'Csak a legközelebbi részek látszanak — ez a sorozatcsalád nagyobb ennél.',
   'No character data.': 'Nincs szereplőadat.',
   'No recommendations yet.': 'Még nincs ajánlás.',
   'Anime not found.': 'Nem található ilyen anime.',

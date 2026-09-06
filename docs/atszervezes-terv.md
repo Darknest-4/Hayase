@@ -170,9 +170,16 @@ A legfontosabb, mert ma **félrevezeti a felhasználót**.
   tesztelhető második importálót nem akartam a katalógusra engedni.
 
 ### 5. kör — Évadok, watch order, minőségi kör (≈ 1 nap)
-- franchise-nézet: évadok, filmek, speciálok, előző/következő
-- webhook-payload bővítése, audit-események
-- reszponzív végigjárás valódi böngészőben (a Playwright-teszt már megvan hozzá)
+- ✅ franchise-nézet: a Kapcsolatok fülön „Nézési sorrend" — évadok, filmek,
+  speciálok, megjelenés szerint rendezve, a jelenlegi cím kiemelve
+  („itt tartasz"). Két lépésre megy el a kapcsolatgráfban, mert a 3. évad nem
+  hivatkozik az 1.-re, és **dátum szerint rendez, nem a gráf szerint** — a
+  sequel-élek csak részleges rendezést adnak, a filmeknek meg egyáltalán nincs
+  helyük abban a sorrendben.
+- ✅ webhook: új `metadata.synced` esemény (a futás kimenetele adja a színt, a
+  félbeszakadt szinkron az érdekes eset), és `metadata.sync` audit-akció
+- ⏳ reszponzív végigjárás: az admin panel megvan (Playwright-teszt), a nyilvános
+  oldalak végigjárása még nincs kész
 
 ---
 

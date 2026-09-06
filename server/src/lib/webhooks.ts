@@ -30,6 +30,7 @@ export const WEBHOOK_EVENTS = [
   'stats.trending',         // trending refresh (top titles)
   'catalogue.imported',     // importer finished
   'catalogue.changed',      // an anime/episode was created, edited, hidden or deleted
+  'metadata.synced',        // a metadata sync run finished, was cancelled or failed
   'job.failed',             // background job exhausted retries
   'config.changed',         // a feature flag or site setting was changed
   'monitor.alert',          // a monitored metric or service crossed into warning/critical
@@ -180,6 +181,19 @@ function renderEmbed (event: WebhookEvent, d: Record<string, unknown>): Embed {
         title: '📚 Catalogue changed',
         color: COLORS.rose,
         fields: [field('Action', d.action), field('Title', d.title), field('Editor', d.by)]
+      }
+    case 'metadata.synced':
+      return {
+        // A sync that failed halfway is the case worth being told about, so
+        // the outcome decides the colour rather than the event doing so.
+        title: d.status === 'done' ? '🔄 Metadata sync finished' : `🔄 Metadata sync ${String(d.status ?? 'ended')}`,
+        color: d.status === 'done' ? COLORS.success : d.status === 'failed' ? COLORS.danger : COLORS.warn,
+        fields: [
+          field('Pass', `${String(d.kind)} · ${String(d.scope)}`),
+          field('Processed', d.processed),
+          field('Result', d.counts),
+          field('Started by', d.by)
+        ]
       }
   }
 }

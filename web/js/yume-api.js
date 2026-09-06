@@ -259,6 +259,22 @@ const YumeAPI = {
     }
   },
 
+  /**
+   * The franchise this title belongs to, in release order.
+   *
+   * Separate from the relations call because it answers a different question:
+   * relations are the immediate neighbours, a franchise is the whole run —
+   * season three does not link to season one, so the graph alone cannot say
+   * where you are in it.
+   */
+  async catalogueFranchise (yumeId) {
+    try {
+      return await this._request(`/v1/anime/${yumeId}/franchise`)
+    } catch (e) {
+      return null
+    }
+  },
+
   /*
    * Cast, staff and recommendations from the catalogue.
    *

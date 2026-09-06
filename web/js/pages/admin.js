@@ -1820,6 +1820,7 @@ const PageAdmin = {
     'stats.daily': 'Daily stats digest',
     'stats.trending': 'Trending refreshed',
     'catalogue.imported': 'Catalogue import finished',
+    'metadata.synced': 'Metadata sync finished',
     'job.failed': 'Background job failed',
     'webhook.test': 'Manual test'
   },

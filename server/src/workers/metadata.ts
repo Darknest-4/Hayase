@@ -23,6 +23,7 @@
 // paced requests, not something to abandon mid-transaction.
 
 import { query, queryOne } from '../db.ts'
+import { emitEvent } from '../lib/webhooks.ts'
 import { enrichFromAniList } from './anilist.ts'
 import { enrichDeepFromAniList } from './anilist-deep.ts'
 
@@ -198,6 +199,7 @@ export async function handleMetadataJob (job: Job): Promise<void> {
         WHERE id = $1 AND status = 'running'`,
       [runId, (err as Error).message.slice(0, 500)]
     )
+    await announce(runId)
     throw err
   }
 }
@@ -216,6 +218,33 @@ async function finish (runId: string, counts: Record<string, number>, processed:
     "UPDATE metadata_runs SET finished_at = now(), processed = $2 WHERE id = $1 AND status = 'cancelled' AND finished_at IS NULL",
     [runId, processed]
   )
+  await announce(runId)
+}
+
+/**
+ * Tell the operator's channel how it went.
+ *
+ * Read back rather than passed in: the row is the record, and a run that was
+ * cancelled while its last batch was in flight must be announced as cancelled
+ * rather than as whatever the pass returned. Fire-and-forget — a webhook that
+ * is down must not fail a completed import.
+ */
+async function announce (runId: string): Promise<void> {
+  const row = await queryOne<MetadataRun & { username: string | null }>(
+    `SELECT r.*, u.username FROM metadata_runs r
+     LEFT JOIN users u ON u.id = r.started_by WHERE r.id = $1`, [runId])
+  if (!row) return
+  const counts = Object.entries(row.counts ?? {})
+    .filter(([, v]) => typeof v === 'number' && v > 0)
+    .map(([k, v]) => `${v} ${k}`).join(', ')
+  void emitEvent('metadata.synced', {
+    kind: row.kind,
+    scope: row.scope,
+    status: row.status,
+    processed: row.processed,
+    counts: counts || 'nothing changed',
+    by: row.username ?? 'the command line'
+  })
 }
 
 /**

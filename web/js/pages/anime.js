@@ -399,13 +399,26 @@ const PageAnime = {
     })
   },
 
-  renderTabRelations (wrap, media) {
+  /**
+   * Where this title sits in its franchise, and what it is attached to.
+   *
+   * Two different questions, so two blocks. The relation graph answers "what
+   * is next to this one"; it cannot answer "what do I watch first", because
+   * season three does not link to season one and the films are attached to
+   * whichever entry happened to spawn them. The watch order above comes from
+   * the franchise endpoint, which walks past the immediate neighbours and
+   * sorts by release date — a total order, which the graph is not.
+   */
+  async renderTabRelations (wrap, media) {
+    if (media.yumeId) await this.renderWatchOrder(wrap, media)
+
     const relations = (media.relations?.edges ?? [])
       .filter(e => e.node?.type !== 'MANGA' && e.relationType !== 'CHARACTER' && e.node?.coverImage)
     if (!relations.length) {
-      wrap.append(U.el('div', { class: 'empty-state', text: T('No known relations.') }))
+      if (!wrap.childElementCount) wrap.append(U.el('div', { class: 'empty-state', text: T('No known relations.') }))
       return
     }
+    wrap.append(U.el('h3', { class: 'detail-section-title', text: T('Related') }))
     const row = U.el('div', { class: 'hscroll', style: 'padding-left:0;padding-right:0;flex-wrap:wrap;' })
     for (const edge of relations) {
       const card = C.card(edge.node)
@@ -413,6 +426,57 @@ const PageAnime = {
       row.append(card)
     }
     wrap.append(row)
+  },
+
+  /** Release order, grouped the way a viewer thinks about a franchise. */
+  FRANCHISE_GROUPS: [
+    ['seasons', 'Seasons', ['TV', 'TV_SHORT', 'ONA']],
+    ['films', 'Films', ['MOVIE']],
+    ['extras', 'Specials & OVAs', ['SPECIAL', 'OVA', 'MUSIC']]
+  ],
+
+  async renderWatchOrder (wrap, media) {
+    const result = await Catalogue.franchise(media.yumeId)
+    const entries = result.data
+    // One entry is this title on its own: a franchise of one is not a
+    // franchise, and a heading over a single card is noise.
+    if (entries.length < 2) return
+
+    const box = U.el('div', { class: 'franchise' })
+    box.append(U.el('h3', { class: 'detail-section-title', text: T('Watch order') }))
+
+    for (const [key, label, formats] of this.FRANCHISE_GROUPS) {
+      const inGroup = entries.filter(e => formats.includes(e.format))
+      if (!inGroup.length) continue
+      box.append(U.el('div', { class: 'franchise-group', text: T(label) }))
+      const list = U.el('div', { class: 'franchise-list', dataset: { group: key } })
+      for (const e of inGroup) {
+        const current = e.id === media.yumeId
+        const year = e.start_date ? String(e.start_date).slice(0, 4) : (e.season_year ?? null)
+        list.append(U.el(current ? 'div' : 'a', {
+          class: 'franchise-item' + (current ? ' current' : ''),
+          // Navigate by whichever id the rest of the client understands, the
+          // same rule the relation cards use.
+          ...(current ? {} : { href: `#/anime/${e.anilist_id ?? e.id}` })
+        }, [
+          U.el('span', { class: 'franchise-year', text: year ? String(year) : '—' }),
+          U.el('span', { class: 'franchise-title', text: e.canonical_title }),
+          U.el('span', {
+            class: 'franchise-meta',
+            text: [e.episode_count ? `${e.episode_count} ep` : null, current ? T('you are here') : null]
+              .filter(Boolean).join(' · ')
+          })
+        ]))
+      }
+      box.append(list)
+    }
+
+    // Only said when it is true: a franchise big enough to be cut off is one
+    // where "this is not all of it" is worth knowing.
+    if (result.truncated) {
+      box.append(U.el('p', { class: 'franchise-note', text: T('Only the closest entries are shown — this franchise is larger.') }))
+    }
+    wrap.append(box)
   },
 
   /**

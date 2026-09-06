@@ -517,6 +517,68 @@ const routes: FastifyPluginAsync = async fastify => {
     return { data }
   })
 
+  /**
+   * The whole franchise this title belongs to, in the order to watch it.
+   *
+   * The relations endpoint answers "what is directly attached to this one",
+   * which is the question a graph asks. The question a viewer asks is "where
+   * does this sit and what comes next" — and answering that means walking past
+   * the immediate neighbours: season three does not link to season one.
+   *
+   * So: an undirected walk over `anime_relations`, depth-capped and
+   * count-capped. Franchises are not small — some run to dozens of entries —
+   * and an uncapped walk on a well-connected component would return most of
+   * the catalogue to draw a sidebar.
+   *
+   * Ordering is by release date, not by the relation graph. Sequel edges give
+   * only a partial order, plenty of them are missing, and every entry that is
+   * neither sequel nor prequel — the films, the specials — has no place in
+   * that order at all. A date is a total order and is what a viewer means.
+   */
+  fastify.get('/:id/franchise', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    if (!UUID.test(id)) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    const data = await query<{
+      id: string, canonical_title: string, format: string, status: string,
+      season: string | null, season_year: number | null, start_date: string | null,
+      episode_count: number | null, cover_key: string | null, anilist_id: number | null,
+      relation: string | null, depth: number
+    }>(
+      `WITH RECURSIVE walk AS (
+         SELECT $1::uuid AS id, 0 AS depth
+         UNION
+         SELECT CASE WHEN r.anime_id = w.id THEN r.related_id ELSE r.anime_id END, w.depth + 1
+           FROM walk w
+           JOIN anime_relations r ON r.anime_id = w.id OR r.related_id = w.id
+          WHERE w.depth < 2
+       ),
+       nodes AS (SELECT id, min(depth) AS depth FROM walk GROUP BY id)
+       SELECT a.id, a.canonical_title, a.format, a.status, a.season, a.season_year,
+              a.start_date, a.episode_count, n.depth,
+              img.object_key AS cover_key, m.anilist_id,
+              -- the direct edge to the title that was asked about, when there
+              -- is one; further out there is no single relation to name
+              (SELECT r.relation FROM anime_relations r
+                WHERE (r.anime_id = $1 AND r.related_id = a.id)
+                   OR (r.related_id = $1 AND r.anime_id = a.id)
+                LIMIT 1) AS relation
+         FROM nodes n
+         JOIN anime a ON a.id = n.id
+         LEFT JOIN anime_images img ON img.anime_id = a.id AND img.kind = 'cover' AND img.is_primary
+         LEFT JOIN anime_mappings m ON m.anime_id = a.id
+        WHERE a.visibility = 'public' OR a.id = $1
+        ORDER BY a.start_date NULLS LAST, a.season_year NULLS LAST, a.canonical_title
+        LIMIT 61`,
+      [id]
+    )
+    if (!data.length) return { data: [], truncated: false }
+
+    // One over the cap means there was more; the list itself stays at the cap.
+    const truncated = data.length > 60
+    return { data: truncated ? data.slice(0, 60) : data, truncated }
+  })
+
   /*
    * Cast, staff and recommendations.
    *

@@ -231,6 +231,19 @@ const Catalogue = {
     return rows.map(r => this.toCard(r)).filter(Boolean)
   },
 
+  /**
+   * The franchise this title belongs to, in release order.
+   *
+   * Only the catalogue can answer it: it needs a walk over our own relation
+   * graph, and an external provider returns the immediate neighbours only.
+   * `{ data: [], truncated: false }` when there is nothing, so the caller has
+   * one shape to read rather than two.
+   */
+  async franchise (yumeId) {
+    const result = await YumeAPI.catalogueFranchise(yumeId)
+    return { data: result?.data ?? [], truncated: Boolean(result?.truncated) }
+  },
+
   // ------------------------------------------------------------- browsing
 
   /**
