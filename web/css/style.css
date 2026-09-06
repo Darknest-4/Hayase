@@ -2722,6 +2722,61 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
   .audit-subject, .audit-detail { display: none; }
 }
 
+/* ===== admin: metadata synchronisation ===== */
+
+.meta-bars { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: var(--space-3); margin-bottom: var(--space-5); }
+.meta-bar {
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  background: var(--bg-raised); padding: var(--space-3);
+}
+.meta-bar-head { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+.meta-bar-label { font-weight: var(--weight-bold); font-size: var(--text-sm); }
+.meta-bar-value { font-size: var(--text-xs); color: var(--fg-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.meta-bar-track {
+  height: .4rem; border-radius: var(--radius-full);
+  background: color-mix(in oklab, var(--fg-faint) 22%, transparent);
+  margin: .45rem 0 .35rem; overflow: hidden;
+}
+.meta-bar-fill { height: 100%; background: var(--accent); border-radius: var(--radius-full); transition: width var(--dur-base) var(--ease-out); }
+.meta-bar-hint { font-size: var(--text-xs); color: var(--fg-faint); }
+
+.meta-note { font-size: var(--text-xs); color: var(--fg-muted); margin: 0 0 var(--space-3); max-width: 46rem; }
+
+/* The run in flight. Deliberately the loudest thing on the section: it is the
+   only part of this screen that changes while you watch it. */
+.meta-active {
+  border: 1px solid var(--accent); border-radius: var(--radius-lg);
+  background: var(--accent-soft); padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-5);
+}
+.meta-active-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.meta-active-title { font-weight: var(--weight-bold); font-size: var(--text-sm); }
+
+.meta-rows { display: flex; flex-direction: column; margin-bottom: var(--space-5); }
+.meta-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(6rem, auto) auto;
+  gap: .75rem; align-items: center;
+  padding: .5rem .6rem;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-xs);
+}
+.meta-row:hover { background: var(--bg-raised); }
+.meta-row-main { min-width: 0; }
+.meta-row-title { font-family: var(--font-mono); font-weight: var(--weight-semibold); color: var(--fg); }
+.meta-row-sub { color: var(--fg-faint); margin-top: .1rem; }
+/* Spans the row so a long message is readable instead of squeezed into a cell. */
+.meta-row-error { grid-column: 1 / -1; color: var(--danger); font-family: var(--font-mono); }
+
+.meta-status {
+  font-size: .58rem; font-weight: var(--weight-bold); text-transform: uppercase; letter-spacing: .05em;
+  padding: .12rem .4rem; border-radius: var(--radius-sm); white-space: nowrap;
+  color: var(--fg-faint); background: color-mix(in oklab, var(--fg-faint) 14%, transparent);
+}
+.meta-status-running, .meta-status-queued { color: var(--accent); background: var(--accent-soft); }
+.meta-status-done { color: var(--green-400); background: color-mix(in oklab, var(--green-500) 16%, transparent); }
+.meta-status-failed { color: var(--danger); background: color-mix(in oklab, var(--danger) 16%, transparent); }
+
 /* ===== admin: roles & permissions ===== */
 
 .roles-layout { display: grid; grid-template-columns: 15rem 1fr; gap: var(--space-5); align-items: start; }

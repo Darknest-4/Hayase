@@ -463,6 +463,17 @@ const YumeAPI = {
       merge: (id, sourceId) => YumeAPI._request(`/v1/admin/catalogue/${id}/merge`, { method: 'POST', auth: true, body: { sourceId } })
     },
 
+    // metadata synchronisation — coverage, runs, and the id collisions the
+    // importers could not resolve on their own
+    metadata: {
+      status: () => YumeAPI._request('/v1/admin/catalogue/metadata', { auth: true }),
+      start: body => YumeAPI._request('/v1/admin/catalogue/metadata/runs', { method: 'POST', auth: true, body }),
+      cancel: id => YumeAPI._request(`/v1/admin/catalogue/metadata/runs/${id}/cancel`, { method: 'POST', auth: true, body: {} }),
+      conflicts: () => YumeAPI._request('/v1/admin/catalogue/metadata/conflicts', { auth: true }),
+      resolveConflict: (id, resolution) =>
+        YumeAPI._request(`/v1/admin/catalogue/metadata/conflicts/${id}/resolve`, { method: 'POST', auth: true, body: { resolution } })
+    },
+
     // error triage — list groups, open one for its stack, change its status
     errors: (status = 'open') => YumeAPI._request(`/v1/admin/errors?status=${status}&limit=100`, { auth: true }),
     error: id => YumeAPI._request(`/v1/admin/errors/${id}`, { auth: true }),

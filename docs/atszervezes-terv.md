@@ -150,10 +150,24 @@ A legfontosabb, mert ma **félrevezeti a felhasználót**.
 - 2 alternatív téma (Crimson, Midnight)
 
 ### 4. kör — Metadata sync felület (≈ 1 nap)
-- `last_synced_at`, `sync_status`, `sync_error` oszlopok
-- admin: Sync Anime / Sync All, haladás, hibalista, újrapróbálás
-- a meglévő `jobs` sorra épül, nem új infrastruktúra
-- MAL mint második forrás (Jikan API)
+- ✅ admin: Metadata szekció — lefedettség (hány címnek van szinopszisa,
+  borítója, szereplőgárdája, kapcsolata), indítás (alap/mély × hiányzó/összes ×
+  darabszám-korlát), élő haladás, megszakítás, futástörténet a hibaüzenettel
+- ✅ a meglévő `jobs` sorra épül (`metadata` queue), nem új infrastruktúra
+- ✅ a `mapping_conflicts` sorok is itt jelennek meg és jelölhetők átnézettnek —
+  eddig csak SQL-ből lehetett látni őket
+- ✅ a CLI script ugyanazon a `metadata_runs` soron megy át, mint a panel, tehát
+  egyszerre tényleg csak egy futás lehet — az AniList rate limitje miatt ez nem
+  kényelmi kérdés
+- ⚠️ **eltérés a brieftől:** nem vezettem be `last_synced_at` / `sync_status` /
+  `sync_error` oszlopokat az `anime` táblán. Futásonkénti sor válaszolja meg
+  ugyanazokat a kérdéseket („volt-e szinkron, meddig jutott, mi bukott el"),
+  soronkénti írás nélkül; a „mikor nyúltunk ehhez a címhez utoljára" pedig már
+  ma is megvan (`anime.updated_at`, `anime.metadata_sources`). Ha kifejezetten
+  per-cím státusz kell a katalógus listában, szólj, és beteszem.
+- ❌ MAL/Jikan mint második forrás: **nem készült el**. Ebben a környezetben az
+  `api.jikan.moe` blokkolt, tehát megírni tudnám, kipróbálni nem — egy nem
+  tesztelhető második importálót nem akartam a katalógusra engedni.
 
 ### 5. kör — Évadok, watch order, minőségi kör (≈ 1 nap)
 - franchise-nézet: évadok, filmek, speciálok, előző/következő

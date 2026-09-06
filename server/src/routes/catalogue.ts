@@ -6,6 +6,8 @@
 
 import { query, queryOne, pool, transaction } from '../db.ts'
 import { audit } from '../lib/audit.ts'
+import { enqueue } from '../lib/queue.ts'
+import { activeRun, coverage, requestCancel, startRun, RunInProgress } from '../workers/metadata.ts'
 import { findDuplicates, lockFields, mergeAnime, unlockFields, MANAGED_FIELDS } from '../lib/metadata.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 
@@ -414,6 +416,132 @@ const routes: FastifyPluginAsync = async fastify => {
       action: `merged "${source?.canonical_title}" into`, title: target?.canonical_title, by: request.user.username
     })
     return { id, merged: sourceId }
+  })
+
+  // ---- metadata synchronisation ----
+  //
+  // The AniList passes used to be reachable only over SSH, which meant the
+  // catalogue's freshness was known to whoever last ran the script and to
+  // nobody else. These four routes are the panel behind that.
+
+  /** Coverage, the run in flight, and the recent history — one screen's data. */
+  fastify.get('/metadata', {
+    preHandler: fastify.requirePermission('anime.edit', { hide: true })
+  }, async () => {
+    const [stats, active, runs] = await Promise.all([
+      coverage(),
+      activeRun(),
+      query(`SELECT r.id, r.kind, r.scope, r.max_items, r.status, r.processed, r.total,
+                    r.updated_rows, r.counts, r.error, r.created_at, r.started_at, r.finished_at,
+                    u.username AS started_by
+               FROM metadata_runs r
+               LEFT JOIN users u ON u.id = r.started_by
+              ORDER BY r.created_at DESC
+              LIMIT 15`)
+    ])
+    return { coverage: stats, active: active ?? null, runs }
+  })
+
+  fastify.post('/metadata/runs', {
+    preHandler: fastify.requirePermission('anime.edit', { hide: true }),
+    schema: {
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          kind: { enum: ['basic', 'deep'] },
+          scope: { enum: ['missing', 'all'] },
+          // A first run on a new deployment wants a small number to check the
+          // shape of what comes back before committing to half an hour.
+          limit: { type: 'integer', minimum: 1, maximum: 100000 }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const body = request.body as { kind?: string, scope?: string, limit?: number }
+    const kind = body.kind ?? 'basic'
+    const scope = body.scope ?? 'missing'
+
+    let run
+    try {
+      run = await startRun({
+        kind: kind as 'basic' | 'deep',
+        scope: scope as 'missing' | 'all',
+        limit: body.limit ?? null,
+        startedBy: request.user.sub
+      })
+    } catch (err) {
+      if (err instanceof RunInProgress) {
+        return reply.code(409).send({
+          type: 'about:blank', title: 'Conflict', status: 409, detail: err.message
+        })
+      }
+      throw err
+    }
+
+    await enqueue('metadata', { runId: run.id })
+    await audit(request.user.sub, 'metadata.sync', 'metadata_run', run.id,
+      null, { kind, scope, limit: body.limit ?? null })
+    return reply.code(202).send({ id: run.id, kind, scope, status: 'queued' })
+  })
+
+  fastify.post('/metadata/runs/:id/cancel', {
+    preHandler: fastify.requirePermission('anime.edit', { hide: true }),
+    schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } }
+  }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    // Cooperative: the pass notices at its next batch boundary. Saying so is
+    // the difference between a button that looks broken and one that is
+    // honest about a half-minute of paced requests still in flight.
+    if (!await requestCancel(id)) {
+      return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    }
+    return { id, status: 'cancelled' }
+  })
+
+  /**
+   * External ids an importer could not write because another anime held them.
+   *
+   * Mostly AniList season splits against one MAL entry rather than corruption
+   * — but the pairs are also where real duplicates in the catalogue surface,
+   * and nobody goes looking in a table they were never shown.
+   */
+  fastify.get('/metadata/conflicts', {
+    preHandler: fastify.requirePermission('anime.edit', { hide: true })
+  }, async () => {
+    return query(
+      `SELECT c.id, c.provider, c.external_id, c.source, c.seen_count, c.first_seen, c.last_seen,
+              c.anime_id, a.canonical_title AS anime_title,
+              c.held_by, h.canonical_title AS holder_title
+         FROM mapping_conflicts c
+         JOIN anime a ON a.id = c.anime_id
+         LEFT JOIN anime h ON h.id = c.held_by
+        WHERE c.resolved_at IS NULL
+        ORDER BY c.seen_count DESC, c.last_seen DESC
+        LIMIT 100`
+    )
+  })
+
+  fastify.post('/metadata/conflicts/:id/resolve', {
+    preHandler: fastify.requirePermission('anime.edit', { hide: true }),
+    schema: {
+      params: { type: 'object', properties: { id: { type: 'string', pattern: '^[0-9]+$' } } },
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { resolution: { type: 'string', maxLength: 200 } }
+      }
+    }
+  }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { resolution } = (request.body ?? {}) as { resolution?: string }
+    const row = await queryOne<{ id: string }>(
+      `UPDATE mapping_conflicts SET resolved_at = now(), resolution = $2
+        WHERE id = $1 AND resolved_at IS NULL RETURNING id`,
+      [id, resolution ?? 'reviewed']
+    )
+    if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    return { id, resolved: true }
   })
 }
 

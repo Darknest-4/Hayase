@@ -8,6 +8,7 @@ import { drain, enqueue, runWorker } from '../lib/queue.ts'
 import { handleWebhookJob } from '../lib/webhooks.ts'
 import { handleImportJob } from './importer.ts'
 import { handleMaintenanceJob } from './maintenance.ts'
+import { handleMetadataJob } from './metadata.ts'
 import { handleMonitorJob } from './monitor.ts'
 import { handleNotifyJob } from './notify.ts'
 import { handleReviewJob } from './review.ts'
@@ -17,6 +18,7 @@ const handlers = {
   stats: handleStatsJob,
   notify: handleNotifyJob,
   maintenance: handleMaintenanceJob,
+  metadata: handleMetadataJob,
   monitor: handleMonitorJob,
   import: handleImportJob,
   'ext-review': handleReviewJob,

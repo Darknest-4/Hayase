@@ -30,8 +30,12 @@ export type AuditAction =
   // the operator who imported a repository is the person answerable for what
   // came in with it.
   | 'extension.imported'
+  // Starting a catalogue-wide metadata pull. Recorded because it rewrites
+  // fields across the whole catalogue and the question afterwards is who
+  // asked for it.
+  | 'metadata.sync'
 
-export type SubjectType = 'user' | 'role' | 'anime' | 'episode' | 'config' | 'webhook' | 'extension'
+export type SubjectType = 'user' | 'role' | 'anime' | 'episode' | 'config' | 'webhook' | 'extension' | 'metadata_run'
 
 /**
  * Record one administrative action.

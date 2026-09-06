@@ -29,6 +29,7 @@ const PageAdmin = {
     { key: 'reports', group: 'people', label: 'Reports', sub: 'Moderation queue', perm: 'community.moderate', render: 'renderReports', icon: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>' },
 
     { key: 'catalogue', group: 'content', label: 'Catalogue', sub: 'Anime, episodes & publishing', perm: 'anime.view', render: 'renderCatalogue', icon: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>' },
+    { key: 'metadata', group: 'content', label: 'Metadata', sub: 'AniList coverage & sync runs', perm: 'anime.edit', render: 'renderMetadata', icon: '<path d="M21 12a9 9 0 1 1-6.2-8.6"/><path d="M21 3v6h-6"/>' },
     { key: 'translations', group: 'content', label: 'Translations', sub: 'Hungarian titles & descriptions', perm: 'anime.edit', render: 'renderTranslations', icon: '<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>' },
 
     { key: 'monitoring', group: 'system', label: 'Infrastructure', sub: 'VPS health & services', perm: 'system.metrics.view', render: 'renderMonitoring', icon: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>' },
@@ -1207,6 +1208,198 @@ const PageAdmin = {
     const h = Math.floor((seconds % 86400) / 3600)
     const m = Math.floor((seconds % 3600) / 60)
     return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`
+  },
+
+  // ---- metadata synchronisation ----
+  //
+  // Both AniList passes used to live in `scripts/import-anilist.ts`: an
+  // operator with SSH ran one and watched it print. Nothing recorded that it
+  // had happened, so "is the catalogue current?" had no answer, and an
+  // operator without a terminal had no way to ask for one at all.
+
+  METADATA_BARS: [
+    ['mapped', 'Mapped to AniList', 'Without a mapping there is nothing to fetch.'],
+    ['withSynopsis', 'Has a synopsis', 'The basic pass fills this.'],
+    ['withCover', 'Has cover art', 'Also the basic pass.'],
+    ['withCast', 'Has a cast', 'The deep pass — characters and voice actors.'],
+    ['withRelations', 'Has relations', 'Sequels, prequels, side stories.']
+  ],
+
+  async renderMetadata (content) {
+    const state = { timer: null }
+
+    const load = async () => {
+      // Stop polling once the admin has navigated away, the same way the
+      // infrastructure section does.
+      if (!document.body.contains(content)) { clearInterval(state.timer); return }
+      try {
+        const [data, conflicts] = await Promise.all([
+          YumeAPI.admin.metadata.status(),
+          YumeAPI.admin.metadata.conflicts()
+        ])
+        this.paintMetadata(content, data, conflicts, load)
+      } catch (e) {
+        content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load metadata status: ' + e.message }))
+        clearInterval(state.timer)
+      }
+    }
+
+    await load()
+    // A run reports every couple of seconds; polling faster than it writes
+    // would only cost queries.
+    state.timer = setInterval(load, 5_000)
+  },
+
+  paintMetadata (content, data, conflicts, reload) {
+    const cov = data.coverage ?? {}
+    const total = cov.total || 0
+    content.replaceChildren()
+
+    // ---- coverage ----
+    const bars = U.el('div', { class: 'meta-bars' })
+    for (const [key, label, hint] of this.METADATA_BARS) {
+      const n = cov[key] ?? 0
+      const pct = total ? Math.round(n / total * 100) : 0
+      bars.append(U.el('div', { class: 'meta-bar' }, [
+        U.el('div', { class: 'meta-bar-head' }, [
+          U.el('span', { class: 'meta-bar-label', text: label }),
+          U.el('span', { class: 'meta-bar-value', text: `${n.toLocaleString()} / ${total.toLocaleString()} (${pct}%)` })
+        ]),
+        U.el('div', { class: 'meta-bar-track' }, [U.el('div', { class: 'meta-bar-fill', style: `width:${pct}%;` })]),
+        U.el('div', { class: 'meta-bar-hint', text: hint })
+      ]))
+    }
+    content.append(U.el('h3', { class: 'detail-section-title', text: 'Coverage' }), bars)
+
+    // ---- start a run ----
+    const active = data.active
+    const kind = U.el('select', { class: 'select' }, [
+      U.el('option', { value: 'basic', text: 'Basic — synopsis, art, score, genres' }),
+      U.el('option', { value: 'deep', text: 'Deep — cast, staff, relations' })
+    ])
+    const scope = U.el('select', { class: 'select' }, [
+      U.el('option', { value: 'missing', text: 'Only what is missing' }),
+      U.el('option', { value: 'all', text: 'Everything (re-fetch)' })
+    ])
+    const limit = U.el('input', { class: 'input', type: 'number', min: '1', placeholder: 'Limit (optional)', style: 'max-width:11rem;' })
+
+    const start = U.el('button', {
+      class: 'btn btn-primary',
+      // One run at a time is enforced by the database, not merely by this
+      // button — AniList's rate limit is the reason, and a disabled button is
+      // not a rate limiter.
+      ...(active ? { disabled: true } : {}),
+      onclick: async () => {
+        start.disabled = true
+        try {
+          await YumeAPI.admin.metadata.start({
+            kind: kind.value,
+            scope: scope.value,
+            ...(limit.value ? { limit: Number(limit.value) } : {})
+          })
+          U.toast('Sync queued')
+          await reload()
+        } catch (e) {
+          U.toast(e.message, 'error')
+          start.disabled = false
+        }
+      }
+    }, [U.el('span', { text: 'Start sync' })])
+
+    content.append(
+      U.el('h3', { class: 'detail-section-title', text: 'Run a sync' }),
+      U.el('p', { class: 'meta-note', text: 'Requests are paced to stay inside AniList\u2019s published rate limit, so a full pass takes a while: minutes for the basic pass, hours for the deep one. Only one run at a time.' }),
+      U.el('div', { class: 'admin-toolbar' }, [kind, scope, limit, start])
+    )
+
+    // ---- the run in flight ----
+    if (active) {
+      const pct = active.total ? Math.round(active.processed / active.total * 100) : 0
+      content.append(U.el('div', { class: 'meta-active' }, [
+        U.el('div', { class: 'meta-active-head' }, [
+          U.el('span', { class: 'meta-active-title', text: `${active.kind === 'deep' ? 'Deep' : 'Basic'} sync — ${active.status}` }),
+          U.el('button', {
+            class: 'btn btn-danger',
+            onclick: async () => {
+              try {
+                await YumeAPI.admin.metadata.cancel(active.id)
+                // Cooperative, not immediate: the pass stops at its next batch
+                // boundary, and saying so is the difference between a button
+                // that looks broken and one that is honest.
+                U.toast('Stopping after the current batch')
+                await reload()
+              } catch (e) { U.toast(e.message, 'error') }
+            }
+          }, [U.el('span', { text: 'Cancel' })])
+        ]),
+        U.el('div', { class: 'meta-bar-track' }, [U.el('div', { class: 'meta-bar-fill', style: `width:${pct}%;` })]),
+        U.el('div', { class: 'meta-bar-hint', text: `${active.processed.toLocaleString()} / ${active.total.toLocaleString()} — ${this.metadataCounts(active)}` })
+      ]))
+    }
+
+    // ---- history ----
+    content.append(U.el('h3', { class: 'detail-section-title', text: 'Recent runs' }))
+    if (!data.runs?.length) {
+      content.append(U.el('div', { class: 'empty-state', text: 'No sync has been run from here yet.' }))
+    } else {
+      const rows = U.el('div', { class: 'meta-rows' })
+      for (const r of data.runs) {
+        rows.append(U.el('div', { class: 'meta-row' }, [
+          U.el('div', { class: 'meta-row-main' }, [
+            U.el('div', { class: 'meta-row-title', text: `${r.kind} · ${r.scope}${r.max_items ? ` · limit ${r.max_items}` : ''}` }),
+            U.el('div', { class: 'meta-row-sub', text: this.metadataCounts(r) })
+          ]),
+          U.el('span', { class: 'meta-status meta-status-' + r.status, text: r.status }),
+          U.el('div', { class: 'meta-row-sub', text: (r.started_by ?? 'system') + ' · ' + U.relTime(r.created_at) }),
+          // The failure message, when there is one. It is the whole reason to
+          // keep a history rather than only a "last run" line.
+          r.error ? U.el('div', { class: 'meta-row-error', text: r.error }) : null
+        ]))
+      }
+      content.append(rows)
+    }
+
+    // ---- id collisions ----
+    //
+    // Not errors: AniList splits a show into separate entries far more readily
+    // than MyAnimeList does, so two AniList ids sharing one MAL id is the
+    // normal shape of a multi-season show. They are shown because the same
+    // pairs are where real duplicates in our own catalogue surface.
+    content.append(U.el('h3', { class: 'detail-section-title', text: `Unresolved id collisions (${conflicts.length})` }))
+    if (!conflicts.length) {
+      content.append(U.el('div', { class: 'empty-state', text: 'Nothing waiting to be looked at.' }))
+      return
+    }
+    content.append(U.el('p', { class: 'meta-note', text: 'An importer could not attach one of these ids because another anime already held it. Most are legitimate season splits; the rest are duplicates worth merging.' }))
+    const list = U.el('div', { class: 'meta-rows' })
+    for (const c of conflicts) {
+      list.append(U.el('div', { class: 'meta-row' }, [
+        U.el('div', { class: 'meta-row-main' }, [
+          U.el('div', { class: 'meta-row-title', text: `${c.provider}:${c.external_id}` }),
+          U.el('div', { class: 'meta-row-sub', text: `${c.anime_title} — already held by ${c.holder_title ?? '(deleted)'}` })
+        ]),
+        U.el('span', { class: 'meta-row-sub', text: c.seen_count > 1 ? `seen ${c.seen_count}×` : '' }),
+        U.el('button', {
+          class: 'btn',
+          onclick: async () => {
+            try {
+              await YumeAPI.admin.metadata.resolveConflict(c.id, 'reviewed in the panel')
+              await reload()
+            } catch (e) { U.toast(e.message, 'error') }
+          }
+        }, [U.el('span', { text: 'Mark reviewed' })])
+      ]))
+    }
+    content.append(list)
+  },
+
+  /** The per-kind tallies a run collected, as one readable line. */
+  metadataCounts (run) {
+    const counts = run.counts ?? {}
+    const parts = Object.entries(counts)
+      .filter(([, v]) => typeof v === 'number' && v > 0)
+      .map(([k, v]) => `${v.toLocaleString()} ${k}`)
+    return parts.length ? parts.join(' · ') : 'nothing yet'
   },
 
   async renderMonitoring (content) {
