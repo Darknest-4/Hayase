@@ -554,6 +554,56 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   /**
+   * The opening and ending intervals for one episode.
+   *
+   * Ours, from `skip_segments` — a table that has been in the schema since
+   * migration 0003 with nothing ever reading or writing it. The player used to
+   * ask an extension and then call api.aniskip.com from the page directly, so
+   * a deployment that had corrected a wrong interval had nowhere to put the
+   * correction.
+   *
+   * Ordered by votes: the table was built for community submissions, and the
+   * one people agreed with is the one to offer.
+   */
+  fastify.get('/episodes/:eid/skips', async (request, reply) => {
+    const { eid } = request.params as { eid: string }
+    if (!UUID.test(eid)) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    const data = await query(
+      `SELECT s.id, s.kind, s.start_sec, s.end_sec, s.votes
+         FROM skip_segments s
+         JOIN episodes e ON e.id = s.episode_id
+         JOIN anime a ON a.id = e.anime_id
+        WHERE s.episode_id = $1 AND e.visibility = 'public' AND a.visibility <> 'hidden'
+        ORDER BY s.kind, s.votes DESC`,
+      [eid]
+    )
+    return { data }
+  })
+
+  /**
+   * Subtitle tracks for one episode.
+   *
+   * `subtitle_tracks` is the same story: in the schema since 0003, written by
+   * nothing. A track is either hosted by us (`object_key`) or referenced
+   * (`url`); the caller wants one address either way, so both are returned and
+   * the client prefers whichever is set.
+   */
+  fastify.get('/episodes/:eid/subtitles', async (request, reply) => {
+    const { eid } = request.params as { eid: string }
+    if (!UUID.test(eid)) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    const data = await query(
+      `SELECT t.id, t.language, t.kind, t.format, t.url, t.object_key, t.source_id
+         FROM subtitle_tracks t
+         JOIN episodes e ON e.id = t.episode_id
+         JOIN anime a ON a.id = e.anime_id
+        WHERE t.episode_id = $1 AND e.visibility = 'public' AND a.visibility <> 'hidden'
+        ORDER BY t.language, t.kind`,
+      [eid]
+    )
+    return { data }
+  })
+
+  /**
    * The whole franchise this title belongs to, in the order to watch it.
    *
    * The relations endpoint answers "what is directly attached to this one",

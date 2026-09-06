@@ -620,6 +620,139 @@ const routes: FastifyPluginAsync = async fastify => {
     return { id: sid, deleted: true }
   })
 
+  // ---- skip segments & subtitle tracks ----
+  //
+  // Both tables have been in the schema since migration 0003 and neither was
+  // ever written to. The player asked an extension for skip intervals and then
+  // called api.aniskip.com from the page; subtitles came from whichever
+  // extension happened to be installed. So a deployment that had a correction
+  // — a wrong interval, a translation of its own — had nowhere to put it.
+
+  fastify.get('/episodes/:eid/skips', {
+    onRequest: fastify.requirePermission('episode.edit', { hide: true }),
+    schema: { params: { type: 'object', properties: { eid: { type: 'string', format: 'uuid' } } } }
+  }, async request => {
+    const { eid } = request.params as { eid: string }
+    const data = await query(
+      `SELECT s.id, s.kind, s.start_sec, s.end_sec, s.votes, u.username AS submitted_by
+         FROM skip_segments s
+         LEFT JOIN users u ON u.id = s.submitted_by
+        WHERE s.episode_id = $1 ORDER BY s.kind, s.votes DESC`,
+      [eid]
+    )
+    return { data }
+  })
+
+  fastify.post('/episodes/:eid/skips', {
+    onRequest: fastify.requirePermission('episode.edit', { hide: true }),
+    schema: {
+      params: { type: 'object', properties: { eid: { type: 'string', format: 'uuid' } } },
+      body: {
+        type: 'object',
+        required: ['kind', 'start', 'end'],
+        additionalProperties: false,
+        properties: {
+          kind: { enum: ['intro', 'outro', 'recap', 'preview'] },
+          start: { type: 'number', minimum: 0, maximum: 86400 },
+          end: { type: 'number', minimum: 0, maximum: 86400 }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const { eid } = request.params as { eid: string }
+    const body = request.body as { kind: string, start: number, end: number }
+    // The table's own CHECK says the same thing; catching it here turns a
+    // constraint violation into a sentence the operator can act on.
+    if (body.end <= body.start) {
+      return reply.code(400).send({
+        type: 'about:blank', title: 'Bad Request', status: 400, detail: 'The end must come after the start'
+      })
+    }
+    const episode = await queryOne('SELECT 1 FROM episodes WHERE id = $1', [eid])
+    if (!episode) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    const row = await queryOne<{ id: string }>(
+      `INSERT INTO skip_segments (episode_id, kind, start_sec, end_sec, submitted_by)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [eid, body.kind, body.start, body.end, request.user.sub]
+    )
+    await audit(request.user.sub, 'episode.edit', 'episode', eid, null,
+      { skip: body.kind, start: body.start, end: body.end })
+    return reply.code(201).send({ id: row?.id })
+  })
+
+  fastify.delete('/skips/:sid', {
+    onRequest: fastify.requirePermission('episode.edit', { hide: true }),
+    schema: { params: { type: 'object', properties: { sid: { type: 'string', format: 'uuid' } } } }
+  }, async (request, reply) => {
+    const { sid } = request.params as { sid: string }
+    const row = await queryOne<{ episode_id: string }>(
+      'DELETE FROM skip_segments WHERE id = $1 RETURNING episode_id', [sid])
+    if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    return { id: sid, deleted: true }
+  })
+
+  fastify.get('/episodes/:eid/subtitles', {
+    onRequest: fastify.requirePermission('episode.edit', { hide: true }),
+    schema: { params: { type: 'object', properties: { eid: { type: 'string', format: 'uuid' } } } }
+  }, async request => {
+    const { eid } = request.params as { eid: string }
+    const data = await query(
+      `SELECT id, language, kind, format, url, object_key, source_id
+         FROM subtitle_tracks WHERE episode_id = $1 ORDER BY language, kind`,
+      [eid]
+    )
+    return { data }
+  })
+
+  fastify.post('/episodes/:eid/subtitles', {
+    onRequest: fastify.requirePermission('episode.edit', { hide: true }),
+    schema: {
+      params: { type: 'object', properties: { eid: { type: 'string', format: 'uuid' } } },
+      body: {
+        type: 'object',
+        required: ['language', 'format', 'url'],
+        additionalProperties: false,
+        properties: {
+          language: { type: 'string', minLength: 2, maxLength: 12 },
+          kind: { enum: ['subtitles', 'captions', 'signs'] },
+          format: { enum: ['ass', 'srt', 'vtt'] },
+          url: { type: 'string', minLength: 1, maxLength: 4000 }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const { eid } = request.params as { eid: string }
+    const body = request.body as { language: string, kind?: string, format: string, url: string }
+    // Same guard as a video source, and for the same reason: this string is
+    // handed to the browser as a track URL.
+    const bad = badReference('http', body.url)
+    if (bad) return reply.code(400).send({ type: 'about:blank', title: 'Bad Request', status: 400, detail: bad })
+
+    const episode = await queryOne('SELECT 1 FROM episodes WHERE id = $1', [eid])
+    if (!episode) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    const row = await queryOne<{ id: string }>(
+      `INSERT INTO subtitle_tracks (episode_id, language, kind, format, url)
+       VALUES ($1, $2, coalesce($3, 'subtitles'), $4, $5) RETURNING id`,
+      [eid, body.language, body.kind ?? null, body.format, body.url]
+    )
+    await audit(request.user.sub, 'episode.edit', 'episode', eid, null,
+      { subtitle: body.language, format: body.format })
+    return reply.code(201).send({ id: row?.id })
+  })
+
+  fastify.delete('/subtitles/:sid', {
+    onRequest: fastify.requirePermission('episode.edit', { hide: true }),
+    schema: { params: { type: 'object', properties: { sid: { type: 'string', format: 'uuid' } } } }
+  }, async (request, reply) => {
+    const { sid } = request.params as { sid: string }
+    const row = await queryOne<{ episode_id: string }>(
+      'DELETE FROM subtitle_tracks WHERE id = $1 RETURNING episode_id', [sid])
+    if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    return { id: sid, deleted: true }
+  })
+
   // ---- metadata synchronisation ----
   //
   // The AniList passes used to be reachable only over SSH, which meant the

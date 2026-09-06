@@ -241,6 +241,19 @@ indíthatja kézzel.
 **K3 — Sorrend.** Az öt kör közül mivel kezdjem? Én az 1. kört javaslom: ma a
 felület olyat állít, ami nem igaz, és ez a legolcsóbban javítható kár.
 
-**K4 — Meglévő kiegészítők.** A `jellyfin`, `plex`, `opensubtitles`, `aniskip`
-csomagok valódi funkciót adnak. Ezek beépített funkcióvá alakuljanak, vagy
-elvesszenek a kiegészítőkkel együtt?
+**K4 — Meglévő kiegészítők. ✅ MEGVÁLASZOLVA: alakuljanak beépített
+funkcióvá.** Amit ez a gyakorlatban jelent, csomagonként:
+
+| Csomag | Mi lett belőle | Miért |
+|---|---|---|
+| `yume-themes` | ✅ **beépítve** — `themes` tábla + admin szerkesztő + választó | Egy téma tiszta adat. Csomagot közzétenni tizenkét hexa értékért aránytalan. |
+| `aniskip` | ✅ **beépítve** — `skip_segments` a katalógusból, a kliens AniSkip-hívása marad tartaléknak | A tábla 0003 óta létezett, és soha semmi nem írt bele: egy elrontott intervallumot nem lehetett kijavítani sehol. |
+| `anilist-meta` | ✅ **részben** — a saját tábláinkat a mély AniList-menet tölti | A kiegészítő csak a katalóguson kívüli címekhez kell; ezért **marad**. |
+| `translation-feed` | ✅ **részben** — a fordításkezelő admin felület megvan | A feed-import maradék funkciója még a csomagban van. |
+| `yume-library` | ✅ **beépítve** — a könyvtár-szinkron szerveroldali | |
+| `opensubtitles`, `plex`, `jellyfin` | ⛔ **marad kiegészítőnek** | Ezek a **néző saját** hitelesítő adataival érnek el egy külső vagy személyes szolgáltatást. Beépíteni azt jelentené, hogy a felhasználó OpenSubtitles- vagy Plex-tokenjét a mi adatbázisunkban tároljuk — ez olyan személyes adat, amit ma nem gyűjtünk, és a kapott korlát szerint nem is kell. A helyes forma ezeknél a kliensoldali futtatás, ami ma is ez. |
+
+Amit ez **nem** old meg: a `plex`/`jellyfin`/`opensubtitles` miatt a
+kiegészítő-platform (sandbox, worker, store) nem törölhető teljesen. Ha azt is
+akarod, az a döntés, hogy ez a három funkció **elvesszen** — mondd meg, és
+megcsinálom, de magamtól nem törlök működő funkciót.

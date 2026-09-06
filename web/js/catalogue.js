@@ -265,6 +265,47 @@ const Catalogue = {
   },
 
   /**
+   * Opening and ending intervals for one episode.
+   *
+   * `skip_segments` has been in the schema since the beginning and was read by
+   * nothing: the player asked an extension and then called api.aniskip.com
+   * from the page. So a deployment that had corrected a wrong interval had
+   * nowhere to put the correction.
+   *
+   * Mapped to the shape the player already draws — a label and two times —
+   * with the kinds it has a button for. `recap` and `preview` are in the table
+   * and are not offered: skipping the recap of last week is a different
+   * feature, and inventing a label for it here would be guessing.
+   */
+  async skips (episodeId) {
+    const rows = await YumeAPI.episodeSkips(episodeId)
+    if (!rows?.length) return []
+    return rows
+      .filter(r => r.kind === 'intro' || r.kind === 'outro')
+      .map(r => ({ kind: r.kind, start: Number(r.start_sec), end: Number(r.end_sec) }))
+      .filter(r => Number.isFinite(r.start) && Number.isFinite(r.end) && r.end > r.start)
+  },
+
+  /**
+   * Subtitle tracks for one episode.
+   *
+   * A track is either hosted by us or referenced elsewhere; the player wants
+   * one address either way.
+   */
+  async subtitles (episodeId) {
+    const rows = await YumeAPI.episodeSubtitles(episodeId)
+    if (!rows?.length) return []
+    return rows
+      .map(r => ({
+        url: r.url ?? r.object_key ?? '',
+        lang: r.language,
+        label: `${String(r.language).toUpperCase()}${r.kind && r.kind !== 'subtitles' ? ' · ' + r.kind : ''}`,
+        format: r.format
+      }))
+      .filter(t => t.url)
+  },
+
+  /**
    * The franchise this title belongs to, in release order.
    *
    * Only the catalogue can answer it: it needs a walk over our own relation

@@ -275,6 +275,26 @@ const YumeAPI = {
     }
   },
 
+  /** Opening/ending intervals this deployment holds for one episode. */
+  async episodeSkips (episodeId) {
+    try {
+      const { data } = await this._request(`/v1/anime/episodes/${episodeId}/skips`)
+      return data
+    } catch (e) {
+      return null
+    }
+  },
+
+  /** Subtitle tracks this deployment holds for one episode. */
+  async episodeSubtitles (episodeId) {
+    try {
+      const { data } = await this._request(`/v1/anime/episodes/${episodeId}/subtitles`)
+      return data
+    } catch (e) {
+      return null
+    }
+  },
+
   /** The registered, enabled sources of one episode. */
   async episodeSources (episodeId) {
     try {
@@ -508,7 +528,16 @@ const YumeAPI = {
       sources: eid => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}/sources`, { auth: true }),
       addSource: (eid, body) => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}/sources`, { method: 'POST', auth: true, body }),
       updateSource: (sid, body) => YumeAPI._request(`/v1/admin/catalogue/sources/${sid}`, { method: 'PATCH', auth: true, body }),
-      removeSource: sid => YumeAPI._request(`/v1/admin/catalogue/sources/${sid}`, { method: 'DELETE', auth: true })
+      removeSource: sid => YumeAPI._request(`/v1/admin/catalogue/sources/${sid}`, { method: 'DELETE', auth: true }),
+
+      // the rest of what an episode needs to play well: skip intervals and
+      // subtitle tracks, both of which used to come only from an extension
+      skips: eid => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}/skips`, { auth: true }),
+      addSkip: (eid, body) => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}/skips`, { method: 'POST', auth: true, body }),
+      removeSkip: sid => YumeAPI._request(`/v1/admin/catalogue/skips/${sid}`, { method: 'DELETE', auth: true }),
+      subtitles: eid => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}/subtitles`, { auth: true }),
+      addSubtitle: (eid, body) => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}/subtitles`, { method: 'POST', auth: true, body }),
+      removeSubtitle: sid => YumeAPI._request(`/v1/admin/catalogue/subtitles/${sid}`, { method: 'DELETE', auth: true })
     },
 
     // metadata synchronisation — coverage, runs, and the id collisions the

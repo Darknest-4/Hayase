@@ -237,6 +237,91 @@ describe('video sources', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
     assert.ok(seven && seven.source_count === 3, `episode seven reports ${seven?.source_count}`)
   })
 
+  // ---- skip intervals & subtitle tracks ----
+  //
+  // Both tables have been in the schema since migration 0003 and neither was
+  // ever written to: the player asked an extension for skip intervals and then
+  // called api.aniskip.com from the page. So a deployment that had corrected a
+  // wrong interval had nowhere to put the correction.
+
+  test('an operator can record skip intervals, and viewers get them', async () => {
+    const add = await app.inject({
+      method: 'POST',
+      url: `/v1/admin/catalogue/episodes/${episodeId}/skips`,
+      headers: as(editor),
+      payload: { kind: 'intro', start: 12.5, end: 102.3 }
+    })
+    assert.equal(add.statusCode, 201, add.body)
+
+    const res = await app.inject({ url: `/v1/anime/episodes/${episodeId}/skips` })
+    assert.equal(res.statusCode, 200, res.body)
+    const rows = (res.json() as { data: Array<{ kind: string, start_sec: string, end_sec: string }> }).data
+    const intro = rows.find(r => r.kind === 'intro')
+    assert.ok(intro, 'the interval was not served')
+    // numeric(8,3) comes back as a string; the client coerces, and the test
+    // should not pretend otherwise.
+    assert.equal(Number(intro.start_sec), 12.5)
+    assert.equal(Number(intro.end_sec), 102.3)
+  })
+
+  test('an interval that ends before it starts is refused with a sentence', async () => {
+    // The table's CHECK says the same thing; catching it in the route turns a
+    // constraint violation into something an operator can act on.
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/admin/catalogue/episodes/${episodeId}/skips`,
+      headers: as(editor),
+      payload: { kind: 'outro', start: 200, end: 100 }
+    })
+    assert.equal(res.statusCode, 400, res.body)
+    assert.match(res.body, /after the start/)
+  })
+
+  test('a subtitle URL is checked the way a source reference is', async () => {
+    // It becomes a track URL in somebody's browser, so it gets the same guard.
+    for (const url of ['javascript:alert(1)', 'http://example.invalid/sub.vtt']) {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/v1/admin/catalogue/episodes/${episodeId}/subtitles`,
+        headers: as(editor),
+        payload: { language: 'hu', format: 'vtt', url }
+      })
+      assert.equal(res.statusCode, 400, `${url} was accepted`)
+    }
+    const good = await app.inject({
+      method: 'POST',
+      url: `/v1/admin/catalogue/episodes/${episodeId}/subtitles`,
+      headers: as(editor),
+      payload: { language: 'hu', format: 'vtt', url: 'https://example.invalid/hu.vtt' }
+    })
+    assert.equal(good.statusCode, 201, good.body)
+  })
+
+  test('skips and subtitles follow the episode\u2019s visibility', async () => {
+    // Same rule as the sources: an unpublished episode answers nothing, and
+    // the check is on the pair rather than on the episode alone.
+    await app.inject({
+      method: 'POST',
+      url: `/v1/admin/catalogue/episodes/${hiddenEpisodeId}/skips`,
+      headers: as(editor),
+      payload: { kind: 'intro', start: 1, end: 2 }
+    })
+    const skips = await app.inject({ url: `/v1/anime/episodes/${hiddenEpisodeId}/skips` })
+    assert.deepEqual((skips.json() as { data: unknown[] }).data, [])
+    const subs = await app.inject({ url: `/v1/anime/episodes/${hiddenEpisodeId}/subtitles` })
+    assert.deepEqual((subs.json() as { data: unknown[] }).data, [])
+  })
+
+  test('the skip and subtitle editors are hidden without the permission', async () => {
+    for (const url of [
+      `/v1/admin/catalogue/episodes/${episodeId}/skips`,
+      `/v1/admin/catalogue/episodes/${episodeId}/subtitles`
+    ]) {
+      const res = await app.inject({ url, headers: as(plain) })
+      assert.equal(res.statusCode, 404, `${url} answered ${res.statusCode}`)
+    }
+  })
+
   test('deleting a source removes it and records who did', async () => {
     const { id } = await addSource({ kind: 'http', ref: 'https://example.invalid/gone.m3u8', provider: 'Gone' })
     const res = await app.inject({ method: 'DELETE', url: `/v1/admin/catalogue/sources/${id}`, headers: as(editor) })

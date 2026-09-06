@@ -1236,7 +1236,128 @@ const PageAdmin = {
       }
     }
 
-    const backdrop = C.modalShell(`Sources — ${anime.canonical_title}, episode ${Number(ep.number)}`, [
+    // ---- skip intervals & subtitle tracks ----
+    //
+    // Same modal, because they answer the same question — what does this
+    // episode need to play well — and splitting them across three screens
+    // would mean three round trips to fix one episode.
+    const extras = U.el('div')
+    const loadExtras = async () => {
+      extras.replaceChildren(U.el('div', { class: 'spinner' }))
+      try {
+        const [{ data: skips }, { data: subs }] = await Promise.all([
+          YumeAPI.admin.catalogue.skips(ep.id),
+          YumeAPI.admin.catalogue.subtitles(ep.id)
+        ])
+        extras.replaceChildren()
+
+        extras.append(U.el('h4', { class: 'src-add-title', text: 'Skip intervals' }))
+        const skipList = U.el('div', { class: 'src-list' })
+        if (!skips.length) {
+          skipList.append(U.el('div', { class: 'empty-state', style: 'padding:.6rem;', text: 'None — the player falls back to AniSkip.' }))
+        }
+        for (const seg of skips) {
+          skipList.append(U.el('div', { class: 'src-row' }, [
+            U.el('div', { class: 'src-main' }, [
+              U.el('div', { class: 'src-provider', text: seg.kind }),
+              U.el('div', { class: 'src-ref', text: `${this.clock(seg.start_sec)} → ${this.clock(seg.end_sec)}` })
+            ]),
+            U.el('span', { class: 'src-tag', text: seg.submitted_by ?? '' }),
+            U.el('span', {}),
+            U.el('button', {
+              class: 'btn btn-ghost btn-sm cat-ep-del',
+              onclick: async () => {
+                try { await YumeAPI.admin.catalogue.removeSkip(seg.id); await loadExtras() } catch (e) { U.toast(e.message, 'error') }
+              }
+            }, [document.createTextNode('✕')])
+          ]))
+        }
+        extras.append(skipList)
+
+        const skipDraft = { kind: 'intro', start: '', end: '' }
+        extras.append(U.el('div', { class: 'src-add-grid' }, [
+          U.el('label', { class: 'cat-field' }, [
+            U.el('span', { class: 'cat-field-label', text: 'Kind' }),
+            U.el('select', { class: 'select', onchange: e => { skipDraft.kind = e.target.value } },
+              ['intro', 'outro', 'recap', 'preview'].map(k => U.el('option', { value: k, text: k })))
+          ]),
+          U.el('label', { class: 'cat-field' }, [
+            U.el('span', { class: 'cat-field-label', text: 'Start (s)' }),
+            U.el('input', { class: 'input', type: 'number', step: '0.1', min: '0', oninput: e => { skipDraft.start = e.target.value } })
+          ]),
+          U.el('label', { class: 'cat-field' }, [
+            U.el('span', { class: 'cat-field-label', text: 'End (s)' }),
+            U.el('input', { class: 'input', type: 'number', step: '0.1', min: '0', oninput: e => { skipDraft.end = e.target.value } })
+          ]),
+          U.el('button', {
+            class: 'btn btn-secondary btn-sm',
+            style: 'align-self:end;',
+            onclick: async () => {
+              try {
+                await YumeAPI.admin.catalogue.addSkip(ep.id, {
+                  kind: skipDraft.kind, start: Number(skipDraft.start), end: Number(skipDraft.end)
+                })
+                await loadExtras()
+              } catch (e) { U.toast(e.message, 'error') }
+            }
+          }, [document.createTextNode('Add interval')])
+        ]))
+
+        extras.append(U.el('h4', { class: 'src-add-title', text: 'Subtitle tracks' }))
+        const subList = U.el('div', { class: 'src-list' })
+        if (!subs.length) {
+          subList.append(U.el('div', { class: 'empty-state', style: 'padding:.6rem;', text: 'None held here.' }))
+        }
+        for (const track of subs) {
+          subList.append(U.el('div', { class: 'src-row' }, [
+            U.el('div', { class: 'src-main' }, [
+              U.el('div', { class: 'src-provider', text: `${String(track.language).toUpperCase()} · ${track.format}` }),
+              U.el('div', { class: 'src-ref', title: track.url ?? track.object_key, text: track.url ?? track.object_key })
+            ]),
+            U.el('span', { class: 'src-tag', text: track.kind }),
+            U.el('span', {}),
+            U.el('button', {
+              class: 'btn btn-ghost btn-sm cat-ep-del',
+              onclick: async () => {
+                try { await YumeAPI.admin.catalogue.removeSubtitle(track.id); await loadExtras() } catch (e) { U.toast(e.message, 'error') }
+              }
+            }, [document.createTextNode('✕')])
+          ]))
+        }
+        extras.append(subList)
+
+        const subDraft = { language: '', format: 'vtt', url: '' }
+        extras.append(U.el('div', { class: 'src-add-grid' }, [
+          U.el('label', { class: 'cat-field' }, [
+            U.el('span', { class: 'cat-field-label', text: 'Language' }),
+            U.el('input', { class: 'input', placeholder: 'hu', oninput: e => { subDraft.language = e.target.value } })
+          ]),
+          U.el('label', { class: 'cat-field' }, [
+            U.el('span', { class: 'cat-field-label', text: 'Format' }),
+            U.el('select', { class: 'select', onchange: e => { subDraft.format = e.target.value } },
+              ['vtt', 'srt', 'ass'].map(f => U.el('option', { value: f, text: f })))
+          ]),
+          U.el('label', { class: 'cat-field' }, [
+            U.el('span', { class: 'cat-field-label', text: 'URL' }),
+            U.el('input', { class: 'input', placeholder: 'https://…', oninput: e => { subDraft.url = e.target.value } })
+          ]),
+          U.el('button', {
+            class: 'btn btn-secondary btn-sm',
+            style: 'align-self:end;',
+            onclick: async () => {
+              try {
+                await YumeAPI.admin.catalogue.addSubtitle(ep.id, subDraft)
+                await loadExtras()
+              } catch (e) { U.toast(e.message, 'error') }
+            }
+          }, [document.createTextNode('Add track')])
+        ]))
+      } catch (e) {
+        extras.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+      }
+    }
+
+    const backdrop = C.modalShell(`Playback — ${anime.canonical_title}, episode ${Number(ep.number)}`, [
       list,
       U.el('h4', { class: 'src-add-title', text: 'Add a source' }),
       field('Type', select('kind', this.SOURCE_KINDS)),
@@ -1247,7 +1368,8 @@ const PageAdmin = {
         field('Audio', select('variant', [['', '—'], ['sub', 'Subbed'], ['dub', 'Dubbed'], ['raw', 'Raw']])),
         field('Priority', U.el('input', { class: 'input', type: 'number', placeholder: '0', oninput: e => { draft.priority = e.target.value } }))
       ]),
-      U.el('p', { class: 'src-note', text: 'Lower priority is tried first. The platform stores the reference only — never the video.' })
+      U.el('p', { class: 'src-note', text: 'Lower priority is tried first. The platform stores the reference only — never the video.' }),
+      extras
     ], async () => {
       if (!draft.ref.trim()) { U.toast('A reference is required', 'error'); return }
       try {
@@ -1267,7 +1389,14 @@ const PageAdmin = {
       } catch (e) { U.toast(e.message, 'error') }
     })
     load()
+    loadExtras()
     return backdrop
+  },
+
+  /** Seconds → m:ss, for an interval an operator reads off a player. */
+  clock (seconds) {
+    const total = Math.round(Number(seconds) || 0)
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
   },
 
   episodeModal (anime, ep, onDone) {
