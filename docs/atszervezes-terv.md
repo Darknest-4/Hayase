@@ -109,11 +109,22 @@ külön mergelhető.
 ### 1. kör — Hazug felület (≈ fél nap)
 A legfontosabb, mert ma **félrevezeti a felhasználót**.
 
-- kapu-alapértelmezés tiltóra, header-bug (`app.js`)
-- 404 az admin route-okon (`plugins/auth.ts`, opcionális kapcsolóval)
-- URL nélküli epizód: letiltott állapot + route-védelem
-- a nem működő beállítások **kivezetése vagy bekötése** — a 11. pont szerint
-  ami nem csinál semmit, az ne maradjon bent
+- ✅ kapu-alapértelmezés tiltóra, header-bug (`app.js`) — `681018c`
+- ✅ 404 az admin route-okon (`plugins/auth.ts`, `{ hide: true }` kapcsolóval)
+- ✅ a nem működő beállítások bekötése — mind a három:
+  - `registration_open`: eddig csak a regisztrációs űrlap tűnt el tőle, a
+    `POST /v1/auth/register` továbbra is létrehozta a fiókot. Most a route
+    elején áll egy őr.
+  - `require_login`: eddig csak a kliens útvonal-kapuja nézte, az API bárkinek
+    kiszolgálta a teljes katalógust. Most globális `onRequest` hook védi a
+    `/v1/*` és `/graphql` felületet; nyitva marad a `/v1/health`, a `/v1/config`
+    és a `/v1/auth/*`, mert ezek kellenek ahhoz, hogy valaki be tudjon lépni.
+  - `tagline`: eddig sehol nem jelent meg — most a lábléc szövege, üres
+    értéknél a fordított alapértelmezéssel.
+  - a beállítás-cache íráskor ürül, tehát a „Mentve" azt jelenti, hogy már
+    érvényes is, nem azt, hogy fél perc múlva az lesz.
+- ⛔ URL nélküli epizód: letiltott állapot + route-védelem — **K1-re vár**, mert
+  a kiegészítők törlése után ma egyetlen epizódnak sem lenne forrása
 
 ### 2. kör — Admin panel (≈ 1–1,5 nap)
 - külön layout: saját sidebar, nincs normál header/footer/mobil nav

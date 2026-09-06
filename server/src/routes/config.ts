@@ -5,6 +5,7 @@
 //   PATCH /v1/admin/config/settings/:key — set a global site setting
 
 import { query, queryOne } from '../db.ts'
+import { settings as siteSettings } from '../lib/site-settings.ts'
 import { configured as passwordResetConfigured } from '../lib/reset-delivery.ts'
 import { invalidateThresholds } from '../lib/thresholds.ts'
 import { PREFERENCES } from '../lib/preferences.ts'
@@ -23,16 +24,11 @@ interface FlagRow {
   sort: number
 }
 
-async function loadSettings (): Promise<Record<string, unknown>> {
-  const rows = await query<{ key: string, value: unknown }>('SELECT key, value FROM site_settings')
-  return Object.fromEntries(rows.map(r => [r.key, r.value]))
-}
-
 // the shape the client consumes: site + a flat flags map
 async function buildPublicConfig (): Promise<unknown> {
   const [flags, settings] = await Promise.all([
     query<FlagRow>('SELECT key, label, category, enabled, access, required_permission FROM feature_flags'),
-    loadSettings()
+    siteSettings.load()
   ])
   return {
     site: {
@@ -89,7 +85,7 @@ export const adminConfig: FastifyPluginAsync = async fastify => {
   fastify.get('/', async () => {
     const [flags, settings] = await Promise.all([
       query<FlagRow>('SELECT key, label, category, enabled, access, required_permission, description, sort FROM feature_flags ORDER BY category, sort'),
-      loadSettings()
+      siteSettings.load()
     ])
     return { flags, settings }
   })
@@ -149,6 +145,9 @@ export const adminConfig: FastifyPluginAsync = async fastify => {
     // threshold sat inert until the cache expired — an operator raising a
     // limit during an incident would watch it not take effect. The invalidator
     // was written and never called.
+    // The cache exists so `registration_open` and `require_login` can be read
+    // on hot paths; dropping it here is what makes "Saved" mean "in effect".
+    siteSettings.invalidate()
     if (key === 'monitor_thresholds') invalidateThresholds()
 
     void emitEvent('config.changed', { key, value: JSON.stringify(value), by: request.user.username })

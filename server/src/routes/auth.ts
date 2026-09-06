@@ -13,6 +13,7 @@ import { query, queryOne, transaction } from '../db.ts'
 import { onUniqueViolation } from '../lib/db-errors.ts'
 import { hashPassword, verifyPassword } from '../lib/password.ts'
 import { deliverReset } from '../lib/reset-delivery.ts'
+import { settings as siteSettings } from '../lib/site-settings.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
@@ -117,6 +118,26 @@ const routes: FastifyPluginAsync = async fastify => {
     }
   }, async (request, reply) => {
     const { email, username, password } = request.body as { email: string, username: string, password: string }
+
+    /*
+     * Registration can be closed from the admin panel.
+     *
+     * It could not before: the setting was stored, echoed back to the client
+     * as `site.registrationOpen`, and enforced nowhere. The form disappeared
+     * and the endpoint kept accepting posts, so closing registration stopped
+     * exactly the people who were using the UI honestly.
+     *
+     * 403 rather than 404: the endpoint plainly exists — the client just asked
+     * for its config — and "closed" is the useful answer.
+     */
+    if (!await siteSettings.registrationOpen()) {
+      return reply.code(403).send({
+        type: 'about:blank',
+        title: 'Forbidden',
+        status: 403,
+        detail: 'Registration is closed on this instance'
+      })
+    }
 
     const existing = await queryOne('SELECT 1 FROM users WHERE email = $1 OR username = $2', [email, username])
     if (existing) {
