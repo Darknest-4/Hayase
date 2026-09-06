@@ -10,10 +10,14 @@
 //   --retry-conflicts  only re-attempt external ids refused on an earlier run
 //                      (run this after merging duplicates; the normal run
 //                       cannot, because those rows already have a synopsis)
+//
+// The same thing is available without a shell: Admin → Metadata starts a run,
+// shows its progress and can cancel it. Both go through one `metadata_runs`
+// row, so only one pass can be in flight at a time and every pass is recorded.
 
-import { pool } from '../src/db.ts'
-import { enrichFromAniList, retryMappingConflicts } from '../src/workers/anilist.ts'
-import { enrichDeepFromAniList } from '../src/workers/anilist-deep.ts'
+import { pool, queryOne } from '../src/db.ts'
+import { retryMappingConflicts } from '../src/workers/anilist.ts'
+import { handleMetadataJob, RunInProgress, startRun } from '../src/workers/metadata.ts'
 
 const args = process.argv.slice(2)
 
@@ -25,40 +29,61 @@ if (args.includes('--retry-conflicts')) {
 }
 
 const onlyMissing = !args.includes('--all')
-
-if (args.includes('--deep')) {
-  const deepLimitArg = args.indexOf('--limit')
-  const deepLimit = deepLimitArg >= 0 ? Number(args[deepLimitArg + 1]) : undefined
-  console.log(`deep enrich from AniList (${onlyMissing ? 'only titles with no cast yet' : 'every mapped title'}${deepLimit ? `, limit ${deepLimit}` : ''})`)
-  const deepStarted = Date.now()
-  const deep = await enrichDeepFromAniList({
-    onlyMissing,
-    ...(deepLimit ? { limit: deepLimit } : {}),
-    onProgress: (done, total, counts) => {
-      if (done % 100 === 0 || done >= total) {
-        console.log(`  ${done}/${total} — ${counts.characters} cast, ${counts.voices} voices, ${counts.staff} staff, ${counts.relations} relations, ${counts.recommendations} recommendations`)
-      }
-    }
-  })
-  console.log(`done in ${Math.round((Date.now() - deepStarted) / 1000)}s:`, JSON.stringify(deep))
-  await pool.end()
-  process.exit(0)
-}
+const deep = args.includes('--deep')
 const limitArg = args.indexOf('--limit')
-const limit = limitArg >= 0 ? Number(args[limitArg + 1]) : undefined
+const limit = limitArg >= 0 ? Number(args[limitArg + 1]) : null
 
-console.log(`enriching from AniList (${onlyMissing ? 'only rows missing a synopsis' : 'all mapped rows'}${limit ? `, limit ${limit}` : ''})`)
+/*
+ * The script goes through the same run row as the administration panel.
+ *
+ * Two reasons. The single-active-run rule is only a rule if both entry points
+ * respect it — AniList publishes a rate limit and the pass is paced to stay
+ * under it, so a script started next to a panel run doubles the request rate.
+ * And a run nobody recorded is a run nobody can see afterwards: the panel
+ * would show the catalogue as untouched while this was rewriting it.
+ */
+let run
+try {
+  run = await startRun({
+    kind: deep ? 'deep' : 'basic',
+    scope: onlyMissing ? 'missing' : 'all',
+    limit
+  })
+} catch (err) {
+  if (err instanceof RunInProgress) {
+    console.error(err.message + ' — wait for it, or cancel it from the admin panel.')
+    await pool.end()
+    process.exit(1)
+  }
+  throw err
+}
+
+console.log(`${deep ? 'deep enrich' : 'enriching'} from AniList (${onlyMissing ? 'only what is missing' : 'every mapped title'}${limit ? `, limit ${limit}` : ''})`)
 const started = Date.now()
 
-const onProgress = (done: number, total: number, updated: number): void => {
-  if (done % 500 === 0 || done === total) {
-    const pct = total ? Math.round(done / total * 100) : 100
-    console.log(`  ${done}/${total} (${pct}%) — ${updated} updated`)
-  }
-}
-const result = await enrichFromAniList(limit ? { onlyMissing, limit, onProgress } : { onlyMissing, onProgress })
+// The handler writes progress to the row; this prints what it wrote, so the
+// terminal and the panel cannot disagree about how far along it is.
+const ticker = setInterval(() => {
+  void (async () => {
+    const row = await queryOne<{ processed: number, total: number, counts: Record<string, number> }>(
+      'SELECT processed, total, counts FROM metadata_runs WHERE id = $1', [run.id])
+    if (!row?.total) return
+    const pct = Math.round(row.processed / row.total * 100)
+    const counts = Object.entries(row.counts ?? {}).filter(([, v]) => v).map(([k, v]) => `${v} ${k}`).join(', ')
+    console.log(`  ${row.processed}/${row.total} (${pct}%)${counts ? ' — ' + counts : ''}`)
+  })()
+}, 10_000)
 
-console.log(`done in ${Math.round((Date.now() - started) / 1000)}s:`, JSON.stringify(result))
+try {
+  await handleMetadataJob({ id: 'cli', queue: 'metadata', payload: { runId: run.id }, attempts: 1 })
+} finally {
+  clearInterval(ticker)
+}
+
+const result = await queryOne<{ status: string, processed: number, counts: Record<string, number>, error: string | null }>(
+  'SELECT status, processed, counts, error FROM metadata_runs WHERE id = $1', [run.id])
+console.log(`${result?.status} in ${Math.round((Date.now() - started) / 1000)}s:`, JSON.stringify(result?.counts ?? {}))
+if (result?.error) console.error(result.error)
 
 // Collisions are not failures and the exit code does not treat them as such —
 // AniList splits a show into separate entries far more readily than MAL does,
@@ -66,8 +91,8 @@ console.log(`done in ${Math.round((Date.now() - started) / 1000)}s:`, JSON.strin
 // show. They are printed because the pairs are also where duplicates in our
 // own catalogue show up, and nobody goes looking in a table they were never
 // told about.
-if (result.conflicts) {
-  console.log(`\n${result.conflicts} external id(s) could not be attached because another anime already held them.`)
+if (result?.counts?.conflicts) {
+  console.log(`\n${result.counts.conflicts} external id(s) could not be attached because another anime already held them.`)
   const { rows } = await pool.query<{ title: string, external_id: string, holder: string, seen_count: number }>(
     `SELECT a.canonical_title AS title, c.external_id, h.canonical_title AS holder, c.seen_count
        FROM mapping_conflicts c
@@ -86,8 +111,8 @@ if (result.conflicts) {
 
 // A row that failed keeps its synopsis NULL, so the default run picks it up
 // again. Say so, rather than leaving the operator to work it out.
-if (result.rowFailures) {
-  console.log(`\n${result.rowFailures} row(s) failed individually — re-run the same command to retry just those.`)
+if (result?.counts?.rowFailures) {
+  console.log(`\n${result.counts.rowFailures} row(s) failed individually — re-run the same command to retry just those.`)
 }
 
 await pool.end()

@@ -29,10 +29,12 @@ const PageAdmin = {
     { key: 'reports', group: 'people', label: 'Reports', sub: 'Moderation queue', perm: 'community.moderate', render: 'renderReports', icon: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>' },
 
     { key: 'catalogue', group: 'content', label: 'Catalogue', sub: 'Anime, episodes & publishing', perm: 'anime.view', render: 'renderCatalogue', icon: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>' },
+    { key: 'metadata', group: 'content', label: 'Metadata', sub: 'AniList coverage & sync runs', perm: 'anime.edit', render: 'renderMetadata', icon: '<path d="M21 12a9 9 0 1 1-6.2-8.6"/><path d="M21 3v6h-6"/>' },
     { key: 'translations', group: 'content', label: 'Translations', sub: 'Hungarian titles & descriptions', perm: 'anime.edit', render: 'renderTranslations', icon: '<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>' },
 
     { key: 'monitoring', group: 'system', label: 'Infrastructure', sub: 'VPS health & services', perm: 'system.metrics.view', render: 'renderMonitoring', icon: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>' },
     { key: 'webhooks', group: 'system', label: 'Webhooks', sub: 'Outbound integrations', perm: 'admin.webhooks.manage', render: 'renderWebhooks', icon: '<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>' },
+    { key: 'themes', group: 'system', label: 'Themes', sub: 'Colours viewers can choose', perm: 'theme.publish', render: 'renderThemes', icon: '<circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2a10 10 0 0 0 0 20 2 2 0 0 0 2-2v-1a2 2 0 0 1 2-2h2a4 4 0 0 0 4-4 10 10 0 0 0-10-11"/>' },
     { key: 'config', group: 'system', label: 'Site config', sub: 'Feature flags & settings', perm: 'settings.system', render: 'renderConfig', icon: '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>' }
   ],
 
@@ -1120,6 +1122,19 @@ const PageAdmin = {
                 }
               }, [document.createTextNode(ep.visibility === 'public' ? 'Unpublish' : 'Publish')])
               : null,
+            // Published with nowhere to play from is the state worth shouting
+            // about: from a viewer's side it is a broken link, and from here
+            // it is invisible unless the row says so.
+            ep.visibility === 'public' && !ep.source_count
+              ? U.el('span', { class: 'cat-badge cat-badge-warn', title: 'This episode is published but has no enabled source.', text: 'no source' })
+              : null,
+            can('episode.edit')
+              ? U.el('button', {
+                class: 'btn btn-ghost btn-sm',
+                title: 'Where this episode plays from',
+                onclick: () => this.sourcesModal(anime, ep, () => load())
+              }, [document.createTextNode(`Sources${ep.source_total ? ` (${ep.source_count}/${ep.source_total})` : ''}`)])
+              : null,
             can('episode.edit') ? U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => this.episodeModal(anime, ep, () => load()) }, [document.createTextNode('Edit')]) : null,
             can('episode.delete')
               ? U.el('button', {
@@ -1135,6 +1150,253 @@ const PageAdmin = {
       } catch (e) { wrap.replaceChildren(U.el('div', { class: 'error-state', text: e.message })) }
     }
     load()
+  },
+
+  /**
+   * Where one episode plays from.
+   *
+   * `video_sources` has been in the schema since the beginning and nothing
+   * ever wrote to it — it was built for an extension to fill. This is the
+   * operator's side of it: any provider, in the order they choose, and a
+   * switch that takes a dead link out of playback without losing the record
+   * of which episode it belonged to.
+   *
+   * The platform stores references, never media.
+   */
+  SOURCE_KINDS: [
+    ['http', 'Direct / HLS — an .mp4 or .m3u8 URL'],
+    ['embed', 'Embed — a provider\u2019s player page'],
+    ['torrent', 'Torrent — magnet link or info hash'],
+    ['nzb', 'NZB']
+  ],
+
+  sourcesModal (anime, ep, onDone) {
+    const list = U.el('div', { class: 'src-list' })
+    const draft = { kind: 'http', ref: '', provider: '', resolution: '', variant: '', priority: '' }
+
+    const field = (label, node) => U.el('label', { class: 'cat-field' }, [
+      U.el('span', { class: 'cat-field-label', text: label }), node
+    ])
+    const select = (key, options) => U.el('select', {
+      class: 'select',
+      onchange: e => { draft[key] = e.target.value }
+    }, options.map(([value, text]) => U.el('option', { value, text })))
+
+    const refInput = U.el('input', {
+      class: 'input',
+      placeholder: 'https://…',
+      oninput: e => { draft.ref = e.target.value }
+    })
+
+    const load = async () => {
+      list.replaceChildren(U.el('div', { class: 'spinner' }))
+      try {
+        const { data } = await YumeAPI.admin.catalogue.sources(ep.id)
+        list.replaceChildren()
+        if (!data.length) {
+          list.append(U.el('div', { class: 'empty-state', style: 'padding:.75rem;', text: 'No sources yet — this episode cannot be played.' }))
+          return
+        }
+        for (const src of data) {
+          list.append(U.el('div', { class: 'src-row' + (src.enabled ? '' : ' src-row-off') }, [
+            U.el('div', { class: 'src-main' }, [
+              U.el('div', { class: 'src-provider', text: src.provider || src.title || 'Unnamed source' }),
+              // The reference itself, truncated by CSS rather than by JS: an
+              // operator checking a link needs to see enough of it to
+              // recognise it, and how much fits is the column's business.
+              U.el('div', { class: 'src-ref', title: src.ref, text: src.ref })
+            ]),
+            U.el('span', { class: 'src-tag', text: [src.kind, src.resolution ? src.resolution + 'p' : null, src.variant].filter(Boolean).join(' · ') }),
+            U.el('button', {
+              class: 'btn btn-ghost btn-sm',
+              title: src.enabled ? 'Take this source out of playback' : 'Put it back into playback',
+              onclick: async () => {
+                try {
+                  await YumeAPI.admin.catalogue.updateSource(src.id, { enabled: !src.enabled })
+                  await load()
+                  onDone?.()
+                } catch (e) { U.toast(e.message, 'error') }
+              }
+            }, [document.createTextNode(src.enabled ? 'Disable' : 'Enable')]),
+            U.el('button', {
+              class: 'btn btn-ghost btn-sm cat-ep-del',
+              onclick: async () => {
+                if (!confirm('Remove this source?')) return
+                try {
+                  await YumeAPI.admin.catalogue.removeSource(src.id)
+                  await load()
+                  onDone?.()
+                } catch (e) { U.toast(e.message, 'error') }
+              }
+            }, [document.createTextNode('✕')])
+          ]))
+        }
+      } catch (e) {
+        list.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+      }
+    }
+
+    // ---- skip intervals & subtitle tracks ----
+    //
+    // Same modal, because they answer the same question — what does this
+    // episode need to play well — and splitting them across three screens
+    // would mean three round trips to fix one episode.
+    const extras = U.el('div')
+    const loadExtras = async () => {
+      extras.replaceChildren(U.el('div', { class: 'spinner' }))
+      try {
+        const [{ data: skips }, { data: subs }] = await Promise.all([
+          YumeAPI.admin.catalogue.skips(ep.id),
+          YumeAPI.admin.catalogue.subtitles(ep.id)
+        ])
+        extras.replaceChildren()
+
+        extras.append(U.el('h4', { class: 'src-add-title', text: 'Skip intervals' }))
+        const skipList = U.el('div', { class: 'src-list' })
+        if (!skips.length) {
+          skipList.append(U.el('div', { class: 'empty-state', style: 'padding:.6rem;', text: 'None — the player falls back to AniSkip.' }))
+        }
+        for (const seg of skips) {
+          skipList.append(U.el('div', { class: 'src-row' }, [
+            U.el('div', { class: 'src-main' }, [
+              U.el('div', { class: 'src-provider', text: seg.kind }),
+              U.el('div', { class: 'src-ref', text: `${this.clock(seg.start_sec)} → ${this.clock(seg.end_sec)}` })
+            ]),
+            U.el('span', { class: 'src-tag', text: seg.submitted_by ?? '' }),
+            U.el('span', {}),
+            U.el('button', {
+              class: 'btn btn-ghost btn-sm cat-ep-del',
+              onclick: async () => {
+                try { await YumeAPI.admin.catalogue.removeSkip(seg.id); await loadExtras() } catch (e) { U.toast(e.message, 'error') }
+              }
+            }, [document.createTextNode('✕')])
+          ]))
+        }
+        extras.append(skipList)
+
+        const skipDraft = { kind: 'intro', start: '', end: '' }
+        extras.append(U.el('div', { class: 'src-add-grid' }, [
+          U.el('label', { class: 'cat-field' }, [
+            U.el('span', { class: 'cat-field-label', text: 'Kind' }),
+            U.el('select', { class: 'select', onchange: e => { skipDraft.kind = e.target.value } },
+              ['intro', 'outro', 'recap', 'preview'].map(k => U.el('option', { value: k, text: k })))
+          ]),
+          U.el('label', { class: 'cat-field' }, [
+            U.el('span', { class: 'cat-field-label', text: 'Start (s)' }),
+            U.el('input', { class: 'input', type: 'number', step: '0.1', min: '0', oninput: e => { skipDraft.start = e.target.value } })
+          ]),
+          U.el('label', { class: 'cat-field' }, [
+            U.el('span', { class: 'cat-field-label', text: 'End (s)' }),
+            U.el('input', { class: 'input', type: 'number', step: '0.1', min: '0', oninput: e => { skipDraft.end = e.target.value } })
+          ]),
+          U.el('button', {
+            class: 'btn btn-secondary btn-sm',
+            style: 'align-self:end;',
+            onclick: async () => {
+              try {
+                await YumeAPI.admin.catalogue.addSkip(ep.id, {
+                  kind: skipDraft.kind, start: Number(skipDraft.start), end: Number(skipDraft.end)
+                })
+                await loadExtras()
+              } catch (e) { U.toast(e.message, 'error') }
+            }
+          }, [document.createTextNode('Add interval')])
+        ]))
+
+        extras.append(U.el('h4', { class: 'src-add-title', text: 'Subtitle tracks' }))
+        const subList = U.el('div', { class: 'src-list' })
+        if (!subs.length) {
+          subList.append(U.el('div', { class: 'empty-state', style: 'padding:.6rem;', text: 'None held here.' }))
+        }
+        for (const track of subs) {
+          subList.append(U.el('div', { class: 'src-row' }, [
+            U.el('div', { class: 'src-main' }, [
+              U.el('div', { class: 'src-provider', text: `${String(track.language).toUpperCase()} · ${track.format}` }),
+              U.el('div', { class: 'src-ref', title: track.url ?? track.object_key, text: track.url ?? track.object_key })
+            ]),
+            U.el('span', { class: 'src-tag', text: track.kind }),
+            U.el('span', {}),
+            U.el('button', {
+              class: 'btn btn-ghost btn-sm cat-ep-del',
+              onclick: async () => {
+                try { await YumeAPI.admin.catalogue.removeSubtitle(track.id); await loadExtras() } catch (e) { U.toast(e.message, 'error') }
+              }
+            }, [document.createTextNode('✕')])
+          ]))
+        }
+        extras.append(subList)
+
+        const subDraft = { language: '', format: 'vtt', url: '' }
+        extras.append(U.el('div', { class: 'src-add-grid' }, [
+          U.el('label', { class: 'cat-field' }, [
+            U.el('span', { class: 'cat-field-label', text: 'Language' }),
+            U.el('input', { class: 'input', placeholder: 'hu', oninput: e => { subDraft.language = e.target.value } })
+          ]),
+          U.el('label', { class: 'cat-field' }, [
+            U.el('span', { class: 'cat-field-label', text: 'Format' }),
+            U.el('select', { class: 'select', onchange: e => { subDraft.format = e.target.value } },
+              ['vtt', 'srt', 'ass'].map(f => U.el('option', { value: f, text: f })))
+          ]),
+          U.el('label', { class: 'cat-field' }, [
+            U.el('span', { class: 'cat-field-label', text: 'URL' }),
+            U.el('input', { class: 'input', placeholder: 'https://…', oninput: e => { subDraft.url = e.target.value } })
+          ]),
+          U.el('button', {
+            class: 'btn btn-secondary btn-sm',
+            style: 'align-self:end;',
+            onclick: async () => {
+              try {
+                await YumeAPI.admin.catalogue.addSubtitle(ep.id, subDraft)
+                await loadExtras()
+              } catch (e) { U.toast(e.message, 'error') }
+            }
+          }, [document.createTextNode('Add track')])
+        ]))
+      } catch (e) {
+        extras.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+      }
+    }
+
+    const backdrop = C.modalShell(`Playback — ${anime.canonical_title}, episode ${Number(ep.number)}`, [
+      list,
+      U.el('h4', { class: 'src-add-title', text: 'Add a source' }),
+      field('Type', select('kind', this.SOURCE_KINDS)),
+      field('Reference', refInput),
+      U.el('div', { class: 'src-add-grid' }, [
+        field('Provider', U.el('input', { class: 'input', placeholder: 'Shown to viewers', oninput: e => { draft.provider = e.target.value } })),
+        field('Resolution', select('resolution', [['', '—'], ['2160', '2160p'], ['1080', '1080p'], ['720', '720p'], ['540', '540p'], ['480', '480p']])),
+        field('Audio', select('variant', [['', '—'], ['sub', 'Subbed'], ['dub', 'Dubbed'], ['raw', 'Raw']])),
+        field('Priority', U.el('input', { class: 'input', type: 'number', placeholder: '0', oninput: e => { draft.priority = e.target.value } }))
+      ]),
+      U.el('p', { class: 'src-note', text: 'Lower priority is tried first. The platform stores the reference only — never the video.' }),
+      extras
+    ], async () => {
+      if (!draft.ref.trim()) { U.toast('A reference is required', 'error'); return }
+      try {
+        await YumeAPI.admin.catalogue.addSource(ep.id, {
+          kind: draft.kind,
+          ref: draft.ref.trim(),
+          ...(draft.provider.trim() ? { provider: draft.provider.trim() } : {}),
+          ...(draft.resolution ? { resolution: draft.resolution } : {}),
+          ...(draft.variant ? { variant: draft.variant } : {}),
+          ...(draft.priority !== '' ? { priority: Number(draft.priority) } : {})
+        })
+        U.toast('Source added')
+        draft.ref = ''
+        refInput.value = ''
+        await load()
+        onDone?.()
+      } catch (e) { U.toast(e.message, 'error') }
+    })
+    load()
+    loadExtras()
+    return backdrop
+  },
+
+  /** Seconds → m:ss, for an interval an operator reads off a player. */
+  clock (seconds) {
+    const total = Math.round(Number(seconds) || 0)
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
   },
 
   episodeModal (anime, ep, onDone) {
@@ -1207,6 +1469,347 @@ const PageAdmin = {
     const h = Math.floor((seconds % 86400) / 3600)
     const m = Math.floor((seconds % 3600) / 60)
     return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`
+  },
+
+  // ---- themes ----
+  //
+  // A theme used to be an extension: a package in a store, sandboxed in a
+  // worker, asked over a message channel for a list of colours. That is a lot
+  // of machinery for twelve hex values, and it meant an operator could not put
+  // their own palette in front of their own viewers without publishing one.
+
+  async renderThemes (content) {
+    const load = async () => {
+      content.replaceChildren(U.el('div', { class: 'spinner' }))
+      try {
+        const { data } = await YumeAPI.admin.themes.list()
+        this.paintThemes(content, data, load)
+      } catch (e) {
+        content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load themes: ' + e.message }))
+      }
+    }
+    await load()
+  },
+
+  paintThemes (content, themes, reload) {
+    content.replaceChildren()
+    content.append(U.el('p', { class: 'meta-note', text: 'The default is what a viewer who has never chosen sees. Changing it does not repaint anyone who has picked their own — that is their choice.' }))
+
+    const grid = U.el('div', { class: 'theme-admin-grid' })
+    for (const theme of themes) {
+      const card = U.el('div', { class: 'theme-admin-card' + (theme.enabled ? '' : ' theme-admin-off') }, [
+        U.el('div', { class: 'theme-admin-head' }, [
+          U.el('span', { class: 'theme-admin-swatch', style: `background:${theme.accent ?? 'var(--accent)'};` }),
+          U.el('div', { class: 'theme-admin-name' }, [
+            U.el('div', { class: 'theme-admin-title', text: theme.name }),
+            U.el('div', { class: 'theme-admin-slug', text: `${theme.slug} · ${theme.base}${theme.accent ? '' : ' · stylesheet accent'}` })
+          ]),
+          theme.is_default ? U.el('span', { class: 'cat-badge cat-badge-default', text: 'default' }) : null,
+          theme.built_in ? U.el('span', { class: 'cat-badge', title: 'Ships with the deployment; it can be recoloured and disabled, not deleted.', text: 'built-in' }) : null
+        ]),
+        U.el('div', { class: 'theme-admin-actions' }, [
+          // An accent is a colour, so the control is a colour picker: typing
+          // a hex value by hand is how a theme ends up one character wrong.
+          U.el('input', {
+            type: 'color',
+            class: 'theme-color-input theme-admin-picker',
+            value: U.toHex(theme.accent) ?? '#f43f6e',
+            title: 'Recolour',
+            onchange: async e => {
+              try {
+                await YumeAPI.admin.themes.update(theme.id, { accent: e.target.value })
+                U.toast(`${theme.name} recoloured`)
+                await reload()
+              } catch (err) { U.toast(err.message, 'error') }
+            }
+          }),
+          theme.is_default
+            ? null
+            : U.el('button', {
+              class: 'btn btn-ghost btn-sm',
+              onclick: async () => {
+                try {
+                  await YumeAPI.admin.themes.update(theme.id, { isDefault: true })
+                  U.toast(`${theme.name} is now the default`)
+                  await reload()
+                } catch (err) { U.toast(err.message, 'error') }
+              }
+            }, [document.createTextNode('Make default')]),
+          U.el('button', {
+            class: 'btn btn-ghost btn-sm',
+            onclick: async () => {
+              try {
+                await YumeAPI.admin.themes.update(theme.id, { enabled: !theme.enabled })
+                await reload()
+              } catch (err) { U.toast(err.message, 'error') }
+            }
+          }, [document.createTextNode(theme.enabled ? 'Disable' : 'Enable')]),
+          theme.built_in
+            ? null
+            : U.el('button', {
+              class: 'btn btn-ghost btn-sm cat-ep-del',
+              onclick: async () => {
+                if (!confirm(`Delete the "${theme.name}" theme?`)) return
+                try {
+                  await YumeAPI.admin.themes.remove(theme.id)
+                  U.toast('Theme deleted')
+                  await reload()
+                } catch (err) { U.toast(err.message, 'error') }
+              }
+            }, [document.createTextNode('✕')])
+        ])
+      ])
+      grid.append(card)
+    }
+    content.append(grid)
+
+    // ---- add one ----
+    const draft = { slug: '', name: '', base: 'dark', accent: '#7c5cff' }
+    let slugInput
+    const field = (label, node) => U.el('label', { class: 'cat-field' }, [
+      U.el('span', { class: 'cat-field-label', text: label }), node
+    ])
+    content.append(
+      U.el('h3', { class: 'detail-section-title', text: 'Add a theme' }),
+      U.el('div', { class: 'src-add-grid' }, [
+        field('Name', U.el('input', {
+          class: 'input',
+          placeholder: 'Shown to viewers',
+          oninput: e => {
+            draft.name = e.target.value
+            // The slug follows the name until somebody edits it themselves:
+            // it is an identifier, and asking for one is asking a viewer-facing
+            // question about a machine-facing field.
+            if (!draft.slugTouched) {
+              draft.slug = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
+              slugInput.value = draft.slug
+            }
+          }
+        })),
+        field('Slug', slugInput = U.el('input', {
+          class: 'input',
+          placeholder: 'my-theme',
+          oninput: e => { draft.slugTouched = true; draft.slug = e.target.value }
+        })),
+        field('Base', U.el('select', {
+          class: 'select',
+          onchange: e => { draft.base = e.target.value }
+        }, [U.el('option', { value: 'dark', text: 'Dark' }), U.el('option', { value: 'light', text: 'Light' })])),
+        field('Accent', U.el('input', {
+          class: 'theme-color-input',
+          type: 'color',
+          value: '#7c5cff',
+          oninput: e => { draft.accent = e.target.value }
+        }))
+      ]),
+      U.el('div', { class: 'admin-toolbar' }, [
+        U.el('button', {
+          class: 'btn btn-primary',
+          onclick: async () => {
+            if (!draft.name.trim() || !draft.slug.trim()) { U.toast('A name and a slug are required', 'error'); return }
+            try {
+              await YumeAPI.admin.themes.create({
+                slug: draft.slug.trim(), name: draft.name.trim(), base: draft.base, accent: draft.accent
+              })
+              U.toast('Theme added')
+              await reload()
+            } catch (e) { U.toast(e.message, 'error') }
+          }
+        }, [U.el('span', { text: 'Add theme' })])
+      ])
+    )
+  },
+
+  // ---- metadata synchronisation ----
+  //
+  // Both AniList passes used to live in `scripts/import-anilist.ts`: an
+  // operator with SSH ran one and watched it print. Nothing recorded that it
+  // had happened, so "is the catalogue current?" had no answer, and an
+  // operator without a terminal had no way to ask for one at all.
+
+  METADATA_BARS: [
+    ['mapped', 'Mapped to AniList', 'Without a mapping there is nothing to fetch.'],
+    ['withSynopsis', 'Has a synopsis', 'The basic pass fills this.'],
+    ['withCover', 'Has cover art', 'Also the basic pass.'],
+    ['withCast', 'Has a cast', 'The deep pass — characters and voice actors.'],
+    ['withRelations', 'Has relations', 'Sequels, prequels, side stories.']
+  ],
+
+  async renderMetadata (content) {
+    const state = { timer: null }
+
+    const load = async () => {
+      // Stop polling once the admin has navigated away, the same way the
+      // infrastructure section does.
+      if (!document.body.contains(content)) { clearInterval(state.timer); return }
+      try {
+        const [data, conflicts] = await Promise.all([
+          YumeAPI.admin.metadata.status(),
+          YumeAPI.admin.metadata.conflicts()
+        ])
+        this.paintMetadata(content, data, conflicts, load)
+      } catch (e) {
+        content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load metadata status: ' + e.message }))
+        clearInterval(state.timer)
+      }
+    }
+
+    await load()
+    // A run reports every couple of seconds; polling faster than it writes
+    // would only cost queries.
+    state.timer = setInterval(load, 5_000)
+  },
+
+  paintMetadata (content, data, conflicts, reload) {
+    const cov = data.coverage ?? {}
+    const total = cov.total || 0
+    content.replaceChildren()
+
+    // ---- coverage ----
+    const bars = U.el('div', { class: 'meta-bars' })
+    for (const [key, label, hint] of this.METADATA_BARS) {
+      const n = cov[key] ?? 0
+      const pct = total ? Math.round(n / total * 100) : 0
+      bars.append(U.el('div', { class: 'meta-bar' }, [
+        U.el('div', { class: 'meta-bar-head' }, [
+          U.el('span', { class: 'meta-bar-label', text: label }),
+          U.el('span', { class: 'meta-bar-value', text: `${n.toLocaleString()} / ${total.toLocaleString()} (${pct}%)` })
+        ]),
+        U.el('div', { class: 'meta-bar-track' }, [U.el('div', { class: 'meta-bar-fill', style: `width:${pct}%;` })]),
+        U.el('div', { class: 'meta-bar-hint', text: hint })
+      ]))
+    }
+    content.append(U.el('h3', { class: 'detail-section-title', text: 'Coverage' }), bars)
+
+    // ---- start a run ----
+    const active = data.active
+    const kind = U.el('select', { class: 'select' }, [
+      U.el('option', { value: 'basic', text: 'Basic — synopsis, art, score, genres' }),
+      U.el('option', { value: 'deep', text: 'Deep — cast, staff, relations' })
+    ])
+    const scope = U.el('select', { class: 'select' }, [
+      U.el('option', { value: 'missing', text: 'Only what is missing' }),
+      U.el('option', { value: 'all', text: 'Everything (re-fetch)' })
+    ])
+    const limit = U.el('input', { class: 'input', type: 'number', min: '1', placeholder: 'Limit (optional)', style: 'max-width:11rem;' })
+
+    const start = U.el('button', {
+      class: 'btn btn-primary',
+      // One run at a time is enforced by the database, not merely by this
+      // button — AniList's rate limit is the reason, and a disabled button is
+      // not a rate limiter.
+      ...(active ? { disabled: true } : {}),
+      onclick: async () => {
+        start.disabled = true
+        try {
+          await YumeAPI.admin.metadata.start({
+            kind: kind.value,
+            scope: scope.value,
+            ...(limit.value ? { limit: Number(limit.value) } : {})
+          })
+          U.toast('Sync queued')
+          await reload()
+        } catch (e) {
+          U.toast(e.message, 'error')
+          start.disabled = false
+        }
+      }
+    }, [U.el('span', { text: 'Start sync' })])
+
+    content.append(
+      U.el('h3', { class: 'detail-section-title', text: 'Run a sync' }),
+      U.el('p', { class: 'meta-note', text: 'Requests are paced to stay inside AniList\u2019s published rate limit, so a full pass takes a while: minutes for the basic pass, hours for the deep one. Only one run at a time.' }),
+      U.el('div', { class: 'admin-toolbar' }, [kind, scope, limit, start])
+    )
+
+    // ---- the run in flight ----
+    if (active) {
+      const pct = active.total ? Math.round(active.processed / active.total * 100) : 0
+      content.append(U.el('div', { class: 'meta-active' }, [
+        U.el('div', { class: 'meta-active-head' }, [
+          U.el('span', { class: 'meta-active-title', text: `${active.kind === 'deep' ? 'Deep' : 'Basic'} sync — ${active.status}` }),
+          U.el('button', {
+            class: 'btn btn-danger',
+            onclick: async () => {
+              try {
+                await YumeAPI.admin.metadata.cancel(active.id)
+                // Cooperative, not immediate: the pass stops at its next batch
+                // boundary, and saying so is the difference between a button
+                // that looks broken and one that is honest.
+                U.toast('Stopping after the current batch')
+                await reload()
+              } catch (e) { U.toast(e.message, 'error') }
+            }
+          }, [U.el('span', { text: 'Cancel' })])
+        ]),
+        U.el('div', { class: 'meta-bar-track' }, [U.el('div', { class: 'meta-bar-fill', style: `width:${pct}%;` })]),
+        U.el('div', { class: 'meta-bar-hint', text: `${active.processed.toLocaleString()} / ${active.total.toLocaleString()} — ${this.metadataCounts(active)}` })
+      ]))
+    }
+
+    // ---- history ----
+    content.append(U.el('h3', { class: 'detail-section-title', text: 'Recent runs' }))
+    if (!data.runs?.length) {
+      content.append(U.el('div', { class: 'empty-state', text: 'No sync has been run from here yet.' }))
+    } else {
+      const rows = U.el('div', { class: 'meta-rows' })
+      for (const r of data.runs) {
+        rows.append(U.el('div', { class: 'meta-row' }, [
+          U.el('div', { class: 'meta-row-main' }, [
+            U.el('div', { class: 'meta-row-title', text: `${r.kind} · ${r.scope}${r.max_items ? ` · limit ${r.max_items}` : ''}` }),
+            U.el('div', { class: 'meta-row-sub', text: this.metadataCounts(r) })
+          ]),
+          U.el('span', { class: 'meta-status meta-status-' + r.status, text: r.status }),
+          U.el('div', { class: 'meta-row-sub', text: (r.started_by ?? 'system') + ' · ' + U.relTime(r.created_at) }),
+          // The failure message, when there is one. It is the whole reason to
+          // keep a history rather than only a "last run" line.
+          r.error ? U.el('div', { class: 'meta-row-error', text: r.error }) : null
+        ]))
+      }
+      content.append(rows)
+    }
+
+    // ---- id collisions ----
+    //
+    // Not errors: AniList splits a show into separate entries far more readily
+    // than MyAnimeList does, so two AniList ids sharing one MAL id is the
+    // normal shape of a multi-season show. They are shown because the same
+    // pairs are where real duplicates in our own catalogue surface.
+    content.append(U.el('h3', { class: 'detail-section-title', text: `Unresolved id collisions (${conflicts.length})` }))
+    if (!conflicts.length) {
+      content.append(U.el('div', { class: 'empty-state', text: 'Nothing waiting to be looked at.' }))
+      return
+    }
+    content.append(U.el('p', { class: 'meta-note', text: 'An importer could not attach one of these ids because another anime already held it. Most are legitimate season splits; the rest are duplicates worth merging.' }))
+    const list = U.el('div', { class: 'meta-rows' })
+    for (const c of conflicts) {
+      list.append(U.el('div', { class: 'meta-row' }, [
+        U.el('div', { class: 'meta-row-main' }, [
+          U.el('div', { class: 'meta-row-title', text: `${c.provider}:${c.external_id}` }),
+          U.el('div', { class: 'meta-row-sub', text: `${c.anime_title} — already held by ${c.holder_title ?? '(deleted)'}` })
+        ]),
+        U.el('span', { class: 'meta-row-sub', text: c.seen_count > 1 ? `seen ${c.seen_count}×` : '' }),
+        U.el('button', {
+          class: 'btn',
+          onclick: async () => {
+            try {
+              await YumeAPI.admin.metadata.resolveConflict(c.id, 'reviewed in the panel')
+              await reload()
+            } catch (e) { U.toast(e.message, 'error') }
+          }
+        }, [U.el('span', { text: 'Mark reviewed' })])
+      ]))
+    }
+    content.append(list)
+  },
+
+  /** The per-kind tallies a run collected, as one readable line. */
+  metadataCounts (run) {
+    const counts = run.counts ?? {}
+    const parts = Object.entries(counts)
+      .filter(([, v]) => typeof v === 'number' && v > 0)
+      .map(([k, v]) => `${v.toLocaleString()} ${k}`)
+    return parts.length ? parts.join(' · ') : 'nothing yet'
   },
 
   async renderMonitoring (content) {
@@ -1627,6 +2230,7 @@ const PageAdmin = {
     'stats.daily': 'Daily stats digest',
     'stats.trending': 'Trending refreshed',
     'catalogue.imported': 'Catalogue import finished',
+    'metadata.synced': 'Metadata sync finished',
     'job.failed': 'Background job failed',
     'webhook.test': 'Manual test'
   },

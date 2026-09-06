@@ -25,6 +25,24 @@ const StreamEngine = {
    */
   SOURCE_TYPES: ['http', 'torrent', 'nzb'],
 
+  /**
+   * Is anything loaded that could answer a request for a source?
+   *
+   * The episode list needs this to decide what to offer. An episode with no
+   * registered source and no provider installed has nowhere to play from, and
+   * a link to a dead end is worse than an honest label — but the same episode
+   * with a provider loaded may well play, so the question cannot be answered
+   * from the catalogue alone.
+   */
+  hasProviders () {
+    const host = window.ExtensionHost
+    if (typeof host?.loaded !== 'function') return false
+    return host.loaded().some(slug => {
+      const type = host.typeOf?.(slug) ?? null
+      return type === null || this.SOURCE_TYPES.includes(type)
+    })
+  },
+
   /** How long a stream gets to produce data before it counts as failed. */
   START_TIMEOUT_MS: 12_000,
 

@@ -2722,6 +2722,165 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
   .audit-subject, .audit-detail { display: none; }
 }
 
+/* An episode with nowhere to play from. Dimmed and inert rather than hidden:
+   the episode exists, it aired, and pretending otherwise would make the list
+   disagree with the episode count above it. */
+.episode-unplayable { opacity: .55; cursor: default; }
+.episode-unplayable:hover { background: none; border-color: var(--border); }
+.episode-nosource {
+  flex-shrink: 0;
+  font-size: .55rem; font-weight: var(--weight-bold);
+  text-transform: uppercase; letter-spacing: .05em;
+  padding: .12rem .4rem; border-radius: var(--radius-sm);
+  color: var(--fg-faint); background: color-mix(in oklab, var(--fg-faint) 14%, transparent);
+}
+
+/* ===== admin: themes ===== */
+
+.theme-admin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr)); gap: var(--space-3); margin-bottom: var(--space-5); }
+.theme-admin-card {
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  background: var(--bg-raised); padding: var(--space-3);
+  display: flex; flex-direction: column; gap: .6rem;
+}
+/* Disabled, not gone: an operator taking a theme out of the picker still has
+   to be able to see and undo it. */
+.theme-admin-off { opacity: .55; }
+.theme-admin-head { display: flex; align-items: center; gap: .6rem; }
+.theme-admin-swatch { width: 1.6rem; height: 1.6rem; border-radius: var(--radius-full); flex-shrink: 0; border: 1px solid var(--border); }
+.theme-admin-name { min-width: 0; flex-grow: 1; }
+.theme-admin-title { font-weight: var(--weight-bold); font-size: var(--text-sm); }
+.theme-admin-slug { font-family: var(--font-mono); font-size: .62rem; color: var(--fg-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.theme-admin-actions { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.theme-admin-picker { width: 2.2rem; height: 2.2rem; padding: 0; }
+.cat-badge-default { color: var(--accent); background: var(--accent-soft); }
+
+/* ===== admin: an episode's video sources ===== */
+
+/* The catalogue rows have been asking for `.cat-badge` since they were
+   written; only the colour half (.vis-*) was ever defined, so the badges had
+   the right colour and none of the shape. */
+.cat-badge {
+  flex-shrink: 0;
+  font-size: .6rem; font-weight: var(--weight-bold);
+  text-transform: uppercase; letter-spacing: .04em;
+  padding: .18rem .4rem; border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+/* Published with nowhere to play from. From a viewer's side that is a broken
+   link, so it is stated where the operator is already looking. */
+.cat-badge-warn { color: var(--warn); background: color-mix(in oklab, var(--warn) 16%, transparent); }
+
+.src-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: clip; }
+.src-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: .6rem; align-items: center;
+  padding: .5rem .7rem;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-xs);
+}
+.src-row:last-child { border-bottom: none; }
+/* Disabled, not deleted: still legible, plainly not in play. */
+.src-row-off { opacity: .55; }
+.src-main { min-width: 0; }
+.src-provider { font-weight: var(--weight-bold); font-size: var(--text-sm); }
+.src-ref {
+  font-family: var(--font-mono); color: var(--fg-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.src-tag {
+  font-family: var(--font-mono); font-size: .6rem; color: var(--fg-faint);
+  white-space: nowrap;
+}
+.src-add-title { margin: var(--space-3) 0 0; font-size: var(--text-sm); font-weight: var(--weight-extrabold); }
+.src-add-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .6rem; }
+.src-note { font-size: var(--text-xs); color: var(--fg-faint); margin: 0; }
+
+/* ===== anime detail: franchise / watch order ===== */
+
+.franchise { margin-bottom: var(--space-5); }
+.franchise-group {
+  font-size: .6rem; font-weight: var(--weight-bold);
+  letter-spacing: .09em; text-transform: uppercase; color: var(--fg-faint);
+  margin: var(--space-4) 0 .35rem;
+}
+.franchise-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: clip; }
+.franchise-item {
+  display: grid;
+  grid-template-columns: 3.2rem minmax(0, 1fr) auto;
+  gap: .75rem; align-items: baseline;
+  padding: .5rem .8rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-muted); text-decoration: none;
+  font-size: var(--text-sm);
+}
+.franchise-item:last-child { border-bottom: none; }
+.franchise-item:hover { background: var(--bg-raised); color: var(--fg); }
+/* Where you are. The list is only useful if this is unmistakable. */
+.franchise-item.current { background: var(--accent-soft); color: var(--accent); font-weight: var(--weight-bold); }
+.franchise-year { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-faint); font-variant-numeric: tabular-nums; }
+.franchise-item.current .franchise-year { color: inherit; }
+.franchise-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.franchise-meta { font-size: var(--text-xs); color: var(--fg-faint); white-space: nowrap; }
+.franchise-item.current .franchise-meta { color: inherit; }
+.franchise-note { font-size: var(--text-xs); color: var(--fg-faint); margin: var(--space-3) 0 0; }
+
+/* ===== admin: metadata synchronisation ===== */
+
+.meta-bars { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: var(--space-3); margin-bottom: var(--space-5); }
+.meta-bar {
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  background: var(--bg-raised); padding: var(--space-3);
+}
+.meta-bar-head { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+.meta-bar-label { font-weight: var(--weight-bold); font-size: var(--text-sm); }
+.meta-bar-value { font-size: var(--text-xs); color: var(--fg-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.meta-bar-track {
+  height: .4rem; border-radius: var(--radius-full);
+  background: color-mix(in oklab, var(--fg-faint) 22%, transparent);
+  margin: .45rem 0 .35rem; overflow: hidden;
+}
+.meta-bar-fill { height: 100%; background: var(--accent); border-radius: var(--radius-full); transition: width var(--dur-base) var(--ease-out); }
+.meta-bar-hint { font-size: var(--text-xs); color: var(--fg-faint); }
+
+.meta-note { font-size: var(--text-xs); color: var(--fg-muted); margin: 0 0 var(--space-3); max-width: 46rem; }
+
+/* The run in flight. Deliberately the loudest thing on the section: it is the
+   only part of this screen that changes while you watch it. */
+.meta-active {
+  border: 1px solid var(--accent); border-radius: var(--radius-lg);
+  background: var(--accent-soft); padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-5);
+}
+.meta-active-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.meta-active-title { font-weight: var(--weight-bold); font-size: var(--text-sm); }
+
+.meta-rows { display: flex; flex-direction: column; margin-bottom: var(--space-5); }
+.meta-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(6rem, auto) auto;
+  gap: .75rem; align-items: center;
+  padding: .5rem .6rem;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-xs);
+}
+.meta-row:hover { background: var(--bg-raised); }
+.meta-row-main { min-width: 0; }
+.meta-row-title { font-family: var(--font-mono); font-weight: var(--weight-semibold); color: var(--fg); }
+.meta-row-sub { color: var(--fg-faint); margin-top: .1rem; }
+/* Spans the row so a long message is readable instead of squeezed into a cell. */
+.meta-row-error { grid-column: 1 / -1; color: var(--danger); font-family: var(--font-mono); }
+
+.meta-status {
+  font-size: .58rem; font-weight: var(--weight-bold); text-transform: uppercase; letter-spacing: .05em;
+  padding: .12rem .4rem; border-radius: var(--radius-sm); white-space: nowrap;
+  color: var(--fg-faint); background: color-mix(in oklab, var(--fg-faint) 14%, transparent);
+}
+.meta-status-running, .meta-status-queued { color: var(--accent); background: var(--accent-soft); }
+.meta-status-done { color: var(--green-400); background: color-mix(in oklab, var(--green-500) 16%, transparent); }
+.meta-status-failed { color: var(--danger); background: color-mix(in oklab, var(--danger) 16%, transparent); }
+
 /* ===== admin: roles & permissions ===== */
 
 .roles-layout { display: grid; grid-template-columns: 15rem 1fr; gap: var(--space-5); align-items: start; }

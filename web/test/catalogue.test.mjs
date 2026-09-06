@@ -68,7 +68,7 @@ let Catalogue
 let calls
 
 /** Stubs for the two things the resolver talks to. */
-function load ({ catalogueMedia, catalogueEpisodes, catalogueRelations, apiMedia, apiEpisodes, byIds, browse, text, schedule } = {}) {
+function load ({ catalogueMedia, catalogueEpisodes, catalogueRelations, episodeSources, apiMedia, apiEpisodes, byIds, browse, text, schedule } = {}) {
   calls = { catalogue: 0, anilist: 0, aniZip: 0 }
   const window = {}
   const context = {
@@ -78,6 +78,7 @@ function load ({ catalogueMedia, catalogueEpisodes, catalogueRelations, apiMedia
       async catalogueMedia (id) { calls.catalogue++; return catalogueMedia ? catalogueMedia(id) : null },
       async catalogueEpisodes (id) { return catalogueEpisodes ? catalogueEpisodes(id) : null },
       async catalogueRelations (id) { return catalogueRelations ? catalogueRelations(id) : null },
+      async episodeSources (id) { return episodeSources ? episodeSources(id) : null },
       async catalogueByAniListIds (ids) { calls.byIds = ids; return byIds ? byIds(ids) : null },
       async browseCatalogue (f) { calls.browse = f; return browse ? browse(f) : null },
       async searchCatalogue (q, f) { calls.text = { q, f }; return text ? text(q, f) : null },
@@ -433,5 +434,91 @@ describe('schedule', () => {
     Catalogue = load({ schedule: () => [] })
     const list = await Catalogue.scheduleOrAniList(new Date(), new Date())
     assert.equal(list[0]._fromAniList, true)
+  })
+})
+
+describe('episode sources', () => {
+  // `video_sources` had never been read by anything: the platform could only
+  // play from an extension or from a URL the viewer pasted. These are the two
+  // properties the player depends on — that a registered row arrives in the
+  // engine's shape, and that "we hold no episodes" and "this episode has no
+  // source" stay distinguishable.
+
+  const ROWS = [
+    {
+      id: 'aaaaaaaa-1111-4111-8111-111111111111',
+      kind: 'http',
+      ref: 'https://cdn.example/ep1/index.m3u8',
+      title: null,
+      provider: 'Some Provider',
+      resolution: '1080',
+      language: 'ja',
+      variant: 'sub',
+      is_batch: false,
+      size_bytes: null,
+      seeders: null
+    }
+  ]
+
+  it('hands the engine a source in the shape it normalises', () => {
+    const c = load({ episodeSources: () => ROWS })
+    return c.episodeSources('ep-1').then(sources => {
+      assert.equal(sources.length, 1)
+      const [s] = plain(sources)
+      // `url` is the field normalise() reads; `ref` is the column name and
+      // means nothing to the engine.
+      assert.equal(s.url, 'https://cdn.example/ep1/index.m3u8')
+      assert.equal(s.quality, 1080)
+      assert.equal(s.variant, 'sub')
+      // The provider's name is what the player shows when it starts playing.
+      assert.equal(s.source.name, 'Some Provider')
+      // Registered by hand by whoever runs the deployment: a stronger claim
+      // that this is the right episode than anything matched on a title.
+      assert.equal(s.source.accuracy, 'high')
+    })
+  })
+
+  it('falls back to the provider name when the source has no title', () => {
+    const c = load({ episodeSources: () => ROWS })
+    return c.episodeSources('ep-1').then(sources => {
+      assert.equal(sources[0].title, 'Some Provider')
+    })
+  })
+
+  it('returns nothing rather than throwing when there is nothing', async () => {
+    // plain(), for the reason at the top of this file: an array built inside
+    // the vm is not reference-equal to one built out here.
+    const c = load({ episodeSources: () => null })
+    assert.deepEqual(plain(await c.episodeSources('ep-1')), [])
+    const empty = load({ episodeSources: () => [] })
+    assert.deepEqual(plain(await empty.episodeSources('ep-1')), [])
+  })
+
+  it('carries the source count and the row id onto each episode', async () => {
+    // What the episode list gates on, and what the player needs to ask for
+    // sources with. Without the id there is nothing to ask about.
+    const c = load({
+      catalogueMedia: () => ROW,
+      catalogueEpisodes: () => ({
+        total: 2,
+        data: [
+          { id: 'ep-1', number: '1.0', title: 'One', source_count: 2 },
+          { id: 'ep-2', number: '2.0', title: 'Two', source_count: 0 }
+        ]
+      })
+    })
+    const episodes = await c.episodes({ yumeId: ROW.id, id: 154587 })
+    assert.equal(episodes[0].sourceCount, 2)
+    assert.equal(episodes[0].yumeId, 'ep-1')
+    assert.equal(episodes[1].sourceCount, 0)
+  })
+
+  it('leaves the count unknown for episodes that did not come from us', async () => {
+    // ani.zip knows what an episode is, not where this deployment plays it
+    // from. Reporting 0 there would gate every episode of every title we have
+    // not imported — "unknown" and "none" must not gate the same way.
+    const c = load({ catalogueEpisodes: () => ({ total: 0, data: [] }) })
+    const episodes = await c.episodes({ yumeId: ROW.id, id: 154587 })
+    assert.equal(episodes[0].sourceCount, undefined)
   })
 })

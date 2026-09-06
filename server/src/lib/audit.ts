@@ -17,6 +17,10 @@ export type AuditAction =
   | 'role.permission.grant' | 'role.permission.revoke'
   | 'anime.create' | 'anime.edit' | 'anime.delete' | 'anime.merge' | 'anime.unlock'
   | 'episode.create' | 'episode.edit' | 'episode.delete'
+  // Where an episode can be played from. Recorded because a source is the one
+  // catalogue field that decides whether a viewer sees anything at all, and
+  // "who put this link here" is the question when one turns out to be wrong.
+  | 'episode.source.add' | 'episode.source.edit' | 'episode.source.remove'
   // Publishing is its own act, separate from editing an episode's text: it is
   // the one that decides whether viewers can reach the thing at all.
   | 'episode.visibility' | 'anime.visibility'
@@ -30,8 +34,15 @@ export type AuditAction =
   // the operator who imported a repository is the person answerable for what
   // came in with it.
   | 'extension.imported'
+  // Starting a catalogue-wide metadata pull. Recorded because it rewrites
+  // fields across the whole catalogue and the question afterwards is who
+  // asked for it.
+  | 'metadata.sync'
+  // What the whole site looks like. One row decides the colours every viewer
+  // who has not chosen otherwise sees.
+  | 'theme.create' | 'theme.update' | 'theme.delete'
 
-export type SubjectType = 'user' | 'role' | 'anime' | 'episode' | 'config' | 'webhook' | 'extension'
+export type SubjectType = 'user' | 'role' | 'anime' | 'episode' | 'config' | 'webhook' | 'extension' | 'metadata_run' | 'theme'
 
 /**
  * Record one administrative action.

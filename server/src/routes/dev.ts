@@ -70,7 +70,7 @@ const routes: FastifyPluginAsync = async fastify => {
 
   // ---------- listings ----------
 
-  fastify.get('/extensions', { preHandler: fastify.requirePermission('extensions.publish', { hide: true }) }, async request => {
+  fastify.get('/extensions', { onRequest: fastify.requirePermission('extensions.publish', { hide: true }) }, async request => {
     const data = await query(
       `SELECT e.id, e.slug, e.name, e.summary, e.type, e.status, e.install_count, e.rating_avg, e.rating_count, e.updated_at,
               (SELECT count(*) FROM extension_versions v WHERE v.extension_id = e.id) AS version_count,
@@ -82,7 +82,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.post('/extensions', {
-    preHandler: fastify.requirePermission('extensions.publish', { hide: true }),
+    onRequest: fastify.requirePermission('extensions.publish', { hide: true }),
     schema: {
       body: {
         type: 'object',
@@ -163,7 +163,7 @@ const routes: FastifyPluginAsync = async fastify => {
    * to assert what their own bytes hash to.
    */
   fastify.post('/extensions/:slug/packages', {
-    preHandler: fastify.requirePermission('extensions.publish', { hide: true }),
+    onRequest: fastify.requirePermission('extensions.publish', { hide: true }),
     // the global body limit is sized for JSON payloads; a package is larger
     bodyLimit: MAX_PACKAGE_BYTES,
     schema: { params: { type: 'object', properties: { slug: { type: 'string' } } } }
@@ -199,7 +199,7 @@ const routes: FastifyPluginAsync = async fastify => {
   // Publish a version against an already-uploaded package. The manifest and
   // declared permissions are snapshotted here and static review is queued.
   fastify.post('/extensions/:slug/versions', {
-    preHandler: fastify.requirePermission('extensions.publish', { hide: true }),
+    onRequest: fastify.requirePermission('extensions.publish', { hide: true }),
     schema: {
       params: { type: 'object', properties: { slug: { type: 'string' } } },
       body: {
@@ -329,7 +329,7 @@ const routes: FastifyPluginAsync = async fastify => {
    * operator who imported one is the person who chose to.
    */
   fastify.post('/repositories/import', {
-    preHandler: fastify.requirePermission('extensions.publish', { hide: true }),
+    onRequest: fastify.requirePermission('extensions.publish', { hide: true }),
     config: WRITE_LIMIT,
     schema: {
       body: {
@@ -438,7 +438,7 @@ const routes: FastifyPluginAsync = async fastify => {
     return { repository: url, dryRun: dryRun === true, imported, problems }
   })
 
-  fastify.get('/extensions/:slug/analytics', { preHandler: fastify.requirePermission('extensions.publish', { hide: true }) }, async (request, reply) => {
+  fastify.get('/extensions/:slug/analytics', { onRequest: fastify.requirePermission('extensions.publish', { hide: true }) }, async (request, reply) => {
     const { slug } = request.params as { slug: string }
     const ext = await ownedExtension(request.user.sub, slug)
     if (!ext) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })

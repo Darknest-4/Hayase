@@ -231,6 +231,93 @@ const Catalogue = {
     return rows.map(r => this.toCard(r)).filter(Boolean)
   },
 
+  /**
+   * Where one episode can be played from.
+   *
+   * References an operator registered, in the order they chose. Only the
+   * catalogue can answer this — an external metadata provider knows what an
+   * episode is, not where this deployment plays it from.
+   */
+  async episodeSources (episodeId) {
+    const rows = await YumeAPI.episodeSources(episodeId)
+    if (!rows?.length) return []
+    return rows.map(row => ({
+      // The engine's own shape: `url` is what it normalises from, and the
+      // source block is what the player shows as the provider's name.
+      url: row.ref,
+      title: row.title ?? row.provider ?? 'Registered source',
+      quality: row.resolution ? Number(row.resolution) : null,
+      variant: row.variant ?? null,
+      audioLang: row.language ?? null,
+      isBatch: Boolean(row.is_batch),
+      seeders: row.seeders ?? null,
+      size: row.size_bytes ?? null,
+      source: {
+        slug: 'catalogue:' + row.id,
+        name: row.provider ?? 'Catalogue',
+        // Registered by hand by somebody who runs this deployment — that is a
+        // stronger claim about "this is the right episode" than a search
+        // result, and the engine ranks on it.
+        accuracy: 'high',
+        health: 'unknown'
+      }
+    }))
+  },
+
+  /**
+   * Opening and ending intervals for one episode.
+   *
+   * `skip_segments` has been in the schema since the beginning and was read by
+   * nothing: the player asked an extension and then called api.aniskip.com
+   * from the page. So a deployment that had corrected a wrong interval had
+   * nowhere to put the correction.
+   *
+   * Mapped to the shape the player already draws — a label and two times —
+   * with the kinds it has a button for. `recap` and `preview` are in the table
+   * and are not offered: skipping the recap of last week is a different
+   * feature, and inventing a label for it here would be guessing.
+   */
+  async skips (episodeId) {
+    const rows = await YumeAPI.episodeSkips(episodeId)
+    if (!rows?.length) return []
+    return rows
+      .filter(r => r.kind === 'intro' || r.kind === 'outro')
+      .map(r => ({ kind: r.kind, start: Number(r.start_sec), end: Number(r.end_sec) }))
+      .filter(r => Number.isFinite(r.start) && Number.isFinite(r.end) && r.end > r.start)
+  },
+
+  /**
+   * Subtitle tracks for one episode.
+   *
+   * A track is either hosted by us or referenced elsewhere; the player wants
+   * one address either way.
+   */
+  async subtitles (episodeId) {
+    const rows = await YumeAPI.episodeSubtitles(episodeId)
+    if (!rows?.length) return []
+    return rows
+      .map(r => ({
+        url: r.url ?? r.object_key ?? '',
+        lang: r.language,
+        label: `${String(r.language).toUpperCase()}${r.kind && r.kind !== 'subtitles' ? ' · ' + r.kind : ''}`,
+        format: r.format
+      }))
+      .filter(t => t.url)
+  },
+
+  /**
+   * The franchise this title belongs to, in release order.
+   *
+   * Only the catalogue can answer it: it needs a walk over our own relation
+   * graph, and an external provider returns the immediate neighbours only.
+   * `{ data: [], truncated: false }` when there is nothing, so the caller has
+   * one shape to read rather than two.
+   */
+  async franchise (yumeId) {
+    const result = await YumeAPI.catalogueFranchise(yumeId)
+    return { data: result?.data ?? [], truncated: Boolean(result?.truncated) }
+  },
+
   // ------------------------------------------------------------- browsing
 
   /**
@@ -416,7 +503,13 @@ const Catalogue = {
           airdate: e.air_date ?? null,
           runtime: e.duration ?? null,
           rating: null,
-          filler: Boolean(e.is_filler)
+          filler: Boolean(e.is_filler),
+          // The episode's row id, so the player can ask for its sources.
+          yumeId: e.id,
+          // How many registered sources this episode has. Undefined — not
+          // zero — when the episodes came from ani.zip: we do not know, and
+          // "unknown" and "none" must not gate the same way.
+          sourceCount: Number(e.source_count ?? 0)
         }))
       }
     }

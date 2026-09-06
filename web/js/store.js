@@ -387,6 +387,23 @@ const Store = {
 
   // ---- theme ----
 
+  /**
+   * A colour, and nothing that is not a colour.
+   *
+   * The values written here come from the site's theme table, which validates
+   * them on the way in — but they travel through localStorage, and a custom
+   * property is interpolated into a <style> element. Checking again where the
+   * string is used costs a regex and removes the question.
+   */
+  _isColour (value) {
+    if (typeof value !== 'string') return false
+    const colour = value.trim()
+    if (!colour || colour.length > 140 || /[;{}<>\\@]/.test(colour)) return false
+    return /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(colour) ||
+      /^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(\s*[0-9a-z.%,\s/+-]{1,120}\)$/i.test(colour) ||
+      /^[a-z]{3,20}$/i.test(colour)
+  },
+
   applyTheme () {
     // Theme engine: a base (dark | light) plus an optional custom accent.
     // dark is the :root default, light is [data-theme='light']. Legacy
@@ -413,16 +430,39 @@ const Store = {
       // subtly tint the raised surfaces toward the accent for a richer look
       rules.push(`--bg-raised:color-mix(in srgb, ${s.themeAccent ?? 'var(--accent)'} 6%, var(--bg))`)
     }
+    // Whatever else the chosen theme overrides. Themes used to be able to say
+    // one thing — an accent — because that is all an extension returned; a
+    // site theme can name any token, which is what a deployment with its own
+    // palette needs.
+    for (const [name, value] of Object.entries(s.themeTokens ?? {})) {
+      if (/^--[a-z][a-z0-9-]{1,40}$/.test(name) && this._isColour(value)) rules.push(`${name}:${value}`)
+    }
     style.textContent = rules.length ? `:root, [data-theme='light'] { ${rules.join(';')} }` : ''
   },
 
-  setTheme ({ base, accent, tint } = {}) {
+  setTheme ({ base, accent, tint, tokens, slug } = {}) {
     const patch = {}
     if (base !== undefined) { patch.themeBase = base; patch.theme = base } // keep legacy key in sync
     if (accent !== undefined) patch.themeAccent = accent || undefined
     if (tint !== undefined) patch.themeTint = tint
+    if (tokens !== undefined) patch.themeTokens = tokens && Object.keys(tokens).length ? tokens : undefined
+    // Which named theme this is, so the picker can show what is selected and
+    // so a viewer who has chosen is not overwritten by a change of default.
+    if (slug !== undefined) patch.themeSlug = slug || undefined
     this.saveSettings(patch)
     this.applyTheme()
+  },
+
+  /**
+   * Has this viewer ever chosen a theme?
+   *
+   * The site's default applies to everyone who has not. Once somebody has
+   * picked, an operator changing the default must not silently repaint their
+   * app — that is their choice, not a preference we are free to reset.
+   */
+  hasChosenTheme () {
+    const s = this.settings()
+    return Boolean(s.themeSlug || s.themeBase || s.themeAccent || s.theme)
   },
 
   clearCache () {

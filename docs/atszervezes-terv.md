@@ -123,8 +123,17 @@ A legfontosabb, mert ma **félrevezeti a felhasználót**.
     értéknél a fordított alapértelmezéssel.
   - a beállítás-cache íráskor ürül, tehát a „Mentve" azt jelenti, hogy már
     érvényes is, nem azt, hogy fél perc múlva az lesz.
-- ⛔ URL nélküli epizód: letiltott állapot + route-védelem — **K1-re vár**, mert
-  a kiegészítők törlése után ma egyetlen epizódnak sem lenne forrása
+- ✅ URL nélküli epizód: **K1 megválaszolva** — a `video_sources` táblát
+  használjuk, tetszőleges providerrel. Az epizódlista letiltott állapotban
+  mutatja azt, aminek nincs engedélyezett forrása („nincs forrás" jelölés,
+  nem kattintható). A kapu három állapotot különböztet meg, nem kettőt:
+  *van forrás* → kattintható; *nincs forrás, de van betöltött forrás-kiegészítő*
+  → kattintható (a kiegészítő még válaszolhat); *nincs forrás és nincs
+  kiegészítő* → letiltva. A 3. kör után a középső eset magától megszűnik,
+  további változtatás nélkül.
+  Amit az `undefined` jelent: ha az epizódlista az ani.zip-ből jött, nem
+  tudjuk, hány forrás van — a „nem tudjuk" nem ugyanaz, mint a „nincs", és nem
+  is tilthat ugyanúgy.
 
 ### 2. kör — Admin panel (≈ 1–1,5 nap)
 - ✅ külön layout: az `admin-route` osztály a `<body>`-n elveszi az oldal
@@ -150,15 +159,36 @@ A legfontosabb, mert ma **félrevezeti a felhasználót**.
 - 2 alternatív téma (Crimson, Midnight)
 
 ### 4. kör — Metadata sync felület (≈ 1 nap)
-- `last_synced_at`, `sync_status`, `sync_error` oszlopok
-- admin: Sync Anime / Sync All, haladás, hibalista, újrapróbálás
-- a meglévő `jobs` sorra épül, nem új infrastruktúra
-- MAL mint második forrás (Jikan API)
+- ✅ admin: Metadata szekció — lefedettség (hány címnek van szinopszisa,
+  borítója, szereplőgárdája, kapcsolata), indítás (alap/mély × hiányzó/összes ×
+  darabszám-korlát), élő haladás, megszakítás, futástörténet a hibaüzenettel
+- ✅ a meglévő `jobs` sorra épül (`metadata` queue), nem új infrastruktúra
+- ✅ a `mapping_conflicts` sorok is itt jelennek meg és jelölhetők átnézettnek —
+  eddig csak SQL-ből lehetett látni őket
+- ✅ a CLI script ugyanazon a `metadata_runs` soron megy át, mint a panel, tehát
+  egyszerre tényleg csak egy futás lehet — az AniList rate limitje miatt ez nem
+  kényelmi kérdés
+- ⚠️ **eltérés a brieftől:** nem vezettem be `last_synced_at` / `sync_status` /
+  `sync_error` oszlopokat az `anime` táblán. Futásonkénti sor válaszolja meg
+  ugyanazokat a kérdéseket („volt-e szinkron, meddig jutott, mi bukott el"),
+  soronkénti írás nélkül; a „mikor nyúltunk ehhez a címhez utoljára" pedig már
+  ma is megvan (`anime.updated_at`, `anime.metadata_sources`). Ha kifejezetten
+  per-cím státusz kell a katalógus listában, szólj, és beteszem.
+- ❌ MAL/Jikan mint második forrás: **nem készült el**. Ebben a környezetben az
+  `api.jikan.moe` blokkolt, tehát megírni tudnám, kipróbálni nem — egy nem
+  tesztelhető második importálót nem akartam a katalógusra engedni.
 
 ### 5. kör — Évadok, watch order, minőségi kör (≈ 1 nap)
-- franchise-nézet: évadok, filmek, speciálok, előző/következő
-- webhook-payload bővítése, audit-események
-- reszponzív végigjárás valódi böngészőben (a Playwright-teszt már megvan hozzá)
+- ✅ franchise-nézet: a Kapcsolatok fülön „Nézési sorrend" — évadok, filmek,
+  speciálok, megjelenés szerint rendezve, a jelenlegi cím kiemelve
+  („itt tartasz"). Két lépésre megy el a kapcsolatgráfban, mert a 3. évad nem
+  hivatkozik az 1.-re, és **dátum szerint rendez, nem a gráf szerint** — a
+  sequel-élek csak részleges rendezést adnak, a filmeknek meg egyáltalán nincs
+  helyük abban a sorrendben.
+- ✅ webhook: új `metadata.synced` esemény (a futás kimenetele adja a színt, a
+  félbeszakadt szinkron az érdekes eset), és `metadata.sync` audit-akció
+- ⏳ reszponzív végigjárás: az admin panel megvan (Playwright-teszt), a nyilvános
+  oldalak végigjárása még nincs kész
 
 ---
 
@@ -190,10 +220,18 @@ kell, ahonnan elérhetők.
 
 ## 6. Kérdések
 
-**K1 — Lejátszás.** A 0. szakasz miatt: a kiegészítők törlése után mi legyen a
-videóforrás? (a) beépített, szerveroldali forrás-provider réteg; (b) egyelőre
-nincs lejátszás, csak katalógus; (c) a sandbox marad *csak* forrásoknak, minden
-más kiegészítő megy.
+**K1 — Lejátszás. ✅ MEGVÁLASZOLVA: a `video_sources` tábla, tetszőleges
+providerrel.** Az operátor epizódonként vesz fel forrásokat (típus, provider
+neve, hivatkozás, felbontás, sub/dub, prioritás); a lejátszó ezeket kapja meg
+elsőként, a kiegészítők ranglistája mögé. A provider neve szabad szöveg: a
+providerek halmaza nem a miénk felsorolni, egy enum meg minden új tükörnél
+migrációt kérne.
+
+Amit ez eldöntött, és amit nem: a lejátszás innentől nem függ attól, hogy
+telepítve van-e bármi, tehát a 3. kör (kiegészítők lebontása) elindítható. Amit
+**nem** csinálok meg hozzá: link-kereső vagy -kinyerő providerek oldalairól.
+A tábla hivatkozásokat tárol, amiket valaki felvett; a keresést nem
+automatizálom.
 
 **K2 — Külső API.** Korábban azt kérted, ne kérje le AniListről, ha nincs meg
 nálunk. A 2.4 pont viszont pont ezt engedné. Melyik? (a) kérés közben soha, csak
@@ -203,6 +241,19 @@ indíthatja kézzel.
 **K3 — Sorrend.** Az öt kör közül mivel kezdjem? Én az 1. kört javaslom: ma a
 felület olyat állít, ami nem igaz, és ez a legolcsóbban javítható kár.
 
-**K4 — Meglévő kiegészítők.** A `jellyfin`, `plex`, `opensubtitles`, `aniskip`
-csomagok valódi funkciót adnak. Ezek beépített funkcióvá alakuljanak, vagy
-elvesszenek a kiegészítőkkel együtt?
+**K4 — Meglévő kiegészítők. ✅ MEGVÁLASZOLVA: alakuljanak beépített
+funkcióvá.** Amit ez a gyakorlatban jelent, csomagonként:
+
+| Csomag | Mi lett belőle | Miért |
+|---|---|---|
+| `yume-themes` | ✅ **beépítve** — `themes` tábla + admin szerkesztő + választó | Egy téma tiszta adat. Csomagot közzétenni tizenkét hexa értékért aránytalan. |
+| `aniskip` | ✅ **beépítve** — `skip_segments` a katalógusból, a kliens AniSkip-hívása marad tartaléknak | A tábla 0003 óta létezett, és soha semmi nem írt bele: egy elrontott intervallumot nem lehetett kijavítani sehol. |
+| `anilist-meta` | ✅ **részben** — a saját tábláinkat a mély AniList-menet tölti | A kiegészítő csak a katalóguson kívüli címekhez kell; ezért **marad**. |
+| `translation-feed` | ✅ **részben** — a fordításkezelő admin felület megvan | A feed-import maradék funkciója még a csomagban van. |
+| `yume-library` | ✅ **beépítve** — a könyvtár-szinkron szerveroldali | |
+| `opensubtitles`, `plex`, `jellyfin` | ⛔ **marad kiegészítőnek** | Ezek a **néző saját** hitelesítő adataival érnek el egy külső vagy személyes szolgáltatást. Beépíteni azt jelentené, hogy a felhasználó OpenSubtitles- vagy Plex-tokenjét a mi adatbázisunkban tároljuk — ez olyan személyes adat, amit ma nem gyűjtünk, és a kapott korlát szerint nem is kell. A helyes forma ezeknél a kliensoldali futtatás, ami ma is ez. |
+
+Amit ez **nem** old meg: a `plex`/`jellyfin`/`opensubtitles` miatt a
+kiegészítő-platform (sandbox, worker, store) nem törölhető teljesen. Ha azt is
+akarod, az a döntés, hogy ez a három funkció **elvesszen** — mondd meg, és
+megcsinálom, de magamtól nem törlök működő funkciót.

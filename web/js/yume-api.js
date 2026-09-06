@@ -259,6 +259,68 @@ const YumeAPI = {
     }
   },
 
+  /**
+   * The themes this deployment offers.
+   *
+   * Public and unauthenticated: the colours are the same for everyone, and a
+   * signed-out visitor seeing the wrong ones until they sign in is a worse
+   * answer than serving a list of hex values to anybody who asks.
+   */
+  async themes () {
+    try {
+      const { data } = await this._request('/v1/themes')
+      return data
+    } catch (e) {
+      return null
+    }
+  },
+
+  /** Opening/ending intervals this deployment holds for one episode. */
+  async episodeSkips (episodeId) {
+    try {
+      const { data } = await this._request(`/v1/anime/episodes/${episodeId}/skips`)
+      return data
+    } catch (e) {
+      return null
+    }
+  },
+
+  /** Subtitle tracks this deployment holds for one episode. */
+  async episodeSubtitles (episodeId) {
+    try {
+      const { data } = await this._request(`/v1/anime/episodes/${episodeId}/subtitles`)
+      return data
+    } catch (e) {
+      return null
+    }
+  },
+
+  /** The registered, enabled sources of one episode. */
+  async episodeSources (episodeId) {
+    try {
+      const { data } = await this._request(`/v1/anime/episodes/${episodeId}/sources`)
+      return data
+    } catch (e) {
+      return null
+    }
+  },
+
+  /**
+   * The franchise this title belongs to, in release order.
+   *
+   * Separate from the relations call because it answers a different question:
+   * relations are the immediate neighbours, a franchise is the whole run —
+   * season three does not link to season one, so the graph alone cannot say
+   * where you are in it.
+   */
+  async catalogueFranchise (yumeId) {
+    try {
+      return await this._request(`/v1/anime/${yumeId}/franchise`)
+    } catch (e) {
+      return null
+    }
+  },
+
   /*
    * Cast, staff and recommendations from the catalogue.
    *
@@ -460,7 +522,41 @@ const YumeAPI = {
       unlock: (id, fields) => YumeAPI._request(`/v1/admin/catalogue/${id}/unlock`, { method: 'POST', auth: true, body: { fields } }),
       duplicates: (threshold = 0.86, limit = 50) =>
         YumeAPI._request(`/v1/admin/catalogue/duplicates?threshold=${threshold}&limit=${limit}`, { auth: true }),
-      merge: (id, sourceId) => YumeAPI._request(`/v1/admin/catalogue/${id}/merge`, { method: 'POST', auth: true, body: { sourceId } })
+      merge: (id, sourceId) => YumeAPI._request(`/v1/admin/catalogue/${id}/merge`, { method: 'POST', auth: true, body: { sourceId } }),
+
+      // where an episode plays from — registered by an operator, any provider
+      sources: eid => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}/sources`, { auth: true }),
+      addSource: (eid, body) => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}/sources`, { method: 'POST', auth: true, body }),
+      updateSource: (sid, body) => YumeAPI._request(`/v1/admin/catalogue/sources/${sid}`, { method: 'PATCH', auth: true, body }),
+      removeSource: sid => YumeAPI._request(`/v1/admin/catalogue/sources/${sid}`, { method: 'DELETE', auth: true }),
+
+      // the rest of what an episode needs to play well: skip intervals and
+      // subtitle tracks, both of which used to come only from an extension
+      skips: eid => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}/skips`, { auth: true }),
+      addSkip: (eid, body) => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}/skips`, { method: 'POST', auth: true, body }),
+      removeSkip: sid => YumeAPI._request(`/v1/admin/catalogue/skips/${sid}`, { method: 'DELETE', auth: true }),
+      subtitles: eid => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}/subtitles`, { auth: true }),
+      addSubtitle: (eid, body) => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}/subtitles`, { method: 'POST', auth: true, body }),
+      removeSubtitle: sid => YumeAPI._request(`/v1/admin/catalogue/subtitles/${sid}`, { method: 'DELETE', auth: true })
+    },
+
+    // metadata synchronisation — coverage, runs, and the id collisions the
+    // importers could not resolve on their own
+    metadata: {
+      status: () => YumeAPI._request('/v1/admin/catalogue/metadata', { auth: true }),
+      start: body => YumeAPI._request('/v1/admin/catalogue/metadata/runs', { method: 'POST', auth: true, body }),
+      cancel: id => YumeAPI._request(`/v1/admin/catalogue/metadata/runs/${id}/cancel`, { method: 'POST', auth: true, body: {} }),
+      conflicts: () => YumeAPI._request('/v1/admin/catalogue/metadata/conflicts', { auth: true }),
+      resolveConflict: (id, resolution) =>
+        YumeAPI._request(`/v1/admin/catalogue/metadata/conflicts/${id}/resolve`, { method: 'POST', auth: true, body: { resolution } })
+    },
+
+    // themes — the colours viewers may choose from
+    themes: {
+      list: () => YumeAPI._request('/v1/admin/themes', { auth: true }),
+      create: body => YumeAPI._request('/v1/admin/themes', { method: 'POST', auth: true, body }),
+      update: (id, body) => YumeAPI._request(`/v1/admin/themes/${id}`, { method: 'PATCH', auth: true, body }),
+      remove: id => YumeAPI._request(`/v1/admin/themes/${id}`, { method: 'DELETE', auth: true })
     },
 
     // error triage — list groups, open one for its stack, change its status

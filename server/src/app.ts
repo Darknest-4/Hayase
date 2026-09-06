@@ -31,6 +31,7 @@ import devRoutes from './routes/dev.ts'
 import profileRoutes from './routes/profiles.ts'
 import webhookRoutes from './routes/webhooks.ts'
 import { publicConfig, adminConfig } from './routes/config.ts'
+import { publicThemes, adminThemes } from './routes/themes.ts'
 import roleRoutes from './routes/roles.ts'
 import catalogueRoutes from './routes/catalogue.ts'
 import { publicReadiness, adminMonitoring } from './routes/monitoring.ts'
@@ -245,6 +246,8 @@ export async function buildApp (): Promise<FastifyInstance> {
   })
 
   await app.register(publicConfig, { prefix: '/v1/config' })
+  await app.register(publicThemes, { prefix: '/v1/themes' })
+  await app.register(adminThemes, { prefix: '/v1/admin/themes' })
   await app.register(adminConfig, { prefix: '/v1/admin/config' })
   await app.register(authRoutes, { prefix: '/v1/auth' })
   await app.register(animeRoutes, { prefix: '/v1/anime' })

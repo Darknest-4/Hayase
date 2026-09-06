@@ -120,7 +120,12 @@ describe('the packages that ship with the project', () => {
   it('has packages to publish at all', () => {
     // The publish step runs on every boot; an empty directory means an empty
     // store and nothing to explain it.
-    assert.ok(slugs.length >= 8, `only found ${slugs.length}`)
+    //
+    // Not a count. Packages are being retired as their features become part of
+    // the platform — the theme pack was the first — and a threshold that has to
+    // be edited every time one is is a threshold that gets edited without being
+    // read. What matters is that the directory is not empty by accident.
+    assert.ok(slugs.length > 0, 'no packages found to publish')
   })
 
   for (const slug of slugs) {

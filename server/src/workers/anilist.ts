@@ -333,7 +333,17 @@ export async function retryMappingConflicts (): Promise<{ retried: number, attac
 
 /** Drive the enrichment across every anime that has an anilist_id. */
 export async function enrichFromAniList (
-  opts: { limit?: number, onlyMissing?: boolean, onProgress?: (done: number, total: number, updated: number) => void } = {}
+  opts: {
+    limit?: number
+    onlyMissing?: boolean
+    onProgress?: (done: number, total: number, updated: number) => void | Promise<void>
+    /**
+     * Asked between batches. A full pass is half an hour of paced requests,
+     * so "stop" has to mean something before the end of it — but only at a
+     * batch boundary, so a stop never leaves a half-written transaction.
+     */
+    shouldStop?: () => boolean | Promise<boolean>
+  } = {}
 ): Promise<{ processed: number, updated: number, failed: number, rowFailures: number, conflicts: number }> {
   const onlyMissing = opts.onlyMissing ?? true
   const startedAt = new Date()
@@ -388,7 +398,8 @@ export async function enrichFromAniList (
       console.error(`batch ${i / 50 + 1} failed:`, (err as Error).message)
     }
     processed += batch.length
-    opts.onProgress?.(processed, total, updated)
+    await opts.onProgress?.(processed, total, updated)
+    if (await opts.shouldStop?.()) break
     if (i + 50 < ids.length) await sleep(DELAY_MS)
   }
 

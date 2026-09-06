@@ -283,7 +283,13 @@ export async function upsertDeep (client: pg.PoolClient, media: DeepMedia, anime
  * two-second pause, a full catalogue is hours of work.
  */
 export async function enrichDeepFromAniList (
-  opts: { limit?: number, onlyMissing?: boolean, onProgress?: (done: number, total: number, counts: DeepCounts) => void } = {}
+  opts: {
+    limit?: number
+    onlyMissing?: boolean
+    onProgress?: (done: number, total: number, counts: DeepCounts) => void | Promise<void>
+    /** Asked between batches — see the fast pass for why it is not finer. */
+    shouldStop?: () => boolean | Promise<boolean>
+  } = {}
 ): Promise<{ processed: number, failed: number, rowFailures: number } & DeepCounts> {
   const onlyMissing = opts.onlyMissing ?? true
   const { rows } = await pool.query<{ anime_id: string, anilist_id: number }>(
@@ -331,7 +337,8 @@ export async function enrichDeepFromAniList (
       console.error(`deep batch ${Math.floor(i / DEEP_BATCH) + 1} failed:`, (err as Error).message)
     }
     processed += batch.length
-    opts.onProgress?.(processed, total, counts)
+    await opts.onProgress?.(processed, total, counts)
+    if (await opts.shouldStop?.()) break
     if (i + DEEP_BATCH < ids.length) await sleep(DELAY_MS)
   }
 

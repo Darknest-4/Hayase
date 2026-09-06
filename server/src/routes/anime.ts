@@ -487,6 +487,11 @@ const routes: FastifyPluginAsync = async fastify => {
       query(
         `SELECT e.id, e.number, e.absolute_number, e.title, e.synopsis, e.thumbnail_key,
                 e.air_date, e.duration, e.is_filler, e.is_recap,
+                -- Whether this episode can be played at all. The list is where
+                -- the client decides what to make clickable, and an episode
+                -- with nowhere to play from is a link to a dead end.
+                (SELECT count(*) FROM video_sources v
+                  WHERE v.episode_id = e.id AND v.enabled)::int AS source_count,
                 tr.title    AS title_hu,
                 tr.synopsis AS synopsis_hu
          FROM episodes e
@@ -498,6 +503,37 @@ const routes: FastifyPluginAsync = async fastify => {
       queryOne<{ total: string }>('SELECT count(*)::int AS total FROM episodes WHERE anime_id = $1', [id])
     ])
     return { data: data.map(row => localiseEpisode(row, locale.language)), total: Number(counts?.total ?? 0) }
+  })
+
+  /**
+   * Where this episode can be played from.
+   *
+   * References, never media: the platform stores a pointer an operator
+   * registered and hands it to the player, which is the same thing it does
+   * with a source an extension found. Disabled rows are left out — "enabled"
+   * is how an operator takes a dead link out of playback without losing the
+   * record of which episode it belonged to.
+   *
+   * Visibility is checked through the episode's anime, not only the episode:
+   * publishing an episode under a hidden entry must not make it reachable.
+   */
+  fastify.get('/episodes/:eid/sources', async (request, reply) => {
+    const { eid } = request.params as { eid: string }
+    if (!UUID.test(eid)) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    const episode = await queryOne<{ id: string }>(
+      `SELECT e.id FROM episodes e JOIN anime a ON a.id = e.anime_id
+        WHERE e.id = $1 AND e.visibility = 'public' AND a.visibility <> 'hidden'`, [eid])
+    if (!episode) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    const data = await query(
+      `SELECT id, kind, ref, title, provider, resolution, language, variant, is_batch, size_bytes, seeders
+         FROM video_sources
+        WHERE episode_id = $1 AND enabled
+        ORDER BY priority, created_at`,
+      [eid]
+    )
+    return { data }
   })
 
   fastify.get('/:id/relations', async (request, reply) => {
@@ -515,6 +551,118 @@ const routes: FastifyPluginAsync = async fastify => {
       [id]
     )
     return { data }
+  })
+
+  /**
+   * The opening and ending intervals for one episode.
+   *
+   * Ours, from `skip_segments` — a table that has been in the schema since
+   * migration 0003 with nothing ever reading or writing it. The player used to
+   * ask an extension and then call api.aniskip.com from the page directly, so
+   * a deployment that had corrected a wrong interval had nowhere to put the
+   * correction.
+   *
+   * Ordered by votes: the table was built for community submissions, and the
+   * one people agreed with is the one to offer.
+   */
+  fastify.get('/episodes/:eid/skips', async (request, reply) => {
+    const { eid } = request.params as { eid: string }
+    if (!UUID.test(eid)) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    const data = await query(
+      `SELECT s.id, s.kind, s.start_sec, s.end_sec, s.votes
+         FROM skip_segments s
+         JOIN episodes e ON e.id = s.episode_id
+         JOIN anime a ON a.id = e.anime_id
+        WHERE s.episode_id = $1 AND e.visibility = 'public' AND a.visibility <> 'hidden'
+        ORDER BY s.kind, s.votes DESC`,
+      [eid]
+    )
+    return { data }
+  })
+
+  /**
+   * Subtitle tracks for one episode.
+   *
+   * `subtitle_tracks` is the same story: in the schema since 0003, written by
+   * nothing. A track is either hosted by us (`object_key`) or referenced
+   * (`url`); the caller wants one address either way, so both are returned and
+   * the client prefers whichever is set.
+   */
+  fastify.get('/episodes/:eid/subtitles', async (request, reply) => {
+    const { eid } = request.params as { eid: string }
+    if (!UUID.test(eid)) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    const data = await query(
+      `SELECT t.id, t.language, t.kind, t.format, t.url, t.object_key, t.source_id
+         FROM subtitle_tracks t
+         JOIN episodes e ON e.id = t.episode_id
+         JOIN anime a ON a.id = e.anime_id
+        WHERE t.episode_id = $1 AND e.visibility = 'public' AND a.visibility <> 'hidden'
+        ORDER BY t.language, t.kind`,
+      [eid]
+    )
+    return { data }
+  })
+
+  /**
+   * The whole franchise this title belongs to, in the order to watch it.
+   *
+   * The relations endpoint answers "what is directly attached to this one",
+   * which is the question a graph asks. The question a viewer asks is "where
+   * does this sit and what comes next" — and answering that means walking past
+   * the immediate neighbours: season three does not link to season one.
+   *
+   * So: an undirected walk over `anime_relations`, depth-capped and
+   * count-capped. Franchises are not small — some run to dozens of entries —
+   * and an uncapped walk on a well-connected component would return most of
+   * the catalogue to draw a sidebar.
+   *
+   * Ordering is by release date, not by the relation graph. Sequel edges give
+   * only a partial order, plenty of them are missing, and every entry that is
+   * neither sequel nor prequel — the films, the specials — has no place in
+   * that order at all. A date is a total order and is what a viewer means.
+   */
+  fastify.get('/:id/franchise', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    if (!UUID.test(id)) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    const data = await query<{
+      id: string, canonical_title: string, format: string, status: string,
+      season: string | null, season_year: number | null, start_date: string | null,
+      episode_count: number | null, cover_key: string | null, anilist_id: number | null,
+      relation: string | null, depth: number
+    }>(
+      `WITH RECURSIVE walk AS (
+         SELECT $1::uuid AS id, 0 AS depth
+         UNION
+         SELECT CASE WHEN r.anime_id = w.id THEN r.related_id ELSE r.anime_id END, w.depth + 1
+           FROM walk w
+           JOIN anime_relations r ON r.anime_id = w.id OR r.related_id = w.id
+          WHERE w.depth < 2
+       ),
+       nodes AS (SELECT id, min(depth) AS depth FROM walk GROUP BY id)
+       SELECT a.id, a.canonical_title, a.format, a.status, a.season, a.season_year,
+              a.start_date, a.episode_count, n.depth,
+              img.object_key AS cover_key, m.anilist_id,
+              -- the direct edge to the title that was asked about, when there
+              -- is one; further out there is no single relation to name
+              (SELECT r.relation FROM anime_relations r
+                WHERE (r.anime_id = $1 AND r.related_id = a.id)
+                   OR (r.related_id = $1 AND r.anime_id = a.id)
+                LIMIT 1) AS relation
+         FROM nodes n
+         JOIN anime a ON a.id = n.id
+         LEFT JOIN anime_images img ON img.anime_id = a.id AND img.kind = 'cover' AND img.is_primary
+         LEFT JOIN anime_mappings m ON m.anime_id = a.id
+        WHERE a.visibility = 'public' OR a.id = $1
+        ORDER BY a.start_date NULLS LAST, a.season_year NULLS LAST, a.canonical_title
+        LIMIT 61`,
+      [id]
+    )
+    if (!data.length) return { data: [], truncated: false }
+
+    // One over the cap means there was more; the list itself stays at the cap.
+    const truncated = data.length > 60
+    return { data: truncated ? data.slice(0, 60) : data, truncated }
   })
 
   /*

@@ -405,6 +405,50 @@ const PageWatch = {
   },
 
   /**
+   * The catalogue's row id for one episode number.
+   *
+   * Three things now hang off it — sources, skip intervals, subtitle tracks —
+   * and the episode list is the only thing that maps a number to a row. It is
+   * already fetched and cached by the time playback starts, so this is a map
+   * lookup rather than a request.
+   */
+  async _episodeId (media, episode) {
+    if (!media?.yumeId) return null
+    try {
+      const list = await Catalogue.episodes(media)
+      return list.find(e => e.episode === episode)?.yumeId ?? null
+    } catch (error) {
+      return null
+    }
+  },
+
+  /**
+   * The catalogue's own sources for one episode number.
+   *
+   * Two requests rather than one: the episode list is the only thing that maps
+   * a number to the row the sources hang off, and it is already fetched and
+   * cached by the time playback starts. Returns [] for anything the catalogue
+   * does not hold — an AniList title we have never imported has no episode row
+   * to attach a source to, and that is not an error.
+   */
+  async registeredSources (media, episode) {
+    try {
+      const episodeId = await this._episodeId(media, episode)
+      if (!episodeId) return []
+      const sources = await Catalogue.episodeSources(episodeId)
+      // Any subtitle tracks this deployment holds ride along on every one of
+      // them: a track is attached to the episode, not to whichever mirror the
+      // viewer happens to get.
+      const tracks = await Catalogue.subtitles(episodeId)
+      return tracks.length ? sources.map(s => ({ ...s, subtitles: tracks })) : sources
+    } catch (error) {
+      // A failure here must not stop the extensions being asked.
+      console.warn('[stream] registered sources unavailable:', error.message)
+      return []
+    }
+  },
+
+  /**
    * Build the candidate list for this episode and hand it to the engine.
    *
    * Candidates come from the URL(s) the user picked plus every extension the
@@ -416,6 +460,18 @@ const PageWatch = {
     const manual = String(src ?? '')
       .split('\n').map(u => u.trim()).filter(Boolean)
       .map(url => ({ url, title: T('Manual source'), source: { slug: 'manual', name: 'Manual URL', accuracy: 'low', health: 'unknown' } }))
+
+    /*
+     * What this deployment says the episode plays from.
+     *
+     * First in the candidate list, and ranked above a search result: somebody
+     * who runs this site attached these to this episode by hand, which is a
+     * stronger claim about "this is the right video" than anything matched by
+     * title. Extensions still answer — they are the way to find something the
+     * catalogue does not have — but they no longer have to be installed for
+     * anything to play at all.
+     */
+    const registered = await this.registeredSources(media, episode)
 
     if (!engine) { // engine unavailable → behave like the old direct player
       if (manual[0]) { video.src = manual[0].url; video.load() }
@@ -433,7 +489,7 @@ const PageWatch = {
       subtitles: window.Prefs?.get('playback.subtitles') ?? null
     }
 
-    const { results, errors } = await engine.candidates(media, episode, { sources: manual, extensions: loaded, prefs })
+    const { results, errors } = await engine.candidates(media, episode, { sources: [...registered, ...manual], extensions: loaded, prefs })
     for (const error of errors) console.warn('[stream] extension failed:', error)
 
     if (!results.length) { giveUp(T('No sources were offered for this episode.')); return }
@@ -1018,13 +1074,16 @@ const PageWatch = {
   /**
    * Opening and ending intervals for this episode.
    *
-   * Metadata extensions are asked first, so a viewer can install a different
-   * skip provider, turn one off, or see its failures in the developer portal.
+   * Three sources, in order of who is most likely to be right about *this*
+   * deployment's copy of the episode:
    *
-   * The built-in AniSkip call is kept as the fallback when no extension
-   * answers. Moving it out entirely would have been cleaner to read and worse
-   * to use: the skip button would silently disappear for everyone who has not
-   * installed an extension, which is a regression dressed as a refactor.
+   *   1. our own `skip_segments`, which somebody here entered or corrected
+   *   2. a metadata extension, so a viewer can bring a different provider
+   *   3. api.aniskip.com, the way it always worked
+   *
+   * The last one stays because removing it would silently take the skip button
+   * away from every episode nobody has entered intervals for, which is a
+   * regression dressed as a refactor.
    */
   async _loadSkips (media, episode, video, skipBtn) {
     this._skips = null
@@ -1034,9 +1093,21 @@ const PageWatch = {
       if (active) video.currentTime = active.end
     })
 
-    const label = type => (type === 'ed' ? T('Skip outro') : T('Skip intro'))
+    const label = type => (type === 'ed' || type === 'outro' ? T('Skip outro') : T('Skip intro'))
 
-    // ---- extensions first ----
+    // ---- the catalogue's own, first ----
+    const episodeId = await this._episodeId(media, episode)
+    if (episodeId) {
+      try {
+        const own = await Catalogue.skips(episodeId)
+        if (own.length) {
+          this._skips = own.map(s => ({ kind: label(s.kind), start: s.start, end: s.end }))
+          return
+        }
+      } catch (e) { /* fall through */ }
+    }
+
+    // ---- extensions next ----
     const host = window.ExtensionHost
     if (host?.collect) {
       try {
