@@ -1,4 +1,4 @@
-/* global window, document, I18n */
+/* global window, document, getComputedStyle, I18n */
 // Small DOM + formatting helpers shared by every page.
 
 // T() — the single text lookup — is defined in web/js/i18n.js, which loads
@@ -40,6 +40,32 @@ const U = {
     const wrap = document.createElement('span')
     wrap.innerHTML = `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`
     return wrap.firstChild
+  },
+
+  /**
+   * Any CSS colour → #rrggbb, for an <input type="color">.
+   *
+   * The picker takes hex and nothing else, while a theme's accent may be an
+   * hsl() or a named colour. Rather than parse CSS, this asks the browser: set
+   * the value on a detached element and read back what it computed. Returns
+   * null when the browser makes nothing of it, and the caller falls back — a
+   * picker showing the wrong colour is worse than one showing a default.
+   */
+  toHex (value) {
+    if (!value || typeof value !== 'string') return null
+    if (/^#[0-9a-f]{6}$/i.test(value.trim())) return value.trim()
+    try {
+      const probe = document.createElement('span')
+      probe.style.color = value
+      document.body.append(probe)
+      const rgb = getComputedStyle(probe).color
+      probe.remove()
+      const parts = rgb.match(/\d+/g)
+      if (!parts) return null
+      return '#' + parts.slice(0, 3).map(n => Number(n).toString(16).padStart(2, '0')).join('')
+    } catch (e) {
+      return null
+    }
   },
 
   title (media) {

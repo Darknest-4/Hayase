@@ -125,7 +125,7 @@ function buildUpdate (body: Record<string, unknown>, allowed: string[]): { sql: 
 
 const routes: FastifyPluginAsync = async fastify => {
   // reading the catalogue (incl. hidden rows) requires at least anime.view
-  fastify.addHook('preHandler', fastify.requirePermission('anime.view', { hide: true }))
+  fastify.addHook('onRequest', fastify.requirePermission('anime.view', { hide: true }))
 
   // ---- list / search (all visibilities) ----
   fastify.get('/', {
@@ -187,7 +187,7 @@ const routes: FastifyPluginAsync = async fastify => {
 
   // ---- create ----
   fastify.post('/', {
-    preHandler: fastify.requirePermission('anime.create', { hide: true }),
+    onRequest: fastify.requirePermission('anime.create', { hide: true }),
     schema: {
       body: {
         type: 'object',
@@ -215,7 +215,7 @@ const routes: FastifyPluginAsync = async fastify => {
 
   // ---- edit metadata / visibility ----
   fastify.patch('/:id', {
-    preHandler: fastify.requirePermission('anime.edit', { hide: true }),
+    onRequest: fastify.requirePermission('anime.edit', { hide: true }),
     schema: {
       params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } },
       body: { type: 'object', additionalProperties: false, properties: ANIME_FIELDS }
@@ -247,7 +247,7 @@ const routes: FastifyPluginAsync = async fastify => {
 
   // ---- delete ----
   fastify.delete('/:id', {
-    preHandler: fastify.requirePermission('anime.delete', { hide: true }),
+    onRequest: fastify.requirePermission('anime.delete', { hide: true }),
     schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
     const { id } = request.params as { id: string }
@@ -282,7 +282,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.post('/:id/episodes', {
-    preHandler: fastify.requirePermission('episode.create', { hide: true }),
+    onRequest: fastify.requirePermission('episode.create', { hide: true }),
     schema: {
       params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } },
       body: { type: 'object', required: ['number'], additionalProperties: false, properties: EPISODE_FIELDS }
@@ -307,7 +307,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.patch('/episodes/:eid', {
-    preHandler: fastify.requirePermission('episode.edit', { hide: true }),
+    onRequest: fastify.requirePermission('episode.edit', { hide: true }),
     schema: {
       params: { type: 'object', properties: { eid: { type: 'string', format: 'uuid' } } },
       body: { type: 'object', additionalProperties: false, properties: EPISODE_FIELDS }
@@ -347,7 +347,7 @@ const routes: FastifyPluginAsync = async fastify => {
    * ready" is one call rather than a decision per episode.
    */
   fastify.post('/:id/episodes/visibility', {
-    preHandler: fastify.requirePermission('episode.edit', { hide: true }),
+    onRequest: fastify.requirePermission('episode.edit', { hide: true }),
     schema: {
       params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } },
       body: {
@@ -395,7 +395,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.delete('/episodes/:eid', {
-    preHandler: fastify.requirePermission('episode.delete', { hide: true }),
+    onRequest: fastify.requirePermission('episode.delete', { hide: true }),
     schema: { params: { type: 'object', properties: { eid: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
     const { eid } = request.params as { eid: string }
@@ -406,7 +406,7 @@ const routes: FastifyPluginAsync = async fastify => {
 
   // ---- metadata provenance: release a field back to the importers ----
   fastify.post('/:id/unlock', {
-    preHandler: fastify.requirePermission('anime.edit', { hide: true }),
+    onRequest: fastify.requirePermission('anime.edit', { hide: true }),
     schema: {
       params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } },
       body: {
@@ -432,7 +432,7 @@ const routes: FastifyPluginAsync = async fastify => {
   // ---- duplicate detection ----
   // Read-only: it proposes pairs, a human confirms each merge.
   fastify.get('/duplicates', {
-    preHandler: fastify.requirePermission('anime.merge', { hide: true }),
+    onRequest: fastify.requirePermission('anime.merge', { hide: true }),
     schema: {
       querystring: {
         type: 'object',
@@ -451,7 +451,7 @@ const routes: FastifyPluginAsync = async fastify => {
   // Destructive and irreversible, so it is never automatic: the duplicate
   // scan only suggests, an operator with anime.merge confirms.
   fastify.post('/:id/merge', {
-    preHandler: fastify.requirePermission('anime.merge', { hide: true }),
+    onRequest: fastify.requirePermission('anime.merge', { hide: true }),
     schema: {
       params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } },
       body: {
@@ -495,7 +495,7 @@ const routes: FastifyPluginAsync = async fastify => {
   // The platform stores references, never media.
 
   fastify.get('/episodes/:eid/sources', {
-    preHandler: fastify.requirePermission('episode.edit', { hide: true }),
+    onRequest: fastify.requirePermission('episode.edit', { hide: true }),
     schema: { params: { type: 'object', properties: { eid: { type: 'string', format: 'uuid' } } } }
   }, async request => {
     const { eid } = request.params as { eid: string }
@@ -515,7 +515,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.post('/episodes/:eid/sources', {
-    preHandler: fastify.requirePermission('episode.edit', { hide: true }),
+    onRequest: fastify.requirePermission('episode.edit', { hide: true }),
     schema: {
       params: { type: 'object', properties: { eid: { type: 'string', format: 'uuid' } } },
       body: {
@@ -570,7 +570,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.patch('/sources/:sid', {
-    preHandler: fastify.requirePermission('episode.edit', { hide: true }),
+    onRequest: fastify.requirePermission('episode.edit', { hide: true }),
     schema: {
       params: { type: 'object', properties: { sid: { type: 'string', format: 'uuid' } } },
       body: { type: 'object', additionalProperties: false, properties: SOURCE_FIELDS }
@@ -608,7 +608,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.delete('/sources/:sid', {
-    preHandler: fastify.requirePermission('episode.edit', { hide: true }),
+    onRequest: fastify.requirePermission('episode.edit', { hide: true }),
     schema: { params: { type: 'object', properties: { sid: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
     const { sid } = request.params as { sid: string }
@@ -628,7 +628,7 @@ const routes: FastifyPluginAsync = async fastify => {
 
   /** Coverage, the run in flight, and the recent history — one screen's data. */
   fastify.get('/metadata', {
-    preHandler: fastify.requirePermission('anime.edit', { hide: true })
+    onRequest: fastify.requirePermission('anime.edit', { hide: true })
   }, async () => {
     const [stats, active, runs] = await Promise.all([
       coverage(),
@@ -645,7 +645,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.post('/metadata/runs', {
-    preHandler: fastify.requirePermission('anime.edit', { hide: true }),
+    onRequest: fastify.requirePermission('anime.edit', { hide: true }),
     schema: {
       body: {
         type: 'object',
@@ -688,7 +688,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.post('/metadata/runs/:id/cancel', {
-    preHandler: fastify.requirePermission('anime.edit', { hide: true }),
+    onRequest: fastify.requirePermission('anime.edit', { hide: true }),
     schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
     const { id } = request.params as { id: string }
@@ -709,7 +709,7 @@ const routes: FastifyPluginAsync = async fastify => {
    * and nobody goes looking in a table they were never shown.
    */
   fastify.get('/metadata/conflicts', {
-    preHandler: fastify.requirePermission('anime.edit', { hide: true })
+    onRequest: fastify.requirePermission('anime.edit', { hide: true })
   }, async () => {
     return query(
       `SELECT c.id, c.provider, c.external_id, c.source, c.seen_count, c.first_seen, c.last_seen,
@@ -725,7 +725,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.post('/metadata/conflicts/:id/resolve', {
-    preHandler: fastify.requirePermission('anime.edit', { hide: true }),
+    onRequest: fastify.requirePermission('anime.edit', { hide: true }),
     schema: {
       params: { type: 'object', properties: { id: { type: 'string', pattern: '^[0-9]+$' } } },
       body: {

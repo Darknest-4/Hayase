@@ -34,6 +34,7 @@ const PageAdmin = {
 
     { key: 'monitoring', group: 'system', label: 'Infrastructure', sub: 'VPS health & services', perm: 'system.metrics.view', render: 'renderMonitoring', icon: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>' },
     { key: 'webhooks', group: 'system', label: 'Webhooks', sub: 'Outbound integrations', perm: 'admin.webhooks.manage', render: 'renderWebhooks', icon: '<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>' },
+    { key: 'themes', group: 'system', label: 'Themes', sub: 'Colours viewers can choose', perm: 'theme.publish', render: 'renderThemes', icon: '<circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2a10 10 0 0 0 0 20 2 2 0 0 0 2-2v-1a2 2 0 0 1 2-2h2a4 4 0 0 0 4-4 10 10 0 0 0-10-11"/>' },
     { key: 'config', group: 'system', label: 'Site config', sub: 'Feature flags & settings', perm: 'settings.system', render: 'renderConfig', icon: '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>' }
   ],
 
@@ -1339,6 +1340,155 @@ const PageAdmin = {
     const h = Math.floor((seconds % 86400) / 3600)
     const m = Math.floor((seconds % 3600) / 60)
     return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`
+  },
+
+  // ---- themes ----
+  //
+  // A theme used to be an extension: a package in a store, sandboxed in a
+  // worker, asked over a message channel for a list of colours. That is a lot
+  // of machinery for twelve hex values, and it meant an operator could not put
+  // their own palette in front of their own viewers without publishing one.
+
+  async renderThemes (content) {
+    const load = async () => {
+      content.replaceChildren(U.el('div', { class: 'spinner' }))
+      try {
+        const { data } = await YumeAPI.admin.themes.list()
+        this.paintThemes(content, data, load)
+      } catch (e) {
+        content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load themes: ' + e.message }))
+      }
+    }
+    await load()
+  },
+
+  paintThemes (content, themes, reload) {
+    content.replaceChildren()
+    content.append(U.el('p', { class: 'meta-note', text: 'The default is what a viewer who has never chosen sees. Changing it does not repaint anyone who has picked their own — that is their choice.' }))
+
+    const grid = U.el('div', { class: 'theme-admin-grid' })
+    for (const theme of themes) {
+      const card = U.el('div', { class: 'theme-admin-card' + (theme.enabled ? '' : ' theme-admin-off') }, [
+        U.el('div', { class: 'theme-admin-head' }, [
+          U.el('span', { class: 'theme-admin-swatch', style: `background:${theme.accent ?? 'var(--accent)'};` }),
+          U.el('div', { class: 'theme-admin-name' }, [
+            U.el('div', { class: 'theme-admin-title', text: theme.name }),
+            U.el('div', { class: 'theme-admin-slug', text: `${theme.slug} · ${theme.base}${theme.accent ? '' : ' · stylesheet accent'}` })
+          ]),
+          theme.is_default ? U.el('span', { class: 'cat-badge cat-badge-default', text: 'default' }) : null,
+          theme.built_in ? U.el('span', { class: 'cat-badge', title: 'Ships with the deployment; it can be recoloured and disabled, not deleted.', text: 'built-in' }) : null
+        ]),
+        U.el('div', { class: 'theme-admin-actions' }, [
+          // An accent is a colour, so the control is a colour picker: typing
+          // a hex value by hand is how a theme ends up one character wrong.
+          U.el('input', {
+            type: 'color',
+            class: 'theme-color-input theme-admin-picker',
+            value: U.toHex(theme.accent) ?? '#f43f6e',
+            title: 'Recolour',
+            onchange: async e => {
+              try {
+                await YumeAPI.admin.themes.update(theme.id, { accent: e.target.value })
+                U.toast(`${theme.name} recoloured`)
+                await reload()
+              } catch (err) { U.toast(err.message, 'error') }
+            }
+          }),
+          theme.is_default
+            ? null
+            : U.el('button', {
+              class: 'btn btn-ghost btn-sm',
+              onclick: async () => {
+                try {
+                  await YumeAPI.admin.themes.update(theme.id, { isDefault: true })
+                  U.toast(`${theme.name} is now the default`)
+                  await reload()
+                } catch (err) { U.toast(err.message, 'error') }
+              }
+            }, [document.createTextNode('Make default')]),
+          U.el('button', {
+            class: 'btn btn-ghost btn-sm',
+            onclick: async () => {
+              try {
+                await YumeAPI.admin.themes.update(theme.id, { enabled: !theme.enabled })
+                await reload()
+              } catch (err) { U.toast(err.message, 'error') }
+            }
+          }, [document.createTextNode(theme.enabled ? 'Disable' : 'Enable')]),
+          theme.built_in
+            ? null
+            : U.el('button', {
+              class: 'btn btn-ghost btn-sm cat-ep-del',
+              onclick: async () => {
+                if (!confirm(`Delete the "${theme.name}" theme?`)) return
+                try {
+                  await YumeAPI.admin.themes.remove(theme.id)
+                  U.toast('Theme deleted')
+                  await reload()
+                } catch (err) { U.toast(err.message, 'error') }
+              }
+            }, [document.createTextNode('✕')])
+        ])
+      ])
+      grid.append(card)
+    }
+    content.append(grid)
+
+    // ---- add one ----
+    const draft = { slug: '', name: '', base: 'dark', accent: '#7c5cff' }
+    let slugInput
+    const field = (label, node) => U.el('label', { class: 'cat-field' }, [
+      U.el('span', { class: 'cat-field-label', text: label }), node
+    ])
+    content.append(
+      U.el('h3', { class: 'detail-section-title', text: 'Add a theme' }),
+      U.el('div', { class: 'src-add-grid' }, [
+        field('Name', U.el('input', {
+          class: 'input',
+          placeholder: 'Shown to viewers',
+          oninput: e => {
+            draft.name = e.target.value
+            // The slug follows the name until somebody edits it themselves:
+            // it is an identifier, and asking for one is asking a viewer-facing
+            // question about a machine-facing field.
+            if (!draft.slugTouched) {
+              draft.slug = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
+              slugInput.value = draft.slug
+            }
+          }
+        })),
+        field('Slug', slugInput = U.el('input', {
+          class: 'input',
+          placeholder: 'my-theme',
+          oninput: e => { draft.slugTouched = true; draft.slug = e.target.value }
+        })),
+        field('Base', U.el('select', {
+          class: 'select',
+          onchange: e => { draft.base = e.target.value }
+        }, [U.el('option', { value: 'dark', text: 'Dark' }), U.el('option', { value: 'light', text: 'Light' })])),
+        field('Accent', U.el('input', {
+          class: 'theme-color-input',
+          type: 'color',
+          value: '#7c5cff',
+          oninput: e => { draft.accent = e.target.value }
+        }))
+      ]),
+      U.el('div', { class: 'admin-toolbar' }, [
+        U.el('button', {
+          class: 'btn btn-primary',
+          onclick: async () => {
+            if (!draft.name.trim() || !draft.slug.trim()) { U.toast('A name and a slug are required', 'error'); return }
+            try {
+              await YumeAPI.admin.themes.create({
+                slug: draft.slug.trim(), name: draft.name.trim(), base: draft.base, accent: draft.accent
+              })
+              U.toast('Theme added')
+              await reload()
+            } catch (e) { U.toast(e.message, 'error') }
+          }
+        }, [U.el('span', { text: 'Add theme' })])
+      ])
+    )
   },
 
   // ---- metadata synchronisation ----

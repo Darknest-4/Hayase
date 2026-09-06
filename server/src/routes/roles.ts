@@ -10,7 +10,7 @@ import { emitEvent } from '../lib/webhooks.ts'
 import type { FastifyPluginAsync } from 'fastify'
 
 const routes: FastifyPluginAsync = async fastify => {
-  fastify.addHook('preHandler', fastify.requirePermission('roles.manage', { hide: true }))
+  fastify.addHook('onRequest', fastify.requirePermission('roles.manage', { hide: true }))
 
   // all roles with their granted permission slugs + how many users hold them
   fastify.get('/', async () => {

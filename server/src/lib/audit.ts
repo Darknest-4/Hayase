@@ -38,8 +38,11 @@ export type AuditAction =
   // fields across the whole catalogue and the question afterwards is who
   // asked for it.
   | 'metadata.sync'
+  // What the whole site looks like. One row decides the colours every viewer
+  // who has not chosen otherwise sees.
+  | 'theme.create' | 'theme.update' | 'theme.delete'
 
-export type SubjectType = 'user' | 'role' | 'anime' | 'episode' | 'config' | 'webhook' | 'extension' | 'metadata_run'
+export type SubjectType = 'user' | 'role' | 'anime' | 'episode' | 'config' | 'webhook' | 'extension' | 'metadata_run' | 'theme'
 
 /**
  * Record one administrative action.

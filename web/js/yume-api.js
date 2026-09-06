@@ -259,6 +259,22 @@ const YumeAPI = {
     }
   },
 
+  /**
+   * The themes this deployment offers.
+   *
+   * Public and unauthenticated: the colours are the same for everyone, and a
+   * signed-out visitor seeing the wrong ones until they sign in is a worse
+   * answer than serving a list of hex values to anybody who asks.
+   */
+  async themes () {
+    try {
+      const { data } = await this._request('/v1/themes')
+      return data
+    } catch (e) {
+      return null
+    }
+  },
+
   /** The registered, enabled sources of one episode. */
   async episodeSources (episodeId) {
     try {
@@ -504,6 +520,14 @@ const YumeAPI = {
       conflicts: () => YumeAPI._request('/v1/admin/catalogue/metadata/conflicts', { auth: true }),
       resolveConflict: (id, resolution) =>
         YumeAPI._request(`/v1/admin/catalogue/metadata/conflicts/${id}/resolve`, { method: 'POST', auth: true, body: { resolution } })
+    },
+
+    // themes — the colours viewers may choose from
+    themes: {
+      list: () => YumeAPI._request('/v1/admin/themes', { auth: true }),
+      create: body => YumeAPI._request('/v1/admin/themes', { method: 'POST', auth: true, body }),
+      update: (id, body) => YumeAPI._request(`/v1/admin/themes/${id}`, { method: 'PATCH', auth: true, body }),
+      remove: id => YumeAPI._request(`/v1/admin/themes/${id}`, { method: 'DELETE', auth: true })
     },
 
     // error triage — list groups, open one for its stack, change its status

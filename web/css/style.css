@@ -2735,6 +2735,26 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
   color: var(--fg-faint); background: color-mix(in oklab, var(--fg-faint) 14%, transparent);
 }
 
+/* ===== admin: themes ===== */
+
+.theme-admin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr)); gap: var(--space-3); margin-bottom: var(--space-5); }
+.theme-admin-card {
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  background: var(--bg-raised); padding: var(--space-3);
+  display: flex; flex-direction: column; gap: .6rem;
+}
+/* Disabled, not gone: an operator taking a theme out of the picker still has
+   to be able to see and undo it. */
+.theme-admin-off { opacity: .55; }
+.theme-admin-head { display: flex; align-items: center; gap: .6rem; }
+.theme-admin-swatch { width: 1.6rem; height: 1.6rem; border-radius: var(--radius-full); flex-shrink: 0; border: 1px solid var(--border); }
+.theme-admin-name { min-width: 0; flex-grow: 1; }
+.theme-admin-title { font-weight: var(--weight-bold); font-size: var(--text-sm); }
+.theme-admin-slug { font-family: var(--font-mono); font-size: .62rem; color: var(--fg-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.theme-admin-actions { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.theme-admin-picker { width: 2.2rem; height: 2.2rem; padding: 0; }
+.cat-badge-default { color: var(--accent); background: var(--accent-soft); }
+
 /* ===== admin: an episode's video sources ===== */
 
 /* The catalogue rows have been asking for `.cat-badge` since they were

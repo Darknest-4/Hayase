@@ -1,49 +1,58 @@
-/* global Store, U, document, getComputedStyle, window, T */
+/* global Store, U, YumeAPI, document, window, T */
 // Theme Engine — pick a base (dark/light), choose an accent from curated
 // presets or a fully custom colour, and optionally tint surfaces toward the
 // accent. Applied live via CSS custom-property overrides (Store.applyTheme).
 
 const PageThemes = {
   /**
-   * Ask theme extensions what they offer, and draw them under their own
-   * heading.
+   * The themes this deployment offers.
    *
-   * Asynchronous and best-effort: the built-in themes are already on screen by
-   * the time this runs, so a slow or broken extension delays nothing and
-   * removes nothing. A theme is cosmetic — it is never worth an error state.
+   * They used to come from two places that could not see each other: a
+   * hard-coded list in this file, and whatever `theme` extensions returned
+   * over the sandbox message channel. So an operator could not add a palette
+   * without publishing a package, and the two lists could disagree about a
+   * slug with nothing to arbitrate.
+   *
+   * One table now, ordered by the operator. Asynchronous and best-effort: the
+   * fallback list below is already on screen by the time this runs, so a slow
+   * or unreachable server delays nothing. A theme is cosmetic — it is never
+   * worth an error state.
    */
-  async _appendExtensionThemes (pad, currentAccent, currentBase, swatch) {
-    const host = window.ExtensionHost
-    if (!host?.collect) return
-
-    let results = []
+  async _appendSiteThemes (pad, grid, swatch) {
+    let themes
     try {
-      ({ results } = await host.collect('theme', undefined, { types: ['theme'] }))
+      themes = await YumeAPI.themes()
     } catch (e) {
       return
     }
-
-    const themes = (results ?? []).filter(row =>
-      row?.kind === 'theme' &&
-      typeof row.accent === 'string' &&
+    const usable = (themes ?? []).filter(row =>
       // Only the two bases the engine implements. Anything else would set a
       // data-theme the stylesheet has no rules for and render an unstyled page.
-      (row.base === 'dark' || row.base === 'light')
+      row?.base === 'dark' || row?.base === 'light'
     )
-    if (!themes.length) return
+    if (!usable.length) return
 
-    pad.append(U.el('h2', { class: 'settings-group-title', text: T('From extensions') }))
-    const grid = U.el('div', { class: 'theme-swatch-grid' })
-    for (const theme of themes) {
+    // The server's list replaces the fallback rather than joining it: two
+    // grids of near-identical swatches is not a choice, it is a puzzle.
+    grid.replaceChildren()
+    for (const theme of usable) {
       grid.append(swatch({
-        name: theme.name || theme.slug || 'Theme',
+        slug: theme.slug,
+        name: theme.name || theme.slug,
         base: theme.base,
-        accent: theme.accent
-      }, theme._source))
+        accent: theme.accent,
+        tint: theme.tint,
+        tokens: theme.tokens
+      }))
     }
-    pad.append(grid)
   },
 
+  /**
+   * What to draw before the server answers, and if it never does.
+   *
+   * The same rows the themes table is seeded with, so the two agree; kept here
+   * so a fresh page paints a full grid rather than an empty box that fills in.
+   */
   PRESETS: [
     { slug: 'rose', name: 'Rose', base: 'dark', accent: 'hsl(346.6 79% 51%)' },
     { slug: 'sakura', name: 'Sakura', base: 'light', accent: 'hsl(340 82% 62%)' },
@@ -53,7 +62,7 @@ const PageThemes = {
     { slug: 'ember', name: 'Ember', base: 'dark', accent: 'hsl(18 90% 56%)' },
     { slug: 'gold', name: 'Gold', base: 'dark', accent: 'hsl(42 90% 55%)' },
     { slug: 'mono', name: 'Mono', base: 'dark', accent: 'hsl(0 0% 82%)' },
-    { slug: 'daylight', name: 'Daylight', base: 'light', accent: 'hsl(215 90% 55%)' }
+    { slug: 'dawn', name: 'Dawn', base: 'light', accent: 'hsl(215 90% 55%)' }
   ],
 
   render (root) {
@@ -84,14 +93,27 @@ const PageThemes = {
     // ---- accent presets ----
     pad.append(U.el('h2', { class: 'detail-section-title', text: T('Accent') }))
     const grid = U.el('div', { class: 'theme-grid' })
+    const currentSlug = settings.themeSlug ?? null
     const swatch = (preset, from) => {
-      const active = currentAccent === preset.accent && currentBase === preset.base
+      // By slug when the theme has one — two themes may legitimately share an
+      // accent, and the selected card should be the one that was clicked.
+      const active = preset.slug && currentSlug
+        ? preset.slug === currentSlug
+        : currentAccent === preset.accent && currentBase === preset.base
       return U.el('button', {
         class: 'theme-swatch-card' + (active ? ' active' : ''),
         title: from ? `${preset.name} · ${from}` : preset.name,
-        onclick: () => { Store.setTheme({ base: preset.base, accent: preset.accent }); window.App.navigate() }
+        onclick: () => {
+          Store.setTheme({
+            base: preset.base,
+            accent: preset.accent ?? '',
+            tokens: preset.tokens ?? {},
+            slug: preset.slug ?? ''
+          })
+          window.App.navigate()
+        }
       }, [
-        U.el('span', { class: 'theme-swatch', style: `background:${preset.accent};` }),
+        U.el('span', { class: 'theme-swatch', style: `background:${preset.accent ?? 'var(--accent)'};` }),
         U.el('span', { class: 'theme-swatch-name', text: preset.name }),
         U.el('span', { class: 'theme-swatch-base', text: preset.base })
       ])
@@ -99,17 +121,7 @@ const PageThemes = {
 
     for (const p of this.PRESETS) grid.append(swatch(p))
     pad.append(grid)
-
-    // Themes contributed by `theme` extensions.
-    //
-    // The type has been valid in the manifest validator since the store
-    // existed and nothing ever consumed it, so a theme pack could be published
-    // and installed and would then do nothing at all. This is the consumer.
-    //
-    // Appended after the built-ins rather than merged into them: a viewer
-    // should be able to tell which themes came from where, and an extension
-    // should not be able to shadow a built-in by reusing its slug.
-    this._appendExtensionThemes(pad, currentAccent, currentBase, swatch)
+    this._appendSiteThemes(pad, grid, swatch)
 
     // ---- custom colour ----
     pad.append(U.el('h2', { class: 'detail-section-title', text: T('Custom accent') }))
@@ -168,22 +180,9 @@ const PageThemes = {
     ]))
   },
 
-  // best-effort conversion of an accent value to a #rrggbb for the picker
+  // Shared with the admin theme editor, which needs exactly the same thing.
   _toHex (value) {
-    if (!value) return null
-    if (value.startsWith('#')) return value
-    try {
-      const probe = document.createElement('span')
-      probe.style.color = value
-      document.body.append(probe)
-      const rgb = getComputedStyle(probe).color
-      probe.remove()
-      const m = rgb.match(/\d+/g)
-      if (!m) return null
-      return '#' + m.slice(0, 3).map(n => Number(n).toString(16).padStart(2, '0')).join('')
-    } catch (e) {
-      return null
-    }
+    return U.toHex(value)
   }
 }
 

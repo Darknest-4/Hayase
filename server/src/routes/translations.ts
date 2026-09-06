@@ -23,7 +23,7 @@ const MAX_TITLE = 500
 const MAX_SYNOPSIS = 8000
 
 const routes: FastifyPluginAsync = async fastify => {
-  fastify.addHook('preHandler', fastify.requirePermission('anime.edit', { hide: true }))
+  fastify.addHook('onRequest', fastify.requirePermission('anime.edit', { hide: true }))
 
   // ---- the queue ----
   //

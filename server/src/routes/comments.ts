@@ -67,7 +67,7 @@ const routes: FastifyPluginAsync = async fastify => {
 
   fastify.post('/', {
     config: WRITE_LIMIT,
-    preHandler: fastify.requirePermission('community.post'),
+    onRequest: fastify.requirePermission('community.post'),
     schema: {
       body: {
         type: 'object',

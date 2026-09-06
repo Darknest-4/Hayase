@@ -99,6 +99,33 @@ const App = {
     if (!this.CHROMELESS.includes(route)) page.append(C.footer())
   },
 
+  /**
+   * Paint the site's default theme for a viewer who has never chosen one.
+   *
+   * Only for them. An operator changing the default must not repaint the app
+   * of somebody who picked their own — that is their choice, and silently
+   * overwriting it is the behaviour nobody can explain afterwards.
+   *
+   * Best-effort and off the critical path: if the theme list cannot be
+   * reached the page renders in the stylesheet's own colours, which is what it
+   * did before any of this existed.
+   */
+  async applyDefaultTheme () {
+    if (window.Store?.hasChosenTheme?.()) return
+    try {
+      const themes = await window.YumeAPI.themes()
+      const fallback = (themes ?? []).find(t => t.is_default)
+      if (!fallback) return
+      window.Store.setTheme({
+        base: fallback.base,
+        accent: fallback.accent ?? '',
+        tint: Boolean(fallback.tint),
+        tokens: fallback.tokens ?? {},
+        slug: fallback.slug
+      })
+    } catch (e) { /* the stylesheet's own colours are a fine answer */ }
+  },
+
   // ---- feature-flag / access gate ----
 
   config: null, // effective site config from /v1/config
@@ -604,6 +631,7 @@ const App = {
       if (logoText) logoText.textContent = this.config.site.name.toLowerCase()
       document.title = this.config.site.name
     }
+    await this.applyDefaultTheme()
     this.refreshAdminNav()
     this.applyNavVisibility()
     this.navigate()
