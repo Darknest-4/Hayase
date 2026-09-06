@@ -8,7 +8,7 @@ import { checkOutboundUrl } from '../lib/ssrf.ts'
 import type { FastifyPluginAsync } from 'fastify'
 
 const routes: FastifyPluginAsync = async fastify => {
-  fastify.addHook('preHandler', fastify.requirePermission('admin.webhooks.manage'))
+  fastify.addHook('preHandler', fastify.requirePermission('admin.webhooks.manage', { hide: true }))
 
   // list available event types (for the UI's per-event toggles)
   fastify.get('/events', async () => ({ events: WEBHOOK_EVENTS }))

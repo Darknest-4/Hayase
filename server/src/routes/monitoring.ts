@@ -84,7 +84,7 @@ const DEPENDENCIES: Array<{ service: string, required: boolean, provides: string
 ]
 
 export const adminMonitoring: FastifyPluginAsync = async fastify => {
-  fastify.addHook('preHandler', fastify.requirePermission('system.metrics.view'))
+  fastify.addHook('preHandler', fastify.requirePermission('system.metrics.view', { hide: true }))
 
   /** Latest reading of every metric, classified against the active thresholds. */
   fastify.get('/current', async () => {
@@ -198,7 +198,7 @@ export const adminMonitoring: FastifyPluginAsync = async fastify => {
    * never run on the request path; this returns immediately with an id to poll.
    */
   fastify.post('/diagnostics', {
-    preHandler: fastify.requirePermission('system.diagnostics.run')
+    preHandler: fastify.requirePermission('system.diagnostics.run', { hide: true })
   }, async (request, reply) => {
     // a run that never finished (worker killed mid-benchmark) must not block
     // new runs forever

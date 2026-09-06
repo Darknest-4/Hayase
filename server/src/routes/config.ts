@@ -83,7 +83,7 @@ export const publicConfig: FastifyPluginAsync = async fastify => {
 
 // ---- admin endpoints ----
 export const adminConfig: FastifyPluginAsync = async fastify => {
-  fastify.addHook('preHandler', fastify.requirePermission('settings.system'))
+  fastify.addHook('preHandler', fastify.requirePermission('settings.system', { hide: true }))
 
   // full flag rows + settings, for the editor
   fastify.get('/', async () => {

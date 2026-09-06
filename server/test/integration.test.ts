@@ -156,15 +156,18 @@ describe('API integration', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => 
     })
 
     test('an ordinary account is refused admin routes', async () => {
+      // 404 rather than 403: the administration surface is hidden from an
+      // account that has no business knowing it exists. See
+      // test/admin-visibility.test.ts for the reasoning and the boundary.
       for (const url of ['/v1/admin/users', '/v1/admin/catalogue', '/v1/admin/monitoring/current']) {
         const res = await app.inject({ url, headers: { authorization: `Bearer ${token}` } })
-        assert.equal(res.statusCode, 403, `${url} must require a permission, got ${res.statusCode}`)
+        assert.equal(res.statusCode, 404, `${url} must be hidden, got ${res.statusCode}`)
       }
     })
 
     test('granting the role opens exactly the gated route', async () => {
       const before = await app.inject({ url: '/v1/admin/catalogue', headers: { authorization: `Bearer ${token}` } })
-      assert.equal(before.statusCode, 403)
+      assert.equal(before.statusCode, 404, 'hidden before the grant')
 
       await pool.query(
         `INSERT INTO user_roles (user_id, role_id)

@@ -853,7 +853,11 @@ describe('adversarial', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
 
     test('both views refuse an ordinary account', async () => {
       for (const url of ['/v1/admin/errors', '/v1/admin/audit']) {
-        assert.equal((await app.inject({ url, headers: { authorization: `Bearer ${attacker.token}` } })).statusCode, 403, url)
+        // Hidden, not forbidden: a 403 confirms the panel exists and that this
+        // account is merely outside it.
+        assert.equal((await app.inject({ url, headers: { authorization: `Bearer ${attacker.token}` } })).statusCode, 404, url)
+        // Still 401 without a token: there is no account to hide it from yet,
+        // and 401 is what tells a client to sign in.
         assert.equal((await app.inject({ url })).statusCode, 401, url)
       }
     })
@@ -1088,7 +1092,7 @@ describe('adversarial', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
         { method: 'PATCH' as const, url: `/v1/admin/catalogue/${animeId}`, payload: { visibility: 'public' } }
       ]) {
         const res = await app.inject({ ...call, headers: { authorization: `Bearer ${attacker.token}` } })
-        assert.equal(res.statusCode, 403, call.url)
+        assert.equal(res.statusCode, 404, call.url)
       }
     })
 
@@ -1192,9 +1196,10 @@ describe('adversarial', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
           WHERE ur.user_id = $1 AND r.slug = 'admin'`, [account.id])
       assert.equal(Number(rows[0]!.n), 0, 'the bootstrap must be dead once anybody holds the role')
 
-      // And it really is an ordinary account.
+      // And it really is an ordinary account: the panel is not merely refused
+      // to it, it is invisible.
       const res = await app.inject({ url: '/v1/admin/users', headers: { authorization: `Bearer ${account.token}` } })
-      assert.equal(res.statusCode, 403)
+      assert.equal(res.statusCode, 404)
       await pool.query('DELETE FROM users WHERE id = $1', [account.id])
     })
 

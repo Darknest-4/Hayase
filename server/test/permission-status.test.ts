@@ -32,7 +32,10 @@ function enforcedSlugs (dir = SRC, found = new Set<string>()): Set<string> {
     const path = join(dir, name)
     if (statSync(path).isDirectory()) { enforcedSlugs(path, found); continue }
     if (!path.endsWith('.ts')) continue
-    for (const match of readFileSync(path, 'utf8').matchAll(/requirePermission\('([a-z0-9._]+)'\)/g)) {
+    // The second argument is optional — admin routes pass `{ hide: true }` so
+    // they answer 404 instead of 403 — so the slug is matched without
+    // requiring the closing paren to follow it.
+    for (const match of readFileSync(path, 'utf8').matchAll(/requirePermission\('([a-z0-9._]+)'/g)) {
       found.add(match[1]!)
     }
   }

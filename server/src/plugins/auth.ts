@@ -1,7 +1,7 @@
 // Authentication + RBAC plugin.
 //  - registers @fastify/jwt for access tokens
 //  - decorates fastify.authenticate (route preHandler)
-//  - decorates fastify.requirePermission(slug) — resolves the user's
+//  - decorates fastify.requirePermission(slug, { hide }) — resolves the user's
 //    permission set (users → user_roles → role_permissions) with a
 //    per-request memo; Redis caching slots in here later without touching
 //    call sites.
@@ -45,7 +45,7 @@ declare module '@fastify/jwt' {
 declare module 'fastify' {
   interface FastifyInstance {
     authenticate: preHandlerHookHandler
-    requirePermission: (slug: string) => preHandlerHookHandler
+    requirePermission: (slug: string, options?: { hide?: boolean }) => preHandlerHookHandler
   }
 }
 
@@ -209,12 +209,29 @@ export default fp(async fastify => {
     await verify(request, reply)
   })
 
-  fastify.decorate('requirePermission', (slug: string) =>
+  /**
+   * Refuse a request that lacks a permission.
+   *
+   * `hide: true` answers 404 instead of 403, for routes where the *existence*
+   * of the thing is itself the information — the administration surface. A 403
+   * there confirms there is an admin panel and that this account is simply not
+   * in it, which is a map for somebody probing.
+   *
+   * It is opt-in rather than the default on purpose. 403 is the honest and
+   * more useful answer nearly everywhere else: "this exists, you cannot do it"
+   * lets a legitimate user ask for access, while a blanket 404 turns every
+   * permission mistake into a support ticket about a broken link.
+   */
+  fastify.decorate('requirePermission', (slug: string, options?: { hide?: boolean }) =>
     async function (request: FastifyRequest, reply: FastifyReply) {
       if (!await verify(request, reply)) return
       const permissions = await loadPermissions(request.user.sub)
       if (!permissions.has(slug)) {
-        return reply.code(403).send({ type: 'about:blank', title: 'Forbidden', status: 403, detail: `Missing permission: ${slug}` })
+        return options?.hide === true
+          // Deliberately says nothing about permissions: the reply is meant to
+          // be indistinguishable from a route that does not exist.
+          ? await reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+          : await reply.code(403).send({ type: 'about:blank', title: 'Forbidden', status: 403, detail: `Missing permission: ${slug}` })
       }
     })
 })
