@@ -17,6 +17,10 @@ export type AuditAction =
   | 'role.permission.grant' | 'role.permission.revoke'
   | 'anime.create' | 'anime.edit' | 'anime.delete' | 'anime.merge' | 'anime.unlock'
   | 'episode.create' | 'episode.edit' | 'episode.delete'
+  // Where an episode can be played from. Recorded because a source is the one
+  // catalogue field that decides whether a viewer sees anything at all, and
+  // "who put this link here" is the question when one turns out to be wrong.
+  | 'episode.source.add' | 'episode.source.edit' | 'episode.source.remove'
   // Publishing is its own act, separate from editing an episode's text: it is
   // the one that decides whether viewers can reach the thing at all.
   | 'episode.visibility' | 'anime.visibility'

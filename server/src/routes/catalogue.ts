@@ -18,6 +18,67 @@ const STATUSES = ['NOT_YET_RELEASED', 'RELEASING', 'FINISHED', 'CANCELLED', 'HIA
 const SEASONS = ['WINTER', 'SPRING', 'SUMMER', 'FALL']
 const VISIBILITIES = ['public', 'unlisted', 'hidden']
 
+// ---- video sources ----
+
+const SOURCE_KINDS = ['http', 'torrent', 'nzb', 'embed']
+const SOURCE_VARIANTS = ['sub', 'dub', 'raw']
+
+/** The editable columns of a source, shared by POST and PATCH. */
+const SOURCE_FIELDS = {
+  kind: { enum: SOURCE_KINDS },
+  ref: { type: 'string', minLength: 1, maxLength: 4000 },
+  title: { type: ['string', 'null'], maxLength: 300 },
+  provider: { type: ['string', 'null'], maxLength: 80 },
+  resolution: { type: ['string', 'null'], enum: ['2160', '1080', '720', '540', '480', null] },
+  language: { type: ['string', 'null'], maxLength: 12 },
+  variant: { type: ['string', 'null'], enum: [...SOURCE_VARIANTS, null] },
+  enabled: { type: 'boolean' },
+  priority: { type: 'integer', minimum: -32768, maximum: 32767 },
+  isBatch: { type: 'boolean' }
+} as const
+
+interface SourceBody {
+  kind?: string
+  ref?: string
+  title?: string | null
+  provider?: string | null
+  resolution?: string | null
+  language?: string | null
+  variant?: string | null
+  enabled?: boolean
+  priority?: number
+  isBatch?: boolean
+}
+
+/**
+ * Refuse a reference the player must never be handed.
+ *
+ * The stored string ends up in an `href`, a `<video src>` or an iframe in
+ * somebody's browser, so the scheme is not cosmetic: `javascript:` and `data:`
+ * in that position are script execution in the site's own origin. An operator
+ * pasting one by accident is far likelier than one doing it on purpose, and
+ * either way the check belongs where the value is written rather than at each
+ * of the places it is later read.
+ *
+ * Returns the reason it is bad, or null when it is fine.
+ */
+function badReference (kind: string, ref: string | undefined): string | null {
+  const value = String(ref ?? '').trim()
+  if (!value) return 'A reference is required'
+  if (kind === 'torrent') {
+    return /^(magnet:\?|[0-9a-f]{40}$|https?:\/\/)/i.test(value)
+      ? null
+      : 'A torrent source must be a magnet link, an info hash, or a link to a .torrent file'
+  }
+  if (!/^https:\/\//i.test(value)) {
+    // http:// is refused rather than merely discouraged: the site is served
+    // over TLS, so a plain-http source is a mixed-content error in the
+    // browser — it would be recorded as working and then not play.
+    return 'The reference must be an https:// URL'
+  }
+  return null
+}
+
 // editable anime columns → their JSON-schema fragment (used for PATCH/POST)
 const ANIME_FIELDS = {
   canonical_title: { type: 'string', minLength: 1, maxLength: 500 },
@@ -416,6 +477,142 @@ const routes: FastifyPluginAsync = async fastify => {
       action: `merged "${source?.canonical_title}" into`, title: target?.canonical_title, by: request.user.username
     })
     return { id, merged: sourceId }
+  })
+
+  // ---- video sources ----
+  //
+  // `video_sources` has been in the schema since 0003 and nothing ever wrote
+  // to it: it was designed for an extension to fill. That left two ways to
+  // play anything — a loaded extension, or a URL the viewer pastes into the
+  // player — and neither is something an operator can curate. These routes
+  // are the third: sources an operator registers, from any provider.
+  //
+  // The platform stores references, never media.
+
+  fastify.get('/episodes/:eid/sources', {
+    preHandler: fastify.requirePermission('episode.edit', { hide: true }),
+    schema: { params: { type: 'object', properties: { eid: { type: 'string', format: 'uuid' } } } }
+  }, async request => {
+    const { eid } = request.params as { eid: string }
+    // Disabled ones included: this is the editor, and a source taken out of
+    // playback is exactly the row somebody came here to fix.
+    const data = await query(
+      `SELECT s.id, s.kind, s.ref, s.title, s.provider, s.resolution, s.language, s.variant,
+              s.enabled, s.priority, s.is_batch, s.size_bytes, s.seeders, s.created_at,
+              u.username AS added_by
+         FROM video_sources s
+         LEFT JOIN users u ON u.id = s.added_by
+        WHERE s.episode_id = $1
+        ORDER BY s.enabled DESC, s.priority, s.created_at`,
+      [eid]
+    )
+    return { data }
+  })
+
+  fastify.post('/episodes/:eid/sources', {
+    preHandler: fastify.requirePermission('episode.edit', { hide: true }),
+    schema: {
+      params: { type: 'object', properties: { eid: { type: 'string', format: 'uuid' } } },
+      body: {
+        type: 'object',
+        required: ['kind', 'ref'],
+        additionalProperties: false,
+        properties: SOURCE_FIELDS
+      }
+    }
+  }, async (request, reply) => {
+    const { eid } = request.params as { eid: string }
+    const body = request.body as SourceBody
+
+    const episode = await queryOne<{ id: string, number: number, anime: string }>(
+      `SELECT e.id, e.number, a.canonical_title AS anime
+         FROM episodes e JOIN anime a ON a.id = e.anime_id WHERE e.id = $1`, [eid])
+    if (!episode) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    const bad = badReference(body.kind ?? '', body.ref)
+    if (bad) return reply.code(400).send({ type: 'about:blank', title: 'Bad Request', status: 400, detail: bad })
+
+    let row
+    try {
+      row = await queryOne<{ id: string }>(
+        `INSERT INTO video_sources
+           (episode_id, kind, ref, title, provider, resolution, language, variant,
+            enabled, priority, is_batch, added_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, coalesce($9, true), coalesce($10, 0), coalesce($11, false), $12)
+         RETURNING id`,
+        [eid, body.kind, body.ref, body.title ?? null, body.provider ?? null, body.resolution ?? null,
+          body.language ?? null, body.variant ?? null, body.enabled ?? null, body.priority ?? null,
+          body.isBatch ?? null, request.user.sub]
+      )
+    } catch (err) {
+      // (episode_id, kind, ref) is unique — the same link twice is not two
+      // sources, and saying so beats a 500.
+      if ((err as { code?: string }).code === '23505') {
+        return reply.code(409).send({
+          type: 'about:blank', title: 'Conflict', status: 409,
+          detail: 'That reference is already registered for this episode'
+        })
+      }
+      throw err
+    }
+
+    await audit(request.user.sub, 'episode.source.add', 'episode', eid, null,
+      { provider: body.provider ?? null, kind: body.kind })
+    void emitEvent('catalogue.changed', {
+      action: 'added a source to', title: `${episode.anime} — episode ${episode.number}`, by: request.user.username
+    })
+    return reply.code(201).send({ id: row?.id })
+  })
+
+  fastify.patch('/sources/:sid', {
+    preHandler: fastify.requirePermission('episode.edit', { hide: true }),
+    schema: {
+      params: { type: 'object', properties: { sid: { type: 'string', format: 'uuid' } } },
+      body: { type: 'object', additionalProperties: false, properties: SOURCE_FIELDS }
+    }
+  }, async (request, reply) => {
+    const { sid } = request.params as { sid: string }
+    const body = request.body as SourceBody
+
+    if (body.ref !== undefined) {
+      const current = await queryOne<{ kind: string }>('SELECT kind FROM video_sources WHERE id = $1', [sid])
+      const bad = badReference(body.kind ?? current?.kind ?? '', body.ref)
+      if (bad) return reply.code(400).send({ type: 'about:blank', title: 'Bad Request', status: 400, detail: bad })
+    }
+
+    const columns: Record<keyof SourceBody, string> = {
+      kind: 'kind', ref: 'ref', title: 'title', provider: 'provider', resolution: 'resolution',
+      language: 'language', variant: 'variant', enabled: 'enabled', priority: 'priority', isBatch: 'is_batch'
+    }
+    const sets: string[] = []
+    const values: unknown[] = []
+    for (const [key, column] of Object.entries(columns) as Array<[keyof SourceBody, string]>) {
+      if (body[key] === undefined) continue
+      values.push(body[key])
+      sets.push(`${column} = $${values.length}`)
+    }
+    if (!sets.length) return reply.code(400).send({ type: 'about:blank', title: 'Bad Request', status: 400, detail: 'No changes' })
+    values.push(sid)
+
+    const row = await queryOne<{ id: string, episode_id: string }>(
+      `UPDATE video_sources SET ${sets.join(', ')} WHERE id = $${values.length} RETURNING id, episode_id`, values)
+    if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    await audit(request.user.sub, 'episode.source.edit', 'episode', row.episode_id, null, body as Record<string, unknown>)
+    return { id: row.id }
+  })
+
+  fastify.delete('/sources/:sid', {
+    preHandler: fastify.requirePermission('episode.edit', { hide: true }),
+    schema: { params: { type: 'object', properties: { sid: { type: 'string', format: 'uuid' } } } }
+  }, async (request, reply) => {
+    const { sid } = request.params as { sid: string }
+    const row = await queryOne<{ episode_id: string, provider: string | null }>(
+      'DELETE FROM video_sources WHERE id = $1 RETURNING episode_id, provider', [sid])
+    if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    await audit(request.user.sub, 'episode.source.remove', 'episode', row.episode_id,
+      { provider: row.provider }, null)
+    return { id: sid, deleted: true }
   })
 
   // ---- metadata synchronisation ----

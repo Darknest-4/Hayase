@@ -487,6 +487,11 @@ const routes: FastifyPluginAsync = async fastify => {
       query(
         `SELECT e.id, e.number, e.absolute_number, e.title, e.synopsis, e.thumbnail_key,
                 e.air_date, e.duration, e.is_filler, e.is_recap,
+                -- Whether this episode can be played at all. The list is where
+                -- the client decides what to make clickable, and an episode
+                -- with nowhere to play from is a link to a dead end.
+                (SELECT count(*) FROM video_sources v
+                  WHERE v.episode_id = e.id AND v.enabled)::int AS source_count,
                 tr.title    AS title_hu,
                 tr.synopsis AS synopsis_hu
          FROM episodes e
@@ -498,6 +503,37 @@ const routes: FastifyPluginAsync = async fastify => {
       queryOne<{ total: string }>('SELECT count(*)::int AS total FROM episodes WHERE anime_id = $1', [id])
     ])
     return { data: data.map(row => localiseEpisode(row, locale.language)), total: Number(counts?.total ?? 0) }
+  })
+
+  /**
+   * Where this episode can be played from.
+   *
+   * References, never media: the platform stores a pointer an operator
+   * registered and hands it to the player, which is the same thing it does
+   * with a source an extension found. Disabled rows are left out — "enabled"
+   * is how an operator takes a dead link out of playback without losing the
+   * record of which episode it belonged to.
+   *
+   * Visibility is checked through the episode's anime, not only the episode:
+   * publishing an episode under a hidden entry must not make it reachable.
+   */
+  fastify.get('/episodes/:eid/sources', async (request, reply) => {
+    const { eid } = request.params as { eid: string }
+    if (!UUID.test(eid)) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    const episode = await queryOne<{ id: string }>(
+      `SELECT e.id FROM episodes e JOIN anime a ON a.id = e.anime_id
+        WHERE e.id = $1 AND e.visibility = 'public' AND a.visibility <> 'hidden'`, [eid])
+    if (!episode) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    const data = await query(
+      `SELECT id, kind, ref, title, provider, resolution, language, variant, is_batch, size_bytes, seeders
+         FROM video_sources
+        WHERE episode_id = $1 AND enabled
+        ORDER BY priority, created_at`,
+      [eid]
+    )
+    return { data }
   })
 
   fastify.get('/:id/relations', async (request, reply) => {
