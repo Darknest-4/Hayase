@@ -11,7 +11,6 @@ import { handleMaintenanceJob } from './maintenance.ts'
 import { handleMetadataJob } from './metadata.ts'
 import { handleMonitorJob } from './monitor.ts'
 import { handleNotifyJob } from './notify.ts'
-import { handleReviewJob } from './review.ts'
 import { handleStatsJob } from './stats.ts'
 
 const handlers = {
@@ -21,7 +20,6 @@ const handlers = {
   metadata: handleMetadataJob,
   monitor: handleMonitorJob,
   import: handleImportJob,
-  'ext-review': handleReviewJob,
   webhook: handleWebhookJob
 } as const
 

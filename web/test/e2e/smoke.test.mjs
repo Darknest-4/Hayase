@@ -5,7 +5,7 @@
 // ---------------------------------------------------------------------------
 // The client's unit tests run against a DOM stub, which is the right trade for
 // the parts with logic in them — the stream engine, i18n, the watch-time
-// meter, the extensions. But it means the router, the layout, the sidebar, the
+// meter. But it means the router, the layout, the sidebar, the
 // sign-in modal and the player chrome had no automated coverage at all: a
 // change that threw on boot would pass every test in the repository and only
 // fail when somebody opened the page.
@@ -126,7 +126,7 @@ describe('browser smoke', { skip: REASON }, () => {
     // The router is one switch; a page that throws takes only itself down,
     // which is exactly why nobody notices until somebody visits it.
     for (const route of ['#/home', '#/search', '#/schedule', '#/list', '#/dashboard',
-      '#/profile', '#/notifications', '#/community', '#/extensions', '#/settings']) {
+      '#/profile', '#/notifications', '#/community', '#/themes', '#/settings']) {
       const { page, errors } = await open(route)
       const text = (await page.locator('#page').innerText()).trim()
       assert.deepEqual(errors, [], `${route} threw`)
@@ -142,46 +142,6 @@ describe('browser smoke', { skip: REASON }, () => {
     await page.keyboard.press('Enter')
     await page.waitForTimeout(150)
     assert.equal(await page.evaluate(() => document.activeElement?.id), 'page')
-    await page.close()
-  })
-
-  it('shows the extension store with the bundled packages installable', async () => {
-    const { page, errors } = await open('#/extensions')
-    await page.waitForSelector('.ext-card, .empty-state, .callout', { timeout: 10000 })
-    assert.deepEqual(errors, [])
-    // A fresh CI database has no published extensions, so an empty store is a
-    // valid outcome; a broken one is not.
-    const cards = await page.locator('.ext-card').count()
-    if (cards) {
-      assert.ok(await page.locator('.ext-actions button').count(), 'cards with no action')
-      assert.equal(await page.evaluate(() =>
-        [...document.querySelectorAll('.ext-icon img')].filter(i => !i.complete || i.naturalWidth === 0).length
-      ), 0, 'broken icon images')
-    }
-    await page.close()
-  })
-
-  it('opens an extension\'s detail page from the store listing', async () => {
-    // The store had no detail view at all: a card's name was plain text and
-    // the description, permissions, versions and reviews were unreachable.
-    const { page, errors } = await open('#/extensions')
-    await page.waitForSelector('.ext-card, .empty-state, .callout', { timeout: 10000 })
-    if (!await page.locator('.ext-card').count()) { await page.close(); return } // empty store
-
-    await page.locator('.ext-card a.ext-name').first().click()
-    await page.waitForSelector('.ext-detail-head', { timeout: 10000 })
-    assert.deepEqual(errors, [])
-
-    // The permissions are the reason the page exists — an extension asking for
-    // a host you do not recognise is what you read before pressing Install.
-    assert.ok(await page.locator('.ext-permissions').count(), 'no permissions section')
-    assert.ok(await page.locator('.ext-reviews').count(), 'no reviews section')
-    assert.match(page.url(), /#\/extensions\/[^/]+$/, 'the detail page must be a real link')
-
-    // The account is signed in but has not installed this extension, and the
-    // server refuses a review without one — so the page must say so rather
-    // than offering a form that fails when it is submitted.
-    assert.equal(await page.locator('.ext-review-form').count(), 0)
     await page.close()
   })
 

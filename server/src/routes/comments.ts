@@ -1,4 +1,4 @@
-// /v1/comments — the unified comment system (anime/episode/post/extension).
+// /v1/comments — the unified comment system (anime/episode/post).
 // Threading uses the materialised path column; this API exposes one level
 // of nesting (top-level + replies), which is what the client renders.
 
@@ -9,7 +9,7 @@ import { notify } from '../workers/notify.ts'
 import type { FastifyPluginAsync } from 'fastify'
 import { WRITE_LIMIT } from '../plugins/security.ts'
 
-const SUBJECT_TYPES = ['anime', 'episode', 'post', 'extension', 'review'] as const
+const SUBJECT_TYPES = ['anime', 'episode', 'post', 'review'] as const
 
 const routes: FastifyPluginAsync = async fastify => {
   fastify.get('/', {

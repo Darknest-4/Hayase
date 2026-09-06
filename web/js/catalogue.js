@@ -193,7 +193,7 @@ const Catalogue = {
    * recommendation is a card record like every other card on the site.
    *
    * Each returns an empty array when there is nothing — the caller's fallback
-   * to a metadata extension is then the same code path as "no backend".
+   * an empty tab is then the same code path as "no backend".
    */
   async characters (yumeId) {
     const rows = await YumeAPI.catalogueCharacters(yumeId)
@@ -268,7 +268,7 @@ const Catalogue = {
    * Opening and ending intervals for one episode.
    *
    * `skip_segments` has been in the schema since the beginning and was read by
-   * nothing: the player asked an extension and then called api.aniskip.com
+   * nothing: the player called api.aniskip.com
    * from the page. So a deployment that had corrected a wrong interval had
    * nowhere to put the correction.
    *

@@ -246,7 +246,7 @@ const API = {
 
   // ---------- combined episode list ----------
   // Merges AniList count/airing info + ani.zip metadata + Jikan fallback,
-  // the same way makeEpisodeList() works in the original extensions module.
+  // the same way makeEpisodeList() worked in the original client.
 
   async episodes (media) {
     const airing = media.nextAiringEpisode?.episode

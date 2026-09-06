@@ -70,14 +70,14 @@ Neither is true, and if either becomes true the queue's public surface
 
 # MinIO — removed
 
-Carried in compose for extension package storage, which is now
-[content-addressed on the filesystem](./extensions.md). Packages are small,
-immutable and few; a volume backs up with everything else, and the store goes
-through one module (`server/src/lib/package-store.ts`) whose four functions an
-object-storage backend can replace without touching a call site.
+Carried in compose for extension package storage. The extension platform is
+gone and nothing else stores bytes outside the database, so there is nothing
+left for it to hold.
 
-Reach for object storage when packages outgrow a single host's disk, or when
-more than one app instance must serve them — the same trigger as Redis.
+Reach for object storage when something does start storing large files — hosted
+subtitle files, episode thumbnails at scale — and it outgrows a single host's
+disk, or when more than one app instance must serve them. Same trigger as
+Redis.
 
 ---
 

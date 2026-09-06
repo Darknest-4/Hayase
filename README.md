@@ -1,14 +1,14 @@
 # Yume (夢)
 
 **Yume** is an anime streaming platform born from the Hayase codebase but
-rebuilt as its own product: its own identity, its own design system, a real
-backend with a scalable database, and an extension **store** instead of
-URL-pasted plugins. Two ideas are inherited and kept sacred:
+rebuilt as its own product: its own identity, its own design system, and a real
+backend with a scalable database. Two ideas are inherited and kept sacred:
 
-1. **The platform hosts zero content** — video sources are resolved by
-   sandboxed, permission-scoped extensions.
-2. **Accuracy is earned, not claimed** — the runtime measures what data an
-   extension actually used and caps how confident its results may look.
+1. **The platform hosts zero content** — video sources are *references* an
+   operator registers against an episode, never media.
+2. **Accuracy is earned, not claimed** — the player ranks a source the
+   deployment registered above a string somebody pasted, and says which one it
+   played from.
 
 ## Repository layout
 
@@ -19,7 +19,6 @@ URL-pasted plugins. Two ideas are inherited and kept sacred:
 │  │                      publishing workflow, scaling, ADRs
 │  ├─ database.md         Schema guide: domains, ER, indexing, partitioning
 │  ├─ api.md              REST + GraphQL reference
-│  ├─ extensions.md       Extension platform: manifest, permissions, store
 │  ├─ security.md         Threat model and the controls that answer it
 │  ├─ backup.md           Backup, restore and what has not been rehearsed
 │  └─ redis.md            Why Redis is carried but not adopted
@@ -30,9 +29,6 @@ URL-pasted plugins. Two ideas are inherited and kept sacred:
 ├─ server/                API gateway — Fastify 5 + TypeScript on Node 22
 │  ├─ src/                No build step: --experimental-strip-types
 │  └─ test/               17 suites, including the adversarial one
-├─ extensions/            First-party source extensions (sandboxed, one host each)
-│  ├─ jellyfin/           Streams from a Jellyfin server you have an account on
-│  └─ yume-library/       Streams from a server you run, by index or path pattern
 ├─ packages/
 │  └─ design-tokens/      Design tokens shared with native surfaces
 ├─ web/                   Web client — framework-free HTML/CSS/JS SPA
@@ -293,32 +289,6 @@ for reproducible shots. Click any section below to expand it. Full gallery in
 </details>
 
 <details>
-<summary><b>🧩 Extension Store</b> — live registry with ratings and verified developers</summary>
-
-<br>
-
-![🧩 Extension Store — desktop](docs/screenshots/18-extension-store.png)
-
-<sub>📱 Mobile</sub>
-
-<img src="docs/screenshots/18-extension-store-mobile.png" alt="🧩 Extension Store — mobile" width="300">
-
-</details>
-
-<details>
-<summary><b>🛠️ Developer Portal</b> — listings, review status and per-version analytics</summary>
-
-<br>
-
-![🛠️ Developer Portal — desktop](docs/screenshots/19-developer.png)
-
-<sub>📱 Mobile</sub>
-
-<img src="docs/screenshots/19-developer-mobile.png" alt="🛠️ Developer Portal — mobile" width="300">
-
-</details>
-
-<details>
 <summary><b>🛡️ Admin</b> — users, watch stats, trending, job-queue health, reports</summary>
 
 <br>
@@ -541,7 +511,7 @@ who asked for a dub.
 `unknown` is a real answer and is never guessed into one of the others: a
 wrong guess starts the wrong audio. Under the player, a bar switches between
 the variants and providers actually on offer, re-ranking candidates already in
-hand rather than re-querying every extension.
+hand rather than fetching again.
 
 ### Translating the catalogue
 
@@ -730,6 +700,14 @@ Remaining:
       auto-approves + publishes low-risk versions, flags sensitive
       permissions (net:fetch, query:media) for human review, rejects
       invalid manifests / wildcard hosts, notifies the developer
+- [x] **The extension platform was removed.** The entries above stay because
+      they are what happened, not what is true now. Every feature it carried is
+      part of the platform: themes are a table with an admin editor, skip
+      intervals and subtitle tracks are catalogue data, cast and staff come
+      from the AniList passes, the library syncs server-side, and video sources
+      are references an operator registers against an episode. What was left
+      was a store, a review queue, a sandbox and thirty permissions for
+      delivering code as packages that is now simply code.
 
 ## License
 

@@ -1,48 +1,19 @@
 /* global window, document */
-// Streaming engine — the layer between "an extension found something" and
+// Streaming engine — the layer between "the catalogue has a reference" and
 // "the player has a video".
 //
-//   Extension → Source → Resolver → StreamResult → Player
+//   Source → Resolver → StreamResult → Player
 //
-// The player must not care which extension produced a stream, so everything an
-// extension returns is normalised into one StreamResult shape here, ranked, and
-// handed over one at a time. If a stream fails to start, the engine silently
-// advances to the next candidate instead of showing the user a dead end.
+// The player must not care where a stream came from, so every reference is
+// normalised into one StreamResult shape here, ranked, and handed over one at
+// a time. If a stream fails to start, the engine silently advances to the next
+// candidate instead of showing the user a dead end.
 //
 // It plays what a source gives it and nothing more: no scraping, no bypassing
 // of provider access controls, and formats the browser cannot handle are
 // reported honestly rather than pretended away.
 
 const StreamEngine = {
-  /**
-   * Extension types that can answer with a playable source.
-   *
-   * The engine used to ask *every* loaded extension for `single()`, whatever
-   * it declared itself to be. A `subtitle` extension therefore returned .vtt
-   * URLs into the stream candidate list and the player tried to play them as
-   * video; a `metadata` extension polluted the list the same way. The declared
-   * type is the answer to "who can I ask this", and it was being ignored.
-   */
-  SOURCE_TYPES: ['http', 'torrent', 'nzb'],
-
-  /**
-   * Is anything loaded that could answer a request for a source?
-   *
-   * The episode list needs this to decide what to offer. An episode with no
-   * registered source and no provider installed has nowhere to play from, and
-   * a link to a dead end is worse than an honest label — but the same episode
-   * with a provider loaded may well play, so the question cannot be answered
-   * from the catalogue alone.
-   */
-  hasProviders () {
-    const host = window.ExtensionHost
-    if (typeof host?.loaded !== 'function') return false
-    return host.loaded().some(slug => {
-      const type = host.typeOf?.(slug) ?? null
-      return type === null || this.SOURCE_TYPES.includes(type)
-    })
-  },
-
   /** How long a stream gets to produce data before it counts as failed. */
   START_TIMEOUT_MS: 12_000,
 
@@ -175,16 +146,17 @@ const StreamEngine = {
   },
 
   /**
-   * Normalise whatever an extension returned into a StreamResult.
-   * Extensions are untrusted, so every field is coerced and bounded.
+   * Normalise a raw source record into a StreamResult.
+   *
+   * Every field is coerced and bounded. The records come from the catalogue
+   * and from what a viewer typed, and neither is a reason to trust a shape.
    */
   normalise (raw, source) {
-    // `||`, not `??`: the sandbox's sanitiseResult always emits BOTH keys, and
-    // writes an empty string for the one the extension did not supply. With
-    // `??` an empty `url` is a present value, so it won the fallback and every
-    // link-only result — which is every torrent result — normalised to '' and
-    // was dropped here without an error. The engine reported zero candidates
-    // and no failure, so the torrent path looked like "no sources found".
+    // `||`, not `??`. A record may carry both keys with one of them an empty
+    // string, and `??` treats '' as present — so an empty `url` won the
+    // fallback and every link-only result normalised to '' and was dropped
+    // here with no error at all. That bug reported zero candidates and no
+    // failure, which looked exactly like "nothing found".
     const url = String(raw?.url || raw?.link || '')
     if (!url) return null
     const kind = this.classify(url)
@@ -294,7 +266,7 @@ const StreamEngine = {
 
   // ---------------------------------------------------------------- gathering
 
-  /** The query handed to extensions. Only what they declared may reach them. */
+  /** The identifiers a source lookup is made with. */
   buildQuery (media, episode) {
     return {
       titles: [media?.title?.userPreferred, media?.title?.romaji, media?.title?.english, media?.title?.native]
@@ -307,48 +279,19 @@ const StreamEngine = {
   },
 
   /**
-   * Ask every loaded extension for candidates. One failing extension never
-   * blocks the others — its error is recorded and the rest still answer.
+   * Normalise and rank what the caller has.
+   *
+   * `errors` is still returned, and still empty: the shape is what the watch
+   * page reads, and a caller that gathers sources from somewhere that can fail
+   * has somewhere to put the failure.
    */
-  async candidates (media, episode, { sources = [], extensions = [], prefs = {} } = {}) {
-    const query = this.buildQuery(media, episode)
+  async candidates (media, episode, { sources = [], prefs = {} } = {}) {
     const results = []
     const errors = []
 
     for (const raw of sources) {
       const normalised = this.normalise(raw, raw.source)
       if (normalised) results.push(normalised)
-    }
-
-    const host = window.ExtensionHost
-    if (host) {
-      // Only the types that can produce a source. Anything else declared
-      // itself to be something other than a stream provider, and asking it
-      // for one puts its answer in the wrong list.
-      const askable = extensions.filter(ext => {
-        const type = host.typeOf?.(ext.slug) ?? null
-        return type === null || this.SOURCE_TYPES.includes(type)
-      })
-      const settled = await Promise.allSettled(askable.map(async ext => {
-        const items = await host.call(ext.slug, 'single', query)
-        return { ext, items }
-      }))
-      for (const outcome of settled) {
-        if (outcome.status === 'rejected') {
-          errors.push(String(outcome.reason?.message ?? outcome.reason))
-          continue
-        }
-        const { ext, items } = outcome.value
-        for (const item of items ?? []) {
-          const normalised = this.normalise(item, {
-            slug: ext.slug,
-            name: ext.name ?? ext.slug,
-            accuracy: item.accuracy ?? ext.accuracy ?? 'low',
-            health: ext.health ?? 'unknown'
-          })
-          if (normalised) results.push(normalised)
-        }
-      }
     }
 
     return { results: this.rank(results, prefs), errors }
@@ -580,48 +523,6 @@ const StreamEngine = {
   },
 
   /**
-   * Subtitle tracks contributed by `subtitle` extensions.
-   *
-   * These are not sources and never enter the candidate list; they are extra
-   * tracks for whatever stream ends up playing. That distinction is the whole
-   * reason the type exists, and until the host learned to dispatch by type
-   * there was no way to express it.
-   *
-   * Failure is silent by design: a missing subtitle is a smaller problem than
-   * a player that refuses to start because a subtitle provider was down.
-   */
-  async externalSubtitles (media, episode) {
-    const host = window.ExtensionHost
-    if (!host?.collect) return []
-    try {
-      const { results } = await host.collect('subtitles', this.buildQuery(media, episode), {
-        types: ['subtitle']
-      })
-      return results
-        .slice(0, 40)
-        .map(track => {
-          // Content wins over a URL when both are present: the extension has
-          // already fetched it through the proxy, so it is known-readable,
-          // while the URL may not be CORS-readable from a <track> at all.
-          const url = track?.content
-            ? this.subtitleObjectUrl(track.content, track.format)
-            : track?.url
-          if (!url) return null
-          return {
-            url,
-            lang: this.languageCode(track.lang),
-            // The provider is named in the label because two extensions
-            // offering "Magyar" are otherwise indistinguishable in the picker.
-            label: track._source ? `${track.label} · ${track._source}` : track.label
-          }
-        })
-        .filter(Boolean)
-    } catch (e) {
-      return []
-    }
-  },
-
-  /**
    * Merge external subtitle tracks into a candidate before it is attached.
    *
    * De-duplicated on URL: the same file offered by two providers is one track,
@@ -635,12 +536,17 @@ const StreamEngine = {
     return { ...candidate, subtitles: [...(candidate.subtitles ?? []), ...extra] }
   },
 
-  /** A failed stream is a data point about its source. */
+  /**
+   * A failed stream is a data point about its source.
+   *
+   * It went to a telemetry endpoint that no longer exists. The console is
+   * where it lands until there is somewhere better:
+   * the equivalent for a registered source would be a health column on
+   * `video_sources`, which is a feature and not a rename.
+   */
   _report (candidate, reason) {
     if (candidate.source?.slug && candidate.source.slug !== 'manual') {
-      window.YumeAPI?.reportExtensionEvent?.(candidate.source.slug, 'error', {
-        message: `stream failed: ${reason}`.slice(0, 200)
-      })
+      console.warn(`[stream] ${candidate.source.name ?? candidate.source.slug} failed: ${reason}`)
     }
   }
 }

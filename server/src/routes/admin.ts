@@ -5,7 +5,6 @@
 import { query, queryOne, transaction } from '../db.ts'
 import { auditTrail } from '../lib/audit.ts'
 import { errorGroups, errorOccurrences, setErrorGroupStatus } from '../lib/errors.ts'
-import { recomputeRatingForReview } from '../lib/extension-rating.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 import { invalidatePermissions } from '../plugins/auth.ts'
 
@@ -13,7 +12,7 @@ import type { FastifyPluginAsync } from 'fastify'
 
 // which table's hidden_at a report subject maps to
 const HIDEABLE: Record<string, string> = {
-  comment: 'comments', post: 'posts', review: 'reviews', extension_review: 'extension_reviews'
+  comment: 'comments', post: 'posts', review: 'reviews'
 }
 
 const routes: FastifyPluginAsync = async fastify => {
@@ -136,8 +135,6 @@ const routes: FastifyPluginAsync = async fastify => {
                    WHEN r.subject_type = 'review'  THEN (SELECT left(v.body, 200) FROM reviews v WHERE v.id = r.subject_id)
                    WHEN r.subject_type = 'post'    THEN (SELECT left(p.body, 200) FROM posts p WHERE p.id = r.subject_id)
                    WHEN r.subject_type = 'user'    THEN (SELECT uu.username FROM users uu WHERE uu.id = r.subject_id)
-                   WHEN r.subject_type = 'extension_review'
-                     THEN (SELECT left(coalesce(er.body, '(' || er.rating || '/5, no text)'), 200) FROM extension_reviews er WHERE er.id = r.subject_id)
               END AS excerpt
        FROM reports r
        JOIN users u ON u.id = r.reporter_id
@@ -182,12 +179,6 @@ const routes: FastifyPluginAsync = async fastify => {
         await client.query(`UPDATE ${table} SET hidden_at = now() WHERE id = $1`, [report.subject_id])
       } else if (action === 'restore') {
         await client.query(`UPDATE ${table} SET hidden_at = NULL WHERE id = $1`, [report.subject_id])
-      }
-      // The store's rating is derived and excludes hidden reviews, so hiding
-      // one has to move the average too — otherwise moderation removes the
-      // text and leaves the score it was brigading with.
-      if (report.subject_type === 'extension_review' && action !== 'dismiss') {
-        await recomputeRatingForReview(client, report.subject_id)
       }
       await client.query(
         `UPDATE reports SET status = $2, resolved_by = $3, resolved_at = now() WHERE id = $1`,
@@ -314,7 +305,7 @@ const routes: FastifyPluginAsync = async fastify => {
       querystring: {
         type: 'object',
         properties: {
-          subjectType: { enum: ['user', 'role', 'anime', 'episode', 'config', 'webhook', 'extension'] },
+          subjectType: { enum: ['user', 'role', 'anime', 'episode', 'config', 'webhook', 'theme', 'metadata_run'] },
           subjectId: { type: 'string', format: 'uuid' },
           actorId: { type: 'string', format: 'uuid' },
           limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 }

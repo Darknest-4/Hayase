@@ -1,4 +1,4 @@
-/* global C, Catalogue, PageAdmin, PageAnime, PageCommunity, PageDashboard, PageDeveloper, PageExtensions, PageHome, PageList, PageNotifications, PageProfile, PageProfiles, PageSchedule, PageSearch, PageSettings, PageW2G, PageWatch, Store, T, U, YumeAPI, I18n, document, requestAnimationFrame, window */
+/* global C, Catalogue, PageAdmin, PageAnime, PageCommunity, PageDashboard, PageHome, PageList, PageNotifications, PageProfile, PageProfiles, PageSchedule, PageSearch, PageSettings, PageW2G, PageWatch, Store, T, U, YumeAPI, I18n, document, requestAnimationFrame, window */
 // App bootstrap: hash router (same #/route scheme as the original SvelteKit
 // build), sidebar active state and the quick-search modal (Ctrl+K / S).
 
@@ -15,8 +15,6 @@ const App = {
     community: (root, params) => PageCommunity.render(root, params),
     w2g: (root, params, arg) => PageW2G.render(root, params, arg),
     watch: (root, params, arg) => PageWatch.render(root, params, arg),
-    extensions: (root, params, arg) => PageExtensions.render(root, params, arg),
-    developer: (root, params) => PageDeveloper.render(root, params),
     admin: (root, params) => PageAdmin.render(root, params),
     settings: (root, params) => PageSettings.render(root, params),
     anime: (root, params, arg) => PageAnime.render(root, params, arg)
@@ -68,7 +66,7 @@ const App = {
     document.body.classList.toggle('admin-route', route === 'admin')
 
     document.querySelectorAll('.sidebar-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.route === route || ((route === 'anime' || route === 'watch') && btn.dataset.route === 'home') || (route === 'developer' && btn.dataset.route === 'extensions'))
+      btn.classList.toggle('active', btn.dataset.route === route || ((route === 'anime' || route === 'watch') && btn.dataset.route === 'home'))
     })
     // mobile bottom bar: the "More" tab lights up for any route that isn't a
     // primary tab (or its home-mapped detail/watch pages)
@@ -149,7 +147,7 @@ const App = {
    * leave the catalogue browsable rather than blank the site. That default is
    * wrong for the admin panel, where "we could not check" must mean "no".
    */
-  PRIVILEGED: ['admin', 'developer'],
+  PRIVILEGED: ['admin'],
 
   /**
    * Does this account hold any permission the admin panel actually uses?
@@ -294,30 +292,8 @@ const App = {
     this.applyNavVisibility()
     this.navigate()
 
-    this.loadExtensions()
     if (window.YumeAPI.user()) window.LibrarySync?.init() // pull the account library + start mirroring
     else window.LibrarySync?.reset() // signed out → stop mirroring
-  },
-
-  /**
-   * Load this account's installed extensions into the sandbox.
-   *
-   * Runs off the critical path: the streaming engine asks whichever ones are
-   * ready when a source is actually needed, so a slow store never delays the
-   * first render. Signed out, any previously loaded extension is dropped —
-   * the next account must not inherit the last one's code.
-   */
-  loadExtensions () {
-    const host = window.ExtensionHost
-    if (!host) return
-    if (!window.YumeAPI.user()) { host.unloadAll?.(); return }
-
-    host.bootstrap().then(result => {
-      if (result.loaded.length) console.info('[extensions] loaded:', result.loaded.join(', '))
-      for (const failure of result.failed) {
-        U.toast(`Extension "${failure.slug}" could not load — ${failure.error}`, 'error')
-      }
-    }).catch(error => console.warn('[extensions] bootstrap failed:', error.message))
   },
 
   async loadConfig () {
@@ -523,7 +499,6 @@ const App = {
     { route: 'profile', label: T('Profile'), icon: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>' },
     { route: 'profile', href: '#/profile?tab=analytics', label: T('Analytics'), icon: '<path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7"/><rect x="12" y="7" width="3" height="11"/><rect x="17" y="4" width="3" height="14"/>' },
     { route: 'profile', href: '#/profile?tab=achievements', label: T('Awards'), icon: '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>' },
-    { route: 'extensions', label: T('Extensions'), icon: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M17.5 13v8M13.5 17h8"/>' },
     { route: 'settings', label: T('Settings'), icon: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>' }
   ],
 
@@ -635,7 +610,6 @@ const App = {
     this.refreshAdminNav()
     this.applyNavVisibility()
     this.navigate()
-    this.loadExtensions()
 
     // sign-in library sync (best-effort, off the critical path)
     if (window.YumeAPI.user()) window.LibrarySync?.init()

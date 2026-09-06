@@ -1,7 +1,7 @@
 /* global window, fetch, localStorage, WebSocket */
 // Yume backend adapter. The client works standalone (AniList/Jikan direct),
 // but when a Yume API is reachable it powers platform features: accounts,
-// comments/community and the extension store.
+// comments/community, themes and playback data.
 // Configure the endpoint in Settings; default assumes local development.
 
 const YumeAPI = {
@@ -329,7 +329,7 @@ const YumeAPI = {
    * detail load to fill tabs nobody looks at is a poor trade.
    *
    * Each returns null on failure rather than throwing, because every caller's
-   * answer to a failure is the same — fall back to a metadata extension.
+   * answer to a failure is the same — show the tab empty rather than broken.
    */
   async catalogueCharacters (yumeId) {
     try {
@@ -531,7 +531,7 @@ const YumeAPI = {
       removeSource: sid => YumeAPI._request(`/v1/admin/catalogue/sources/${sid}`, { method: 'DELETE', auth: true }),
 
       // the rest of what an episode needs to play well: skip intervals and
-      // subtitle tracks, both of which used to come only from an extension
+      // subtitle tracks, both of which the catalogue now holds itself
       skips: eid => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}/skips`, { auth: true }),
       addSkip: (eid, body) => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}/skips`, { method: 'POST', auth: true, body }),
       removeSkip: sid => YumeAPI._request(`/v1/admin/catalogue/skips/${sid}`, { method: 'DELETE', auth: true }),
@@ -572,149 +572,6 @@ const YumeAPI = {
       if (actorId) params.set('actorId', actorId)
       return YumeAPI._request('/v1/admin/audit?' + params.toString(), { auth: true })
     }
-  },
-
-  // ---- extension store ----
-
-  extensions (type, sort = 'installs') {
-    const params = new URLSearchParams({ sort })
-    if (type) params.set('type', type)
-    return this._request('/v1/extensions?' + params.toString())
-  },
-
-  extension (slug) {
-    return this._request('/v1/extensions/' + encodeURIComponent(slug))
-  },
-
-  /**
-   * Fetch the source of one published extension version.
-   *
-   * Returned as text, not JSON: the sandbox hashes these exact bytes against
-   * the version's published hash before running them, so any re-encoding on
-   * the way would break the check that makes the package trustworthy.
-   */
-  async extensionPackage (slug, version) {
-    const res = await fetch(`${this.base()}/v1/extensions/${encodeURIComponent(slug)}/versions/${encodeURIComponent(version)}/package`)
-    if (!res.ok) {
-      if (res.status === 410) throw new Error('This version is no longer available from the store')
-      throw new Error(`Could not download ${slug} ${version} (HTTP ${res.status})`)
-    }
-    return res.text()
-  },
-
-  /**
-   * The account's server-side notifications.
-   *
-   * Written by the notify worker — a monitoring alert reaches every operator
-   * this way. Returns [] when signed out or unreachable, because the
-   * notification screen also has local signals to show and must not fail
-   * whole because the server did.
-   */
-  async notifications ({ unreadOnly = false, limit = 50 } = {}) {
-    if (!this.user()) return []
-    try {
-      const { data } = await this._request(`/v1/me/notifications?unreadOnly=${unreadOnly}&limit=${limit}`, { auth: true })
-      return data ?? []
-    } catch (e) {
-      return []
-    }
-  },
-
-  /** Mark notifications read — specific ids, or every unread one. */
-  markNotificationsRead (ids) {
-    return this._request('/v1/me/notifications/read', {
-      method: 'POST',
-      auth: true,
-      body: ids?.length ? { ids } : {}
-    }).catch(() => null)
-  },
-
-  /**
-   * Upload an extension package's bytes.
-   *
-   * The body is the raw source, not JSON: the server hashes exactly what
-   * arrives, and wrapping it would only add an encode/decode round trip to
-   * something that has to stay byte-identical. Returns { hash, size } — the
-   * only values a version may then be published against.
-   */
-  async uploadExtensionPackage (slug, source) {
-    const tokens = this._tokens()
-    if (!tokens) throw new Error('Sign in to your Yume account first')
-    const res = await fetch(`${this.base()}/v1/dev/extensions/${encodeURIComponent(slug)}/packages`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/javascript',
-        Accept: 'application/json',
-        Authorization: 'Bearer ' + tokens.accessToken
-      },
-      body: source
-    })
-    const json = await res.json().catch(() => null)
-    if (!res.ok) throw new Error(json?.detail ?? json?.title ?? `Upload failed (HTTP ${res.status})`)
-    return json
-  },
-
-  /** Extensions this account has installed, with the metadata the sandbox needs. */
-  async installedExtensions () {
-    const { data } = await this._request('/v1/extensions/installed', { auth: true })
-    return data
-  },
-
-  /** Install the latest published version. Returns the install row. */
-  installExtension (slug) {
-    return this._request(`/v1/extensions/${encodeURIComponent(slug)}/install`, { method: 'POST', auth: true })
-  },
-
-  /**
-   * Change an install: its options, or whether it runs.
-   *
-   * Options replace rather than merge, so a caller sends the whole set — the
-   * settings form submits every field for exactly this reason.
-   */
-  configureExtension (slug, { enabled, options } = {}) {
-    const body = {}
-    if (enabled !== undefined) body.enabled = enabled
-    if (options !== undefined) body.options = options
-    return this._request(`/v1/extensions/${encodeURIComponent(slug)}/install`, { method: 'PATCH', auth: true, body })
-  },
-
-  uninstallExtension (slug) {
-    return this._request(`/v1/extensions/${encodeURIComponent(slug)}/install`, { method: 'DELETE', auth: true })
-  },
-
-  /**
-   * The reviews on one extension, plus this account's own review if it has one.
-   *
-   * Sent with credentials when there are any and without when there are not:
-   * the list is public, but `mine` can only be answered for a signed-in
-   * caller, and asking for it must not be a reason to demand a login.
-   */
-  extensionReviews (slug, limit) {
-    const params = limit ? '?limit=' + limit : ''
-    return this._request(`/v1/extensions/${encodeURIComponent(slug)}/reviews${params}`, { auth: !!this._tokens() })
-  },
-
-  /** Leave or replace this account's review. The server requires an install. */
-  reviewExtension (slug, { rating, body }) {
-    return this._request(`/v1/extensions/${encodeURIComponent(slug)}/reviews`, {
-      method: 'PUT', auth: true, body: { rating, ...(body ? { body } : {}) }
-    })
-  },
-
-  deleteExtensionReview (slug) {
-    return this._request(`/v1/extensions/${encodeURIComponent(slug)}/reviews`, { method: 'DELETE', auth: true })
-  },
-
-  /**
-   * Anonymous sandbox failure telemetry. Best-effort: a reporting failure must
-   * never surface to the user or break the extension flow that triggered it.
-   */
-  reportExtensionEvent (slug, event, detail = {}) {
-    return this._request(`/v1/extensions/${encodeURIComponent(slug)}/events`, {
-      method: 'POST',
-      auth: true,
-      body: { event, message: detail.message, versionId: detail.versionId, appVersion: detail.appVersion }
-    }).catch(() => {})
   }
 }
 

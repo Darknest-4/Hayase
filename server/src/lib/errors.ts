@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto'
 
 import { query, queryOne } from '../db.ts'
 
-export type ErrorSource = 'api' | 'worker' | 'web' | 'desktop' | 'mobile' | 'extension'
+export type ErrorSource = 'api' | 'worker' | 'web' | 'desktop' | 'mobile'
 
 export interface ErrorContext {
   route?: string | undefined

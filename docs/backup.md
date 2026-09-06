@@ -13,22 +13,14 @@ Two scripts and one container service, all in `db/`.
 | Data | Where it lives | Covered by |
 |---|---|---|
 | Accounts, library, catalogue, comments, jobs, metrics | Postgres | `backup.sh` |
-| **Extension packages** | the `packages` volume (`PACKAGE_DIR`) | **a volume copy — not the dump** |
 | Uploaded images | external CDN URLs today | nothing to back up yet |
 | Secrets (`JWT_SECRET`, DB password) | your `.env` | your password manager |
 
-The extension packages are the trap. They are deliberately **not** in the
-database — keeping 5 MB blobs out of every dump is what keeps a restore fast —
-so a database restore alone brings back the store listing with no bytes behind
-it, and every install downloads as `410 Gone`. Copy the volume alongside:
-
-```bash
-docker run --rm -v hayase_packages:/src -v "$PWD":/out alpine \
-  tar czf /out/packages.tgz -C /src .
-```
-
-`restore.sh` prints this reminder at the end of every run, because it is the
-thing you will forget at 3 a.m.
+Everything that matters is in the database. That was not always true — the
+extension packages were deliberately kept out of it, so a restore brought back
+a store listing with no bytes behind it and every install downloaded as `410
+Gone`. The extension platform is gone and with it that trap: a database dump is
+now a complete restore.
 
 ---
 
@@ -106,8 +98,6 @@ cp /secure/backup/.env .                       # JWT_SECRET, POSTGRES_PASSWORD
 JWT_SECRET=… docker compose up -d postgres
 cp /secure/backup/yume-*.dump ./restore/
 docker compose run --rm -v "$PWD/restore:/backups" backup /db/restore.sh
-docker run --rm -v hayase_packages:/dst -v "$PWD":/in alpine \
-  tar xzf /in/packages.tgz -C /dst            # the packages volume
 docker compose up -d
 ```
 

@@ -148,8 +148,18 @@ A legfontosabb, mert ma **félrevezeti a felhasználót**.
 - ⏳ a többi admin tábla telefonos átnézése (katalógus, jogosultságok) —
   ezeknek már van saját töréspontjuk, de nem néztem át mindet valós eszközön
 
-### 3. kör — Kiegészítők lebontása + témarendszer (≈ 1,5–2 nap)
-**Ez a kör a K1 válaszától függ.**
+### 3. kör — Kiegészítők lebontása + témarendszer ✅ KÉSZ
+- ✅ témarendszer: `themes` tábla, admin szerkesztő, választó, alapértelmezés
+- ✅ skip-intervallumok és feliratsávok a katalógusból
+- ✅ **a teljes kiegészítő-platform törölve**: store, fejlesztői portál,
+  manifest-validátor, csomagtár, sandbox, review-worker, 30 jogosultság,
+  7 tábla, 2 feature flag, 2 oldal, a `blob:` a CSP-ből
+- ✅ ami a csomagokban volt, az beépült — kivéve a `plex`, `jellyfin` és
+  `opensubtitles` funkcióit, amiket **kértél, hogy essenek el**
+
+Amit ez elvesz: a személyes médiaszerver (Plex/Jellyfin) mint forrás, és az
+automatikus feliratkeresés. A feliratokat mostantól epizódonként lehet
+felvenni az admin panelen, a videóforrásokat ugyanígy.
 
 - ~3559 sor platformkód, 8 kiegészítő-csomag, 9 adatbázistábla
 - migráció: a táblák **eldobás előtt** függőség-ellenőrzéssel

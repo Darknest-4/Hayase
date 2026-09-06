@@ -22,9 +22,6 @@ export const WEBHOOK_EVENTS = [
   'comment.created',        // new top-level comment or reply
   'report.created',         // content reported
   'report.resolved',        // moderation decision
-  'extension.submitted',    // new version entered review
-  'extension.reviewed',     // review outcome (approved/flagged/rejected)
-  'extension.installed',    // install/uninstall
   'w2g.room_created',       // watch-together room opened
   'stats.daily',            // daily rollup digest
   'stats.trending',         // trending refresh (top titles)
@@ -108,24 +105,6 @@ function renderEmbed (event: WebhookEvent, d: Record<string, unknown>): Embed {
         title: '✅ Report resolved',
         color: COLORS.success,
         fields: [field('Action', d.action), field('Moderator', d.moderator), field('Reason', d.reason, false)]
-      }
-    case 'extension.submitted':
-      return {
-        title: '📦 Extension version submitted',
-        color: COLORS.info,
-        fields: [field('Extension', d.slug), field('Version', d.version), field('Developer', d.developer)]
-      }
-    case 'extension.reviewed':
-      return {
-        title: `📦 Extension review: ${d.decision}`,
-        color: d.decision === 'approved' ? COLORS.success : d.decision === 'rejected' ? COLORS.danger : COLORS.warn,
-        fields: [field('Extension', d.slug), field('Version', d.version), field('Notes', d.notes, false)]
-      }
-    case 'extension.installed':
-      return {
-        title: d.action === 'uninstall' ? '📦 Extension uninstalled' : '📦 Extension installed',
-        color: COLORS.info,
-        fields: [field('Extension', d.slug), field('Installs now', d.installCount)]
       }
     case 'w2g.room_created':
       return { title: '🎬 Watch Together room opened', color: COLORS.rose, fields: [field('Code', d.code), field('Host', d.host)] }

@@ -1,7 +1,7 @@
 // Unique-constraint handling.
 //
 // Audit 13 found the same mistake in four places — registration, the like
-// toggle, the watch-together room code and the extension slug — each letting a
+// toggle and the watch-together room code — each letting a
 // 23505 escape as a 500 naming the constraint. Four instances of one mistake
 // across two audits is a pattern, so the handling became a shared helper.
 // These pin its behaviour, including the parts that must NOT be swallowed.
@@ -64,10 +64,10 @@ describe('onUniqueViolation', () => {
 
   it('returns the fallback on a collision, and names the constraint', async () => {
     const result = await onUniqueViolation(
-      async () => { throw pgError(PG.UNIQUE_VIOLATION, 'extensions_slug_key') },
+      async () => { throw pgError(PG.UNIQUE_VIOLATION, 'watch_together_rooms_code_key') },
       constraint => `conflict on ${constraint}`
     )
-    assert.equal(result, 'conflict on extensions_slug_key')
+    assert.equal(result, 'conflict on watch_together_rooms_code_key')
   })
 
   it('rethrows anything that is not a unique violation', async () => {
@@ -75,7 +75,7 @@ describe('onUniqueViolation', () => {
     // mistake in a new costume.
     await assert.rejects(
       onUniqueViolation(
-        async () => { throw pgError(PG.FOREIGN_KEY_VIOLATION, 'extensions_owner_id_fkey') },
+        async () => { throw pgError(PG.FOREIGN_KEY_VIOLATION, 'comments_author_id_fkey') },
         () => 'should not be reached'
       )
     )

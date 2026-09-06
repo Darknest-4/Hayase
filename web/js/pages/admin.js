@@ -321,7 +321,7 @@ const PageAdmin = {
         class: 'select',
         onchange: e => { state.subjectType = e.target.value; load() }
       }, [['', 'Everything'], ['user', 'Users'], ['role', 'Roles'], ['anime', 'Anime'],
-        ['episode', 'Episodes'], ['config', 'Config'], ['webhook', 'Webhooks'], ['extension', 'Extensions']]
+        ['episode', 'Episodes'], ['config', 'Config'], ['webhook', 'Webhooks'], ['theme', 'Themes']]
         .map(([v, l]) => U.el('option', { value: v, text: l, selected: v === state.subjectType })))
     ])
 
@@ -2223,9 +2223,6 @@ const PageAdmin = {
     'comment.created': 'New comment',
     'report.created': 'Content reported',
     'report.resolved': 'Report resolved',
-    'extension.submitted': 'Extension version submitted',
-    'extension.reviewed': 'Extension reviewed',
-    'extension.installed': 'Extension installed',
     'w2g.room_created': 'Watch Together room opened',
     'stats.daily': 'Daily stats digest',
     'stats.trending': 'Trending refreshed',

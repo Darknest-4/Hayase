@@ -411,7 +411,6 @@ const routes: FastifyPluginAsync = async fastify => {
       // Everything that is only ever about this person and useful to nobody
       // else goes with the account.
       await client.query('DELETE FROM user_settings WHERE user_id = $1', [userId])
-      await client.query('DELETE FROM extension_installs WHERE user_id = $1', [userId])
       await client.query('DELETE FROM password_resets WHERE user_id = $1', [userId])
       await client.query('DELETE FROM ws_tickets WHERE user_id = $1', [userId])
       await client.query(

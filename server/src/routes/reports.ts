@@ -7,7 +7,7 @@ import { emitEvent } from '../lib/webhooks.ts'
 import type { FastifyPluginAsync } from 'fastify'
 import { WRITE_LIMIT } from '../plugins/security.ts'
 
-const SUBJECTS = ['comment', 'post', 'topic', 'review', 'user', 'extension', 'message', 'extension_review'] as const
+const SUBJECTS = ['comment', 'post', 'topic', 'review', 'user', 'message'] as const
 const REASONS = ['spam', 'harassment', 'nsfw', 'spoiler', 'illegal', 'other'] as const
 
 /**
@@ -28,10 +28,7 @@ const SUBJECT_TABLE: Record<typeof SUBJECTS[number], string> = {
   topic: 'topics',
   review: 'reviews',
   user: 'users',
-  extension: 'extensions',
-  message: 'messages',
-  // `review` is an anime review; an extension's store review is a different table
-  extension_review: 'extension_reviews'
+  message: 'messages'
 }
 
 const routes: FastifyPluginAsync = async fastify => {

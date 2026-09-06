@@ -109,8 +109,8 @@ const C = {
         ]),
         col(T('footer.discover'), [[T('nav.home'), '#/home'], [T('nav.search'), '#/search'], [T('nav.schedule'), '#/schedule'], [T('nav.dashboard'), '#/dashboard']]),
         col(T('footer.library'), [[T('footer.myLibrary'), '#/list'], [T('footer.profile'), '#/profile'], [T('footer.watchHistory'), '#/profile?tab=history'], [T('footer.analytics'), '#/profile?tab=analytics']]),
-        col(T('footer.community'), [[T('nav.community'), '#/community'], [T('nav.w2g'), '#/w2g'], [T('nav.extensions'), '#/extensions']]),
-        col(T('footer.yume'), [[T('nav.settings'), '#/settings'], [T('nav.notifications'), '#/notifications'], [T('footer.developer'), '#/developer']])
+        col(T('footer.community'), [[T('nav.community'), '#/community'], [T('nav.w2g'), '#/w2g']]),
+        col(T('footer.yume'), [[T('nav.settings'), '#/settings'], [T('nav.notifications'), '#/notifications'], [T('nav.themes'), '#/themes']])
       ]),
       U.el('div', { class: 'footer-bottom' }, [
         U.el('span', { text: `© ${year} ${window.Copy?.footer?.brand ?? (window.App?.config?.site?.name ?? 'Yume')} · ${T('footer.colophon')}` }),

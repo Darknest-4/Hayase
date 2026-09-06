@@ -23,7 +23,7 @@ I18n.register('hu', {
   Analytics: 'Statisztika',
   History: 'Előzmények',
   Achievements: 'Eredmények',
-  Extensions: 'Kiegészítők',
+  Themes: 'Témák',
   Admin: 'Adminisztráció',
   More: 'Továbbiak',
   Overview: 'Áttekintés',
@@ -79,8 +79,8 @@ I18n.register('hu', {
   'Official streams': 'Hivatalos szolgáltatók',
   'Where to watch': 'Hol nézhető',
   'Paste a stream URL first': 'Előbb illessz be egy stream URL-t',
-  'Paste a direct stream URL. Add more on separate lines and the player falls back automatically if one fails. Installed extensions supply sources here too.':
-    'Illessz be egy közvetlen stream URL-t. Több sorba írva a lejátszó automatikusan a következőre vált, ha az egyik nem indul. A telepített kiegészítők is ide adják a forrásaikat.',
+  'Paste a direct stream URL. Add more on separate lines and the player falls back automatically if one fails.':
+    'Illessz be egy közvetlen stream URL-t. Több sorba írva a lejátszó automatikusan a következőre vált, ha az egyik nem indul.',
   'https://… direct video stream (mp4 / webm) — one per line to enable automatic fallback':
     'https://… közvetlen videostream (mp4 / webm) — soronként egy, így lesz automatikus váltás',
   'Could not play this episode from any available source.':
@@ -293,44 +293,13 @@ I18n.register('hu', {
   'Allow adult (18+) content': 'Felnőtt (18+) tartalom engedélyezése',
 
   // ---------------------------------------------------------------- kiegészítők
-  'No published extensions in this category yet.':
-    'Ebben a kategóriában még nincs közzétett kiegészítő.',
   Install: 'Telepítés',
-  Uninstall: 'Eltávolítás',
   Enable: 'Bekapcsolás',
   Disable: 'Kikapcsolás',
-  'Sign in to install': 'Jelentkezz be a telepítéshez',
-  'Installed, not running': 'Telepítve, de nem fut',
-  'Save settings': 'Beállítások mentése',
-  'Saved.': 'Mentve.',
-  'This extension has nothing to configure.':
-    'Ehhez a kiegészítőhöz nincs mit beállítani.',
-  'Failed to load the store: ': 'A bolt betöltése nem sikerült: ',
-  'Failed to load this extension: ': 'A kiegészítő betöltése nem sikerült: ',
-  '← Extension Store': '← Kiegészítő-áruház',
-  'Requested permissions': 'Kért jogosultságok',
-  'None — this extension runs with no access beyond the sandbox.':
-    'Semmit — ez a kiegészítő a sandboxon kívül semmihez nem fér hozzá.',
-  Versions: 'Verziók',
-  'No published versions.': 'Nincs közzétett verzió.',
-  'No ratings yet': 'Még nincs értékelés',
-  deprecated: 'elavult',
-  '%n failures in the last 7 days': '%n hiba az elmúlt 7 napban',
   Reviews: 'Értékelések',
   Delete: 'Törlés',
-  'No reviews yet.': 'Még nincs értékelés.',
-  'Sign in to leave a review.': 'Jelentkezz be az értékeléshez.',
-  'Install the extension to review it.': 'Telepítsd a kiegészítőt, hogy értékelhesd.',
-  'What worked, what did not (optional)': 'Mi működött, mi nem (nem kötelező)',
-  'Post review': 'Értékelés küldése',
-  'Update review': 'Értékelés módosítása',
-  'Pick a rating first.': 'Előbb válassz csillagot.',
-  '%s stars': '%s csillag',
-  'Failed to load the reviews: ': 'Az értékelések betöltése nem sikerült: ',
   'Why are you reporting this review? (spam, harassment, nsfw, spoiler, illegal, other)':
     'Miért jelented ezt az értékelést? (spam, harassment, nsfw, spoiler, illegal, other)',
-  'Thanks — a moderator will look at it.': 'Köszönjük — egy moderátor megnézi.',
-  'Developer Portal →': 'Fejlesztői portál →',
 
   // ---------------------------------------------------------------- általános
   Save: 'Mentés',
@@ -437,7 +406,6 @@ I18n.register('hu', {
     'A nyelvi beállítások nem töltődtek be — ellenőrizd a kapcsolatot és tölts újra.',
   'English interface': 'Angol felület',
   Staff: 'Stáb',
-  'From extensions': 'Kiegészítőkből',
   'Skip outro': 'Végefőcím átugrása',
   Subtitles: 'Feliratok',
   'Episode {n} marked as watched': '{n}. rész megnézettnek jelölve',
@@ -477,8 +445,6 @@ I18n.register('hu', {
     'Kedvencek',
   'Level {level} · {xp} XP · {count} in library':
     '{level}. szint · {xp} XP · {count} a könyvtárban',
-  'Extension Store':
-    'Kiegészítő-bolt',
   'Live discussion across the whole platform':
     'Élő beszélgetés az egész platformról',
   'Your anime, tracked':

@@ -114,6 +114,4 @@ MIGRATIONS=$(psql "$RESTORE_URL" -tAc "SELECT count(*) FROM schema_migrations" 2
 USERS=$(psql "$RESTORE_URL" -tAc "SELECT count(*) FROM users" 2>/dev/null || echo 0)
 log "restored: $MIGRATIONS migrations, $USERS users"
 log ""
-log "Extension packages live outside the database (PACKAGE_DIR / the"
-log "yume-packages volume). Restore that volume too, or installed extensions"
-log "will download as 410 Gone."
+log "Everything is in the database: this restore is complete on its own."

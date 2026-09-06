@@ -135,7 +135,7 @@ export async function loadCaches (client: pg.PoolClient): Promise<EnrichCaches> 
  *      anime row was found in the first place. `mal_id` is a cross-reference,
  *      and nothing about arriving second makes a cross-reference more correct
  *      than the one already there.
- *   2. Overwriting does not add a mapping, it *moves* one. Every extension
+ *   2. Overwriting does not add a mapping, it *moves* one. Everything
  *      that resolves by MAL id would silently start returning a different
  *      anime, with no event anywhere saying so. Refusing the write leaves the
  *      catalogue exactly as it was and puts the disagreement in a table.

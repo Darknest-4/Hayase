@@ -140,28 +140,29 @@ drive the API with a user's bearer token, so:
 
 ---
 
-## 7. Extension sandbox
+## 7. No third-party code runs here
 
-Extensions are third-party code, so they run with no capabilities at all and
-receive only what their manifest declared:
+Extensions are gone. There was a sandbox — a Web Worker per package with the
+network, storage, nested-worker and DOM globals removed, a host that re-checked
+every declared permission over `postMessage`, a hostname allowlist on
+`net:fetch`, a per-package storage namespace, an sha256 check before execution,
+a remote kill switch and a call timeout — and it was verified by a browser test
+covering seventeen boundary cases.
 
-* Each extension runs in its **own Web Worker** with the network, storage,
-  nested-worker and DOM globals removed before its code is evaluated.
-* Every request crosses to the host over `postMessage`, where the declared
-  permissions are re-checked — the host never trusts the worker's own lockdown.
-* `net:fetch` is restricted to the hostnames in the manifest, sent with
-  `credentials: 'omit'` and no identity headers, capped at 2 MB and 8 seconds.
-* `storage:local` is namespaced per extension and size-capped.
-* The package's **sha256 must match** the published hash before it executes.
-* A suspended extension or one requiring a newer client **never loads**
-  (remote kill switch).
-* Calls time out after 10 seconds and the wedged worker is terminated.
+It is the largest control this project has removed by deleting the thing it
+protected. The features that shipped as packages are part of the platform now,
+so there is no third-party code in the page to isolate, no package bytes to
+verify, no permission grants to re-check, and no `blob:` in `script-src`: that
+allowance existed only so the worker could import a verified package as a
+module.
 
-`script-src` allows `blob:` so the worker can import the hash-verified package
-as a module; see `docs/extensions.md` for why that is the safer trade-off.
-Verified by a browser test covering 17 boundary cases (undeclared host, missing
-permission, ambient globals, hash mismatch, kill switch, version gate, infinite
-loop, result tampering).
+What replaced it is smaller and answerable in a line each. A video source is a
+reference an operator typed, checked at the write against a scheme allowlist —
+`javascript:` and `data:` in a `<video src>` are script execution in this
+origin, and plain `http:` is a mixed-content failure recorded as a success. A
+theme is a colour, checked the same way, because the difference between a
+colour and a stylesheet is one closing brace. Both reach the page as data and
+never as code.
 
 ## 8. What monitoring never exposes
 

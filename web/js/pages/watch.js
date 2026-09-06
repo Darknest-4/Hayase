@@ -232,7 +232,7 @@ const PageWatch = {
   // instead of being buried in settings.
   //
   // It re-ranks and replays from the candidates already in hand rather than
-  // asking every extension again, so switching is instant. The sub/dub choice
+  // fetching again, so switching is instant. The sub/dub choice
   // is also written back to preferences: someone who switches to dub here
   // almost always wants dub next time too, and making them state it twice is
   // the kind of small rudeness that adds up.
@@ -442,7 +442,7 @@ const PageWatch = {
       const tracks = await Catalogue.subtitles(episodeId)
       return tracks.length ? sources.map(s => ({ ...s, subtitles: tracks })) : sources
     } catch (error) {
-      // A failure here must not stop the extensions being asked.
+      // A failure here must not stop the manual URL path working.
       console.warn('[stream] registered sources unavailable:', error.message)
       return []
     }
@@ -451,9 +451,9 @@ const PageWatch = {
   /**
    * Build the candidate list for this episode and hand it to the engine.
    *
-   * Candidates come from the URL(s) the user picked plus every extension the
-   * sandbox currently has loaded. The engine ranks them and tries each in turn;
-   * a failure only reaches the user once nothing is left.
+   * Candidates are what this deployment has registered for the episode, plus
+   * any URL the viewer pasted. The engine ranks them and tries each in turn; a
+   * failure only reaches the user once nothing is left.
    */
   async startPlayback (video, media, episode, src, giveUp) {
     const engine = window.StreamEngine
@@ -464,12 +464,10 @@ const PageWatch = {
     /*
      * What this deployment says the episode plays from.
      *
-     * First in the candidate list, and ranked above a search result: somebody
-     * who runs this site attached these to this episode by hand, which is a
-     * stronger claim about "this is the right video" than anything matched by
-     * title. Extensions still answer — they are the way to find something the
-     * catalogue does not have — but they no longer have to be installed for
-     * anything to play at all.
+     * First in the candidate list and ranked above a pasted URL: somebody who
+     * runs this site attached these to this episode by hand, which is a
+     * stronger claim about "this is the right video" than a string somebody
+     * typed into a box once.
      */
     const registered = await this.registeredSources(media, episode)
 
@@ -477,9 +475,6 @@ const PageWatch = {
       if (manual[0]) { video.src = manual[0].url; video.load() }
       return
     }
-
-    // only extensions that are actually loaded in the sandbox can be asked
-    const loaded = (window.ExtensionHost?.loaded?.() ?? []).map(slug => ({ slug }))
 
     // The viewer's sub/dub and subtitle-language choice reaches the engine
     // here, where it decides the order candidates are tried in. Without it the
@@ -489,28 +484,19 @@ const PageWatch = {
       subtitles: window.Prefs?.get('playback.subtitles') ?? null
     }
 
-    const { results, errors } = await engine.candidates(media, episode, { sources: [...registered, ...manual], extensions: loaded, prefs })
-    for (const error of errors) console.warn('[stream] extension failed:', error)
+    const { results, errors } = await engine.candidates(media, episode, { sources: [...registered, ...manual], prefs })
+    for (const error of errors) console.warn('[stream] source lookup failed:', error)
 
     if (!results.length) { giveUp(T('No sources were offered for this episode.')); return }
 
-    // Kept so the switcher can re-rank and replay without asking every
-    // extension again — switching from sub to dub should be instant.
+    // Kept so the switcher can re-rank and replay without fetching again —
+    // switching from sub to dub should be instant.
     this._candidates = results
     this._playContext = { video, media, episode, giveUp }
     this.mountVariantBar(media, episode)
 
-    // Subtitle extensions contribute tracks to whatever stream ends up
-    // playing rather than competing as sources. Fetched alongside the
-    // candidates, not before them: a slow subtitle provider must not delay
-    // the video starting, and an absent one costs nothing.
-    const externalSubs = await engine.externalSubtitles(media, episode).catch(() => [])
-    const enriched = externalSubs.length
-      ? results.map(candidate => engine.withExternalSubtitles(candidate, externalSubs))
-      : results
-
     try {
-      const { candidate } = await engine.play(video, enriched, {
+      const { candidate } = await engine.play(video, results, {
         onFallback: (failed, reason) => {
           console.warn('[stream] falling back from', failed.source.slug, '—', reason)
           U.toast(`${T('Source failed')} (${failed.source.name}) — ${T('trying the next one')}`, 'error')
@@ -549,7 +535,7 @@ const PageWatch = {
     box.append(U.el('div', { class: 'player-pick' }, [
       U.el('div', { class: 'player-pick-inner' }, [
         U.el('h3', { style: 'margin:0 0 .35rem;font-weight:800;', text: T('Pick a source') }),
-        U.el('p', { style: 'margin:0 0 .9rem;color:var(--fg-faint);font-size:.85rem;', text: T('Paste a direct stream URL. Add more on separate lines and the player falls back automatically if one fails. Installed extensions supply sources here too.') }),
+        U.el('p', { style: 'margin:0 0 .9rem;color:var(--fg-faint);font-size:.85rem;', text: T('Paste a direct stream URL. Add more on separate lines and the player falls back automatically if one fails.') }),
         U.el('div', { style: 'display:flex;gap:.6rem;' }, [input, U.el('button', { class: 'btn btn-primary', onclick: play }, [document.createTextNode(T('Play'))])]),
         streams.length
           ? U.el('div', { style: 'margin-top:1rem;' }, [
@@ -1074,16 +1060,12 @@ const PageWatch = {
   /**
    * Opening and ending intervals for this episode.
    *
-   * Three sources, in order of who is most likely to be right about *this*
-   * deployment's copy of the episode:
+   * Ours first — `skip_segments`, which somebody here entered or corrected —
+   * then api.aniskip.com for everything nobody has got to yet.
    *
-   *   1. our own `skip_segments`, which somebody here entered or corrected
-   *   2. a metadata extension, so a viewer can bring a different provider
-   *   3. api.aniskip.com, the way it always worked
-   *
-   * The last one stays because removing it would silently take the skip button
-   * away from every episode nobody has entered intervals for, which is a
-   * regression dressed as a refactor.
+   * The fallback stays because removing it would silently take the skip button
+   * away from every episode with no intervals entered, which is a regression
+   * dressed as a refactor.
    */
   async _loadSkips (media, episode, video, skipBtn) {
     this._skips = null
@@ -1107,20 +1089,7 @@ const PageWatch = {
       } catch (e) { /* fall through */ }
     }
 
-    // ---- extensions next ----
-    const host = window.ExtensionHost
-    if (host?.collect) {
-      try {
-        const query = window.StreamEngine?.buildQuery(media, episode) ?? { episode, malId: media.idMal }
-        const { results } = await host.collect('metadata', query, { types: ['metadata'] })
-        const skips = (results ?? [])
-          .filter(row => row?.kind === 'skip' && Number.isFinite(row.start) && Number.isFinite(row.end))
-          .map(row => ({ kind: label(row.skipType), start: row.start, end: row.end }))
-        if (skips.length) { this._skips = skips; return }
-      } catch (e) { /* fall through to the built-in provider */ }
-    }
-
-    // ---- built-in fallback ----
+    // ---- AniSkip, for the episodes nobody has entered intervals for ----
     if (!media.idMal) return
     try {
       const res = await fetch(`https://api.aniskip.com/v2/skip-times/${media.idMal}/${episode}?types[]=op&types[]=ed&episodeLength=0`)

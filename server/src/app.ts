@@ -27,7 +27,6 @@ import authRoutes from './routes/auth.ts'
 import commentRoutes from './routes/comments.ts'
 import w2gRoutes from './routes/w2g.ts'
 import adminRoutes from './routes/admin.ts'
-import devRoutes from './routes/dev.ts'
 import profileRoutes from './routes/profiles.ts'
 import webhookRoutes from './routes/webhooks.ts'
 import { publicConfig, adminConfig } from './routes/config.ts'
@@ -36,7 +35,6 @@ import roleRoutes from './routes/roles.ts'
 import catalogueRoutes from './routes/catalogue.ts'
 import { publicReadiness, adminMonitoring } from './routes/monitoring.ts'
 import reportRoutes from './routes/reports.ts'
-import extensionRoutes from './routes/extensions.ts'
 import libraryRoutes from './routes/library.ts'
 import settingsRoutes from './routes/settings.ts'
 import translationRoutes from './routes/translations.ts'
@@ -73,20 +71,13 @@ export async function buildApp (): Promise<FastifyInstance> {
     // limiter bypassable with a single header.
     trustProxy: config.trustProxy,
     // Cap request bodies. Nothing Yume accepts is large — the biggest payloads
-    // are comment/review text and extension manifests — so this bounds memory
+    // are comment text and catalogue synopses — so this bounds memory
     // use from hostile requests. Fastify's default is the same 1 MB; setting it
     // explicitly makes the intent (and the place to change it) obvious.
     bodyLimit: Number(process.env.BODY_LIMIT_BYTES ?? 1_048_576),
     requestTimeout: config.requestTimeoutMs,
     connectionTimeout: config.connectionTimeoutMs
   })
-
-  // Extension packages are uploaded as raw source, not JSON — see
-  // lib/package-store.ts. Only these content types bypass the JSON parser,
-  // and the route that accepts them sets its own (larger) body limit.
-  for (const mime of ['application/javascript', 'text/javascript', 'application/octet-stream']) {
-    app.addContentTypeParser(mime, { parseAs: 'buffer' }, (_request, body, done) => { done(null, body) })
-  }
 
   await app.register(securityPlugin)
   await app.register(cors, { origin: config.corsOrigins })
@@ -254,13 +245,11 @@ export async function buildApp (): Promise<FastifyInstance> {
   await app.register(libraryRoutes, { prefix: '/v1/me' })
   await app.register(settingsRoutes, { prefix: '/v1/me' })
   await app.register(profileRoutes, { prefix: '/v1/profiles' })
-  await app.register(extensionRoutes, { prefix: '/v1/extensions' })
   await app.register(commentRoutes, { prefix: '/v1/comments' })
   await app.register(w2gRoutes, { prefix: '/v1/w2g' })
   await app.register(reportRoutes, { prefix: '/v1/reports' })
   await app.register(adminRoutes, { prefix: '/v1/admin' })
   await app.register(translationRoutes, { prefix: '/v1/admin/translations' })
-  await app.register(devRoutes, { prefix: '/v1/dev' })
   await app.register(webhookRoutes, { prefix: '/v1/admin/webhooks' })
   await app.register(roleRoutes, { prefix: '/v1/admin/roles' })
   await app.register(catalogueRoutes, { prefix: '/v1/admin/catalogue' })

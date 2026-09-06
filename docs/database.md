@@ -15,8 +15,12 @@ are verified to apply cleanly on a fresh Postgres 16 (101 relations).
 | `0003_streaming` | playback | `video_sources`, `source_mirrors`, `subtitle_tracks`/`audio_tracks`, `skip_segments`, `watch_progress`, `watch_history` (partitioned), `bookmarks`, `watch_together_rooms` |
 | `0004_community` | social | `comments`(+likes), `forums`/`topics`/`posts`, `chats`/`chat_members`/`messages` (partitioned), `clubs`(+members), `follows`, `friendships`, `reports`, `moderation_actions` |
 | `0005_profile` | library & gamification | `library_entries`, `favorites`, `custom_lists`(+items)/`collections`, `reviews`(+votes), `achievements`/`badges`, `xp_events`, `profile_stats` |
-| `0006_extensions` | extension store | `extension_developers`, `extensions`, `extension_versions`, `extension_permissions`, `extension_installs`, `extension_reviews`, `extension_events` (partitioned) |
+| `0006_extensions` | extension store — **dropped again by `0031`** | (no longer present) |
 | `0007_analytics` | telemetry | `page_views`, `watch_stats_daily`, `search_stats`, `performance_metrics`, `audit_logs`, `error_groups`/`error_logs` (all partitioned) |
+| `0028_metadata_runs` | AniList sync runs | `metadata_runs` (one active at a time) |
+| `0029_video_source_providers` | operator-registered sources | columns on `video_sources`: `provider`, `enabled`, `priority`, `added_by`, `language`, `variant` |
+| `0030_themes` | site palettes | `themes` (seeded with the built-ins) |
+| `0031_remove_extension_platform` | the store, the portal and the sandbox | drops everything `0006` created |
 
 ## Entity relationship overview
 
@@ -31,9 +35,8 @@ users ─1:N─ user_profiles ─1:N─ library_entries ─N:1─ anime
   ├─ sessions / devices / api_keys / notifications       ├─ anime_relations (graph)
   ├─ user_roles ─ roles ─ role_permissions ─ permissions └─ anime_images / videos
   ├─ comments / posts / messages / reports
-  └─ extension_developers ─ extensions ─ versions ─ permissions
-                                  └─ installs / reviews / events
-episodes ─1:N─ video_sources ─N:1─ extensions
+  └─ themes (site palettes)
+episodes ─1:N─ video_sources / subtitle_tracks / skip_segments
 ```
 
 ## Conventions
@@ -65,7 +68,7 @@ in the SQL. The patterns:
   seeders DESC)` (source picker).
 - **Partial indexes** where a predicate is implied: unread notifications,
   open reports, non-completed watch progress (`continue watching`),
-  published extensions, active sessions. Keeps the index small and hot.
+  active sessions and unresolved reports. Keeps the index small and hot.
 - **Trigram GIN** (`pg_trgm`) on `anime.canonical_title` and
   `anime_synonyms.synonym` for typo-tolerant fallback search;
   **tsvector GIN** on `anime.search` (weighted title A / synopsis C,
@@ -77,14 +80,13 @@ in the SQL. The patterns:
 
 High-volume append-only tables are **range-partitioned by month** on
 `created_at`/`started_at`: `watch_history`, `messages`,
-`extension_events`, `page_views`, `search_stats`, `performance_metrics`,
+`page_views`, `search_stats`, `performance_metrics`,
 `audit_logs`, `error_logs`. The maintenance worker creates the next
 partition ahead of time and drops expired ones:
 
 | Table | Retention |
 |---|---|
 | `page_views`, `search_stats`, `performance_metrics` | 90 days raw; rollups forever |
-| `extension_events` | 90 days |
 | `error_logs` | 30 days (groups kept) |
 | `watch_history`, `messages`, `audit_logs`, `security_logs` | indefinitely (cheap, user-valuable / compliance) |
 
@@ -140,7 +142,7 @@ write the new one, and records the pair in `mapping_conflicts`. Two reasons:
 1. `anilist_id` is the identity the enricher works from — it is how the anime
    row is found at all. `mal_id` is a cross-reference, and nothing about
    arriving second makes a cross-reference more correct than the one there.
-2. Overwriting would not add a mapping, it would **move** one. Every extension
+2. Overwriting would not add a mapping, it would **move** one. Everything
    that resolves by MAL id would silently start returning a different anime,
    with no event anywhere saying so. Refusing leaves the catalogue as it was
    and puts the disagreement somewhere a person can look at it.

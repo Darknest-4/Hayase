@@ -38,10 +38,6 @@ services:
     deploy:
       resources:
         limits: { memory: 768M }
-    volumes:
-      # Extension package bytes. These are NOT in the database, so a database
-      # backup alone does not restore them — see docs/backup.md.
-      - packages:/app/packages
 
   # Background worker — REQUIRED in production. It creates next month's
   # partitions and enforces retention (without it, inserts into the
@@ -93,26 +89,6 @@ services:
       DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/yume
       # SEED_URL: <override the dump source, or mount a file and pass its path>
     command: ['sh', '-c', 'node --experimental-strip-types src/lib/migrate.ts && node --experimental-strip-types scripts/seed.ts']
-
-  # one-shot re-publish of the bundled extensions into the store.
-  # The app already does this on every boot; run this when you have edited a
-  # package and want it live without restarting:
-  #   docker compose --profile extensions run --rm extensions
-  # It never changes the status of an extension you suspended, and refuses to
-  # overwrite a published version with different bytes unless you bump the
-  # version in its manifest.json.
-  extensions:
-    build: .
-    profiles: ['extensions']
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/yume
-      # EXTENSIONS_OWNER: <username or email>   # defaults to the oldest admin
-    volumes:
-      - packages:/app/packages
-    command: ['node', '--experimental-strip-types', 'scripts/publish-extensions.ts']
 
   # one-shot AniList enrichment: fills synopsis, cover/banner, score, genres,
   # tags, studios and trailer onto the seeded rows (matched by anilist_id).
@@ -206,7 +182,7 @@ services:
   # for it: sharing the WebSocket hub and the permission cache once a second
   # app instance exists. Off by default until that day — see docs/redis.md.
   # OpenSearch, MinIO and RabbitMQ were removed: search runs on Postgres,
-  # extension packages on the filesystem, and the job queue on Postgres.
+  # and the job queue on Postgres.
   redis:
     image: redis:7-alpine
     profiles: ['infra']
@@ -218,7 +194,6 @@ services:
 
 volumes:
   pgdata:
-  packages:
   backups:
   caddydata:
   caddyconfig:

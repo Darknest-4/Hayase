@@ -10,7 +10,6 @@ import type { Job } from '../lib/queue.ts'
 const PARTITIONED = [
   { table: 'watch_history', column: 'started_at', retentionMonths: null },
   { table: 'messages', column: 'created_at', retentionMonths: null },
-  { table: 'extension_events', column: 'created_at', retentionMonths: 3 },
   { table: 'page_views', column: 'created_at', retentionMonths: 3 },
   { table: 'search_stats', column: 'created_at', retentionMonths: 3 },
   { table: 'performance_metrics', column: 'created_at', retentionMonths: 3 },
