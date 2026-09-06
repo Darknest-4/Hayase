@@ -127,10 +127,17 @@ A legfontosabb, mert ma **félrevezeti a felhasználót**.
   a kiegészítők törlése után ma egyetlen epizódnak sem lenne forrása
 
 ### 2. kör — Admin panel (≈ 1–1,5 nap)
-- külön layout: saját sidebar, nincs normál header/footer/mobil nav
-- összecsukható sidebar a brief szerinti csoportosítással
-- reszponzív: mobilon drawer
-- admin-specifikus táblák, amik telefonon is kezelhetők
+- ✅ külön layout: az `admin-route` osztály a `<body>`-n elveszi az oldal
+  ikonsávját, a mobil fülsávot és a láblécet — a panel a saját sávját hozza
+- ✅ összecsukható sidebar a meglévő csoportosítással; az állapot böngészőnként
+  megmarad, összecsukva a csoportcímekből elválasztó vonal lesz
+- ✅ „Vissza az oldalra" link a sáv alján — az oldal saját sávja nélkül enélkül
+  csak a böngésző Vissza gombja vezetne ki a panelből
+- ✅ reszponzív: mobilon drawer + ragadós fejléc (hamburger, szekciónév,
+  alcím); szekcióválasztásra becsukódik, a háttérre koppintva is
+- ✅ a site-config sorok telefonon külön sorba teszik a vezérlőket
+- ⏳ a többi admin tábla telefonos átnézése (katalógus, jogosultságok) —
+  ezeknek már van saját töréspontjuk, de nem néztem át mindet valós eszközön
 
 ### 3. kör — Kiegészítők lebontása + témarendszer (≈ 1,5–2 nap)
 **Ez a kör a K1 válaszától függ.**

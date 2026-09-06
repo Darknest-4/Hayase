@@ -52,6 +52,21 @@ const App = {
     // banner only persists on home; pages set their own
     if (route !== 'home') U.setBanner(null)
 
+    /*
+     * The administration panel gets the window to itself.
+     *
+     * It was rendering inside the ordinary site chrome — the icon rail on the
+     * left, the mobile tab bar at the bottom, the marketing footer under a
+     * table of user accounts — with its own section rail beside it. Two navs
+     * competing for the same edge, and on a phone a bottom bar covering the
+     * panel's own controls. An operator screen and a viewer screen are not the
+     * same product and should not wear the same frame.
+     *
+     * The class is what the stylesheet keys off; the page module builds the
+     * panel's own rail.
+     */
+    document.body.classList.toggle('admin-route', route === 'admin')
+
     document.querySelectorAll('.sidebar-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.route === route || ((route === 'anime' || route === 'watch') && btn.dataset.route === 'home') || (route === 'developer' && btn.dataset.route === 'extensions'))
     })
@@ -65,7 +80,7 @@ const App = {
     const gate = this._gateCheck(route)
     if (!gate.ok) {
       this._renderGate(page, gate, route)
-      if (!['watch', 'w2g', 'profiles'].includes(route)) page.append(C.footer())
+      if (!this.CHROMELESS.includes(route)) page.append(C.footer())
       return
     }
 
@@ -79,14 +94,23 @@ const App = {
     // a newer navigation superseded us while an async handler was in flight
     if (gen !== this._navGen) return
 
-    // site footer on standard content pages (not on immersive / picker screens)
-    if (!['watch', 'w2g', 'profiles'].includes(route)) page.append(C.footer())
+    // site footer on standard content pages (not on immersive / picker
+    // screens, and not under the admin panel — see CHROMELESS)
+    if (!this.CHROMELESS.includes(route)) page.append(C.footer())
   },
 
   // ---- feature-flag / access gate ----
 
   config: null, // effective site config from /v1/config
   perms: [], // the signed-in user's permission slugs
+
+  /**
+   * Routes that carry no site footer.
+   *
+   * The immersive screens (the player, watch-together, the profile picker)
+   * plus the admin panel, which brings its own frame entirely.
+   */
+  CHROMELESS: ['watch', 'w2g', 'profiles', 'admin'],
 
   // routes always reachable so users can configure the server / sign in
   _gateExempt: ['settings', 'profiles'],
