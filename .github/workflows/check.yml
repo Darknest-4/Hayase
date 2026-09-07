@@ -123,17 +123,49 @@ jobs:
       # passing one made ESLint fail with "No files matching" — so this step
       # was erroring out rather than linting anything.
       - name: Lint the client
-        run: npx --yes standard --ignore "web/js/vendor/**" "web/**/*.js" "web/test/*.mjs" "extensions/**/*.js"
+        run: npx --yes standard --ignore "web/js/vendor/**" "web/**/*.js" "web/test/*.mjs"
 
       # The engine is the one piece of client code with real logic in it —
       # everything else is rendering. It loads against a small DOM stub, so it
       # needs no browser and no server.
-      # --experimental-strip-types because the extension suite validates its
-      # manifest with the server's own TypeScript validator rather than a copy
-      # of the rules, so a manifest that would be rejected at publish time
-      # fails here instead.
+      # --experimental-strip-types so a client test may import the server's own
+      # TypeScript when it needs to check against the real rule rather than a
+      # copy of it.
       - name: Client tests
         run: node --experimental-strip-types --test web/test/*.test.mjs
+
+  # Nothing in this pipeline ever built the container, so a Dockerfile that
+  # could not parse went through review, through CI and through a merge — the
+  # deployment was the first thing to find out. A build is the cheapest check
+  # there is for the one artefact production actually runs.
+  #
+  # `docker build` only, not a push: this proves the image assembles. What it
+  # does at runtime is the business of the jobs above, which run the same code
+  # directly.
+  image:
+    name: Container image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build --tag yume:ci .
+
+      # A syntactically valid Dockerfile that produces an image which exits on
+      # start is still broken. This asks the entrypoint's interpreter to parse
+      # the command without a database behind it, which is enough to catch a
+      # mangled CMD.
+      - name: The entrypoint is runnable
+        run: docker run --rm --entrypoint sh yume:ci -c 'node --experimental-strip-types --check src/index.ts && echo entrypoint ok'
+
+      # The client is served from inside the image, so a COPY that stopped
+      # copying it is a blank site rather than a failed build.
+      - name: The image carries the web client and the migrations
+        run: |
+          docker run --rm --entrypoint sh yume:ci -c 'test -f /app/web/index.html' \
+            || { echo '::error::/app/web/index.html is missing from the image'; exit 1; }
+          docker run --rm --entrypoint sh yume:ci -c 'ls /app/db/migrations/*.sql >/dev/null' \
+            || { echo '::error::/app/db/migrations is missing from the image'; exit 1; }
 
   # The client's unit tests run against a DOM stub, which left the router, the
   # layout, the sign-in modal and the player with no automated coverage at all:
@@ -186,18 +218,10 @@ jobs:
         env:
           DATABASE_URL: postgres://yume:yume@localhost:5432/yume
 
-      - name: Publish the bundled extensions
-        run: node --experimental-strip-types scripts/publish-extensions.ts || true
-        working-directory: server
-        env:
-          DATABASE_URL: postgres://yume:yume@localhost:5432/yume
-          PACKAGE_DIR: /tmp/yume-packages
-
       - name: Browser smoke test
         run: npm run test:e2e
         working-directory: server
         env:
           DATABASE_URL: postgres://yume:yume@localhost:5432/yume
           JWT_SECRET: ci-secret-not-used-for-anything-real-0123456789
-          PACKAGE_DIR: /tmp/yume-packages
           LOG_LEVEL: warn

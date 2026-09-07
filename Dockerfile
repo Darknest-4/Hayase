@@ -21,7 +21,8 @@ COPY web/ /app/web/
 ENV NODE_ENV=production \
     PORT=4000 \
     HOST=0.0.0.0 \
-    WEB_ROOT=/app/web \
+    WEB_ROOT=/app/web
+
 EXPOSE 4000
 
 # Run as the built-in unprivileged user.
