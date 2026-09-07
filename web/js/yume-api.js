@@ -462,6 +462,16 @@ const YumeAPI = {
     overview: () =>
       YumeAPI._request('/v1/admin/analytics/overview', { auth: true }),
 
+    // The counts the section rail puts on its own items. Each figure is null
+    // when this account holds no permission over it.
+    badges: () => YumeAPI._request('/v1/admin/badges', { auth: true }),
+
+    // Everything the overview screen draws, in one round trip. `days` is the
+    // window every comparison on it is measured over, so the captions on the
+    // cards are all true of the same period.
+    dashboard: (days = 7) =>
+      YumeAPI._request(`/v1/admin/analytics/dashboard?days=${days}`, { auth: true }),
+
     // Hungarian catalogue text. `queue` is the only one an editor opens
     // deliberately — everything else follows from picking something in it.
     translations: {

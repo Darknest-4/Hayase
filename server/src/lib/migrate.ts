@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 
 import { pool } from '../db.ts'
 import { check as checkEncoding } from './db-encoding.ts'
+import { ensurePartitions } from './partitions.ts'
 
 const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), '../../../db/migrations')
 
@@ -70,6 +71,23 @@ async function migrate (): Promise<void> {
       client.release()
     }
   }
+  // Month partitions for the event tables, before the lock is given up.
+  //
+  // A migration is fixed text and cannot know what month it is applied in, so
+  // each partitioned table arrives with a couple of literal months in its
+  // CREATE — and once the clock passed the last of them, a freshly applied
+  // schema had nowhere to put an audit row. Registration writes one inside its
+  // transaction, so a brand-new deployment answered 500 to the first account
+  // anybody tried to create. Applying a schema that cannot be written to is
+  // not applying a schema.
+  //
+  // Inside the lock because two replicas migrating together would otherwise
+  // race to create the same partition. It runs on every invocation, not only
+  // when something was applied: the case this exists for is the database that
+  // is already up to date and has simply been running since before the month
+  // turned over.
+  const partitions = await ensurePartitions()
+  if (partitions.length) console.log(`created partitions ${partitions.join(', ')}`)
   } finally {
     await lockClient.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_KEY])
     lockClient.release()

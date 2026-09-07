@@ -134,11 +134,23 @@ async function rehydrate (channel: string, ref: { table: 'messages', id: string 
   }
 }
 
-/** Start listening. `deliver` hands a remote message to the local hub. */
+/**
+ * Start listening. `deliver` hands a remote message to the local hub.
+ *
+ * Replaces a listener that is already running rather than leaking it. The
+ * module keeps one client in a module-level binding, and `connect` assigns
+ * over it — so a second `start` without a `stop` left the first connection
+ * open with nothing holding a reference to close it. A process normally builds
+ * one app and never noticed; a test file that builds several leaked a LISTEN
+ * connection per app, and those open sockets kept the process alive after the
+ * run had finished, which turned a failing test into a job that hung until it
+ * was cancelled.
+ */
 export async function start (
   deliver: Deliver,
   log: (message: string, error?: unknown) => void = () => {}
 ): Promise<void> {
+  await stop()
   deliverLocally = deliver
   stopped = false
   await connect(log)

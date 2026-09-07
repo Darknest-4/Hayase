@@ -105,6 +105,13 @@ describe('which query searchAnime actually issues', () => {
   })
 })
 
+/**
+ * Below this many rows the query planner prefers a sequential scan, correctly.
+ * A real deployment carries tens of thousands; the number only has to be large
+ * enough that choosing an index is the cheaper plan.
+ */
+const MIN_ROWS_FOR_A_PLAN = 1_000
+
 describe('the plan', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
   let pool: { query: (sql: string, params?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }>, end: () => Promise<void> }
 
@@ -122,11 +129,24 @@ describe('the plan', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
     return out
   }
 
-  test('the cheap query reaches all three tables by index', async () => {
+  test('the cheap query reaches all three tables by index', async (t) => {
     // This is the regression that matters: a predicate that stops being
     // index-usable turns 25k anime and 150k synonyms into a sequential scan
     // on every keystroke, and nothing about the response would look wrong.
     const db = await load()
+
+    // The planner is asked what it would do, and on a nearly empty table the
+    // right answer is a sequential scan — reading forty rows beats descending
+    // an index to find them. Asserting index use there is not a weaker version
+    // of this test, it is a different and false one, so the check is skipped
+    // rather than made to pass on data that cannot support it.
+    const { rows: size } = await db.query('SELECT count(*)::int AS n FROM anime')
+    const n = Number(size[0]!.n)
+    if (n < MIN_ROWS_FOR_A_PLAN) {
+      t.skip(`catalogue has ${n} rows; the planner needs about ${MIN_ROWS_FOR_A_PLAN} before an index beats a scan`)
+      return
+    }
+
     const { sql, params } = buildSearchSql({ limit: 20 }, { fuzzy: false })
     params[0] = 'naruto'
     const { rows } = await db.query(`EXPLAIN (FORMAT JSON) ${sql}`, params)

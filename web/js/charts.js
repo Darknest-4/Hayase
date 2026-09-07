@@ -79,6 +79,109 @@ const Charts = {
     return this._svg(W, H, [area, line], label)
   },
 
+  /**
+   * Multi-series line chart with axes: series = [{ name, values[], color }].
+   *
+   * The module had bars, a sparkline, ranked rows and a donut — nothing that
+   * could put three measures on one time axis, which is what "did content
+   * activity move together with users" needs. A sparkline cannot answer it:
+   * no axis, no scale, no second series.
+   *
+   * Everything is drawn from the data. The y-axis is rounded up to a readable
+   * step rather than to the maximum, so the top gridline is a number a person
+   * would say out loud, and a series that is flat at zero still gets a line on
+   * the baseline instead of disappearing.
+   */
+  lines (series, { labels = [], label = 'Trend', height = 190, area = null } = {}) {
+    const W = 380
+    const H = height
+    const padL = 26
+    const padR = 8
+    const padT = 10
+    const padB = 20
+    const plotW = W - padL - padR
+    const plotH = H - padT - padB
+
+    const all = series.flatMap(s => s.values)
+    if (!all.length) return this._svg(W, H, [], label)
+
+    // A "nice" ceiling: 1, 2 or 5 × a power of ten, so the gridline labels are
+    // round numbers. A max of 37 draws to 40, not to 37.
+    const peak = Math.max(1, ...all)
+    const magnitude = 10 ** Math.floor(Math.log10(peak))
+    const top = [1, 2, 5, 10].find(m => peak <= m * magnitude) * magnitude
+    const ticks = [4, 5, 3, 2, 1].find(n => top % n === 0) ?? 4
+
+    const x = i => padL + (series[0].values.length > 1 ? (i * plotW) / (series[0].values.length - 1) : plotW / 2)
+    const y = v => padT + plotH - (v / top) * plotH
+
+    const children = []
+
+    // gridlines + y labels
+    for (let t = 0; t <= ticks; t++) {
+      const value = (top / ticks) * t
+      const yy = y(value)
+      children.push(this._el('line', {
+        x1: padL,
+        x2: W - padR,
+        y1: yy.toFixed(1),
+        y2: yy.toFixed(1),
+        class: 'chart-grid'
+      }))
+      const text = this._el('text', { x: padL - 5, y: (yy + 3).toFixed(1), 'text-anchor': 'end', class: 'chart-axis' })
+      text.textContent = value >= 1000 ? (value / 1000) + 'k' : String(Math.round(value))
+      children.push(text)
+    }
+
+    // x labels — thinned so they never collide on a narrow card
+    const every = Math.ceil(labels.length / 6)
+    labels.forEach((name, i) => {
+      if (i % every !== 0 && i !== labels.length - 1) return
+      const text = this._el('text', { x: x(i).toFixed(1), y: H - 5, 'text-anchor': 'middle', class: 'chart-axis' })
+      text.textContent = name
+      children.push(text)
+    })
+
+    for (const line of series) {
+      const points = line.values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')
+      // A filled area only when there is one series: overlapping translucent
+      // fills read as a third colour that means nothing.
+      if (area ?? series.length === 1) {
+        children.push(this._el('polygon', {
+          points: `${padL},${padT + plotH} ${points} ${x(line.values.length - 1).toFixed(1)},${padT + plotH}`,
+          fill: line.color ?? 'var(--accent)',
+          opacity: '0.12'
+        }))
+      }
+      children.push(this._el('polyline', {
+        points,
+        fill: 'none',
+        stroke: line.color ?? 'var(--accent)',
+        'stroke-width': '2',
+        'stroke-linejoin': 'round',
+        'stroke-linecap': 'round'
+      }))
+      line.values.forEach((v, i) => {
+        const dot = this._el('circle', {
+          cx: x(i).toFixed(1),
+          cy: y(v).toFixed(1),
+          r: '2.6',
+          fill: 'var(--bg)',
+          stroke: line.color ?? 'var(--accent)',
+          'stroke-width': '2'
+        })
+        // The value itself, on hover. No tooltip machinery: a <title> is what
+        // the browser already knows how to show, and it works on touch too.
+        const t = document.createElementNS('http://www.w3.org/2000/svg', 'title')
+        t.textContent = `${line.name ? line.name + ' · ' : ''}${labels[i] ?? i}: ${v}`
+        dot.append(t)
+        children.push(dot)
+      })
+    }
+
+    return this._svg(W, H, children, label)
+  },
+
   // horizontal ranked bars: data = [{label, value, display}]
   ranked (data, { label = 'Ranking', accent = 'var(--accent)' } = {}) {
     const rowH = 30; const W = 640; const H = data.length * rowH + 10; const labelW = 150
@@ -100,7 +203,12 @@ const Charts = {
   },
 
   // donut chart: data = [{label, value, color}]
-  donut (data, { label = 'Distribution', size = 200 } = {}) {
+  /**
+   * Donut. `legend: false` returns the ring alone, for a caller that draws its
+   * own — the built-in one is positioned for a 200px canvas and collides with
+   * anything laid out around a smaller ring.
+   */
+  donut (data, { label = 'Distribution', size = 200, legend: withLegend = true } = {}) {
     const total = data.reduce((s, d) => s + d.value, 0) || 1
     const r = size / 2; const inner = r * 0.62; const cx = r; const cy = r
     const children = []
@@ -119,9 +227,12 @@ const Charts = {
       }))
       angle = a2
     }
+    const svg = this._svg(size, size, children, label)
+    if (!withLegend) return svg
+
     const wrap = document.createElement('div')
     wrap.className = 'donut-wrap'
-    wrap.append(this._svg(size, size, children, label))
+    wrap.append(svg)
     const legend = document.createElement('div')
     legend.className = 'donut-legend'
     for (const d of data) {

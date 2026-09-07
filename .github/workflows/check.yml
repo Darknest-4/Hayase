@@ -10,6 +10,11 @@ jobs:
   server:
     name: Server — typecheck, tests, migrations
     runs-on: ubuntu-latest
+    # A test process that never exits used to sit here until the six-hour
+    # default killed it, and every step after it was skipped — so a run that
+    # looked merely red had in fact checked nothing past the first suite. A
+    # hang should cost minutes and be obvious.
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -45,11 +50,17 @@ jobs:
       - name: Typecheck
         run: npm run check
 
-      - name: Unit tests
-        run: npm test
-        env:
-          JWT_SECRET: ci-secret-not-used-for-anything-real-0123456789
-
+      # Migrations come first now, and the reason is worth writing down.
+      #
+      # The test step below used to run here instead, with no DATABASE_URL,
+      # under the belief that "the whole suite skips itself" without one. It
+      # does not: config.ts falls back to
+      # postgres://yume:yume@localhost:5432/yume outside production, which is
+      # exactly this job's postgres service. So the suite quietly ran against
+      # the database *before the schema existed*, every DB-backed suite failed
+      # on a missing relation, and one of them left a pool open and never
+      # exited. The job burned its six-hour limit and was cancelled, taking the
+      # migration, integration, adversarial and build steps with it.
       - name: Apply migrations to a clean database
         run: npm run migrate
         env:
@@ -66,6 +77,23 @@ jobs:
         env:
           DATABASE_URL: postgres://yume:yume@localhost:5432/yume
 
+      # Registration promotes the first account on an instance with no
+      # administrator, so on a virgin database whichever suite registers first
+      # gets an administrator instead of the ordinary account it asked for —
+      # and which suite that is depends on the order the runner starts files
+      # in. The suites are written for a database that already has one; this
+      # makes that true. See scripts/test-fixture.ts.
+      - name: Give the database an administrator
+        run: node --experimental-strip-types scripts/test-fixture.ts
+        env:
+          DATABASE_URL: postgres://yume:yume@localhost:5432/yume
+
+      - name: Unit tests
+        run: npm test
+        env:
+          DATABASE_URL: postgres://yume:yume@localhost:5432/yume
+          JWT_SECRET: ci-secret-not-used-for-anything-real-0123456789
+
       # These send real HTTP requests at the assembled application. Without
       # them a commit that left every admin route unauthenticated would still
       # go green, because nothing else in this pipeline exercises a route.
@@ -80,9 +108,8 @@ jobs:
       # in the test, so a reverted fix reports what it used to allow rather
       # than only that an assertion failed.
       #
-      # This needs its own step: the unit-test step above runs before the
-      # database exists, so without DATABASE_URL the whole suite skips itself
-      # and reports green having checked nothing.
+      # Its own step so a security regression is named in the job list rather
+      # than buried in the middle of a 400-test run.
       - name: Adversarial tests (forgery, injection, SSRF, IDOR, races)
         run: npm run test:adversarial
         env:
@@ -101,6 +128,7 @@ jobs:
   web:
     name: Web client — syntax
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -123,17 +151,50 @@ jobs:
       # passing one made ESLint fail with "No files matching" — so this step
       # was erroring out rather than linting anything.
       - name: Lint the client
-        run: npx --yes standard --ignore "web/js/vendor/**" "web/**/*.js" "web/test/*.mjs" "extensions/**/*.js"
+        run: npx --yes standard --ignore "web/js/vendor/**" "web/**/*.js" "web/test/*.mjs"
 
       # The engine is the one piece of client code with real logic in it —
       # everything else is rendering. It loads against a small DOM stub, so it
       # needs no browser and no server.
-      # --experimental-strip-types because the extension suite validates its
-      # manifest with the server's own TypeScript validator rather than a copy
-      # of the rules, so a manifest that would be rejected at publish time
-      # fails here instead.
+      # --experimental-strip-types so a client test may import the server's own
+      # TypeScript when it needs to check against the real rule rather than a
+      # copy of it.
       - name: Client tests
         run: node --experimental-strip-types --test web/test/*.test.mjs
+
+  # Nothing in this pipeline ever built the container, so a Dockerfile that
+  # could not parse went through review, through CI and through a merge — the
+  # deployment was the first thing to find out. A build is the cheapest check
+  # there is for the one artefact production actually runs.
+  #
+  # `docker build` only, not a push: this proves the image assembles. What it
+  # does at runtime is the business of the jobs above, which run the same code
+  # directly.
+  image:
+    name: Container image builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build --tag yume:ci .
+
+      # A syntactically valid Dockerfile that produces an image which exits on
+      # start is still broken. This asks the entrypoint's interpreter to parse
+      # the command without a database behind it, which is enough to catch a
+      # mangled CMD.
+      - name: The entrypoint is runnable
+        run: docker run --rm --entrypoint sh yume:ci -c 'node --experimental-strip-types --check src/index.ts && echo entrypoint ok'
+
+      # The client is served from inside the image, so a COPY that stopped
+      # copying it is a blank site rather than a failed build.
+      - name: The image carries the web client and the migrations
+        run: |
+          docker run --rm --entrypoint sh yume:ci -c 'test -f /app/web/index.html' \
+            || { echo '::error::/app/web/index.html is missing from the image'; exit 1; }
+          docker run --rm --entrypoint sh yume:ci -c 'ls /app/db/migrations/*.sql >/dev/null' \
+            || { echo '::error::/app/db/migrations is missing from the image'; exit 1; }
 
   # The client's unit tests run against a DOM stub, which left the router, the
   # layout, the sign-in modal and the player with no automated coverage at all:
@@ -146,6 +207,7 @@ jobs:
   e2e:
     name: Browser smoke test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -186,18 +248,10 @@ jobs:
         env:
           DATABASE_URL: postgres://yume:yume@localhost:5432/yume
 
-      - name: Publish the bundled extensions
-        run: node --experimental-strip-types scripts/publish-extensions.ts || true
-        working-directory: server
-        env:
-          DATABASE_URL: postgres://yume:yume@localhost:5432/yume
-          PACKAGE_DIR: /tmp/yume-packages
-
       - name: Browser smoke test
         run: npm run test:e2e
         working-directory: server
         env:
           DATABASE_URL: postgres://yume:yume@localhost:5432/yume
           JWT_SECRET: ci-secret-not-used-for-anything-real-0123456789
-          PACKAGE_DIR: /tmp/yume-packages
           LOG_LEVEL: warn

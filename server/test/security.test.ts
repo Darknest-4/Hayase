@@ -1,15 +1,34 @@
-// Security hardening tests. These use Fastify's inject() so no server socket
-// and no database connection are needed — none of the exercised routes query.
+// Security hardening tests. These use Fastify's inject(), so no server socket
+// is opened.
+//
+// The header used to claim no database connection was needed either, "because
+// none of the exercised routes query". The monitoring endpoints do — that is
+// the point of asserting they are refused — so a pool connection is opened and
+// the pool has to be released, or the process outlives the test run.
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { describe, it } from 'node:test'
+import { after, describe, it } from 'node:test'
 
 process.env.JWT_SECRET ??= 'test-secret-for-unit-tests-only'
 
 const { buildApp } = await import('../src/app.ts')
 
-/** Fresh app per test: the rate-limit store is in-process, so tests must not share it. */
-const freshApp = async (): Promise<Awaited<ReturnType<typeof buildApp>>> => buildApp()
+/**
+ * Fresh app per test: the rate-limit store is in-process, so tests must not
+ * share it.
+ *
+ * Every app is remembered so the `after` hook can close it. Each test also
+ * closes its own on the way out, which is fine — but that line is the last one
+ * in the test, so an assertion failing above it skips the close and leaks a
+ * Fastify instance. Enough of those and the process never exits, which is how
+ * a failing assertion here became a six-hour CI job instead of a red one.
+ */
+const opened: Array<Awaited<ReturnType<typeof buildApp>>> = []
+const freshApp = async (): Promise<Awaited<ReturnType<typeof buildApp>>> => {
+  const app = await buildApp()
+  opened.push(app)
+  return app
+}
 
 describe('security headers', () => {
   it('sets the hardening headers on responses', async () => {
@@ -138,4 +157,14 @@ describe('production secret validation', () => {
       { env: { ...process.env, NODE_ENV: 'production', JWT_SECRET: 'C'.repeat(64), CORS_ORIGINS: '*', DATABASE_URL: 'postgres://x@localhost/x' }, encoding: 'utf8' })
     assert.match(out, /false/, 'wildcard must collapse to same-origin in production')
   })
+})
+
+// Release everything this file opened, whatever the tests above did.
+//
+// Closing an app a second time is a no-op the tests' own closes make likely,
+// so it is swallowed; failing to close one is what actually costs something.
+after(async () => {
+  for (const app of opened) await app.close().catch(() => {})
+  const { pool } = await import('../src/db.ts')
+  await pool.end()
 })
