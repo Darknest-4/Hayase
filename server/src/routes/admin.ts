@@ -3,6 +3,7 @@
 // moderation_actions / audit_logs.
 
 import { query, queryOne, transaction } from '../db.ts'
+import { overview } from '../lib/dashboard.ts'
 import { auditTrail } from '../lib/audit.ts'
 import { errorGroups, errorOccurrences, setErrorGroupStatus } from '../lib/errors.ts'
 import { emitEvent } from '../lib/webhooks.ts'
@@ -196,6 +197,29 @@ const routes: FastifyPluginAsync = async fastify => {
 
   // ---------- analytics ----------
 
+  /**
+   * The overview screen, in one round trip.
+   *
+   * `?days` sets the comparison window for every figure that has one, so the
+   * captions on the cards are all true of the same period — a dashboard whose
+   * cards compare against different spans is a set of numbers that cannot be
+   * read together.
+   */
+  fastify.get('/analytics/dashboard', {
+    onRequest: fastify.requirePermission('admin.analytics.view', { hide: true }),
+    schema: {
+      querystring: {
+        type: 'object',
+        properties: { days: { type: 'integer', minimum: 1, maximum: 90, default: 7 } }
+      }
+    }
+  }, async request => {
+    const { days } = request.query as { days?: number }
+    return await overview(days ?? 7)
+  })
+
+  // The older, narrower shape. Kept because it is the documented one and
+  // something outside this repository may read it.
   fastify.get('/analytics/overview', {
     onRequest: fastify.requirePermission('admin.analytics.view', { hide: true })
   }, async () => {
