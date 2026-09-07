@@ -198,6 +198,40 @@ const routes: FastifyPluginAsync = async fastify => {
   // ---------- analytics ----------
 
   /**
+   * The counts the section rail puts on its own items.
+   *
+   * Its own route because the rail is drawn before any section loads, and
+   * because each figure is gated by the permission that owns it: an account
+   * that may moderate but not read analytics gets the report count and a null
+   * for the errors. `authenticate` rather than a permission, so the route
+   * answers for anyone already in the panel and decides figure by figure.
+   */
+  fastify.get('/badges', { onRequest: fastify.authenticate }, async request => {
+    const held = await query<{ slug: string }>(
+      `SELECT DISTINCT p.slug
+         FROM user_roles ur
+         JOIN role_permissions rp ON rp.role_id = ur.role_id
+         JOIN permissions p ON p.id = rp.permission_id
+        WHERE ur.user_id = $1`,
+      [request.user.sub]
+    )
+    const slugs = new Set(held.map(row => row.slug))
+
+    const [errors, reports] = await Promise.all([
+      slugs.has('admin.analytics.view')
+        ? queryOne<{ n: string }>("SELECT count(*) AS n FROM error_groups WHERE status = 'open'")
+        : null,
+      slugs.has('community.moderate')
+        ? queryOne<{ n: string }>("SELECT count(*) AS n FROM reports WHERE status IN ('open', 'reviewing')")
+        : null
+    ])
+    return {
+      errors: errors ? Number(errors.n) : null,
+      reports: reports ? Number(reports.n) : null
+    }
+  })
+
+  /**
    * The overview screen, in one round trip.
    *
    * `?days` sets the comparison window for every figure that has one, so the

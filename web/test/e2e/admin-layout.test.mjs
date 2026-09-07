@@ -180,10 +180,21 @@ describe('admin panel layout', { skip: REASON }, () => {
     await page.close()
   })
 
+  // The section name belongs on the screen exactly once. It used to live in
+  // the top bar, with the heading block hidden below a phone's width; now the
+  // heading block carries it at every width and the top bar carries none, so
+  // the same rule is checked from the other side.
   it('does not print the section name twice on a phone', async () => {
     const { page } = await open({ width: 390, height: 780 })
-    assert.equal(await shown(page, '.admin-content-head'), false)
-    assert.ok((await page.locator('.admin-topbar-title').innerText()).trim().length, 'the header lost the title')
+    assert.equal(await shown(page, '.admin-content-head'), true, 'the heading block is hidden')
+    const title = (await page.locator('.admin-content-title').innerText()).trim()
+    assert.ok(title.length, 'the heading lost the title')
+    const echoes = await page.evaluate(name => {
+      const bar = document.querySelector('.admin-topbar')
+      if (!bar) return 0
+      return [...bar.querySelectorAll('*')].filter(el => el.textContent.trim() === name).length
+    }, title)
+    assert.equal(echoes, 0, `the top bar repeats "${title}"`)
     await page.close()
   })
 })

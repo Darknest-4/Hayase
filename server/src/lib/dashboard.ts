@@ -58,10 +58,11 @@ export async function overview (days = 7): Promise<{
   jobs: Record<string, unknown>
   activity: Array<Record<string, unknown>>
   trending: Array<Record<string, unknown>>
+  errorGroups: Array<Record<string, unknown>>
 }> {
   const window = `${days} days`
 
-  const [users, content, watch, jobs, series, contentSeries, activity, trending] = await Promise.all([
+  const [users, content, watch, jobs, series, contentSeries, activity, trending, errorGroups] = await Promise.all([
     queryOne<Row>(
       `SELECT count(*)                                                                   AS total,
               count(*) FILTER (WHERE created_at <= now() - $1::interval)                 AS total_before,
@@ -144,7 +145,12 @@ export async function overview (days = 7): Promise<{
         ORDER BY a.created_at DESC
         LIMIT 12`),
 
-    query<Row>('SELECT id, canonical_title, trending, popularity FROM anime WHERE trending > 0 ORDER BY trending DESC LIMIT 6')
+    query<Row>('SELECT id, canonical_title, trending, popularity FROM anime WHERE trending > 0 ORDER BY trending DESC LIMIT 6'),
+
+    query<Row>(
+      `SELECT id, title, event_count, first_seen, last_seen
+         FROM error_groups WHERE status = 'open'
+        ORDER BY last_seen DESC LIMIT 6`)
   ])
 
   const recentJobs = await query<Row>(
@@ -185,6 +191,7 @@ export async function overview (days = 7): Promise<{
     series: { users: series, content: contentSeries },
     jobs: { ...(jobs ?? {}), recent: recentJobs },
     activity,
-    trending
+    trending,
+    errorGroups
   }
 }

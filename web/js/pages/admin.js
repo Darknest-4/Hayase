@@ -71,7 +71,7 @@ const PageAdmin = {
     const input = U.el('input', {
       class: 'input admin-jump-input',
       type: 'search',
-      placeholder: 'Jump to a section…',
+      placeholder: 'Search sections…',
       oninput: e => paint(e.target.value.trim().toLowerCase()),
       onfocus: e => paint(e.target.value.trim().toLowerCase()),
       onkeydown: e => {
@@ -92,7 +92,14 @@ const PageAdmin = {
       input.focus()
     })
 
-    return U.el('div', { class: 'admin-jump' }, [input, results])
+    return U.el('div', { class: 'admin-jump' }, [
+      U.el('span', { class: 'admin-jump-icon' }, [
+        U.svg('<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>', 15)
+      ]),
+      input,
+      U.el('kbd', { class: 'admin-jump-kbd', text: '/' }),
+      results
+    ])
   },
 
   /**
@@ -129,12 +136,27 @@ const PageAdmin = {
   accountChip (perms) {
     const user = YumeAPI.user?.() ?? null
     const name = user?.username ?? 'signed out'
-    return U.el('a', { class: 'admin-account', href: '#/profile', title: `${perms.length} permissions` }, [
+    // The strongest thing this account can do, named. "58 permissions" is a
+    // number; "can delete accounts" is what somebody actually needs to know
+    // before pressing anything in here.
+    const role = perms.includes('admin.users.manage')
+      ? 'Administrator'
+      : perms.includes('community.moderate')
+        ? 'Moderator'
+        : perms.includes('anime.edit')
+          ? 'Editor'
+          : 'Staff'
+    return U.el('a', {
+      class: 'admin-account',
+      href: '#/profile',
+      title: `${perms.length} permissions`
+    }, [
       U.el('span', { class: 'admin-account-avatar', text: (name[0] ?? '?').toUpperCase() }),
       U.el('span', { class: 'admin-account-text' }, [
         U.el('span', { class: 'admin-account-name', text: name }),
-        U.el('span', { class: 'admin-account-role', text: `${perms.length} permissions` })
-      ])
+        U.el('span', { class: 'admin-account-role', text: role })
+      ]),
+      U.svg('<path d="m6 9 6 6 6-6"/>', 13)
     ])
   },
 
@@ -199,13 +221,18 @@ const PageAdmin = {
       }
     }, [U.svg('<path d="m15 18-6-6 6-6"/>', 15)])
 
+    // The wordmark, then what this corner of it is. The count of reachable
+    // sections used to sit here; the account chip in the bar says how many
+    // permissions you hold, which answers the same question — "why can I not
+    // see Roles" — closer to where you would ask it.
     nav.append(U.el('div', { class: 'admin-nav-head' }, [
-      U.svg('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>', 17),
-      U.el('span', { class: 'admin-nav-brand', text: 'Admin' }),
-      // What this account can actually reach. A permission set is invisible
-      // until something goes wrong with it, and "why can't I see Roles" is a
-      // question worth answering before it is asked.
-      U.el('span', { class: 'admin-nav-count', text: String(available.length) }),
+      U.el('span', { class: 'admin-nav-mark' }, [
+        U.svg('<path d="M23.5 4.5A13 13 0 1 0 27.5 21 10.5 10.5 0 0 1 23.5 4.5Z" fill="currentColor" stroke="none"/>', 18)
+      ]),
+      U.el('span', { class: 'admin-nav-brand' }, [
+        U.el('span', { class: 'admin-nav-brand-name', text: window.App?.config?.site?.name ?? 'Yume' }),
+        U.el('span', { class: 'admin-nav-brand-sub', text: 'Admin panel' })
+      ]),
       collapseBtn
     ]))
 
@@ -224,7 +251,9 @@ const PageAdmin = {
           onclick: () => select(s)
         }, [
           U.svg(s.icon, 17),
-          U.el('span', { class: 'admin-nav-label', text: s.label })
+          U.el('span', { class: 'admin-nav-label', text: s.label }),
+          // Filled in below, once the counts arrive.
+          U.el('span', { class: 'admin-nav-badge hidden', dataset: { badge: s.key } })
         ])
         navItems[s.key] = item
         nav.append(item)
@@ -240,6 +269,22 @@ const PageAdmin = {
         U.el('span', { class: 'admin-nav-label', text: 'Back to the site' })
       ])
     ]))
+
+    /*
+     * How much is waiting, on the item it is waiting under.
+     *
+     * Best-effort and after the rail is on screen: a count nobody asked for
+     * must not delay the panel opening, and a deployment where the request
+     * fails simply shows no badges rather than an error over a working menu.
+     */
+    YumeAPI.admin.badges().then(counts => {
+      for (const [key, count] of Object.entries(counts)) {
+        const badge = nav.querySelector(`[data-badge="${key}"]`)
+        if (!badge || !count) continue
+        badge.textContent = count > 99 ? '99+' : String(count)
+        badge.classList.remove('hidden')
+      }
+    }).catch(() => {})
 
     shell.append(nav)
 
@@ -272,14 +317,10 @@ const PageAdmin = {
       }
     }, [U.svg('<line x1="3" x2="21" y1="6" y2="6"/><line x1="3" x2="21" y1="12" y2="12"/><line x1="3" x2="21" y1="18" y2="18"/>', 18)])
 
-    // Title and sub-line both live here on a phone; the heading block below is
-    // hidden at that width, so the same words are not printed twice.
-    const topTitle = U.el('span', { class: 'admin-topbar-title', text: state.section.label })
-    const topSub = U.el('span', { class: 'admin-topbar-sub', text: state.section.sub })
     main.append(U.el('div', { class: 'admin-topbar' }, [
       menuBtn,
-      U.el('div', { class: 'admin-topbar-text' }, [topTitle, topSub]),
       this.sectionJump(available, section => select(section)),
+      U.el('div', { class: 'admin-topbar-spacer' }),
       this.notifBell(),
       this.accountChip(perms),
       U.el('a', { class: 'admin-topbar-back', href: '#/home', title: 'Back to the site' }, [
@@ -302,8 +343,6 @@ const PageAdmin = {
       Object.values(navItems).forEach(i => i.classList.remove('active'))
       navItems[s.key]?.classList.add('active')
       closeDrawer() // picking a section is the drawer's whole purpose
-      topTitle.textContent = s.label
-      topSub.textContent = s.sub
       history.replaceState(null, '', `#/admin?s=${s.key}`) // deep-link without a re-render
       // A slot on the heading row for whatever the section needs beside its
       // own title — a range picker, a refresh state. Rebuilt per selection so
@@ -2251,7 +2290,13 @@ const PageAdmin = {
         }
       }, [document.createTextNode(days + 'd')])
 
+      const span = U.el('span', { class: 'dash-daterange' }, [
+        U.svg('<rect width="18" height="18" x="3" y="4" rx="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>', 14),
+        U.el('span', { text: `${this.dayLabel(data.range.from)} – ${this.dayLabel(data.range.to)}` })
+      ])
+
       this._headActions.replaceChildren(
+        span,
         U.el('div', { class: 'dash-ranges' }, [chip(7), chip(14), chip(30)]),
         U.el('span', {
           class: 'dash-live',
@@ -2308,7 +2353,7 @@ const PageAdmin = {
 
     // ---- what is happening ----
     const lower = U.el('div', { class: 'dash-lower' })
-    lower.append(this.errorPanel(data))
+    lower.append(this.errorPanel(data, reload))
     lower.append(this.activityPanel(data.activity))
     lower.append(this.jobPanel(data.jobs))
     content.append(lower)
@@ -2388,29 +2433,39 @@ const PageAdmin = {
 
   /** The metrics worth a line on the overview, in the order they matter. */
   HEALTH_ROWS: [
-    ['db.latency_ms', 'Database', 'SELECT 1 round trip'],
-    ['api.latency_ms', 'API', 'self-probe of /v1/health'],
-    ['cpu.usage_pct', 'CPU', 'sustained usage'],
-    ['mem.used_pct', 'Memory', 'based on MemAvailable'],
-    ['disk.used_pct', 'Disk', 'filesystem used'],
-    ['queue.pending', 'Queue backlog', 'runnable jobs'],
-    ['queue.dead', 'Dead jobs', 'past max attempts']
+    ['db.latency_ms', 'Database', 'SELECT 1 round trip', '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/>'],
+    ['api.latency_ms', 'API', 'self-probe of /v1/health', '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>'],
+    ['cpu.usage_pct', 'CPU', 'sustained usage', '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/>'],
+    ['mem.used_pct', 'Memory', 'based on MemAvailable', '<rect x="3" y="8" width="18" height="10" rx="2"/><path d="M7 8V6M12 8V6M17 8V6"/>'],
+    ['disk.used_pct', 'Disk', 'filesystem used', '<path d="M22 12H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11"/><path d="M6 16h.01"/>'],
+    ['queue.pending', 'Queue backlog', 'runnable jobs', '<line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/>'],
+    ['queue.dead', 'Dead jobs', 'past max attempts', '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>']
   ],
+
+  /** The icon for a probed service, by what it is. */
+  SERVICE_ICON: {
+    postgres: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/>',
+    api: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+    worker: '<circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v10M4.2 4.2l4.3 4.3m7 7 4.3 4.3M1 12h6m6 0h10M4.2 19.8l4.3-4.3m7-7 4.3-4.3"/>',
+    redis: '<rect x="3" y="8" width="18" height="10" rx="2"/><path d="M7 8V6M12 8V6M17 8V6"/>',
+    caddy: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>'
+  },
 
   healthPanel (health) {
     const metrics = health.metrics ?? {}
     const rows = U.el('div', { class: 'dash-health' })
 
-    for (const [key, label, sub] of this.HEALTH_ROWS) {
+    for (const [key, label, sub, icon] of this.HEALTH_ROWS) {
       const metric = metrics[key]
       if (!metric) continue
       rows.append(U.el('div', { class: 'dash-health-row' }, [
-        U.el('span', { class: 'dash-dot dash-dot-' + (metric.level ?? 'green') }),
+        U.el('span', { class: 'dash-health-icon' }, [U.svg(icon, 14)]),
         U.el('div', { class: 'dash-health-main' }, [
           U.el('div', { class: 'dash-health-label', text: label }),
           U.el('div', { class: 'dash-health-sub', text: sub })
         ]),
-        U.el('span', { class: 'dash-health-value', text: this.healthValue(metric) })
+        U.el('span', { class: 'dash-health-value', text: this.healthValue(metric) }),
+        U.el('span', { class: 'dash-dot dash-dot-' + (metric.level ?? 'green') })
       ]))
     }
 
@@ -2423,15 +2478,18 @@ const PageAdmin = {
     // section lists every probe, configured or not.
     for (const service of (health.services ?? []).filter(s => s.status !== 'not_configured')) {
       rows.append(U.el('div', { class: 'dash-health-row' }, [
-        U.el('span', { class: 'dash-dot dash-dot-' + (service.status ?? 'green') }),
+        U.el('span', { class: 'dash-health-icon' }, [
+          U.svg(this.SERVICE_ICON[service.service] ?? '<circle cx="12" cy="12" r="9"/>', 14)
+        ]),
         U.el('div', { class: 'dash-health-main' }, [
           U.el('div', { class: 'dash-health-label', text: service.service }),
-          U.el('div', { class: 'dash-health-sub', text: service.detail ?? 'responding' })
+          U.el('div', { class: 'dash-health-sub', text: service.detail || 'responding' })
         ]),
         U.el('span', {
           class: 'dash-health-value',
           text: service.latency_ms === null || service.latency_ms === undefined ? '—' : Math.round(service.latency_ms) + 'ms'
-        })
+        }),
+        U.el('span', { class: 'dash-dot dash-dot-' + (service.status ?? 'green') })
       ]))
     }
 
@@ -2472,26 +2530,58 @@ const PageAdmin = {
 
   // ---- error groups ----
 
-  errorPanel (data) {
+  errorPanel (data, reload) {
     const groups = data.errorGroups ?? []
-    const rows = U.el('div', { class: 'dash-rows' })
+    const table = U.el('div', { class: 'dash-table' })
+
     if (!groups.length) {
-      rows.append(U.el('div', { class: 'empty-state', style: 'padding:.8rem;', text: 'Nothing failing. 🎉' }))
+      table.append(U.el('div', { class: 'empty-state', style: 'padding:.8rem;', text: 'Nothing failing. 🎉' }))
+    } else {
+      table.append(U.el('div', { class: 'dash-thead' }, [
+        U.el('span', { text: 'Error' }),
+        U.el('span', { text: 'Count' }),
+        U.el('span', { text: 'Last seen' }),
+        U.el('span', { text: 'Severity' }),
+        U.el('span', { text: '' })
+      ]))
     }
+
     for (const err of groups) {
       // Severity is derived from how often it happens, because that is what
       // the table actually knows. Nothing here is a label somebody typed.
       const count = Number(err.event_count)
       const severity = count >= 50 ? 'high' : count >= 10 ? 'medium' : 'low'
-      rows.append(U.el('div', { class: 'dash-row' }, [
+      table.append(U.el('div', { class: 'dash-trow' }, [
         U.el('div', { class: 'dash-row-main' }, [
-          U.el('div', { class: 'dash-row-title', text: err.title }),
-          U.el('div', { class: 'dash-row-sub', text: 'last seen ' + U.relTime(new Date(err.last_seen)) })
+          U.el('div', { class: 'dash-row-title', title: err.title, text: err.title }),
+          U.el('div', { class: 'dash-row-sub', text: 'first seen ' + U.relTime(new Date(err.first_seen)) })
         ]),
-        U.el('span', { class: 'dash-count', text: String(count) }),
-        U.el('span', { class: 'dash-sev dash-sev-' + severity, text: severity })
+        U.el('span', { class: 'dash-count', text: count.toLocaleString() }),
+        U.el('span', { class: 'dash-row-when', text: U.relTime(new Date(err.last_seen)) }),
+        U.el('span', { class: 'dash-sev dash-sev-' + severity, text: severity }),
+        // Resolving from here is the whole reason to show the list on the
+        // overview: the alternative is reading it, going to another section
+        // and finding it again.
+        err.id
+          ? U.el('button', {
+            class: 'btn btn-ghost btn-sm',
+            title: 'Mark this group resolved',
+            onclick: async e => {
+              e.currentTarget.disabled = true
+              try {
+                await YumeAPI.admin.setErrorStatus(err.id, 'resolved')
+                U.toast('Marked resolved')
+                await reload()
+              } catch (error) {
+                U.toast(error.message, 'error')
+                e.currentTarget.disabled = false
+              }
+            }
+          }, [document.createTextNode('Resolve')])
+          : U.el('span', {})
       ]))
     }
+
     return this.dashPanel({
       title: 'Error groups',
       sub: 'Open faults, most recent first',
@@ -2501,39 +2591,53 @@ const PageAdmin = {
         type: 'button',
         onclick: () => this.goto('errors')
       }, [document.createTextNode('View all')]),
-      body: rows
+      body: table
     })
   },
 
   // ---- recent activity ----
 
+  ACTIVITY_GLYPH: {
+    user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+    shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>',
+    book: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
+    play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+    link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+    text: '<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>',
+    slider: '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/>',
+    hook: '<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>',
+    sync: '<path d="M21 12a9 9 0 1 1-6.2-8.6"/><path d="M21 3v6h-6"/>',
+    palette: '<circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><path d="M12 2a10 10 0 0 0 0 20 2 2 0 0 0 2-2v-1a2 2 0 0 1 2-2h2a4 4 0 0 0 4-4 10 10 0 0 0-10-11"/>',
+    eye: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7"/><circle cx="12" cy="12" r="3"/>'
+  },
+
   ACTIVITY_ART: {
-    'user.status': ['blue', 'Account status changed'],
-    'role.permission.grant': ['violet', 'Permission granted'],
-    'role.permission.revoke': ['amber', 'Permission revoked'],
-    'anime.create': ['green', 'Anime created'],
-    'anime.edit': ['blue', 'Anime edited'],
-    'anime.delete': ['red', 'Anime deleted'],
-    'anime.merge': ['amber', 'Anime merged'],
-    'anime.visibility': ['teal', 'Anime visibility changed'],
-    'episode.create': ['green', 'Episode created'],
-    'episode.edit': ['blue', 'Episode edited'],
-    'episode.delete': ['red', 'Episode deleted'],
-    'episode.visibility': ['teal', 'Episodes published'],
-    'episode.source.add': ['green', 'Source registered'],
-    'episode.source.edit': ['blue', 'Source edited'],
-    'episode.source.remove': ['red', 'Source removed'],
-    'anime.translation.create': ['violet', 'Translation written'],
-    'anime.translation.update': ['violet', 'Translation edited'],
-    'config.flag': ['amber', 'Feature flag changed'],
-    'config.setting': ['amber', 'Setting changed'],
-    'webhook.create': ['teal', 'Webhook created'],
-    'webhook.update': ['teal', 'Webhook updated'],
-    'webhook.delete': ['red', 'Webhook deleted'],
-    'metadata.sync': ['violet', 'Metadata sync started'],
-    'theme.create': ['rose', 'Theme created'],
-    'theme.update': ['rose', 'Theme updated'],
-    'theme.delete': ['red', 'Theme deleted']
+    'user.status': ['blue', 'Account status changed', 'user'],
+    'role.permission.grant': ['violet', 'Permission granted', 'shield'],
+    'role.permission.revoke': ['amber', 'Permission revoked', 'shield'],
+    'anime.create': ['green', 'Anime created', 'book'],
+    'anime.edit': ['blue', 'Anime edited', 'book'],
+    'anime.delete': ['red', 'Anime deleted', 'book'],
+    'anime.merge': ['amber', 'Anime merged', 'book'],
+    'anime.visibility': ['teal', 'Anime visibility changed', 'eye'],
+    'episode.create': ['green', 'Episode created', 'play'],
+    'episode.edit': ['blue', 'Episode edited', 'play'],
+    'episode.delete': ['red', 'Episode deleted', 'play'],
+    'episode.visibility': ['teal', 'Episodes published', 'eye'],
+    'episode.source.add': ['green', 'Source registered', 'link'],
+    'episode.source.edit': ['blue', 'Source edited', 'link'],
+    'episode.source.remove': ['red', 'Source removed', 'link'],
+    'anime.translation.create': ['violet', 'Translation written', 'text'],
+    'anime.translation.update': ['violet', 'Translation edited', 'text'],
+    'config.flag': ['amber', 'Feature flag changed', 'slider'],
+    'config.setting': ['amber', 'Setting changed', 'slider'],
+    'webhook.create': ['teal', 'Webhook created', 'hook'],
+    'webhook.update': ['teal', 'Webhook updated', 'hook'],
+    'webhook.delete': ['red', 'Webhook deleted', 'hook'],
+    'metadata.sync': ['violet', 'Metadata sync started', 'sync'],
+    'theme.create': ['rose', 'Theme created', 'palette'],
+    'theme.update': ['rose', 'Theme updated', 'palette'],
+    'theme.delete': ['red', 'Theme deleted', 'palette']
   },
 
   activityPanel (activity) {
@@ -2542,9 +2646,11 @@ const PageAdmin = {
       rows.append(U.el('div', { class: 'empty-state', style: 'padding:.8rem;', text: 'Nothing recorded in the last 30 days.' }))
     }
     for (const item of activity) {
-      const [tone, label] = this.ACTIVITY_ART[item.action] ?? ['blue', item.action]
+      const [tone, label, glyph] = this.ACTIVITY_ART[item.action] ?? ['blue', item.action, 'shield']
       rows.append(U.el('div', { class: 'dash-feed-row' }, [
-        U.el('span', { class: 'dash-feed-dot tone-' + tone }),
+        U.el('span', { class: 'dash-feed-dot tone-' + tone }, [
+          U.svg(this.ACTIVITY_GLYPH[glyph] ?? this.ACTIVITY_GLYPH.shield, 13)
+        ]),
         U.el('div', { class: 'dash-feed-main' }, [
           U.el('div', { class: 'dash-feed-title', text: label }),
           U.el('div', { class: 'dash-feed-sub', text: this.activityDetail(item) })
