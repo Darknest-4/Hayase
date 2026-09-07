@@ -79,10 +79,23 @@ describe('video sources', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
   })
 
   after(async () => {
-    await pool?.query('DELETE FROM anime WHERE canonical_title LIKE $1', [tag + ' %'])
-    if (usernames.length) await pool.query('DELETE FROM users WHERE username = ANY($1)', [usernames])
-    await app?.close()
-    await pool?.end()
+    // Release the app and the pool whatever happened above.
+    //
+    // These three lines used to run in sequence, and the first one is a query.
+    // When the schema was missing — CI ran the suite against the database
+    // before applying migrations — the DELETE threw, so `app.close()` and
+    // `pool.end()` never ran, the pool's sockets kept the event loop alive and
+    // the process never exited. A reported failure turned into a six-hour job
+    // that was eventually cancelled, taking the migration, integration and
+    // adversarial steps with it. Cleaning up test rows is best-effort;
+    // releasing the handles is not.
+    try {
+      await pool?.query('DELETE FROM anime WHERE canonical_title LIKE $1', [tag + ' %'])
+      if (usernames.length) await pool.query('DELETE FROM users WHERE username = ANY($1)', [usernames])
+    } finally {
+      await app?.close()
+      await pool?.end()
+    }
   })
 
   async function addSource (body: Record<string, unknown>, token = editor): Promise<{ status: number, id?: string, body: string }> {

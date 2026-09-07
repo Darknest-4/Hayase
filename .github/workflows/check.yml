@@ -10,6 +10,11 @@ jobs:
   server:
     name: Server — typecheck, tests, migrations
     runs-on: ubuntu-latest
+    # A test process that never exits used to sit here until the six-hour
+    # default killed it, and every step after it was skipped — so a run that
+    # looked merely red had in fact checked nothing past the first suite. A
+    # hang should cost minutes and be obvious.
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -45,11 +50,17 @@ jobs:
       - name: Typecheck
         run: npm run check
 
-      - name: Unit tests
-        run: npm test
-        env:
-          JWT_SECRET: ci-secret-not-used-for-anything-real-0123456789
-
+      # Migrations come first now, and the reason is worth writing down.
+      #
+      # The test step below used to run here instead, with no DATABASE_URL,
+      # under the belief that "the whole suite skips itself" without one. It
+      # does not: config.ts falls back to
+      # postgres://yume:yume@localhost:5432/yume outside production, which is
+      # exactly this job's postgres service. So the suite quietly ran against
+      # the database *before the schema existed*, every DB-backed suite failed
+      # on a missing relation, and one of them left a pool open and never
+      # exited. The job burned its six-hour limit and was cancelled, taking the
+      # migration, integration, adversarial and build steps with it.
       - name: Apply migrations to a clean database
         run: npm run migrate
         env:
@@ -66,6 +77,23 @@ jobs:
         env:
           DATABASE_URL: postgres://yume:yume@localhost:5432/yume
 
+      # Registration promotes the first account on an instance with no
+      # administrator, so on a virgin database whichever suite registers first
+      # gets an administrator instead of the ordinary account it asked for —
+      # and which suite that is depends on the order the runner starts files
+      # in. The suites are written for a database that already has one; this
+      # makes that true. See scripts/test-fixture.ts.
+      - name: Give the database an administrator
+        run: node --experimental-strip-types scripts/test-fixture.ts
+        env:
+          DATABASE_URL: postgres://yume:yume@localhost:5432/yume
+
+      - name: Unit tests
+        run: npm test
+        env:
+          DATABASE_URL: postgres://yume:yume@localhost:5432/yume
+          JWT_SECRET: ci-secret-not-used-for-anything-real-0123456789
+
       # These send real HTTP requests at the assembled application. Without
       # them a commit that left every admin route unauthenticated would still
       # go green, because nothing else in this pipeline exercises a route.
@@ -80,9 +108,8 @@ jobs:
       # in the test, so a reverted fix reports what it used to allow rather
       # than only that an assertion failed.
       #
-      # This needs its own step: the unit-test step above runs before the
-      # database exists, so without DATABASE_URL the whole suite skips itself
-      # and reports green having checked nothing.
+      # Its own step so a security regression is named in the job list rather
+      # than buried in the middle of a 400-test run.
       - name: Adversarial tests (forgery, injection, SSRF, IDOR, races)
         run: npm run test:adversarial
         env:
@@ -101,6 +128,7 @@ jobs:
   web:
     name: Web client — syntax
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -145,6 +173,7 @@ jobs:
   image:
     name: Container image builds
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -178,6 +207,7 @@ jobs:
   e2e:
     name: Browser smoke test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     services:
       postgres:

@@ -70,9 +70,22 @@ describe('franchise / watch order', { skip: HAS_DB ? false : 'no DATABASE_URL' }
   })
 
   after(async () => {
-    await pool?.query('DELETE FROM anime WHERE canonical_title LIKE $1', [tag + ' %'])
-    await app?.close()
-    await pool?.end()
+    // Release the app and the pool whatever happened above.
+    //
+    // These three lines used to run in sequence, and the first one is a query.
+    // When the schema was missing — CI ran the suite against the database
+    // before applying migrations — the DELETE threw, so `app.close()` and
+    // `pool.end()` never ran, the pool's sockets kept the event loop alive and
+    // the process never exited. A reported failure turned into a six-hour job
+    // that was eventually cancelled, taking the migration, integration and
+    // adversarial steps with it. Cleaning up test rows is best-effort;
+    // releasing the handles is not.
+    try {
+      await pool?.query('DELETE FROM anime WHERE canonical_title LIKE $1', [tag + ' %'])
+    } finally {
+      await app?.close()
+      await pool?.end()
+    }
   })
 
   const get = async (id: string): Promise<{ data: Array<Record<string, unknown>>, truncated: boolean }> => {

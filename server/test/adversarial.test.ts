@@ -1085,8 +1085,14 @@ describe('adversarial', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
         const res = await app.inject({ url: `/v1/anime/by-anilist?ids=${encodeURIComponent(q)}` })
         assert.ok(res.statusCode === 200 || res.statusCode === 400, `${q} gave ${res.statusCode}`)
       }
-      const { rows } = await pool.query('SELECT count(*)::int AS n FROM anime')
-      assert.ok(Number(rows[0]!.n) > 0, 'the table is still there')
+      // What this is checking is that `1;DROP TABLE anime` did not drop
+      // anything, and the proof of that is the relation still existing — not
+      // it still holding rows. Counting rows made the test depend on a
+      // populated catalogue: against an empty one it failed while the code was
+      // behaving perfectly, and it would equally have passed on a database
+      // where the table had been emptied by something else.
+      const { rows } = await pool.query("SELECT to_regclass('anime') IS NOT NULL AS present")
+      assert.equal(rows[0]!.present, true, 'the anime table is gone')
     })
 
     test('the batch is capped', async () => {
