@@ -116,6 +116,12 @@ export const adminConfig: FastifyPluginAsync = async fastify => {
     params.push(request.user.sub)
     sets.push(`updated_at = now()`, `updated_by = $${params.length}`)
 
+    // Read before the write so the event can say what changed rather than
+    // only what it now is. "access=staff" is not actionable; "was public, now
+    // staff" is the whole message.
+    const was = await queryOne<FlagRow>(
+      'SELECT key, label, category, enabled, access, required_permission FROM feature_flags WHERE key = $1', [key])
+
     const row = await queryOne<FlagRow>(
       `UPDATE feature_flags SET ${sets.join(', ')} WHERE key = $1
        RETURNING key, label, category, enabled, access, required_permission`,
@@ -123,7 +129,13 @@ export const adminConfig: FastifyPluginAsync = async fastify => {
     )
     if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
 
-    void emitEvent('config.changed', { key: `flag:${key}`, value: `enabled=${row.enabled}, access=${row.access}`, by: request.user.username })
+    void emitEvent('config.changed', {
+      key: `flag:${key}`,
+      label: row.label,
+      previous: was ? `enabled=${was.enabled}, access=${was.access}` : null,
+      value: `enabled=${row.enabled}, access=${row.access}`,
+      by: request.user.username
+    })
     return row
   })
 
@@ -135,6 +147,8 @@ export const adminConfig: FastifyPluginAsync = async fastify => {
   }, async (request, reply) => {
     const { key } = request.params as { key: string }
     const { value } = request.body as { value: unknown }
+
+    const previous = await queryOne<{ value: unknown }>('SELECT value FROM site_settings WHERE key = $1', [key])
 
     await query(
       `INSERT INTO site_settings (key, value, updated_by) VALUES ($1, $2::jsonb, $3)
@@ -150,7 +164,12 @@ export const adminConfig: FastifyPluginAsync = async fastify => {
     siteSettings.invalidate()
     if (key === 'monitor_thresholds') invalidateThresholds()
 
-    void emitEvent('config.changed', { key, value: JSON.stringify(value), by: request.user.username })
+    void emitEvent('config.changed', {
+      key,
+      previous: previous ? JSON.stringify(previous.value) : null,
+      value: JSON.stringify(value),
+      by: request.user.username
+    })
     return { key, value }
   })
 }

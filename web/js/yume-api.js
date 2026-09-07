@@ -447,14 +447,24 @@ const YumeAPI = {
   },
 
   admin: {
-    users: (query, status) => {
+    users: ({ query, status, role, sort, limit, offset } = {}) => {
       const params = new URLSearchParams()
       if (query) params.set('query', query)
       if (status) params.set('status', status)
+      if (role) params.set('role', role)
+      if (sort) params.set('sort', sort)
+      if (limit) params.set('limit', String(limit))
+      if (offset) params.set('offset', String(offset))
       return YumeAPI._request('/v1/admin/users?' + params.toString(), { auth: true })
     },
+    // Everything recorded about one account, in one request.
+    user: id => YumeAPI._request(`/v1/admin/users/${id}`, { auth: true }),
     setUserStatus: (id, status, reason) =>
       YumeAPI._request(`/v1/admin/users/${id}/status`, { method: 'POST', auth: true, body: { status, reason } }),
+    setUserRole: (id, role, granted, reason) =>
+      YumeAPI._request(`/v1/admin/users/${id}/roles`, { method: 'POST', auth: true, body: { role, granted, reason } }),
+    revokeUserSessions: (id, reason) =>
+      YumeAPI._request(`/v1/admin/users/${id}/sessions/revoke`, { method: 'POST', auth: true, body: { reason } }),
     reports: (status = 'open') =>
       YumeAPI._request(`/v1/admin/reports?status=${status}`, { auth: true }),
     resolveReport: (id, action, reason) =>

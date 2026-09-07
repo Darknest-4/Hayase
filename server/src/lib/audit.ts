@@ -14,6 +14,15 @@ import { query } from '../db.ts'
 
 export type AuditAction =
   | 'user.status'
+  // Who may do what. A role grant hands somebody every permission that role
+  // carries, which makes it the most consequential thing that can be done to
+  // an account short of banning it — and until now the only way to do it was
+  // an INSERT by hand, which left no record at all.
+  | 'user.role.grant' | 'user.role.revoke'
+  // Ending every session an account has. Recorded because it is indeed
+  // visible to the person it happens to, and "who signed me out" is a fair
+  // question.
+  | 'user.sessions.revoke'
   | 'role.permission.grant' | 'role.permission.revoke'
   | 'anime.create' | 'anime.edit' | 'anime.delete' | 'anime.merge' | 'anime.unlock'
   | 'episode.create' | 'episode.edit' | 'episode.delete'

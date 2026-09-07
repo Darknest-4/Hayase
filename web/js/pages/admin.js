@@ -2760,58 +2760,296 @@ const PageAdmin = {
     window.App.navigate()
   },
 
-  async renderUsers (content, search = '') {
+  /**
+   * Accounts.
+   *
+   * This was a search box and a list of names with Suspend and Ban beside
+   * each. Everything else an operator needs — is this account new, does it
+   * have a role, has anybody acted on it before, how much of the site has it
+   * actually used — was recorded and unreachable, so the answer to every real
+   * question was a database query.
+   *
+   * Now the row carries the shape of the account and the panel behind it
+   * carries the rest, including the two things that could not be done at all:
+   * giving somebody a role, and signing them out without banning them.
+   */
+  USER_SORTS: [['newest', 'Newest first'], ['oldest', 'Oldest first'], ['active', 'Recently active'], ['name', 'Name A–Z']],
+
+  async renderUsers (content, state = {}) {
+    const q = { query: '', status: '', role: '', sort: 'newest', offset: 0, ...state }
+    const PAGE = 50
+
     const input = U.el('input', {
       class: 'input search-input-big',
       placeholder: 'Search by username or email…',
-      value: search,
-      oninput: U.debounce(e => this.renderUsers(content, e.target.value.trim()))
+      value: q.query,
+      oninput: U.debounce(e => this.renderUsers(content, { ...q, query: e.target.value.trim(), offset: 0 }))
     })
 
+    const pick = (value, options, onchange) => U.el('select', {
+      class: 'select',
+      onchange: e => onchange(e.target.value)
+    }, options.map(([v, l]) => U.el('option', { value: v, text: l, selected: v === value })))
+
     try {
-      const { data } = await YumeAPI.admin.users(search || undefined)
-      content.replaceChildren(U.el('div', { class: 'filters' }, [input]))
-      if (search) input.focus()
+      const [{ data, totals }, roleList] = await Promise.all([
+        YumeAPI.admin.users({ ...q, limit: PAGE }),
+        // Only to populate the filter; a failure here must not take the list
+        // with it, so the filter degrades to "any role" instead.
+        YumeAPI.admin.roles().then(r => r.data ?? r.roles ?? []).catch(() => [])
+      ])
 
-      for (const user of data) {
-        const statusBadge = U.el('span', {
-          class: 'badge' + (user.status === 'active' ? '' : ' badge-theme'),
-          text: user.status
-        })
-        const actions = U.el('div', { class: 'progress-controls' })
+      const bar = U.el('div', { class: 'admin-toolbar user-toolbar' }, [
+        input,
+        pick(q.status, [['', 'Any status'], ['active', 'Active'], ['suspended', 'Suspended'], ['banned', 'Banned']],
+          v => this.renderUsers(content, { ...q, status: v, offset: 0 })),
+        pick(q.role, [['', 'Any role'], ...roleList.map(r => [r.slug, r.name ?? r.slug])],
+          v => this.renderUsers(content, { ...q, role: v, offset: 0 })),
+        pick(q.sort, this.USER_SORTS, v => this.renderUsers(content, { ...q, sort: v, offset: 0 }))
+      ])
 
-        const act = (status, label) => U.el('button', {
-          class: 'btn btn-sm ' + (status === 'active' ? 'btn-secondary' : 'btn-ghost'),
-          onclick: async () => {
-            const reason = window.prompt(`Reason for "${label}" on ${user.username}:`)
-            if (!reason || reason.length < 3) return
-            try {
-              await YumeAPI.admin.setUserStatus(user.id, status, reason)
-              U.toast(`${user.username}: ${label}`)
-              this.renderUsers(content, search)
-            } catch (e) { U.toast(e.message, 'error') }
-          }
-        }, [document.createTextNode(label)])
+      // The counts are of the filtered set, not the whole table, so they say
+      // what the filter actually selected rather than repeating a constant.
+      const tally = U.el('div', { class: 'user-tally' }, [
+        U.el('span', { class: 'user-tally-item', text: `${totals?.total ?? 0} matching` }),
+        U.el('span', { class: 'user-tally-item tone-green', text: `${totals?.active ?? 0} active` }),
+        U.el('span', { class: 'user-tally-item tone-amber', text: `${totals?.suspended ?? 0} suspended` }),
+        U.el('span', { class: 'user-tally-item tone-red', text: `${totals?.banned ?? 0} banned` })
+      ])
 
-        if (user.status === 'active') actions.append(act('suspended', 'Suspend'), act('banned', 'Ban'))
-        else actions.append(act('active', 'Restore'))
+      content.replaceChildren(bar, tally)
+      if (q.query) input.focus()
 
-        content.append(U.el('div', { class: 'list-row', style: 'cursor:default;' }, [
-          U.el('div', { class: 'list-row-grow' }, [
-            U.el('div', { class: 'list-row-title' }, [
-              document.createTextNode(user.username + ' '),
-              statusBadge,
-              ...(user.roles.filter(r => r !== 'user').map(role => U.el('span', { class: 'badge badge-outline', style: 'margin-left:.35rem;', text: role })))
-            ]),
-            U.el('div', { class: 'list-row-sub', text: `${user.email} • joined ${U.airDate(user.created_at)}${user.last_login_at ? ' • last seen ' + U.relTime(new Date(user.last_login_at)) : ''}` })
-          ]),
-          actions
+      for (const user of data) content.append(this.userRow(user, content, q))
+
+      if (!data.length) {
+        content.append(U.el('div', { class: 'empty-state', text: 'No users match.' }))
+      }
+
+      const total = Number(totals?.total ?? 0)
+      if (total > PAGE) {
+        const from = q.offset + 1
+        const to = Math.min(q.offset + data.length, total)
+        content.append(U.el('div', { class: 'admin-pager' }, [
+          U.el('button', {
+            class: 'btn btn-sm btn-ghost',
+            disabled: q.offset === 0,
+            onclick: () => this.renderUsers(content, { ...q, offset: Math.max(0, q.offset - PAGE) })
+          }, [document.createTextNode('← Previous')]),
+          U.el('span', { class: 'admin-pager-label', text: `${from}–${to} of ${total}` }),
+          U.el('button', {
+            class: 'btn btn-sm btn-ghost',
+            disabled: to >= total,
+            onclick: () => this.renderUsers(content, { ...q, offset: q.offset + PAGE })
+          }, [document.createTextNode('Next →')])
         ]))
       }
-      if (!data.length) content.append(U.el('div', { class: 'empty-state', text: 'No users match.' }))
     } catch (e) {
       content.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
     }
+  },
+
+  /** One account in the list: identity, shape, and the way into the detail. */
+  userRow (user, content, q) {
+    const tone = user.status === 'active' ? '' : user.status === 'banned' ? ' badge-bad' : ' badge-theme'
+    const roles = (user.roles ?? []).filter(r => r !== 'user')
+
+    // Facts, not decoration: each one is a reason to open the account or to
+    // leave it alone.
+    const facts = []
+    if (roles.length) facts.push(roles.join(', '))
+    facts.push(`joined ${U.airDate(user.created_at)}`)
+    if (user.last_login_at) facts.push(`seen ${U.relTime(new Date(user.last_login_at))}`)
+    else facts.push('never signed in')
+    if (user.active_sessions > 0) facts.push(`${user.active_sessions} session${user.active_sessions === 1 ? '' : 's'}`)
+    if (user.comments > 0) facts.push(`${user.comments} comment${user.comments === 1 ? '' : 's'}`)
+    if (!user.email_verified_at) facts.push('unverified email')
+
+    const open = () => this.userPanel(user.id, () => this.renderUsers(content, q))
+
+    return U.el('div', { class: 'list-row user-row', onclick: open }, [
+      U.el('div', { class: 'list-row-grow' }, [
+        U.el('div', { class: 'list-row-title' }, [
+          document.createTextNode(user.username + ' '),
+          U.el('span', { class: 'badge' + tone, text: user.status }),
+          ...(user.reports_against > 0
+            ? [U.el('span', { class: 'badge badge-bad', style: 'margin-left:.35rem;', text: `${user.reports_against} reported` })]
+            : [])
+        ]),
+        U.el('div', { class: 'list-row-sub', text: facts.join(' • ') })
+      ]),
+      U.el('button', {
+        class: 'btn btn-sm btn-secondary',
+        onclick: e => { e.stopPropagation(); open() }
+      }, [document.createTextNode('Manage')])
+    ])
+  },
+
+  /**
+   * One account, in full.
+   *
+   * Opened as a modal rather than a route because it is a place you look and
+   * then leave, and losing the list's filters and page on the way back would
+   * make triaging a queue of accounts painful.
+   */
+  async userPanel (id, reload) {
+    const body = U.el('div', { class: 'user-panel' }, [U.el('div', { class: 'spinner' })])
+    C.modalPanel('Account', [body])
+
+    const load = async () => {
+      try {
+        const d = await YumeAPI.admin.user(id)
+        body.replaceChildren(...this.userPanelBody(d, { reload, refresh: load }))
+      } catch (e) {
+        body.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+      }
+    }
+    await load()
+  },
+
+  userPanelBody (d, { reload, refresh }) {
+    const a = d.account
+    const held = new Set((d.roles ?? []).map(r => r.slug))
+
+    const ask = (question, preset = '') => {
+      const reason = window.prompt(question, preset)
+      return reason && reason.trim().length >= 3 ? reason.trim() : null
+    }
+
+    const run = async (fn, ok) => {
+      try { await fn(); U.toast(ok); await refresh(); reload?.() } catch (e) { U.toast(e.message, 'error') }
+    }
+
+    // ---- identity ----
+    const head = U.el('div', { class: 'user-panel-head' }, [
+      U.el('div', { class: 'user-panel-name' }, [
+        U.el('h3', { text: a.username }),
+        U.el('span', { class: 'badge' + (a.status === 'active' ? '' : a.status === 'banned' ? ' badge-bad' : ' badge-theme'), text: a.status })
+      ]),
+      U.el('div', { class: 'user-panel-sub', text: a.email })
+    ])
+
+    // ---- the numbers ----
+    const hours = Math.round(Number(d.activity?.watched_sec ?? 0) / 360) / 10
+    const stat = (label, value, sub) => U.el('div', { class: 'user-stat' }, [
+      U.el('div', { class: 'user-stat-value', text: String(value) }),
+      U.el('div', { class: 'user-stat-label', text: label }),
+      sub ? U.el('div', { class: 'user-stat-sub', text: sub }) : null
+    ])
+
+    const stats = U.el('div', { class: 'user-stats' }, [
+      stat('Profiles', d.profiles?.length ?? 0),
+      stat('Episodes finished', d.activity?.episodes_finished ?? 0),
+      stat('Hours watched', hours),
+      stat('Comments', d.activity?.comments ?? 0),
+      stat('Reports filed', d.activity?.reports_filed ?? 0),
+      stat('Reports against', d.activity?.reports_against ?? 0),
+      stat('Sessions', d.sessions?.active ?? 0, `${d.sessions?.total ?? 0} ever · ${d.sessions?.devices ?? 0} devices`)
+    ])
+
+    // ---- account facts ----
+    const fact = (label, value) => U.el('div', { class: 'user-fact' }, [
+      U.el('span', { class: 'user-fact-label', text: label }),
+      U.el('span', { class: 'user-fact-value', text: value })
+    ])
+    const facts = U.el('div', { class: 'user-facts' }, [
+      fact('Joined', new Date(a.created_at).toLocaleString()),
+      fact('Last sign-in', a.last_login_at ? new Date(a.last_login_at).toLocaleString() : 'never'),
+      fact('Last watched', d.activity?.last_watched_at ? U.relTime(new Date(d.activity.last_watched_at)) : 'never'),
+      fact('Email verified', a.email_verified_at ? new Date(a.email_verified_at).toLocaleDateString() : 'no'),
+      fact('Password set', a.has_password ? 'yes' : 'no (external sign-in only)'),
+      fact('Two-factor', a.mfa_enabled ? 'enabled' : 'off')
+    ])
+
+    // ---- roles: the thing that could not be done at all ----
+    const roleBox = U.el('div', { class: 'user-roles' }, (d.allRoles ?? []).map(role => {
+      const on = held.has(role.slug)
+      return U.el('button', {
+        class: 'user-role' + (on ? ' on' : ''),
+        type: 'button',
+        title: on ? `Revoke ${role.slug}` : `Grant ${role.slug}`,
+        onclick: () => {
+          const reason = ask(`${on ? 'Revoke' : 'Grant'} "${role.slug}" ${on ? 'from' : 'to'} ${a.username} — why?`)
+          if (!reason) return
+          run(() => YumeAPI.admin.setUserRole(a.id, role.slug, !on, reason),
+            `${a.username}: ${role.slug} ${on ? 'revoked' : 'granted'}`)
+        }
+      }, [
+        U.el('span', { class: 'user-role-dot' }),
+        document.createTextNode(role.name ?? role.slug)
+      ])
+    }))
+
+    // ---- actions ----
+    const act = (label, cls, fn) => U.el('button', { class: 'btn btn-sm ' + cls, onclick: fn }, [document.createTextNode(label)])
+    const status = (next, label) => act(label, next === 'active' ? 'btn-secondary' : 'btn-ghost', () => {
+      const reason = ask(`Reason for "${label}" on ${a.username}:`)
+      if (!reason) return
+      run(() => YumeAPI.admin.setUserStatus(a.id, next, reason), `${a.username}: ${label}`)
+    })
+
+    const actions = U.el('div', { class: 'user-actions' }, [
+      ...(a.status === 'active' ? [status('suspended', 'Suspend'), status('banned', 'Ban')] : [status('active', 'Restore')]),
+      // Not a punishment and not visible as one: the proportionate answer to a
+      // shared password, which previously had no answer but a ban.
+      act('Sign out everywhere', 'btn-ghost', () => {
+        const reason = ask(`Sign ${a.username} out of every session — why?`, 'Credentials possibly compromised')
+        if (!reason) return
+        run(() => YumeAPI.admin.revokeUserSessions(a.id, reason), `${a.username}: signed out`)
+      })
+    ])
+
+    // ---- history ----
+    const historyRows = (d.moderation ?? []).map(m => U.el('div', { class: 'user-history-row' }, [
+      U.el('span', { class: 'user-history-action', text: m.action }),
+      U.el('span', { class: 'user-history-reason', text: m.reason, title: m.reason }),
+      U.el('span', { class: 'user-history-by', text: m.moderator ?? 'system' }),
+      U.el('time', { class: 'user-history-when', text: U.relTime(new Date(m.created_at)), title: new Date(m.created_at).toLocaleString() })
+    ]))
+
+    // Role grants and sign-outs live here rather than in the moderation
+    // history: that table's vocabulary is disciplinary, and a promotion is not
+    // a punishment. Both are still questions somebody asks of an account, so
+    // both are on the same screen.
+    const auditRows = (d.audit ?? []).map(a2 => {
+      const after = a2.after && Object.keys(a2.after).length ? JSON.stringify(a2.after) : ''
+      return U.el('div', { class: 'user-history-row' }, [
+        U.el('span', { class: 'user-history-action', text: a2.action }),
+        U.el('span', { class: 'user-history-reason', text: after, title: after }),
+        U.el('span', { class: 'user-history-by', text: a2.actor ?? 'system' }),
+        U.el('time', { class: 'user-history-when', text: U.relTime(new Date(a2.created_at)), title: new Date(a2.created_at).toLocaleString() })
+      ])
+    })
+
+    const securityRows = (d.security ?? []).map(e => U.el('div', { class: 'user-history-row' }, [
+      U.el('span', { class: 'user-history-action', text: e.event }),
+      U.el('span', { class: 'user-history-reason', text: `${e.n}×` }),
+      U.el('span', { class: 'user-history-by', text: '' }),
+      U.el('time', { class: 'user-history-when', text: U.relTime(new Date(e.last_at)), title: new Date(e.last_at).toLocaleString() })
+    ]))
+
+    const section = (title, rows, empty) => U.el('div', { class: 'user-section' }, [
+      U.el('h4', { class: 'user-section-title', text: title }),
+      rows.length ? U.el('div', { class: 'user-history' }, rows) : U.el('div', { class: 'user-section-empty', text: empty })
+    ])
+
+    return [
+      head,
+      stats,
+      facts,
+      U.el('div', { class: 'user-section' }, [
+        U.el('h4', { class: 'user-section-title', text: 'Roles' }),
+        roleBox,
+        U.el('p', { class: 'user-section-note', text: 'A role hands over every permission it carries. The last administrator cannot be demoted.' })
+      ]),
+      U.el('div', { class: 'user-section' }, [
+        U.el('h4', { class: 'user-section-title', text: 'Actions' }),
+        actions
+      ]),
+      section('Moderation history', historyRows, 'Nothing has ever been done to this account.'),
+      section('Administrative changes', auditRows, 'No roles granted, no sessions ended.'),
+      section('Sign-in events', securityRows, 'No recorded sign-in activity.')
+    ]
   },
 
   async renderReports (content) {
@@ -2862,6 +3100,13 @@ const PageAdmin = {
   EVENT_LABELS: {
     'user.registered': 'New user registered',
     'user.moderated': 'User suspended/banned/restored',
+    'user.deleted': 'Account deleted itself',
+    'user.roles.changed': 'Role granted or revoked',
+    'user.password_reset_requested': 'Password reset requested',
+    'catalogue.changed': 'Anime or episode changed',
+    'config.changed': 'Setting or feature flag changed',
+    'monitor.alert': 'A metric or service started alerting',
+    'monitor.recovered': 'A metric or service recovered',
     'comment.created': 'New comment',
     'report.created': 'Content reported',
     'report.resolved': 'Report resolved',

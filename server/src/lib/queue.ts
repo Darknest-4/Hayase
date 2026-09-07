@@ -124,12 +124,25 @@ async function fail (job: Job, error: Error): Promise<void> {
   )
 
   // retries exhausted → surface it (never for webhook jobs: avoids loops)
-  const exhausted = await queryOne<{ done: boolean }>(
-    'SELECT attempts >= max_attempts AS done FROM jobs WHERE id = $1', [job.id]
+  const exhausted = await queryOne<{ done: boolean, attempts: number, max_attempts: number }>(
+    'SELECT attempts >= max_attempts AS done, attempts, max_attempts FROM jobs WHERE id = $1', [job.id]
   )
   if (exhausted?.done && job.queue !== 'webhook') {
     const { emitEvent } = await import('./webhooks.ts')
-    await emitEvent('job.failed', { queue: job.queue, jobId: job.id, error: error.message.slice(0, 300) }).catch(() => {})
+    // One dead job is noise; the tenth in an hour is an incident, and the
+    // difference is the only thing worth knowing on arrival. Counted in the
+    // same breath so the message can say which of the two this is.
+    const depth = await queryOne<{ dead: number }>(
+      `SELECT count(*)::int AS dead FROM jobs
+        WHERE queue = $1 AND attempts >= max_attempts AND done_at IS NULL`, [job.queue])
+    await emitEvent('job.failed', {
+      queue: job.queue,
+      jobId: job.id,
+      attempts: Number(exhausted.attempts),
+      maxAttempts: Number(exhausted.max_attempts),
+      deadInQueue: Number(depth?.dead ?? 0),
+      error: error.message.slice(0, 300)
+    }).catch(() => {})
   }
 }
 

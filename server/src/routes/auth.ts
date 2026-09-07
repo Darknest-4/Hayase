@@ -221,7 +221,7 @@ const routes: FastifyPluginAsync = async fastify => {
           )
           request.log.warn({ userId, username }, 'first account promoted to administrator (no admin existed)')
         }
-        return { id: userId, username }
+        return { id: userId, username, promoted: promoted.length > 0 }
       }),
       () => undefined
     )
@@ -229,7 +229,18 @@ const routes: FastifyPluginAsync = async fastify => {
       return reply.code(409).send({ type: 'about:blank', title: 'Conflict', status: 409, detail: 'Email or username already in use' })
     }
 
-    await emitEvent('user.registered', { username: user.username })
+    // How many accounts exist now, and whether this one was handed the
+    // instance. A bare username told a receiver nothing it could act on: the
+    // hundredth signup and the very first one — which the bootstrap makes an
+    // administrator — looked identical.
+    const scale = await queryOne<{ total: number }>('SELECT count(*)::int AS total FROM users')
+    await emitEvent('user.registered', {
+      username: user.username,
+      userId: user.id,
+      totalUsers: Number(scale?.total ?? 0),
+      promotedToAdmin: user.promoted === true,
+      registeredAt: new Date().toISOString()
+    })
     const tokens = await issueTokens(user, request.ip, request.headers['user-agent'])
     return reply.code(201).send(tokens)
   })

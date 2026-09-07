@@ -115,14 +115,38 @@ One service, two protocols over the same service layer:
 
 ### Outbound webhooks
 Admin-configured endpoints subscribe per-event. Discord URLs receive rich
-embeds; generic JSON endpoints receive `{event, data, at}` signed with
-`X-Yume-Signature: sha256=…` (HMAC of the body using the webhook secret)
-and `X-Yume-Event`. Delivery runs through the job queue (retries with
-backoff); 20 consecutive failures auto-disable the hook. Events:
-`user.registered`, `user.moderated`, `comment.created`, `report.created`,
+embeds; generic JSON endpoints receive this envelope:
+
+```json
+{
+  "id": "8f1c…",                       // stable across retries — deduplicate on it
+  "event": "user.registered",
+  "at": "2026-09-07T10:00:00.000Z",    // when the event happened
+  "sentAt": "2026-09-07T10:00:02.113Z",// when this attempt was made
+  "attempt": 1,
+  "instance": { "name": "Yume", "environment": "production", "url": "https://…" },
+  "webhook": { "id": "…", "name": "Ops channel" },
+  "links":  { "site": "https://…", "admin": "https://…/#/admin?s=users" },
+  "data":   { "username": "alice", "totalUsers": 42, "promotedToAdmin": false }
+}
+```
+
+`instance.url` and `links` appear only when `PUBLIC_URL` is set. Headers repeat
+what a receiver routes on without parsing the body: `X-Yume-Event`,
+`X-Yume-Delivery` (the `id`), `X-Yume-Timestamp`, `X-Yume-Attempt`, and
+`X-Yume-Signature: sha256=…` — an HMAC of the whole body with the webhook
+secret, so the delivery id is inside what is signed.
+
+Delivery runs through the job queue (retries with backoff); 20 consecutive
+failures auto-disable the hook. The delivery log records the envelope that was
+actually sent. Events:
+`user.registered`, `user.moderated`, `user.deleted`, `user.roles.changed`,
+`user.password_reset_requested`, `comment.created`, `report.created`,
 `report.resolved`, `w2g.room_created`, `stats.daily`, `stats.trending`,
 `catalogue.imported`, `catalogue.changed`, `metadata.synced`, `config.changed`,
 `monitor.alert`, `monitor.recovered`, `job.failed`, `webhook.test`.
+
+A password reset token never travels here — see `PASSWORD_RESET_WEBHOOK_URL`.
 | GET | `/v1/health` · `/v1/version` | liveness, build info |
 
 ### WebSocket (`/ws`)
