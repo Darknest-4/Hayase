@@ -85,8 +85,8 @@ docker compose up -d --build
 ```
 
 Ez felhúzza: `postgres` → `app` → `worker` → `caddy` → `backup`.
-Az `app` induláskor **magától** lefuttatja a migrációkat és publikálja a
-beépített kiegészítőket — nincs külön migrációs lépés.
+Az `app` induláskor **magától** lefuttatja a migrációkat — nincs külön
+migrációs lépés.
 
 Az első build pár percig tart. Utána:
 
@@ -164,10 +164,6 @@ docker compose --profile enrich run --rm enrich
 A mentés a **saját lemezén** van. Egy lemezhiba így is véget vet a projektnek.
 Állítsd be a `BACKUP_SYNC_CMD`-t a `.env`-ben, hogy máshová is átmásolja.
 
-> A kiegészítők csomagbájtjai **nem az adatbázisban** vannak, hanem a
-> `packages` kötetben. Egy adatbázis-mentés önmagában nem állítja vissza
-> őket — lásd [`backup.md`](./backup.md).
-
 ---
 
 ## Hasznos parancsok
@@ -178,7 +174,6 @@ docker compose restart app              # újraindítás
 docker compose exec postgres psql -U yume yume     # adatbázis
 docker compose run --rm backup db/backup.sh        # azonnali mentés
 docker compose run --rm backup db/restore.sh --list
-docker compose --profile extensions run --rm extensions   # kiegészítők újrapublikálása
 ```
 
 Frissítés:
@@ -207,13 +202,6 @@ sudo ss -tlnp | grep -E ':80|:443'
 sudo systemctl disable --now nginx apache2 2>/dev/null
 ```
 
-**Üres az áruház** — a kiegészítők publikálása kihagyja magát, amíg nincs
-adminisztrátor. Regisztrálj (4. lépés), majd:
-
-```sh
-docker compose --profile extensions run --rm extensions
-```
-
 **A magyar keresés nem talál ékezetes szavakat** — az adatbázis rossz
 kódolással jött létre. A kódolás `initdb` után nem módosítható, csak
 újratöltéssel. Ellenőrzés:
@@ -229,6 +217,8 @@ maradt: mentsd ki az adatokat, dobd el a kötetet, és indítsd újra.
 
 ## Amit ez nem old meg
 
-A Yume magától **egyetlen videót sem játszik le** — a forrásokat kiegészítők
-adják, azokat neked kell telepítened és beállítanod az áruházban. A telepítés
-kész, a lejátszás ettől még nem az.
+A Yume magától **egyetlen videót sem játszik le**. A forrásokat neked kell
+felvenned: Admin → Katalógus → egy epizód → **Lejátszás**, ahol tetszőleges
+providerhez megadsz egy hivatkozást. Amelyik epizódnak nincs forrása, az a
+listában le van tiltva, és nem is kattintható. A telepítés kész, a lejátszás
+ettől még nem az.

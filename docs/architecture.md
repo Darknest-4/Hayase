@@ -1,9 +1,10 @@
 # Yume — Architecture
 
 Yume is an anime streaming platform that grew out of the Hayase interface
-codebase. It keeps Hayase's two strongest ideas — **the platform hosts zero
-content** and **sources come from sandboxed extensions** — and rebuilds
-everything around them as a service-backed product with its own identity.
+codebase. It keeps Hayase's strongest idea — **the platform hosts zero content**; a
+video source is a *reference* an operator registers against an episode — and
+rebuilds everything around it as a service-backed product with its own
+identity.
 
 ```
                         ┌─────────────────────────────┐
@@ -26,7 +27,7 @@ everything around them as a service-backed product with its own identity.
                                        │
                         ┌──────────────▼──────────────┐
                         │   Object Storage (S3/MinIO) │
-                        │ images · packages · subs    │
+                        │ images · subs               │
                         └─────────────────────────────┘
 ```
 
@@ -95,16 +96,17 @@ Workers are separate deployables in `server/src/workers/`
 | `notify` | fan out notifications (DB inbox + push + email) |
 | `stats` | roll up watch_history → profile_stats, watch_stats_daily; XP/achievements |
 | `import` | metadata importers (AniList/AniDB/TVDB dumps → catalogue) |
-| `ext-review` | static-analysis pipeline for submitted extension packages |
+| `metadata` | AniList enrichment runs, one at a time, progress on the run row |
 | `media` | image resize/blurhash/dominant-color on upload |
 | `maintenance` | partition creation, retention pruning, health checks |
 
 Everything async leaves the request path: the API only enqueues.
 
 ### Object storage (S3 / MinIO in dev)
-Buckets: `media` (covers/banners/screenshots/avatars, public via CDN),
-`packages` (signed extension tarballs, public, immutable), `subs`
-(subtitle files). DB stores keys, never URLs — CDN domain is config.
+Buckets: `media` (covers/banners/screenshots/avatars, public via CDN) and
+`subs` (subtitle files). DB stores keys, never URLs — CDN domain is config.
+Nothing is stored outside the database today; see [redis.md](redis.md) for the
+trigger that would change that.
 
 ## Client architecture
 
@@ -113,9 +115,10 @@ The desktop/mobile clients keep Hayase's proven split:
 - **UI**: web app (this repo's `web/`, being rebuilt with the Yume design
   system — see `packages/design-tokens/`).
 - **Native shell**: torrent engine, disk, discovery — unchanged concept.
-- **Extension host**: sandboxed workers per extension (see
-  [extensions.md](extensions.md)); now loading signed store packages with
-  declared permissions instead of raw URLs.
+- **Playback**: the catalogue's registered sources first, then any URL the
+  viewer pasted. There is no third-party code in the page — the extension
+  sandbox and the store it loaded from were removed once every feature they
+  carried became part of the platform.
 
 Offline: the client caches catalogue responses (SWR + IndexedDB), queues
 list mutations while offline and replays them; conflict rule is
@@ -134,9 +137,10 @@ last-write-wins per field with server timestamps.
 4. **Denormalised counters** (like/install/post counts, scores) maintained
    in-transaction or by workers; correctness is periodically reconciled by
    the stats worker. Reads dominate writes ~100:1 here.
-5. **Extensions declare permissions; the runtime enforces them.** The
-   accuracy-capping query proxy from Hayase survives as `query:*`
-   permissions; network access becomes an explicit host allowlist.
+5. **References are validated where they are written.** A source URL or a
+   theme colour ends up in a viewer's browser as an attribute or a custom
+   property, so the scheme and the grammar are checked at the write rather
+   than at each of the places the value is later read.
 6. **REST and GraphQL share one service layer.** Resolvers and route
    handlers call the same typed services; neither owns business logic.
 

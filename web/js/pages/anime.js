@@ -112,13 +112,6 @@ const PageAnime = {
       ])
     ]))
 
-    // A metadata extension may carry the translation the catalogue lacks.
-    // Deliberately after the hero is on screen: the untranslated text appears
-    // immediately and is replaced when and if an answer arrives, rather than
-    // the page waiting on a network call that usually has nothing to add.
-    this._applyTranslations(media, { titleEl, desc, descNote, wantLang })
-      .catch(error => console.warn('[anime] translations failed:', error))
-
     // ---- action row: Continue Watching + list editor + icon buttons ----
     const progress = Store.entry(media.id)?.progress ?? 0
     // resume mid-episode? point at it; otherwise the next unwatched episode
@@ -239,7 +232,7 @@ const PageAnime = {
       if (!rendered[name]) {
         rendered[name] = U.el('div')
         // Some tab renderers are async — they draw synchronously and then fill
-        // in from extensions. The node is appended either way, so the promise
+        // in asynchronously. The node is appended either way, so the promise
         // is deliberately not awaited; it is caught so a failure cannot become
         // an unhandled rejection.
         Promise
@@ -479,62 +472,6 @@ const PageAnime = {
     wrap.append(box)
   },
 
-  /**
-   * Ask metadata extensions about this title.
-   *
-   * Cached on the page instance for the life of the render: the characters and
-   * the recommendations tabs both want the answer, and they are drawn at
-   * different times, so without this the same query runs twice.
-   *
-   * Returns [] on any failure. An empty tab is the status quo; an error state
-   * where a tab used to be is a regression.
-   */
-  async _extensionMetadata (media) {
-    const host = window.ExtensionHost
-    if (!host?.collect || !media?.id) return []
-    if (this._metaCache?.id === media.id) return this._metaCache.records
-
-    let records = []
-    try {
-      const query = window.StreamEngine?.buildQuery(media, 1) ?? { anilistId: media.id }
-      const out = await host.collect('metadata', query, { types: ['metadata'] })
-      records = out.results ?? []
-    } catch (e) {
-      records = []
-    }
-    this._metaCache = { id: media.id, records }
-    return records
-  },
-
-  /**
-   * Swap in translated text from a metadata extension.
-   *
-   * Only where the catalogue has none: `_lang` says which language each field
-   * actually resolved to, and overwriting an editorial Hungarian synopsis with
-   * a feed's version would be the extension outranking the catalogue, which is
-   * backwards.
-   */
-  async _applyTranslations (media, { titleEl, desc, descNote, wantLang }) {
-    const records = await this._extensionMetadata(media)
-    const pick = field => records.find(r =>
-      r?.kind === 'translation' && r.field === field && r.language === wantLang && typeof r.text === 'string' && r.text.trim()
-    )
-
-    if (media._lang?.title !== wantLang) {
-      const title = pick('title')
-      if (title && titleEl.isConnected) titleEl.textContent = title.text
-    }
-
-    if (media._lang?.synopsis !== wantLang) {
-      const synopsis = pick('description')
-      if (synopsis && desc.isConnected) {
-        desc.textContent = synopsis.text
-        // The note said this had not been translated yet. It has now.
-        descNote?.remove()
-      }
-    }
-  },
-
   _charCard (name, role, image) {
     return U.el('div', { class: 'char-card' }, [
       U.el('img', { src: image ?? '', alt: name ?? '', loading: 'lazy' }),
@@ -576,33 +513,10 @@ const PageAnime = {
       return
     }
 
-    // Still nothing: no backend, or a title the deep pass has not reached.
-    // Metadata extensions are the way to fill it.
-    const placeholder = U.el('div', { class: 'empty-state', text: T('No character data.') })
-    wrap.append(placeholder)
-
-    const records = await this._extensionMetadata(media)
-    const cast = records.filter(r => r?.kind === 'character' && r.name)
-    const staff = records.filter(r => r?.kind === 'staff' && r.name)
-    if (!cast.length && !staff.length) return
-
-    placeholder.remove()
-
-    if (cast.length) {
-      const crow = U.el('div', { class: 'hscroll', style: 'padding-left:0;padding-right:0;flex-wrap:wrap;' })
-      for (const row of cast) crow.append(this._charCard(row.name, row.role, row.image))
-      wrap.append(crow)
-    }
-
-    // Staff has no tab of its own; a second section under the cast is where a
-    // viewer would look for it, and adding a tab for it would push the row
-    // past what fits on a phone.
-    if (staff.length) {
-      wrap.append(U.el('h3', { class: 'detail-section-title', text: T('Staff') }))
-      const srow = U.el('div', { class: 'hscroll', style: 'padding-left:0;padding-right:0;flex-wrap:wrap;' })
-      for (const row of staff) srow.append(this._charCard(row.name, row.role, row.image))
-      wrap.append(srow)
-    }
+    // Nothing: either the title is not in our catalogue, or the AniList deep
+    // pass has not reached it yet. Admin → Metadata is where that is fixed,
+    // and saying "no data" is honest about which of the two it is not.
+    wrap.append(U.el('div', { class: 'empty-state', text: T('No character data.') }))
   },
 
   renderTabComments (wrap, media) {
@@ -620,27 +534,7 @@ const PageAnime = {
       return
     }
 
-    const placeholder = U.el('div', { class: 'empty-state', text: T('No recommendations yet.') })
-    wrap.append(placeholder)
-
-    const records = await this._extensionMetadata(media)
-    const fromExtensions = records
-      .filter(r => r?.kind === 'recommendation' && r.anilistId)
-      // Back into the shape C.grid draws, so the cards are the same cards
-      // everywhere else on the site rather than a second kind that looks
-      // almost right.
-      .map(r => ({
-        id: r.anilistId,
-        title: { userPreferred: r.title, romaji: r.titleRomaji, english: r.titleEnglish },
-        coverImage: { large: r.image },
-        format: r.format || null,
-        averageScore: r.score || null,
-        episodes: r.episodes || null
-      }))
-
-    if (!fromExtensions.length) return
-    placeholder.remove()
-    wrap.append(C.grid(fromExtensions))
+    wrap.append(U.el('div', { class: 'empty-state', text: T('No recommendations yet.') }))
   },
 
   async renderEpisodes (wrap, media) {
@@ -694,13 +588,10 @@ const PageAnime = {
        *
        * `sourceCount` is undefined when the episode list came from ani.zip —
        * we do not hold the episode, so we do not know, and "unknown" must not
-       * gate the same way as "none". A loaded provider extension can answer
-       * for an episode the catalogue has nothing registered for, so it counts
-       * too; once nothing is installed, the gate is the catalogue's own
-       * sources and nothing else.
+       * gate the same way as "none". Otherwise the gate is the catalogue's own
+       * registered sources and nothing else.
        */
-      const providers = window.StreamEngine?.hasProviders?.() ?? false
-      const playable = ep => ep.sourceCount === undefined || ep.sourceCount > 0 || providers
+      const playable = ep => ep.sourceCount === undefined || ep.sourceCount > 0
 
       for (const ep of visible) {
         const watched = progress >= ep.episode

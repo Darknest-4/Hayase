@@ -431,7 +431,7 @@ const Store = {
       rules.push(`--bg-raised:color-mix(in srgb, ${s.themeAccent ?? 'var(--accent)'} 6%, var(--bg))`)
     }
     // Whatever else the chosen theme overrides. Themes used to be able to say
-    // one thing — an accent — because that is all an extension returned; a
+    // one thing — an accent — because that is all the old list carried; a
     // site theme can name any token, which is what a deployment with its own
     // palette needs.
     for (const [name, value] of Object.entries(s.themeTokens ?? {})) {

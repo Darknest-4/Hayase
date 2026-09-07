@@ -40,15 +40,11 @@ function makeContext () {
 }
 
 let engine
-let sandbox
 
 before(() => {
   const context = makeContext()
   runInNewContext(readFileSync(join(here, '../js/stream-engine.js'), 'utf8'), context)
   engine = context.window.StreamEngine
-  // Kept so a test can put an extension host on the same `window` the engine
-  // closed over; hasProviders reads it at call time.
-  sandbox = context.window
   assert.ok(engine, 'the script must expose window.StreamEngine')
 })
 
@@ -141,54 +137,5 @@ describe('rank', () => {
       engine.normalise({ title: 'b', url: 'https://example.com/1.mp4' }, source)
     ]
     assert.equal(engine.rank(results).length, 2, 'rank sorts, it must never filter')
-  })
-})
-
-describe('hasProviders', () => {
-  // The episode list asks this before deciding whether an episode with no
-  // registered source is worth offering. Getting it wrong in either direction
-  // is bad in a different way: false when something could answer hides a
-  // playable episode, true when nothing can offers a dead end.
-
-  it('is false when nothing is loaded', () => {
-    sandbox.ExtensionHost = undefined
-    assert.equal(engine.hasProviders(), false)
-    sandbox.ExtensionHost = { loaded: () => [] }
-    assert.equal(engine.hasProviders(), false)
-  })
-
-  it('is false when the only extensions loaded cannot answer with a source', () => {
-    // The same distinction the engine already draws when it decides who to
-    // ask: a subtitle extension returning .vtt URLs into the candidate list
-    // is the bug that made this typed in the first place.
-    sandbox.ExtensionHost = {
-      loaded: () => ['subs', 'meta'],
-      typeOf: slug => (slug === 'subs' ? 'subtitle' : 'metadata')
-    }
-    assert.equal(engine.hasProviders(), false)
-  })
-
-  it('is true when a source extension is loaded', () => {
-    sandbox.ExtensionHost = {
-      loaded: () => ['subs', 'finder'],
-      typeOf: slug => (slug === 'subs' ? 'subtitle' : 'torrent')
-    }
-    assert.equal(engine.hasProviders(), true)
-  })
-
-  it('treats an untyped extension as able to answer', () => {
-    // An older manifest declares no type. Assuming it cannot answer would
-    // gate episodes that in fact play, which is the worse of the two errors.
-    sandbox.ExtensionHost = { loaded: () => ['legacy'], typeOf: () => null }
-    assert.equal(engine.hasProviders(), true)
-  })
-
-  it('survives a host that is halfway set up', () => {
-    // The host object exists before its methods do during boot, and this is
-    // called from a render path that must not throw.
-    sandbox.ExtensionHost = {}
-    assert.equal(engine.hasProviders(), false)
-    sandbox.ExtensionHost = { loaded: () => ['x'] }
-    assert.equal(engine.hasProviders(), true, 'no typeOf means the type is unknown, not disqualifying')
   })
 })

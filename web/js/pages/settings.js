@@ -82,7 +82,7 @@ const PageSettings = {
       wrap.append(this._card('Library sync', 'Your library status and episode progress sync to your account and follow you across devices while signed in.',
         U.el('div', { style: 'display:flex;gap:.6rem;flex-wrap:wrap;' }, [syncBtn, statusEl])))
     }
-    wrap.append(this._card('Yume server', 'Backend endpoint for platform features (extension store, sync). Leave as-is for local development.',
+    wrap.append(this._card('Yume server', 'Backend endpoint for accounts, the catalogue and sync. Leave as-is for local development.',
       U.el('input', {
         class: 'input',
         type: 'url',

@@ -398,23 +398,6 @@ describe('adversarial', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
   // ---- path traversal ----
 
   describe('path traversal', () => {
-    test('a traversal in the package route reaches nothing', async () => {
-      // The store is content-addressed: the key IS the hash, which is looked
-      // up in the database, so no path is ever built from request input. This
-      // asserts that stays true if the storage layer is ever changed.
-      for (const version of [
-        '../../../etc/passwd',
-        '..%2f..%2f..%2fetc%2fpasswd',
-        '%2e%2e%2f%2e%2e%2fetc%2fpasswd',
-        '....//....//etc/passwd',
-        '%00../../etc/passwd'
-      ]) {
-        const res = await app.inject({ url: `/v1/extensions/any/versions/${version}/package` })
-        assert.ok(!res.body.includes('root:'), `${version} returned /etc/passwd`)
-        assert.ok(!res.body.includes('JWT_SECRET'), `${version} returned an env file`)
-      }
-    })
-
     test('the SPA fallback serves the client, never a file off disk', async () => {
       // A non-API GET that is not a real file returns index.html by design.
       // The risk is that a traversal escapes the web root instead, so the
@@ -513,61 +496,6 @@ describe('adversarial', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
       const { rows: counted } = await pool.query('SELECT like_count FROM comments WHERE id = $1', [id])
       assert.ok(Number(counted[0]!.like_count) >= 0, 'like_count must never go negative')
       await pool.query('DELETE FROM comments WHERE id = $1', [id])
-    })
-  })
-
-  // ---- the extension store's entry point ----
-
-  describe('developer portal', () => {
-    before(async () => {
-      await pool.query(
-        `INSERT INTO user_roles (user_id, role_id)
-         SELECT $1, r.id FROM roles r WHERE r.slug = 'admin' ON CONFLICT DO NOTHING`, [attacker.id])
-      const authPlugin = await import('../src/plugins/auth.ts')
-      authPlugin.invalidatePermissions()
-    })
-
-    after(async () => {
-      await pool.query('DELETE FROM extensions WHERE slug LIKE $1', ['adv-%'])
-      await pool.query('DELETE FROM extension_developers WHERE user_id = $1', [attacker.id])
-      await pool.query('DELETE FROM user_roles WHERE user_id = $1', [attacker.id])
-      const authPlugin = await import('../src/plugins/auth.ts')
-      authPlugin.invalidatePermissions()
-    })
-
-    const create = async (slug: string): Promise<ReturnType<typeof app.inject>> => app.inject({
-      method: 'POST',
-      url: '/v1/dev/extensions',
-      headers: { authorization: `Bearer ${attacker.token}` },
-      payload: { slug, name: 'Adversarial', summary: 's', type: 'torrent' }
-    })
-
-    test('publishing without a developer record says so instead of 500ing', async () => {
-      // extensions.owner_id is a foreign key to extension_developers(user_id),
-      // not to users(id), so the extensions.publish permission alone is not
-      // enough. The FK violation used to escape as an opaque 500 from the
-      // store's only entry point — and GET /me and GET /extensions both answer
-      // 200 for such a user, so nothing before this call hinted at it.
-      const res = await create('adv-' + unique())
-      assert.equal(res.statusCode, 409, res.body)
-      assert.match((res.json() as { detail: string }).detail, /register/i)
-    })
-
-    test('parallel creates of one slug yield a single extension, no 500', async () => {
-      await app.inject({
-        method: 'POST',
-        url: '/v1/dev/register',
-        headers: { authorization: `Bearer ${attacker.token}` },
-        payload: { displayName: 'Adversarial Dev' }
-      })
-
-      const slug = 'adv-' + unique()
-      const codes = await Promise.all(Array.from({ length: 5 }, async () => (await create(slug)).statusCode))
-      assert.equal(codes.filter(c => c === 201).length, 1, 'exactly one create must win: ' + codes)
-      assert.ok(codes.every(c => c === 201 || c === 409), 'the rest must be 409, got ' + codes)
-
-      const { rows } = await pool.query('SELECT count(*)::int AS n FROM extensions WHERE slug = $1', [slug])
-      assert.equal(Number(rows[0]!.n), 1)
     })
   })
 

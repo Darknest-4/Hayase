@@ -29,11 +29,6 @@ export type AuditAction =
   | 'anime.translation.create' | 'anime.translation.update' | 'anime.translation.delete'
   | 'config.flag' | 'config.setting'
   | 'webhook.create' | 'webhook.update' | 'webhook.delete'
-  | 'extension.review'
-  // Adopting somebody else's code into this store. Worth recording on its own:
-  // the operator who imported a repository is the person answerable for what
-  // came in with it.
-  | 'extension.imported'
   // Starting a catalogue-wide metadata pull. Recorded because it rewrites
   // fields across the whole catalogue and the question afterwards is who
   // asked for it.
@@ -42,7 +37,7 @@ export type AuditAction =
   // who has not chosen otherwise sees.
   | 'theme.create' | 'theme.update' | 'theme.delete'
 
-export type SubjectType = 'user' | 'role' | 'anime' | 'episode' | 'config' | 'webhook' | 'extension' | 'metadata_run' | 'theme'
+export type SubjectType = 'user' | 'role' | 'anime' | 'episode' | 'config' | 'webhook' | 'metadata_run' | 'theme'
 
 /**
  * Record one administrative action.

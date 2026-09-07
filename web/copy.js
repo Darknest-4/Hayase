@@ -19,7 +19,7 @@ window.Copy = {
     community: 'Community',
     list: 'Library',
     notifications: 'Notifications',
-    extensions: 'Extensions',
+    themes: 'Themes',
     admin: 'Admin',
     settings: 'Settings',
     more: 'More'
@@ -75,7 +75,6 @@ window.Copy = {
     profile: 'Profile',
     watchHistory: 'Watch History',
     analytics: 'Analytics',
-    developer: 'Developer',
     colophon: 'built on the Yume design system'
   },
 

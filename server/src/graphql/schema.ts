@@ -107,26 +107,12 @@ export const schema = /* GraphQL */ `
     stats: ProfileStats
   }
 
-  type Extension {
-    slug: String!
-    name: String!
-    summary: String!
-    type: String!
-    accuracy: String!
-    installCount: Int!
-    ratingAvg: Float
-    ratingCount: Int!
-    developer: String!
-    developerVerified: Boolean!
-    latestVersion: String
-  }
 
   type Query {
     anime(id: ID!): Anime
     animePage(season: Season, year: Int, genre: String, format: Format, status: Status, sort: AnimeSort = POPULARITY, limit: Int = 25, cursor: String, nsfw: Boolean = false): AnimePage!
     search(query: String!, limit: Int = 10, nsfw: Boolean = false): [Anime!]!
     schedule(from: String!, to: String!): [AiringEpisode!]!
-    extensionPage(type: String, sort: String = "installs", limit: Int = 25): [Extension!]!
     me: Viewer
   }
 
@@ -286,34 +272,6 @@ export const resolvers: IResolvers = {
       }))
     },
 
-    async extensionPage (_root, args: { type?: string, sort: string, limit: number }) {
-      const order = args.sort === 'rating' ? 'e.rating_avg DESC NULLS LAST' : args.sort === 'new' ? 'e.created_at DESC' : 'e.install_count DESC'
-      const params: unknown[] = []
-      if (args.type) params.push(args.type)
-      params.push(Math.min(args.limit, 50))
-      const rows = await query(
-        `SELECT e.slug, e.name, e.summary, e.type, e.accuracy, e.install_count, e.rating_avg, e.rating_count,
-                d.display_name, d.verified,
-                (SELECT version FROM extension_versions WHERE extension_id = e.id AND published_at IS NOT NULL ORDER BY published_at DESC LIMIT 1) AS latest_version
-         FROM extensions e JOIN extension_developers d ON d.user_id = e.owner_id
-         WHERE e.status = 'published' ${args.type ? 'AND e.type = $1' : ''}
-         ORDER BY ${order} LIMIT $${params.length}`,
-        params
-      )
-      return rows.map(row => ({
-        slug: row.slug,
-        name: row.name,
-        summary: row.summary,
-        type: row.type,
-        accuracy: row.accuracy,
-        installCount: row.install_count,
-        ratingAvg: row.rating_avg == null ? null : Number(row.rating_avg),
-        ratingCount: row.rating_count,
-        developer: row.display_name,
-        developerVerified: row.verified,
-        latestVersion: row.latest_version
-      }))
-    },
 
     me (_root, _args, ctx: Ctx) {
       if (!ctx.userId) return null

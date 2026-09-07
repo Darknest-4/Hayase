@@ -189,7 +189,7 @@ everything else keeps working.
 | `/top [genre] [format]` | Highest rated |
 | `/trending` | Current trending rail |
 | `/compare <a> <b>` | Two entries side by side |
-| `/where <title>` | Which extensions/sources offer it |
+| `/where <title>` | Which registered sources offer it |
 
 **Autocomplete lands on `/v1/anime/suggest` unchanged.** Discord sends an
 interaction per keystroke and expects choices within 3 seconds; that endpoint

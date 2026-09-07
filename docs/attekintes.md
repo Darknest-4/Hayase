@@ -3,6 +3,25 @@
 Magyar nyelvű áttekintés a platform jelenlegi állapotáról: minden oldal,
 elrendezés és funkció, hogyan működik, és mivel lehet tovább bővíteni.
 
+> ## ⚠️ A kiegészítő-platform megszűnt
+>
+> A store, a fejlesztői portál, a manifest-validátor, a csomagtár és a
+> sandbox törölve (`0031_remove_extension_platform`). Ami bennük volt, az
+> most a platform része:
+>
+> | Régen kiegészítő | Most |
+> |---|---|
+> | témacsomag | `themes` tábla + Admin → Themes |
+> | aniskip | `skip_segments` a katalógusból, AniSkip csak tartalék |
+> | opensubtitles | `subtitle_tracks` epizódonként, admin szerkesztővel |
+> | anilist-meta | a mély AniList-menet tölti a saját tábláinkat |
+> | yume-library, jellyfin, plex | **megszűnt** — a videóforrás most `video_sources`, amit az operátor vesz fel bármilyen providerhez |
+>
+> Az alábbi szöveg jelentős részben azt írja le, ami **volt**. Ahol
+> kiegészítőkről beszél, ott a fenti táblázat a mérvadó.
+
+---
+
 ---
 
 ## 1. Hogyan épül fel a rendszer

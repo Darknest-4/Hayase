@@ -8,6 +8,25 @@
 A magas szintű, elrendezés‑központú áttekintés a [`attekintes.md`](./attekintes.md)‑ben van;
 ez a dokumentum a **műszaki állapotot** és a **teljes leltárt** tartja számon.
 
+> ## ⚠️ A kiegészítő-platform megszűnt
+>
+> A store, a fejlesztői portál, a manifest-validátor, a csomagtár és a
+> sandbox törölve (`0031_remove_extension_platform`). Ami bennük volt, az
+> most a platform része:
+>
+> | Régen kiegészítő | Most |
+> |---|---|
+> | témacsomag | `themes` tábla + Admin → Themes |
+> | aniskip | `skip_segments` a katalógusból, AniSkip csak tartalék |
+> | opensubtitles | `subtitle_tracks` epizódonként, admin szerkesztővel |
+> | anilist-meta | a mély AniList-menet tölti a saját tábláinkat |
+> | yume-library, jellyfin, plex | **megszűnt** — a videóforrás most `video_sources`, amit az operátor vesz fel bármilyen providerhez |
+>
+> Az alábbi szöveg jelentős részben azt írja le, ami **volt**. Ahol
+> kiegészítőkről beszél, ott a fenti táblázat a mérvadó.
+
+---
+
 ---
 
 ## 1. Egy mondatban
@@ -100,7 +119,7 @@ bővítmény‑rendszerrel.
 - [x] **Login timing‑enumeráció lezárva** (decoy‑hash, 1,5% eltérés)
 - [x] **CI helyreállítva**: typecheck + tesztek + migrációk + worker + build, `main` ágon
 
-### Extension 2.0 — sandbox & manifest (kész) — [`extensions.md`](./extensions.md)
+### Extension 2.0 — sandbox & manifest (**megszűnt**, lásd a fenti táblázatot)
 - [x] **Manifest v3 validáció** kikényszerítve publikáláskor; a **manifest az egyetlen igazságforrás** (a hívó külön permission‑listája megszűnt)
 - [x] **Jogosultság‑eszkaláció detektálás** minden új verziónál (új permission vagy bővített host‑lista)
 - [x] **Web Worker sandbox**: minden ambient képesség eltávolítva; a host **újraellenőriz** minden kérést
@@ -142,7 +161,7 @@ bővítmény‑rendszerrel.
 - [x] **Nincs OpenSearch — szándékosan**: 25 672 sornál a Postgres `pg_trgm`+`tsvector` a 0017 indexekről ezredmásodpercben válaszol; az OpenSearch ~1 GB RAM‑ot és egy külön üzemeltetett JVM‑et kérne mérhető haszon nélkül (indoklás és a felülvizsgálat feltétele: `docs/search.md`)
 - [x] Igazolva: **32 új unit‑teszt** (16 metadata + 16 search) + élő végpont‑ellenőrzés + 7 böngésző‑teszt a gyorskeresőre
 
-### Bővítmény‑bolt: csomag‑kiszolgálás (kész) — [`extensions.md`](./extensions.md)
+### Bővítmény‑bolt: csomag‑kiszolgálás (**megszűnt**, lásd a fenti táblázatot)
 - [x] **Eddig egyetlen bővítményt sem lehetett futtatni**: a `package_key`/`package_hash`/`package_size` szabad szöveges JSON volt a fejlesztőtől, a bájtoknak nem volt hova kerülniük, és **`ExtensionHost.load()`‑ot soha semmi nem hívta** — a sandbox (17 teszttel igazolt) elérhetetlen volt
 - [x] **Tartalom‑címzett tároló** (`server/src/lib/package-store.ts`): a kulcs **maga a bájtok sha256‑ja**, amit a szerver számol — a publikáló nem állíthatja meg, mire hashelnek a saját bájtjai; azonos tartalom egy blobra esik össze; atomi írás (temp + rename), tehát csonka blob sosem kap érvényesnek látszó nevet
 - [x] **Feltöltés**: `POST /v1/dev/extensions/:slug/packages` — nyers forrás a törzsben (nem JSON, hogy ne kelljen kódolni‑dekódolni), külön body‑limit, UTF‑8 forrás‑ellenőrzés
@@ -262,7 +281,6 @@ Migrációk: `0001`…`0017` (a `db/migrations/`‑ben, filename szerint követv
 | `/v1/anime` | `anime.ts` | browse, schedule, search, by‑anilist, resolve, detail, episodes, relations *(láthatóságra szűr)* |
 | `/v1/me` | `library.ts` | könyvtár, haladás, continue‑watching, resume‑pozíció *(a kliens `LibrarySync` ehhez szinkronizál, `X-Profile-Id` fejléccel)* |
 | `/v1/profiles` | `profiles.ts` | profilok |
-| `/v1/extensions` | `extensions.ts` | store |
 | `/v1/comments` | `comments.ts` | kommentek |
 | `/v1/w2g` | `w2g.ts` | watch‑together |
 | `/v1/reports` | `reports.ts` | jelentés |
@@ -292,7 +310,7 @@ Migrációk: `0001`…`0017` (a `db/migrations/`‑ben, filename szerint követv
 
 `home`, `search`, `anime` (details), `schedule`, `list` (könyvtár), `profile`,
 `profiles` (váltó), `notifications`, `dashboard`, `community`, `w2g`, `watch`
-(lejátszó), `extensions`, `developer`, `admin`, `settings`.
+(lejátszó), `themes`, `admin`, `settings`.
 
 - **Router:** `app.js` — hash `#/route`, async oldal‑handler‑ek (a footer a
   tartalom után kerül be, navigációs‑generációs őrrel), gate‑ellenőrzés
