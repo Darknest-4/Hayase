@@ -460,40 +460,170 @@ const PageAdmin = {
   // audit_logs was written from day one and had no reader. An audit log nobody
   // can read is storage, not accountability.
 
-  async renderAudit (content) {
-    const state = { subjectType: '' }
-    const rows = U.el('div', { class: 'audit-rows' })
+  /**
+   * The audit trail.
+   *
+   * It filtered by subject type and printed the `after` object as raw JSON —
+   * the least useful of the three things somebody arrives knowing, and a
+   * format that says what a value became without ever saying what it was.
+   * "Who did this", "what happened to this thing" and "what happened around
+   * the time it broke" were all unanswerable here.
+   *
+   * A row now reads as a sentence and opens into the actual change.
+   */
+  AUDIT_WINDOWS: [['', 'Any time'], ['1', 'Last 24 hours'], ['7', 'Last 7 days'], ['30', 'Last 30 days']],
 
-    const bar = U.el('div', { class: 'admin-toolbar' }, [
-      U.el('select', {
-        class: 'select',
-        onchange: e => { state.subjectType = e.target.value; load() }
-      }, [['', 'Everything'], ['user', 'Users'], ['role', 'Roles'], ['anime', 'Anime'],
-        ['episode', 'Episodes'], ['config', 'Config'], ['webhook', 'Webhooks'], ['theme', 'Themes']]
-        .map(([v, l]) => U.el('option', { value: v, text: l, selected: v === state.subjectType })))
-    ])
+  async renderAudit (content) {
+    const state = { subjectType: '', action: '', actor: '', days: '', offset: 0 }
+    const PAGE = 50
+    const rows = U.el('div', { class: 'audit-rows' })
+    const pager = U.el('div', { class: 'admin-pager' })
+    let actionOptions = [['', 'Any action']]
+
+    const pick = (value, options, onchange) => U.el('select', {
+      class: 'select',
+      onchange: e => { onchange(e.target.value); state.offset = 0; load() }
+    }, options.map(([v, l]) => U.el('option', { value: v, text: l, selected: v === value })))
+
+    const actorInput = U.el('input', {
+      class: 'input',
+      placeholder: 'Who did it…',
+      style: 'max-width:12rem;',
+      oninput: U.debounce(e => { state.actor = e.target.value.trim(); state.offset = 0; load() })
+    })
+
+    const bar = U.el('div', { class: 'admin-toolbar' })
+
+    const paintBar = () => bar.replaceChildren(
+      pick(state.subjectType, [['', 'Everything'], ['user', 'Users'], ['role', 'Roles'], ['anime', 'Anime'],
+        ['episode', 'Episodes'], ['config', 'Config'], ['webhook', 'Webhooks'], ['theme', 'Themes'],
+        ['metadata_run', 'Metadata runs']], v => { state.subjectType = v }),
+      // Built from what this instance has actually recorded, so it cannot
+      // drift from the set of actions the server writes.
+      pick(state.action, actionOptions, v => { state.action = v }),
+      pick(state.days, this.AUDIT_WINDOWS, v => { state.days = v }),
+      actorInput
+    )
 
     const load = async () => {
       rows.replaceChildren(U.el('div', { class: 'spinner' }))
+      pager.replaceChildren()
       try {
-        const { data } = await YumeAPI.admin.audit({ subjectType: state.subjectType, limit: 100 })
+        const since = state.days
+          ? new Date(Date.now() - Number(state.days) * 86400000).toISOString()
+          : undefined
+        const { data, total, actions } = await YumeAPI.admin.audit({
+          subjectType: state.subjectType,
+          action: state.action,
+          actor: state.actor,
+          since,
+          limit: PAGE,
+          offset: state.offset
+        })
+
+        if (actions && actionOptions.length === 1) {
+          actionOptions = [['', 'Any action'], ...actions.map(a => [a.action, `${a.action} (${a.n})`])]
+          paintBar()
+        }
+
         rows.replaceChildren()
-        if (!data.length) { rows.append(U.el('div', { class: 'empty-state', text: 'Nothing recorded yet.' })); return }
-        for (const r of data) {
-          const after = r.after && Object.keys(r.after).length ? JSON.stringify(r.after) : ''
-          rows.append(U.el('div', { class: 'audit-row' }, [
-            U.el('span', { class: 'audit-action', text: r.action }),
-            U.el('span', { class: 'audit-subject', text: r.subject_type }),
-            U.el('span', { class: 'audit-actor', text: r.actor ?? 'system' }),
-            U.el('span', { class: 'audit-detail', text: after, title: after }),
-            U.el('time', { class: 'audit-when', text: U.relTime(r.created_at), title: new Date(r.created_at).toLocaleString() })
-          ]))
+        if (!data.length) {
+          rows.append(U.el('div', { class: 'empty-state', text: 'Nothing recorded for that.' }))
+          return
+        }
+        for (const r of data) rows.append(this.auditRow(r))
+
+        if (Number(total) > PAGE) {
+          const to = Math.min(state.offset + data.length, Number(total))
+          pager.replaceChildren(
+            U.el('button', {
+              class: 'btn btn-sm btn-ghost',
+              disabled: state.offset === 0,
+              onclick: () => { state.offset = Math.max(0, state.offset - PAGE); load() }
+            }, [document.createTextNode('← Newer')]),
+            U.el('span', { class: 'admin-pager-label', text: `${state.offset + 1}–${to} of ${total}` }),
+            U.el('button', {
+              class: 'btn btn-sm btn-ghost',
+              disabled: to >= Number(total),
+              onclick: () => { state.offset += PAGE; load() }
+            }, [document.createTextNode('Older →')])
+          )
         }
       } catch (e) { rows.replaceChildren(U.el('div', { class: 'error-state', text: e.message })) }
     }
 
-    content.replaceChildren(bar, rows)
+    paintBar()
+    content.replaceChildren(bar, rows, pager)
     load()
+  },
+
+  /**
+   * One recorded change.
+   *
+   * The summary is the fields that moved, not the whole object: `before` and
+   * `after` hold only what changed, so listing the keys and their two values
+   * is the entire content of the record in a form somebody can read.
+   */
+  auditRow (r) {
+    const before = r.before && typeof r.before === 'object' ? r.before : {}
+    const after = r.after && typeof r.after === 'object' ? r.after : {}
+    const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])]
+
+    const show = v => {
+      if (v === undefined) return '—'
+      if (v === null) return 'null'
+      return typeof v === 'string' ? v : JSON.stringify(v)
+    }
+
+    // A key whose value moved is drawn as a change. Everything else — a key
+    // present on one side only, or one carried on both without changing — is
+    // context the action recorded, and is drawn as a plain line. Rendering
+    // those as "— → demo" invents a transition that never happened; dropping
+    // them loses which role a grant was about, since only `granted` moves.
+    const line = k => {
+      const had = Object.prototype.hasOwnProperty.call(before, k)
+      const has = Object.prototype.hasOwnProperty.call(after, k)
+      if (!had || !has || show(before[k]) === show(after[k])) {
+        const value = show(has ? after[k] : before[k])
+        return U.el('div', { class: 'audit-diff-row audit-diff-note' }, [
+          U.el('span', { class: 'audit-diff-key', text: k }),
+          U.el('span', { class: 'audit-diff-after', text: value, title: value })
+        ])
+      }
+      return U.el('div', { class: 'audit-diff-row' }, [
+        U.el('span', { class: 'audit-diff-key', text: k }),
+        U.el('span', { class: 'audit-diff-before', text: show(before[k]), title: show(before[k]) }),
+        U.el('span', { class: 'audit-diff-arrow', text: '→' }),
+        U.el('span', { class: 'audit-diff-after', text: show(after[k]), title: show(after[k]) })
+      ])
+    }
+
+    const lines = keys.map(line).filter(Boolean)
+    const diff = lines.length ? U.el('div', { class: 'audit-diff' }, lines) : null
+
+    const head = U.el('div', { class: 'audit-row-head' }, [
+      U.el('span', { class: 'audit-action', text: r.action }),
+      U.el('span', { class: 'audit-subject', text: r.subject_type }),
+      U.el('span', { class: 'audit-actor', text: r.actor ?? (r.actor_type === 'system' ? 'system' : 'deleted account') }),
+      U.el('time', { class: 'audit-when', text: U.relTime(r.created_at), title: new Date(r.created_at).toLocaleString() })
+    ])
+
+    // The id is what links a row to the thing it happened to, and it is the
+    // one field somebody copies out of this screen.
+    const subject = r.subject_id
+      ? U.el('button', {
+        class: 'audit-subject-id',
+        type: 'button',
+        title: 'Copy the subject id',
+        onclick: () => {
+          navigator.clipboard?.writeText(String(r.subject_id))
+            .then(() => U.toast('Subject id copied'))
+            .catch(() => U.toast('Could not copy', 'error'))
+        }
+      }, [document.createTextNode(String(r.subject_id).slice(0, 8) + '…')])
+      : null
+
+    return U.el('div', { class: 'audit-row' }, [head, subject, diff])
   },
 
   // ---- Roles & permissions (fine-grained RBAC) ----
@@ -3052,47 +3182,130 @@ const PageAdmin = {
     ]
   },
 
-  async renderReports (content) {
+  /**
+   * The moderation queue.
+   *
+   * It showed the open reports and nothing else: no way to see what had been
+   * decided, no way to see who decided it, and no context beyond the report
+   * itself. A first report from somebody who has never filed one reads very
+   * differently from the ninth from a reporter whose last eight were
+   * dismissed, and that difference decides most of these.
+   */
+  REPORT_TABS: [['open', 'Open'], ['reviewing', 'Reviewing'], ['resolved', 'Resolved'], ['dismissed', 'Dismissed'], ['all', 'Everything']],
+
+  async renderReports (content, state = {}) {
+    const q = { status: 'open', subjectType: '', offset: 0, ...state }
+    const PAGE = 50
+
     try {
-      const { data } = await YumeAPI.admin.reports('open')
-      content.replaceChildren()
+      const { data, totals } = await YumeAPI.admin.reports({ ...q, limit: PAGE })
+
+      const tabs = U.el('div', { class: 'report-tabs' }, this.REPORT_TABS.map(([value, label]) => {
+        const count = value === 'all' ? totals?.total : totals?.[value]
+        return U.el('button', {
+          class: 'report-tab' + (q.status === value ? ' on' : ''),
+          type: 'button',
+          onclick: () => this.renderReports(content, { ...q, status: value, offset: 0 })
+        }, [
+          document.createTextNode(label),
+          U.el('span', { class: 'report-tab-count', text: String(count ?? 0) })
+        ])
+      }))
+
+      const kinds = U.el('select', {
+        class: 'select',
+        onchange: e => this.renderReports(content, { ...q, subjectType: e.target.value, offset: 0 })
+      }, [['', 'Any kind'], ['comment', 'Comments'], ['review', 'Reviews'], ['post', 'Posts'], ['user', 'Users']]
+        .map(([v, l]) => U.el('option', { value: v, text: l, selected: v === q.subjectType })))
+
+      content.replaceChildren(U.el('div', { class: 'admin-toolbar' }, [tabs, kinds]))
 
       if (!data.length) {
-        content.append(U.el('div', { class: 'empty-state', text: 'Moderation queue is empty. ✨' }))
+        content.append(U.el('div', {
+          class: 'empty-state',
+          text: q.status === 'open' ? 'Moderation queue is empty. ✨' : 'Nothing here.'
+        }))
         return
       }
 
-      for (const report of data) {
-        const act = (action, label, primary = false) => U.el('button', {
-          class: 'btn btn-sm ' + (primary ? 'btn-primary' : 'btn-ghost'),
-          onclick: async () => {
-            const reason = window.prompt(`Reason (${label}):`, action === 'dismiss' ? 'Not a violation' : '')
-            if (!reason || reason.length < 3) return
-            try {
-              await YumeAPI.admin.resolveReport(report.id, action, reason)
-              U.toast(`Report ${label.toLowerCase()}ed`)
-              this.renderReports(content)
-            } catch (e) { U.toast(e.message, 'error') }
-          }
-        }, [document.createTextNode(label)])
+      for (const report of data) content.append(this.reportCard(report, content, q))
 
-        content.append(U.el('div', { class: 'comment', style: 'max-width:none;' }, [
-          U.el('div', { class: 'comment-head' }, [
-            U.el('span', { class: 'comment-author', text: report.reason.toUpperCase() }),
-            U.el('span', { class: 'comment-context', text: `${report.subject_type} • reported by ${report.reporter}` }),
-            U.el('span', { class: 'comment-time', text: U.relTime(new Date(report.created_at)) })
-          ]),
-          report.excerpt ? U.el('div', { class: 'comment-body', style: 'background:var(--bg-sunken);border-radius:6px;padding:.5rem .75rem;margin:.35rem 0;', text: report.excerpt }) : null,
-          report.details ? U.el('div', { class: 'list-row-sub', text: 'Details: ' + report.details }) : null,
-          U.el('div', { style: 'display:flex;gap:.5rem;margin-top:.6rem;' }, [
-            ...(report.subject_type in { comment: 1, post: 1, review: 1 } ? [act('hide', 'Hide', true)] : []),
-            act('dismiss', 'Dismiss')
-          ])
+      const total = Number(q.status === 'all' ? totals?.total : totals?.[q.status]) || data.length
+      if (total > PAGE) {
+        const to = Math.min(q.offset + data.length, total)
+        content.append(U.el('div', { class: 'admin-pager' }, [
+          U.el('button', {
+            class: 'btn btn-sm btn-ghost',
+            disabled: q.offset === 0,
+            onclick: () => this.renderReports(content, { ...q, offset: Math.max(0, q.offset - PAGE) })
+          }, [document.createTextNode('← Previous')]),
+          U.el('span', { class: 'admin-pager-label', text: `${q.offset + 1}–${to} of ${total}` }),
+          U.el('button', {
+            class: 'btn btn-sm btn-ghost',
+            disabled: to >= total,
+            onclick: () => this.renderReports(content, { ...q, offset: q.offset + PAGE })
+          }, [document.createTextNode('Next →')])
         ]))
       }
     } catch (e) {
       content.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
     }
+  },
+
+  reportCard (report, content, q) {
+    const act = (action, label, primary = false) => U.el('button', {
+      class: 'btn btn-sm ' + (primary ? 'btn-primary' : 'btn-ghost'),
+      onclick: async () => {
+        const reason = window.prompt(`Reason (${label}):`, action === 'dismiss' ? 'Not a violation' : '')
+        if (!reason || reason.trim().length < 3) return
+        try {
+          await YumeAPI.admin.resolveReport(report.id, action, reason.trim())
+          U.toast(`Report ${label.toLowerCase()}ed`)
+          this.renderReports(content, q)
+        } catch (e) { U.toast(e.message, 'error') }
+      }
+    }, [document.createTextNode(label)])
+
+    // What the reporter's record says. Shown only when there is a record to
+    // speak of: "1 report filed" on a first-time reporter is noise.
+    const filed = Number(report.reporter_total ?? 0)
+    const dismissed = Number(report.reporter_dismissed ?? 0)
+    const marks = []
+    if (filed > 1) marks.push(`${filed} filed`)
+    if (dismissed > 0) marks.push(`${dismissed} dismissed`)
+    if (Number(report.subject_reports ?? 0) > 1) marks.push(`reported ${report.subject_reports}×`)
+
+    const resolved = report.status !== 'open' && report.status !== 'reviewing'
+
+    return U.el('div', { class: 'report-card' }, [
+      U.el('div', { class: 'report-head' }, [
+        U.el('span', { class: 'report-reason', text: String(report.reason).toUpperCase() }),
+        U.el('span', { class: 'badge badge-outline', text: report.subject_type }),
+        U.el('span', { class: 'report-by', text: `by ${report.reporter}` }),
+        ...marks.map(m => U.el('span', { class: 'report-mark', text: m })),
+        U.el('time', {
+          class: 'report-when',
+          text: U.relTime(new Date(report.created_at)),
+          title: new Date(report.created_at).toLocaleString()
+        })
+      ]),
+      report.excerpt ? U.el('div', { class: 'report-excerpt', text: report.excerpt }) : null,
+      report.details ? U.el('div', { class: 'report-details', text: report.details }) : null,
+      resolved
+        // The decision, and who made it. Absent before, which made a resolved
+        // report indistinguishable from one nobody had looked at.
+        ? U.el('div', { class: 'report-outcome' }, [
+          U.el('span', { class: 'badge' + (report.status === 'resolved' ? '' : ' badge-outline'), text: report.status }),
+          U.el('span', {
+            class: 'report-outcome-by',
+            text: `${report.resolver ?? 'unknown'}${report.resolved_at ? ' · ' + U.relTime(new Date(report.resolved_at)) : ''}`
+          })
+        ])
+        : U.el('div', { class: 'report-actions' }, [
+          ...(report.subject_type in { comment: 1, post: 1, review: 1 } ? [act('hide', 'Hide', true)] : []),
+          act('dismiss', 'Dismiss')
+        ])
+    ])
   },
 
   // ---- webhooks ----

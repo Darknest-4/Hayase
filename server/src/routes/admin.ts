@@ -9,6 +9,7 @@ import { errorGroups, errorOccurrences, setErrorGroupStatus } from '../lib/error
 import { emitEvent } from '../lib/webhooks.ts'
 import { invalidatePermissions } from '../plugins/auth.ts'
 
+import type { AuditFilter } from '../lib/audit.ts'
 import type { FastifyPluginAsync } from 'fastify'
 
 // which table's hidden_at a report subject maps to
@@ -321,8 +322,12 @@ const routes: FastifyPluginAsync = async fastify => {
       await client.query(
         `INSERT INTO audit_logs (actor_id, action, subject_type, subject_id, before, after)
          VALUES ($1, $2, 'user', $3, $4, $5)`,
+        // `before` and `after` are the same shape so the trail reads as a
+        // change rather than as two unrelated objects: the screen lines them
+        // up key by key, and a key that appears on only one side is shown as a
+        // note, not as a value that moved.
         [request.user.sub, granted ? 'user.role.grant' : 'user.role.revoke', id,
-          { roles: granted ? 'without ' + roleRow.slug : 'with ' + roleRow.slug },
+          { role: roleRow.slug, granted: !granted },
           { role: roleRow.slug, granted, reason: reason ?? null }]
       )
       // Deliberately not written to moderation_actions. That table's `action`
@@ -401,29 +406,68 @@ const routes: FastifyPluginAsync = async fastify => {
       querystring: {
         type: 'object',
         properties: {
-          status: { enum: ['open', 'reviewing', 'resolved', 'dismissed'], default: 'open' },
-          limit: { type: 'integer', minimum: 1, maximum: 100, default: 50 }
+          status: { enum: ['open', 'reviewing', 'resolved', 'dismissed', 'all'], default: 'open' },
+          subjectType: { type: 'string', maxLength: 40 },
+          limit: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
+          offset: { type: 'integer', minimum: 0, default: 0 }
         }
       }
     }
   }, async request => {
-    const { status, limit } = request.query as { status?: string, limit?: number }
+    const { status, subjectType, limit, offset } =
+      request.query as { status?: string, subjectType?: string, limit?: number, offset?: number }
+
+    const where: string[] = []
+    const params: unknown[] = []
+    // 'all' is a real choice: a queue you can only see the open end of hides
+    // what was decided and by whom, which is exactly what somebody checks when
+    // a decision is questioned.
+    if (status && status !== 'all') { params.push(status); where.push(`r.status = $${params.length}`) }
+    if (subjectType) { params.push(subjectType); where.push(`r.subject_type = $${params.length}`) }
+    const filter = where.length ? 'WHERE ' + where.join(' AND ') : ''
+
+    // Counted per status over the whole table, not the filtered page: the
+    // number an operator wants is "how much is waiting", and it must not
+    // change when they click through to the resolved ones.
+    const totals = await queryOne<Record<string, number>>(
+      `SELECT count(*)::int AS total,
+              count(*) FILTER (WHERE status = 'open')::int AS open,
+              count(*) FILTER (WHERE status = 'reviewing')::int AS reviewing,
+              count(*) FILTER (WHERE status = 'resolved')::int AS resolved,
+              count(*) FILTER (WHERE status = 'dismissed')::int AS dismissed
+         FROM reports`
+    )
+
+    params.push(limit ?? 50, offset ?? 0)
     const data = await query(
-      `SELECT r.id, r.subject_type, r.subject_id, r.reason, r.details, r.status, r.created_at,
+      `SELECT r.id, r.subject_type, r.subject_id, r.reason, r.details, r.status,
+              r.created_at, r.resolved_at,
               u.username AS reporter,
+              res.username AS resolver,
               CASE WHEN r.subject_type = 'comment' THEN (SELECT left(c.body, 200) FROM comments c WHERE c.id = r.subject_id)
                    WHEN r.subject_type = 'review'  THEN (SELECT left(v.body, 200) FROM reviews v WHERE v.id = r.subject_id)
                    WHEN r.subject_type = 'post'    THEN (SELECT left(p.body, 200) FROM posts p WHERE p.id = r.subject_id)
                    WHEN r.subject_type = 'user'    THEN (SELECT uu.username FROM users uu WHERE uu.id = r.subject_id)
-              END AS excerpt
+              END AS excerpt,
+              -- Context that decides most of these without opening anything
+              -- else. A first report from somebody who has never filed one
+              -- reads very differently from the ninth from a reporter whose
+              -- last eight were dismissed, and the same is true of a subject
+              -- that several different people have reported.
+              (SELECT count(*)::int FROM reports r2 WHERE r2.reporter_id = r.reporter_id) AS reporter_total,
+              (SELECT count(*)::int FROM reports r2
+                WHERE r2.reporter_id = r.reporter_id AND r2.status = 'dismissed') AS reporter_dismissed,
+              (SELECT count(*)::int FROM reports r3
+                WHERE r3.subject_type = r.subject_type AND r3.subject_id = r.subject_id) AS subject_reports
        FROM reports r
        JOIN users u ON u.id = r.reporter_id
-       WHERE r.status = $1
+       LEFT JOIN users res ON res.id = r.resolved_by
+       ${filter}
        ORDER BY r.created_at
-       LIMIT $2`,
-      [status ?? 'open', limit ?? 50]
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
     )
-    return { data }
+    return { data, totals }
   })
 
   fastify.post('/reports/:id/resolve', {
@@ -645,22 +689,37 @@ const routes: FastifyPluginAsync = async fastify => {
           subjectType: { enum: ['user', 'role', 'anime', 'episode', 'config', 'webhook', 'theme', 'metadata_run'] },
           subjectId: { type: 'string', format: 'uuid' },
           actorId: { type: 'string', format: 'uuid' },
-          limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 }
+          actor: { type: 'string', maxLength: 60 },
+          action: { type: 'string', maxLength: 60, pattern: '^[a-z0-9._]+$' },
+          since: { type: 'string', format: 'date-time' },
+          limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+          offset: { type: 'integer', minimum: 0, default: 0 }
         }
       }
     }
   }, async request => {
-    const { subjectType, subjectId, actorId, limit } = request.query as {
-      subjectType?: string, subjectId?: string, actorId?: string, limit?: number
+    const q = request.query as Record<string, string | number | undefined>
+    // exactOptionalPropertyTypes: only pass the filters that were supplied,
+    // so an absent one stays absent rather than becoming `undefined`.
+    const filter: AuditFilter = {}
+    for (const key of ['subjectType', 'subjectId', 'actorId', 'actor', 'action', 'since'] as const) {
+      if (q[key]) filter[key] = String(q[key])
     }
-    // exactOptionalPropertyTypes: only pass the filters that were supplied
-    const filter: { subjectType?: string, subjectId?: string, actorId?: string, limit?: number } = {}
-    if (subjectType) filter.subjectType = subjectType
-    if (subjectId) filter.subjectId = subjectId
-    if (actorId) filter.actorId = actorId
-    if (limit) filter.limit = limit
+    if (q.limit) filter.limit = Number(q.limit)
+    if (q.offset) filter.offset = Number(q.offset)
 
-    return { data: await auditTrail(filter) }
+    // The distinct actions present, so the screen's action filter offers what
+    // this instance has actually recorded instead of a hardcoded list that
+    // drifts from the AuditAction union every time somebody adds one.
+    const [trail, actions] = await Promise.all([
+      auditTrail(filter),
+      query<{ action: string, n: number }>(
+        `SELECT action, count(*)::int AS n FROM audit_logs
+          WHERE created_at > now() - interval '90 days'
+          GROUP BY action ORDER BY action`)
+    ])
+
+    return { data: trail.data, total: trail.total, actions }
   })
 }
 
