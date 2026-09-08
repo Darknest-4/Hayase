@@ -14,6 +14,7 @@
 // this file.
 
 import { query, queryOne, transaction } from '../db.ts'
+import { posture } from '../lib/security-posture.ts'
 import { settings as siteSettings } from '../lib/site-settings.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
@@ -74,6 +75,20 @@ const routes: FastifyPluginAsync = async fastify => {
 
     return { controls, context, engaged: controls.filter(c => c.engaged).map(c => c.key) }
   })
+
+  /**
+   * The posture, computed on demand.
+   *
+   * Every entry inspects something and reports what it found; the score is
+   * passing weight over applicable weight and nothing more. A page that shows
+   * a number with no checks behind it is the most confident lie a dashboard
+   * can tell, because the reader stops looking.
+   *
+   * Deliberately not cached. It reads a dozen small indexed counts, an
+   * operator asks for it rarely, and a cached posture is a posture that can be
+   * wrong at the moment somebody is relying on it.
+   */
+  fastify.get('/posture', async () => posture())
 
   /**
    * Throw one control.

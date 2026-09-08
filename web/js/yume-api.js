@@ -645,6 +645,8 @@ const YumeAPI = {
     // Emergency controls. Each switch has an enforcement point in the server
     // and the GET says which — see server/src/routes/security.ts.
     security: () => YumeAPI._request('/v1/admin/security', { auth: true }),
+    // The posture: every entry inspects something and says what it found.
+    posture: () => YumeAPI._request('/v1/admin/security/posture', { auth: true }),
     setControl: (key, value, reason) =>
       YumeAPI._request(`/v1/admin/security/${encodeURIComponent(key)}`, {
         method: 'POST', auth: true, body: { value, reason }

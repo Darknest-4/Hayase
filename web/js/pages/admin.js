@@ -35,7 +35,7 @@ const PageAdmin = {
     { key: 'monitoring', group: 'system', label: 'Infrastructure', sub: 'VPS health & services', perm: 'system.metrics.view', render: 'renderMonitoring', icon: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>' },
     { key: 'webhooks', group: 'system', label: 'Webhooks', sub: 'Outbound integrations', perm: 'admin.webhooks.manage', render: 'renderWebhooks', icon: '<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>' },
     { key: 'themes', group: 'system', label: 'Themes', sub: 'Colours viewers can choose', perm: 'theme.publish', render: 'renderThemes', icon: '<circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2a10 10 0 0 0 0 20 2 2 0 0 0 2-2v-1a2 2 0 0 1 2-2h2a4 4 0 0 0 4-4 10 10 0 0 0-10-11"/>' },
-    { key: 'security', group: 'system', label: 'Security', sub: 'Emergency controls', perm: 'security.manage', render: 'renderSecurity', icon: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>' },
+    { key: 'security', group: 'system', label: 'Security', sub: 'Posture & emergency controls', perm: 'security.manage', render: 'renderSecurity', icon: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>' },
     { key: 'config', group: 'system', label: 'Site config', sub: 'Feature flags & settings', perm: 'settings.system', render: 'renderConfig', icon: '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>' }
   ],
 
@@ -831,7 +831,13 @@ const PageAdmin = {
     const load = async () => {
       content.replaceChildren(U.el('div', { class: 'spinner' }))
       try {
-        const { controls, context, engaged } = await YumeAPI.admin.security()
+        // The posture is a separate request and must not be able to take the
+        // controls down with it: an operator reaching this page mid-incident
+        // needs the levers whether or not a check can run.
+        const [{ controls, context, engaged }, posture] = await Promise.all([
+          YumeAPI.admin.security(),
+          YumeAPI.admin.posture().catch(e => ({ error: e }))
+        ])
         content.replaceChildren()
 
         // The state of the instance, first and unmissable. An operator opening
@@ -853,6 +859,9 @@ const PageAdmin = {
           U.el('span', { text: `${context?.runs ?? 0} metadata runs in flight` })
         ]))
 
+        content.append(this.postureBlock(posture))
+
+        content.append(U.el('h3', { class: 'sec-heading', text: 'Controls' }))
         for (const c of controls) content.append(this.securityControl(c, load))
 
         content.append(this.revokeAllCard(load))
@@ -861,6 +870,75 @@ const PageAdmin = {
       }
     }
     await load()
+  },
+
+  /**
+   * What the instance's own checks found.
+   *
+   * The score is arithmetic — passing weight over applicable weight — and
+   * every row says what it inspected, so a reader can go and look at the same
+   * thing instead of trusting a colour. That is the whole difference between
+   * this and a number somebody made up.
+   */
+  postureBlock (posture) {
+    if (posture?.error) {
+      return U.el('div', { class: 'sec-posture' }, [
+        U.el('h3', { class: 'sec-heading', text: 'Posture' }),
+        C.errorState(posture.error)
+      ])
+    }
+    const { checks = [], summary = {}, generatedAt } = posture ?? {}
+    const tone = summary.fail ? 'bad' : summary.warn ? 'warn' : 'good'
+
+    const head = U.el('div', { class: 'sec-score ' + tone }, [
+      U.el('div', { class: 'sec-score-value', text: summary.score === null ? '—' : `${summary.score}%` }),
+      U.el('div', { class: 'sec-score-side' }, [
+        U.el('div', { class: 'sec-score-counts' }, [
+          U.el('span', { class: 'tone-green', text: `${summary.pass ?? 0} passing` }),
+          summary.warn ? U.el('span', { class: 'tone-amber', text: `${summary.warn} warning` }) : null,
+          summary.fail ? U.el('span', { class: 'tone-red', text: `${summary.fail} failing` }) : null,
+          summary.unknown ? U.el('span', { class: 'tone-red', text: `${summary.unknown} unknown` }) : null,
+          summary.skipped ? U.el('span', { text: `${summary.skipped} not applicable` }) : null
+        ]),
+        // Said out loud, because the number is only worth what is behind it.
+        U.el('p', {
+          class: 'sec-score-note',
+          text: `Passing weight over applicable weight across ${checks.length} checks. Checks that cannot apply here are left out of the total.`
+        })
+      ])
+    ])
+
+    const rows = []
+    let group = null
+    // Failures first within each group: the reason somebody opened this page.
+    const order = { fail: 0, unknown: 1, warn: 2, pass: 3, skipped: 4 }
+    for (const c of [...checks].sort((a, b) =>
+      a.group.localeCompare(b.group) || (order[a.verdict] - order[b.verdict]))) {
+      if (c.group !== group) {
+        group = c.group
+        rows.push(U.el('div', { class: 'sec-check-group', text: group }))
+      }
+      rows.push(U.el('div', { class: 'sec-check v-' + c.verdict }, [
+        U.el('span', { class: 'sec-check-verdict', text: c.verdict }),
+        U.el('div', { class: 'sec-check-body' }, [
+          U.el('div', { class: 'sec-check-title', text: c.title }),
+          U.el('div', { class: 'sec-check-found', text: c.found }),
+          c.remedy ? U.el('div', { class: 'sec-check-remedy', text: c.remedy }) : null,
+          U.el('code', { class: 'sec-check-looks', text: c.looksAt, title: c.looksAt })
+        ])
+      ]))
+    }
+
+    return U.el('div', { class: 'sec-posture' }, [
+      U.el('h3', { class: 'sec-heading' }, [
+        document.createTextNode('Posture'),
+        generatedAt
+          ? U.el('span', { class: 'sec-heading-when', text: U.relTime(new Date(generatedAt)) })
+          : null
+      ]),
+      head,
+      U.el('div', { class: 'sec-checks' }, rows)
+    ])
   },
 
   securityControl (c, reload) {
