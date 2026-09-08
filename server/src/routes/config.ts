@@ -6,6 +6,7 @@
 
 import { query, queryOne } from '../db.ts'
 import { settings as siteSettings } from '../lib/site-settings.ts'
+import { flags as featureFlags } from '../lib/feature-flags.ts'
 import { configured as passwordResetConfigured } from '../lib/reset-delivery.ts'
 import { invalidateThresholds } from '../lib/thresholds.ts'
 import { PREFERENCES } from '../lib/preferences.ts'
@@ -128,6 +129,12 @@ export const adminConfig: FastifyPluginAsync = async fastify => {
       params
     )
     if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    // The flags are cached for the request path that enforces them, so without
+    // this a switch thrown in the panel sat inert until the TTL expired — the
+    // same defect the settings cache had, and the reason "Saved" has to mean
+    // "in effect".
+    featureFlags.invalidate()
 
     void emitEvent('config.changed', {
       key: `flag:${key}`,

@@ -1,0 +1,34 @@
+-- ============================================================================
+-- 0033 — Remove the switches that switch nothing
+-- ============================================================================
+-- `feature_flags` is projected to the client and drawn in the admin panel as a
+-- toggle. A row in it is a promise that flipping it changes something. Three
+-- of them could not keep that promise.
+--
+--   feature.reviews       — there is no review API, no review route and no
+--   feature.custom_lists    review or custom-list UI anywhere in the client.
+--                           The tables exist and are kept (reports reference
+--                           `review` as a subject type, and profile queries
+--                           count them), but a toggle for an interface nobody
+--                           has written is a control that lies about what it
+--                           did. When the feature is built, the flag comes
+--                           back with the code that honours it.
+--
+--   feature.registration  — a duplicate. `site_settings.registration_open` is
+--                           the switch that closes registration, it is enforced
+--                           in routes/auth.ts, and it is what the admin panel's
+--                           Settings section edits. Two switches for one
+--                           behaviour means one of them is wrong at any moment,
+--                           and this was the one nothing read.
+--
+-- The rest of the catalogue stays and is now enforced on the server as well as
+-- the client — see lib/feature-flags.ts and the requireFeature() hook.
+--
+-- Deleting a row is safe in both directions: lib/feature-flags.ts treats a
+-- missing key as "on", so an instance that has already run this behaves
+-- exactly as it did with the flag enabled, which is what every instance has,
+-- since nothing consulted them.
+-- ============================================================================
+
+DELETE FROM feature_flags
+ WHERE key IN ('feature.reviews', 'feature.custom_lists', 'feature.registration');

@@ -9,7 +9,13 @@ const PageHome = {
 
     const hero = U.el('div', { class: 'hero' })
     const sections = U.el('div')
-    root.append(hero, sections)
+    // The page's name, for anybody who cannot see the hero.
+    //
+    // Home had no h1 at all when there was nothing to feature — a fresh
+    // instance, a failed fetch — and when there was, the h1 was the featured
+    // title, which names an item rather than the page. Visually hidden because
+    // the hero already says where you are to anybody who can see it.
+    root.append(U.el('h1', { class: 'sr-only', text: window.App?.config?.site?.name ?? 'Yume' }), hero, sections)
 
     // sections, same order/variables as the original home page
     const defs = [
@@ -128,7 +134,10 @@ const PageHome = {
 
     hero.append(
       U.el('div', { class: 'hero-content' }, [
-        U.el('h1', { class: 'hero-title', text: U.title(media) }),
+        // h2, not h1: the hero is the page's most prominent *content*, not its
+        // name, and it only exists when there is something to feature. The
+        // page's own h1 is added below and is always there.
+        U.el('h2', { class: 'hero-title', text: U.title(media) }),
         metaRow,
         U.el('p', { class: 'hero-desc', text: U.plainDesc(media.description) }),
         (media.genres ?? []).length

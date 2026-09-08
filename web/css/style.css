@@ -1736,6 +1736,21 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* Present to a screen reader, absent to everybody else.
+   Not `display: none` and not `visibility: hidden` — both remove the element
+   from the accessibility tree as well, which is the opposite of the point. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
 .page-title-tick { display: flex; align-items: center; gap: .6rem; }
 .page-title {
   font-size: var(--text-2xl);

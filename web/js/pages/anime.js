@@ -185,7 +185,11 @@ const PageAnime = {
     ))
 
     // trailer (clapperboard)
-    if (media.trailer?.id) {
+    //
+    // `feature.trailers` was a flag nothing read: an operator turning trailers
+    // off — because the embeds reach a third party — kept getting them. The
+    // switch is the whole reason the row exists.
+    if (media.trailer?.id && (!window.App || window.App.featureOn('trailers'))) {
       actions.append(iconBtn(
         U.svg('<path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1-.3 2.1.3 2.4 1.3Z"/><path d="m6.2 5.3 3.1 3.9"/><path d="m12.4 3.4 3.1 4"/><path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>', 15),
         'Trailer',

@@ -416,6 +416,9 @@ const C = {
   // ---- per-anime comment section (detail page) ----
   commentsSection (media) {
     const wrap = U.el('div')
+    // The switch is enforced on the server too now — routes/comments.ts refuses
+    // every endpoint when the flag is off — so this says so rather than
+    // drawing a thread whose requests would 404.
     if (window.App && !window.App.featureOn('comments')) {
       return U.el('div', { class: 'empty-state', style: 'max-width:none;', text: T('Comments are turned off.') })
     }

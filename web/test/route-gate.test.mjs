@@ -213,7 +213,26 @@ describe('what the refusal says', () => {
   it('answers a privileged route as "not found", naming no permission', () => {
     // A 403 that names the missing grant is a map for somebody probing: it
     // confirms the panel exists and says which permission to go after.
-    assert.match(source, /PRIVILEGED\.includes\(route\)[\s\S]{0,400}Page not found/)
+    //
+    // Matched on the branch condition rather than on how far apart two strings
+    // happen to sit: the two cases that must look identical — a route that
+    // does not exist, and a privileged route this viewer may not open — are
+    // rendered from one branch precisely so they cannot drift apart, and a
+    // distance assertion broke the moment that branch grew a second condition.
+    const branch = source.match(/gate\.kind === 'not-found'[^{]*\{([\s\S]*?)\n {4}\} else/)
+    assert.ok(branch, 'the shared not-found branch is gone')
+    // Comments are allowed to discuss permissions — explaining why one is not
+    // named is the point of them. What must not appear is the value.
+    const rendered = branch[1].split('\n').filter(l => !l.trim().startsWith('//')).join('\n')
+    assert.match(rendered, /Page not found/)
+    assert.doesNotMatch(rendered, /gate\.flag/, 'the refusal reached for the flag it must not name')
+  })
+
+  it('renders an address with no page behind it as not found, not as home', () => {
+    // Falling back to the home page made every dead deep link — a renamed
+    // route, a typo, a stale bookmark — look like it had worked.
+    assert.match(source, /const handler = this\.routes\[route\]\s*\n\s{4}if \(!handler\)/)
+    assert.doesNotMatch(source, /this\.routes\[route\] \?\? this\.routes\.home/)
   })
 
   it('still names the permission for an ordinary gated page', () => {
