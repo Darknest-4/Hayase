@@ -66,7 +66,13 @@ describe('API integration', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => 
     test('errors use the problem+json shape', async () => {
       const res = await app.inject({ url: '/v1/anime/by-anilist/999999999' })
       assert.equal(res.statusCode, 404)
-      assert.deepEqual(Object.keys(res.json() as object).sort(), ['status', 'title', 'type'])
+      // `code` and `instance` joined the contract deliberately: without them a
+      // failure is neither reportable by the person who hit it nor findable by
+      // the operator they report it to. See lib/error-codes.ts.
+      assert.deepEqual(Object.keys(res.json() as object).sort(), ['code', 'instance', 'status', 'title', 'type'])
+      const body = res.json() as { code: string, instance: string }
+      assert.equal(body.code, 'YUME-API-404')
+      assert.ok(body.instance)
     })
   })
 

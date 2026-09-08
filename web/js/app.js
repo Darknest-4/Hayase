@@ -99,7 +99,9 @@ const App = {
     try {
       await handler(page, params, arg) // async pages (e.g. admin) finish before the footer lands
     } catch (e) {
-      page.replaceChildren(U.el('div', { class: 'error-state', text: T('Something went wrong: ') + e.message }))
+      // Every page that throws lands here, so this one call is what puts the
+      // code and the request id in front of a viewer on any route.
+      page.replaceChildren(C.errorState(e, () => this.navigate()))
     }
 
     // a newer navigation superseded us while an async handler was in flight

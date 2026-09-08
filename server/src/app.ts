@@ -16,6 +16,7 @@ import { GraphQLError, type ValidationRule } from 'graphql'
 
 import { config } from './config.ts'
 import { query } from './db.ts'
+import { errorCode } from './lib/error-codes.ts'
 import { recordError } from './lib/errors.ts'
 import { settings as siteSettings } from './lib/site-settings.ts'
 import { schema, resolvers, loaders } from './graphql/schema.ts'
@@ -146,28 +147,77 @@ export async function buildApp (): Promise<FastifyInstance> {
    * unauthenticated caller could read database error text, SQL state codes and
    * the offending value straight out of a 500.
    */
+  /*
+   * Every failure carries a code and the id that identifies it.
+   *
+   * The error handler below only sees errors that were *thrown*. Most of this
+   * codebase's refusals are returned instead — `reply.code(404).send({...})`
+   * for a hidden admin route, a 401 for a bad password, a 400 for a bad body —
+   * and those went out with neither, so the two things a person needs in order
+   * to report a failure were present on some of them and absent from most.
+   *
+   * Doing it on the way out is the only place that sees both kinds. The cost
+   * is one parse per failed response and nothing at all on a successful one.
+   *
+   * Existing fields win: a handler that has already said `code` or `instance`
+   * meant it.
+   */
+  app.addHook('onSend', async (request, reply, payload) => {
+    if (reply.statusCode < 400) return payload
+    if (typeof payload !== 'string' || !payload.startsWith('{')) return payload
+    const type = String(reply.getHeader('content-type') ?? '')
+    if (!type.includes('json')) return payload
+
+    try {
+      const body = JSON.parse(payload) as Record<string, unknown>
+      // Only problem documents. A route that answers 4xx with its own domain
+      // shape is not ours to rewrite.
+      if (typeof body.status !== 'number' || typeof body.title !== 'string') return payload
+      if (body.code !== undefined && body.instance !== undefined) return payload
+
+      body.instance ??= request.id
+      body.code ??= errorCode(request.routeOptions?.url ?? request.url, reply.statusCode)
+      return JSON.stringify(body)
+    } catch {
+      // Unparseable, or not ours. Send it exactly as it was.
+      return payload
+    }
+  })
+
   app.setErrorHandler((error: FastifyError, request, reply) => {
     // Some throwers — the rate limiter's errorResponseBuilder among them —
     // reject with a plain object already in this app's problem+json shape
     // rather than an Error carrying statusCode. Passing those through
     // unchanged keeps their status: reading only `statusCode` turned every
     // 429 into a 500.
+    // The route *pattern* where Fastify has one — /v1/anime/:id rather than
+    // the id somebody happened to pass — so the same fault yields the same
+    // code whatever it was called with.
+    const route = request.routeOptions?.url ?? request.url
+
     const shaped = error as unknown as { status?: number, title?: string, detail?: string, type?: string }
     if (typeof shaped.status === 'number' && typeof shaped.title === 'string') {
       return reply.code(shaped.status).type('application/problem+json')
-        .send({ ...shaped, instance: request.id })
+        .send({ ...shaped, instance: request.id, code: errorCode(route, shaped.status) })
     }
 
     const status = error.statusCode ?? 500
+    const code = errorCode(route, status)
     if (status >= 500) {
       request.log.error(error)
       // Persist it so the admin error view reflects reality. Fire-and-forget:
       // the response must not wait on telemetry, and a telemetry failure must
       // never replace the error the caller actually hit.
+      //
+      // `requestId` is what makes the id in the response body worth quoting:
+      // without it the message asked a user to carry a number that led
+      // nowhere, because the occurrence an operator can search did not have it.
       void recordError('api', error, {
-        route: request.routeOptions?.url ?? request.url,
+        route,
         method: request.method,
         statusCode: status,
+        code,
+        requestId: request.id,
         userId: (request.user as { sub?: string } | undefined)?.sub
       })
     }
@@ -178,7 +228,8 @@ export async function buildApp (): Promise<FastifyInstance> {
       // A 5xx body must not leak internals, but it can carry the id that ties
       // the report to the log line and the recorded error group.
       detail: status >= 500 ? `Request ${request.id} failed — quote this id when reporting it` : error.message,
-      instance: request.id
+      instance: request.id,
+      code
     })
   })
 

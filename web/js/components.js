@@ -591,6 +591,55 @@ const C = {
   },
 
   /**
+   * A failure the reader can do something about.
+   *
+   * The message alone is not reportable and not searchable. The server has
+   * always answered with a stable code and a request id — YumeAPI attaches
+   * both to the Error — and this is where they reach a person: shown, and
+   * copyable in one press, because the realistic path is somebody pasting them
+   * into a message to whoever runs the instance.
+   *
+   * Both are optional. A failure that never reached the server — offline, a
+   * client bug — has neither, and renders as the message it always did rather
+   * than as a box with two empty fields.
+   */
+  errorState (error, onRetry) {
+    const message = typeof error === 'string' ? error : (error?.message ?? String(error))
+    const code = typeof error === 'object' ? error?.code : null
+    const requestId = typeof error === 'object' ? error?.requestId : null
+
+    const box = U.el('div', { class: 'error-state' }, [
+      U.el('div', { class: 'error-state-msg', text: message })
+    ])
+
+    if (code || requestId) {
+      const line = [code, requestId].filter(Boolean).join(' · ')
+      box.append(U.el('button', {
+        class: 'error-state-ref',
+        type: 'button',
+        title: T('Copy so you can report it'),
+        onclick: () => {
+          navigator.clipboard?.writeText(line)
+            .then(() => U.toast(T('Copied')))
+            .catch(() => U.toast(T('Could not copy'), 'error'))
+        }
+      }, [
+        U.el('span', { class: 'error-state-ref-text', text: line }),
+        U.el('span', { class: 'error-state-ref-hint', text: T('copy') })
+      ]))
+    }
+
+    if (onRetry) {
+      box.append(U.el('button', {
+        class: 'btn btn-secondary btn-sm',
+        style: 'margin-top:.6rem;',
+        onclick: onRetry
+      }, [document.createTextNode(T('Try again'))]))
+    }
+    return box
+  },
+
+  /**
    * A modal you read rather than fill in.
    *
    * modalShell() below always draws a Save button, because every caller it was

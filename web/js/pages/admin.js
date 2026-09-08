@@ -382,12 +382,47 @@ const PageAdmin = {
     const list = U.el('div', { class: 'err-list' })
     const detail = U.el('div', { class: 'err-detail' })
 
+    /*
+     * Look up the failure somebody is quoting.
+     *
+     * A 500 tells the caller "Request <id> failed — quote this id when
+     * reporting it". This is where it gets quoted to. Before the id was
+     * recorded on the occurrence, that sentence sent people to an operator
+     * with no way to search for the number they were carrying.
+     */
+    const lookup = U.el('input', {
+      class: 'input',
+      type: 'search',
+      placeholder: 'Paste a request id…',
+      style: 'max-width:22rem;',
+      'aria-label': 'Find a failure by request id',
+      onkeydown: async e => {
+        if (e.key !== 'Enter') return
+        const id = e.target.value.trim()
+        if (!id) return
+        detail.replaceChildren(U.el('div', { class: 'spinner' }))
+        try {
+          const { occurrence, group } = await YumeAPI.admin.errorByRequest(id)
+          if (group) { await showDetail(group) } else { detail.replaceChildren() }
+          // The occurrence is what happened to that person at that moment; the
+          // group above is whether it is happening to everybody.
+          detail.prepend(U.el('div', { class: 'err-lookup-hit' }, [
+            U.el('div', { class: 'err-lookup-line', text: `${occurrence.context?.code ?? 'no code'} · ${occurrence.context?.method ?? ''} ${occurrence.context?.route ?? ''}`.trim() }),
+            U.el('time', { class: 'err-lookup-when', text: new Date(occurrence.created_at).toLocaleString() })
+          ]))
+        } catch (err) {
+          detail.replaceChildren(C.errorState(err))
+        }
+      }
+    })
+
     const bar = U.el('div', { class: 'admin-toolbar' }, [
       U.el('select', {
         class: 'select',
         onchange: e => { state.status = e.target.value; load() }
       }, [['open', 'Open'], ['all', 'All'], ['resolved', 'Resolved'], ['ignored', 'Ignored']].map(([v, l]) =>
-        U.el('option', { value: v, text: l, selected: v === state.status })))
+        U.el('option', { value: v, text: l, selected: v === state.status }))),
+      lookup
     ])
 
     const showDetail = async group => {
