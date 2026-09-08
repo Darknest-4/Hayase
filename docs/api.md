@@ -113,6 +113,33 @@ One service, two protocols over the same service layer:
 | GET | `/v1/admin/catalogue/duplicates` | proposed duplicate pairs (`anime.merge`) |
 | POST | `/v1/admin/catalogue/:id/merge` | merge another entry into this one — irreversible (`anime.merge`) |
 
+### Errors
+
+Every failure answers `application/problem+json` and carries two fields
+beyond the RFC-9457 basics:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Internal Server Error",
+  "status": 500,
+  "detail": "Request 8b3ded03-… failed — quote this id when reporting it",
+  "instance": "8b3ded03-f31f-4960-b9e6-53adf34f2f38",
+  "code": "YUME-CATALOGUE-500"
+}
+```
+
+`code` is derived from the route and the status, not enumerated — a new route
+gets a correct code the day it is written and nobody maintains a registry that
+can rot. `instance` is the request id, and it is recorded on the error
+occurrence, so `GET /v1/admin/errors/by-request/:requestId` finds the failure a
+user is quoting (permission `admin.analytics.view`).
+
+One deliberate exception: **a 404 is always `YUME-API-404`**. The admin surface
+answers 404 rather than 403 so an account without permission cannot tell a
+route it may not open from one that does not exist, and a code naming the
+component would hand that back on the very reply meant to hide it.
+
 ### Outbound webhooks
 Admin-configured endpoints subscribe per-event. Discord URLs receive rich
 embeds; generic JSON endpoints receive this envelope:

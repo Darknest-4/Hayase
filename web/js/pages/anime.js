@@ -1,4 +1,4 @@
-/* global window, document, U, C, Catalogue, Store, T, I18n */
+/* global App, window, document, U, C, Catalogue, Store, T, I18n */
 // Anime detail page — faithful to the original Hayase layout:
 // content scrolls over the global banner; cover bottom-aligned next to a
 // huge title; chips tinted with the cover's dominant color (score chip
@@ -43,6 +43,11 @@ const PageAnime = {
     const romaji = media.title?.romaji ?? ''
     const native = media.title?.native ?? ''
     const mainTitle = U.title(media)
+    // Name the browser tab after the show. The server already does this in the
+    // served <title> for anything that is not a browser (routes/seo.ts); the
+    // client has to repeat it because the router replaces the title on every
+    // navigation.
+    App.setTitle(mainTitle)
     const secondary = romaji.toLowerCase().trim() === mainTitle.toLowerCase().trim() ? native : romaji
 
     const entry = Store.entry(media.id)

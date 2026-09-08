@@ -630,6 +630,59 @@ const routes: FastifyPluginAsync = async fastify => {
     return { data: await errorGroups(status ?? 'open', limit ?? 50) }
   })
 
+  /**
+   * Find the failure a user is quoting.
+   *
+   * A 500 tells the caller "Request <id> failed — quote this id when reporting
+   * it". This is where they quote it to. Without this route that sentence sent
+   * people to an operator who had no way to look the number up: it reached the
+   * response body and the log line, and the stored occurrence — the only thing
+   * searchable — did not carry it.
+   *
+   * Returns the occurrence *and* its group, because the two answer different
+   * halves: the occurrence is what happened to that person at that moment, the
+   * group is whether it is happening to everybody.
+   */
+  fastify.get('/errors/by-request/:requestId', {
+    onRequest: fastify.requirePermission('admin.analytics.view', { hide: true }),
+    schema: {
+      params: {
+        type: 'object',
+        required: ['requestId'],
+        // Fastify's ids are uuids by default, but a deployment behind a proxy
+        // may pass its own through, so this is a loose shape rather than a
+        // uuid format — an id that cannot match simply finds nothing.
+        properties: { requestId: { type: 'string', minLength: 4, maxLength: 200 } }
+      }
+    }
+  }, async (request, reply) => {
+    const { requestId } = request.params as { requestId: string }
+
+    const occurrence = await queryOne(
+      `SELECT e.id, e.source, e.message, e.stack, e.context, e.created_at, e.group_id
+         FROM error_logs e
+        WHERE e.context->>'requestId' = $1
+        ORDER BY e.created_at DESC
+        LIMIT 1`,
+      [requestId]
+    )
+    if (!occurrence) {
+      return reply.code(404).send({
+        type: 'about:blank',
+        title: 'Not Found',
+        status: 404,
+        detail: 'No recorded failure carries that request id'
+      })
+    }
+
+    const group = await queryOne(
+      `SELECT id, fingerprint, title, status, event_count, first_seen, last_seen
+         FROM error_groups WHERE id = $1`,
+      [(occurrence as { group_id: string }).group_id]
+    )
+    return { occurrence, group }
+  })
+
   fastify.get('/errors/:id', {
     onRequest: fastify.requirePermission('admin.analytics.view', { hide: true }),
     schema: {

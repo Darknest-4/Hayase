@@ -12,6 +12,7 @@
 // these read the last stored snapshot, so polling them is cheap.
 
 import { query, queryOne } from '../db.ts'
+import { components } from '../lib/components.ts'
 import { activeAlerts, alertHistory } from '../lib/alerts.ts'
 import { isRunning } from '../lib/diagnostics.ts'
 import { overall, probeAll } from '../lib/probes.ts'
@@ -251,6 +252,19 @@ export const adminMonitoring: FastifyPluginAsync = async fastify => {
     if (!run) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
     return run
   })
+
+  /**
+   * What this platform is made of, and whether each part is working.
+   *
+   * Every component measures something real; a component that cannot be
+   * measured says `unknown` rather than `operational`. See lib/components.ts —
+   * the whole design is about not inventing a status, because a page that
+   * answers "is it working" wrongly is worse than one that does not answer.
+   *
+   * Not cached, for the same reason the security posture is not: a stale
+   * health page is wrong exactly when somebody is relying on it.
+   */
+  fastify.get('/components', async () => components())
 
   /** Job queue health — depth, dead letters and recent failures. */
   fastify.get('/queues', async () => {

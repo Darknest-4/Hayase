@@ -25,6 +25,10 @@ services:
       # Only the Docker network may set X-Forwarded-For. Never `true`: that
       # trusts the header from anyone and makes rate limiting bypassable.
       TRUST_PROXY: ${TRUST_PROXY:-172.16.0.0/12}
+      # This site's public address. Used for the canonical link, the Open Graph
+      # URL and the Sitemap: line in robots.txt. Leave it unset and those are
+      # built from the Host header, which the caller chooses — see docs/seo.md.
+      PUBLIC_URL: ${PUBLIC_URL:-}
     # Not published: caddy is the only way in. Expose it again only if you are
     # running without the proxy and know the request is already on a trusted
     # network.

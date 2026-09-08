@@ -21,6 +21,18 @@ export interface ErrorContext {
   queue?: string | undefined
   jobId?: string | undefined
   userId?: string | undefined
+  /**
+   * The id the caller was shown.
+   *
+   * A 500 tells the caller "Request <id> failed — quote this id when reporting
+   * it", and until this field existed there was nowhere to quote it *to*: the
+   * id reached the response body and the log line, and the stored occurrence —
+   * the one thing an operator can search — did not have it. So the sentence
+   * asked a user to carry a number that led nowhere.
+   */
+  requestId?: string | undefined
+  /** The stable code shown alongside it, e.g. YUME-CATALOGUE-500. */
+  code?: string | undefined
 }
 
 /**

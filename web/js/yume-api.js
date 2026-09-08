@@ -73,8 +73,30 @@ const YumeAPI = {
 
     if (res.status === 204) return null
     const json = await res.json().catch(() => null)
-    if (!res.ok) throw new Error(json?.detail ?? json?.title ?? `API ${res.status}`)
+    if (!res.ok) throw this._apiError(json, res.status)
     return json
+  },
+
+  /**
+   * The failure, with the two things a person can act on attached.
+   *
+   * This used to be `new Error(detail)` and nothing else. The server has
+   * always answered a 500 with "Request <id> failed — quote this id when
+   * reporting it" and a problem+json body carrying that id, and the client
+   * dropped it on the floor: the message reached the screen, the id did not,
+   * so nobody could quote anything and no operator could look anything up.
+   *
+   * `code` is the stable part (YUME-CATALOGUE-500 — which component, which
+   * class of failure) and `requestId` is the specific one. Both are properties
+   * rather than text in the message, so a caller that wants to render them
+   * separately can, and one that just prints `e.message` is no worse off.
+   */
+  _apiError (problem, status) {
+    const error = new Error(problem?.detail ?? problem?.title ?? `API ${status}`)
+    error.status = status
+    if (problem?.code) error.code = problem.code
+    if (problem?.instance) error.requestId = problem.instance
+    return error
   },
 
   async _refresh () {
@@ -548,6 +570,9 @@ const YumeAPI = {
       history: (metric, hours = 24) => YumeAPI._request(`/v1/admin/monitoring/history?metric=${encodeURIComponent(metric)}&hours=${hours}`, { auth: true }),
       thresholds: () => YumeAPI._request('/v1/admin/monitoring/thresholds', { auth: true }),
       queues: () => YumeAPI._request('/v1/admin/monitoring/queues', { auth: true }),
+      // The component registry: what the platform is made of, what each part
+      // depends on, and a measured status for each.
+      components: () => YumeAPI._request('/v1/admin/monitoring/components', { auth: true }),
       alerts: () => YumeAPI._request('/v1/admin/monitoring/alerts', { auth: true }),
       diagnostics: () => YumeAPI._request('/v1/admin/monitoring/diagnostics', { auth: true }),
       diagnostic: id => YumeAPI._request('/v1/admin/monitoring/diagnostics/' + id, { auth: true }),
@@ -614,11 +639,17 @@ const YumeAPI = {
     // error triage — list groups, open one for its stack, change its status
     errors: (status = 'open') => YumeAPI._request(`/v1/admin/errors?status=${status}&limit=100`, { auth: true }),
     error: id => YumeAPI._request(`/v1/admin/errors/${id}`, { auth: true }),
+    // Look up the failure a user is quoting. The 500 they saw told them to
+    // quote the request id; this is where it is quoted to.
+    errorByRequest: requestId =>
+      YumeAPI._request(`/v1/admin/errors/by-request/${encodeURIComponent(requestId)}`, { auth: true }),
     setErrorStatus: (id, status) => YumeAPI._request(`/v1/admin/errors/${id}`, { method: 'PATCH', auth: true, body: { status } }),
 
     // Emergency controls. Each switch has an enforcement point in the server
     // and the GET says which — see server/src/routes/security.ts.
     security: () => YumeAPI._request('/v1/admin/security', { auth: true }),
+    // The posture: every entry inspects something and says what it found.
+    posture: () => YumeAPI._request('/v1/admin/security/posture', { auth: true }),
     setControl: (key, value, reason) =>
       YumeAPI._request(`/v1/admin/security/${encodeURIComponent(key)}`, {
         method: 'POST', auth: true, body: { value, reason }
