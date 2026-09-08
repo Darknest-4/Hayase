@@ -9,7 +9,8 @@
 // the mapping/upsert can be unit-tested without touching the network.
 
 import { pool, transaction } from '../../infrastructure/database/index.ts'
-import { resolveFields, applyResolution, CURRENT_COLUMNS, type CurrentRow } from '../../modules/catalogue/metadata.ts'
+import { resolveFields, CURRENT_COLUMNS, type CurrentRow } from '../../modules/catalogue/metadata.ts'
+import { applyResolution } from '../../modules/catalogue/metadata-repository.ts'
 
 import type pg from 'pg'
 

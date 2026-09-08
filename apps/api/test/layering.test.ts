@@ -116,8 +116,13 @@ describe('database access', () => {
 describe('modules that have a repository use it', () => {
   const SQL = /\b(SELECT|INSERT INTO|UPDATE|DELETE FROM)\s/
 
+  // `repository.ts`, or `<aggregate>-repository.ts` for a module big enough
+  // that one file would be unreadable — the catalogue has two, one for anime
+  // and one for episodes and what hangs off them.
+  const isRepository = (rel: string): boolean => /^modules\/[^/]+\/[a-z-]*repository\.ts$/.test(rel)
+
   const withRepository = [...new Set(
-    files.filter(f => /^modules\/[^/]+\/repository\.ts$/.test(f.rel)).map(f => f.rel.split('/')[1] as string)
+    files.filter(f => isRepository(f.rel)).map(f => f.rel.split('/')[1] as string)
   )]
 
   test('at least one module has one, or this file asserts nothing', () => {
@@ -127,7 +132,7 @@ describe('modules that have a repository use it', () => {
   for (const name of withRepository) {
     test(`${name}: no SQL outside its repository`, () => {
       const offenders = files
-        .filter(f => f.rel.startsWith(`modules/${name}/`) && !f.rel.endsWith('/repository.ts'))
+        .filter(f => f.rel.startsWith(`modules/${name}/`) && !isRepository(f.rel))
         .filter(f => {
           // Comments are allowed to discuss SQL; only code counts.
           const code = f.source

@@ -4,11 +4,13 @@
 // and, unlike the public /v1/anime routes, these see hidden entries so
 // operators can find and restore them.
 
-import { query, queryOne, pool, transaction } from '../../infrastructure/database/index.ts'
+import { pool, transaction } from '../../infrastructure/database/index.ts'
+import { catalogueAdminRepository as catalogue } from './admin-repository.ts'
 import { audit } from '../audit/audit.ts'
 import { enqueue } from '../../infrastructure/queue/index.ts'
 import { activeRun, coverage, requestCancel, startRun, RunInProgress } from '../metadata/worker.ts'
-import { findDuplicates, lockFields, mergeAnime, unlockFields, MANAGED_FIELDS } from './metadata.ts'
+import { MANAGED_FIELDS } from './metadata.ts'
+import { findDuplicates, lockFields, mergeAnime, unlockFields } from './metadata-repository.ts'
 import { emitEvent } from '../webhooks/delivery.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
@@ -149,23 +151,11 @@ const routes: FastifyPluginAsync = async fastify => {
     if (visibility) { params.push(visibility); where.push(`a.visibility = $${params.length}`) }
     params.push(limit, offset)
 
-    const rows = await query(
-      `SELECT a.id, a.canonical_title, a.format, a.status, a.season, a.season_year,
-              a.episode_count, a.is_adult, a.visibility, a.updated_at,
-              (SELECT count(*) FROM episodes e WHERE e.anime_id = a.id) AS episode_rows,
-              img.object_key AS cover_key
-       FROM anime a
-       LEFT JOIN anime_images img ON img.anime_id = a.id AND img.kind = 'cover' AND img.is_primary
-       ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-       ORDER BY a.updated_at DESC
-       LIMIT $${params.length - 1} OFFSET $${params.length}`,
-      params
-    )
-    const totalRow = await queryOne<{ n: string }>(
-      `SELECT count(*) AS n FROM anime a ${where.length ? 'WHERE ' + where.join(' AND ') : ''}`,
-      params.slice(0, params.length - 2)
-    )
-    return { data: rows, total: Number(totalRow?.n ?? 0) }
+    const [data, total] = await Promise.all([
+      catalogue.list(where, params),
+      catalogue.count(where, params.slice(0, params.length - 2))
+    ])
+    return { data, total }
   })
 
   // ---- single anime for editing (sees hidden) ----
@@ -173,14 +163,7 @@ const routes: FastifyPluginAsync = async fastify => {
     schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const anime = await queryOne(
-      `SELECT id, canonical_title, format, status, season, season_year, start_date, end_date,
-              episode_count, episode_duration, age_rating, is_adult, synopsis, country,
-              source_material, visibility, popularity, average_score,
-              locked_fields, metadata_sources, created_at, updated_at
-       FROM anime WHERE id = $1`,
-      [id]
-    )
+    const anime = await catalogue.forEditing(id)
     if (!anime) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
     return anime
   })
@@ -198,16 +181,11 @@ const routes: FastifyPluginAsync = async fastify => {
     }
   }, async (request, reply) => {
     const body = request.body as Record<string, unknown>
-    const created = await queryOne<{ id: string, canonical_title: string }>(
-      `INSERT INTO anime (canonical_title, format, status, season, season_year, episode_count,
-                          episode_duration, synopsis, source_material, is_adult, visibility)
-       VALUES ($1, coalesce($2,'TV')::anime_format, coalesce($3,'FINISHED')::anime_status,
-               $4::anime_season, $5, $6, $7, $8, $9, coalesce($10,false), coalesce($11,'public'))
-       RETURNING id, canonical_title`,
-      [body.canonical_title, body.format ?? null, body.status ?? null, body.season ?? null,
-        body.season_year ?? null, body.episode_count ?? null, body.episode_duration ?? null,
-        body.synopsis ?? null, body.source_material ?? null, body.is_adult ?? null, body.visibility ?? null]
-    )
+    const created = await catalogue.create([
+      body.canonical_title, body.format ?? null, body.status ?? null, body.season ?? null,
+      body.season_year ?? null, body.episode_count ?? null, body.episode_duration ?? null,
+      body.synopsis ?? null, body.source_material ?? null, body.is_adult ?? null, body.visibility ?? null
+    ])
     await audit(request.user.sub, 'anime.create', 'anime', created?.id ?? null, null, { title: created?.canonical_title })
     void emitEvent('catalogue.changed', { action: 'created', title: created?.canonical_title, by: request.user.username })
     return reply.code(201).send(created)
@@ -227,11 +205,7 @@ const routes: FastifyPluginAsync = async fastify => {
     if (!upd) return reply.code(400).send({ type: 'about:blank', title: 'Bad Request', status: 400, detail: 'No editable fields provided' })
 
     upd.values.push(id)
-    const row = await queryOne<{ id: string, canonical_title: string, visibility: string }>(
-      `UPDATE anime SET ${upd.sql} WHERE id = $${upd.values.length}
-       RETURNING id, canonical_title, visibility`,
-      upd.values
-    )
+    const row = await catalogue.update(upd)
     if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
 
     // A human just set these values: lock them so the AniList importer and any
@@ -251,7 +225,7 @@ const routes: FastifyPluginAsync = async fastify => {
     schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const row = await queryOne<{ canonical_title: string }>('DELETE FROM anime WHERE id = $1 RETURNING canonical_title', [id])
+    const row = await catalogue.remove(id)
     if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
     await audit(request.user.sub, 'anime.delete', 'anime', id, { title: row.canonical_title }, null)
     void emitEvent('catalogue.changed', { action: 'deleted', title: row.canonical_title, by: request.user.username })
@@ -263,22 +237,12 @@ const routes: FastifyPluginAsync = async fastify => {
     schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const exists = await queryOne('SELECT 1 FROM anime WHERE id = $1', [id])
-    if (!exists) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    if (!await catalogue.exists(id)) {
+      return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    }
     // Deliberately unfiltered: the admin list exists to show staff what is
     // NOT published, so filtering it would hide exactly what they came for.
-    const data = await query(
-      `SELECT e.id, e.number, e.absolute_number, e.title, e.synopsis, e.thumbnail_key,
-              e.air_date, e.duration, e.is_filler, e.is_recap, e.visibility,
-              -- Both counts: an episode with three sources of which none is
-              -- enabled is not the same problem as one with no sources at all,
-              -- and the row has to be able to say which it is.
-              (SELECT count(*) FROM video_sources v WHERE v.episode_id = e.id)::int AS source_total,
-              (SELECT count(*) FROM video_sources v WHERE v.episode_id = e.id AND v.enabled)::int AS source_count
-       FROM episodes e WHERE e.anime_id = $1 ORDER BY e.number`,
-      [id]
-    )
-    return { data }
+    return { data: await catalogue.episodes(id) }
   })
 
   fastify.post('/:id/episodes', {
@@ -290,18 +254,16 @@ const routes: FastifyPluginAsync = async fastify => {
   }, async (request, reply) => {
     const { id } = request.params as { id: string }
     const body = request.body as Record<string, unknown>
-    const anime = await queryOne<{ canonical_title: string }>('SELECT canonical_title FROM anime WHERE id = $1', [id])
+    const anime = await catalogue.titleOf(id)
     if (!anime) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
-    const dup = await queryOne('SELECT 1 FROM episodes WHERE anime_id = $1 AND number = $2', [id, body.number])
-    if (dup) return reply.code(409).send({ type: 'about:blank', title: 'Conflict', status: 409, detail: `Episode ${body.number} already exists` })
+    if (await catalogue.episodeNumberTaken(id, body.number)) {
+      return reply.code(409).send({ type: 'about:blank', title: 'Conflict', status: 409, detail: `Episode ${body.number} already exists` })
+    }
 
-    const ep = await queryOne(
-      `INSERT INTO episodes (anime_id, number, absolute_number, title, synopsis, air_date, duration, is_filler, is_recap)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, coalesce($8,false), coalesce($9,false))
-       RETURNING id, number, title, air_date, duration, is_filler, is_recap, visibility`,
-      [id, body.number, body.absolute_number ?? null, body.title ?? null, body.synopsis ?? null,
-        body.air_date ?? null, body.duration ?? null, body.is_filler ?? null, body.is_recap ?? null]
-    )
+    const ep = await catalogue.createEpisode([
+      id, body.number, body.absolute_number ?? null, body.title ?? null, body.synopsis ?? null,
+      body.air_date ?? null, body.duration ?? null, body.is_filler ?? null, body.is_recap ?? null
+    ])
     void emitEvent('catalogue.changed', { action: `+ episode ${body.number}`, title: anime.canonical_title, by: request.user.username })
     return reply.code(201).send(ep)
   })
@@ -318,11 +280,7 @@ const routes: FastifyPluginAsync = async fastify => {
     const upd = buildUpdate(body, Object.keys(EPISODE_FIELDS))
     if (!upd) return reply.code(400).send({ type: 'about:blank', title: 'Bad Request', status: 400, detail: 'No editable fields provided' })
     upd.values.push(eid)
-    const ep = await queryOne(
-      `UPDATE episodes SET ${upd.sql} WHERE id = $${upd.values.length}
-       RETURNING id, anime_id, number, title, air_date, duration, is_filler, is_recap, visibility`,
-      upd.values
-    )
+    const ep = await catalogue.updateEpisode(upd)
     if (!ep) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
 
     // Publishing is an editorial act, and "who put this live" is exactly the
@@ -365,7 +323,7 @@ const routes: FastifyPluginAsync = async fastify => {
     const { id } = request.params as { id: string }
     const { visibility, from, to } = request.body as { visibility: string, from?: number, to?: number }
 
-    const anime = await queryOne<{ canonical_title: string }>('SELECT canonical_title FROM anime WHERE id = $1', [id])
+    const anime = await catalogue.titleOf(id)
     if (!anime) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
 
     const params: unknown[] = [id, visibility]
@@ -373,13 +331,7 @@ const routes: FastifyPluginAsync = async fastify => {
     if (from !== undefined) { params.push(from); bounds.push(`number >= $${params.length}`) }
     if (to !== undefined) { params.push(to); bounds.push(`number <= $${params.length}`) }
 
-    const changed = await query<{ number: number }>(
-      `UPDATE episodes SET visibility = $2, updated_at = now()
-        WHERE anime_id = $1 ${bounds.length ? 'AND ' + bounds.join(' AND ') : ''}
-          AND visibility IS DISTINCT FROM $2
-        RETURNING number`,
-      params
-    )
+    const changed = await catalogue.setEpisodeVisibility(bounds, params)
 
     await audit(request.user.sub, 'episode.visibility', 'anime', id, null, {
       visibility, from: from ?? null, to: to ?? null, count: changed.length
@@ -399,7 +351,7 @@ const routes: FastifyPluginAsync = async fastify => {
     schema: { params: { type: 'object', properties: { eid: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
     const { eid } = request.params as { eid: string }
-    const ep = await queryOne('DELETE FROM episodes WHERE id = $1 RETURNING number', [eid])
+    const ep = await catalogue.removeEpisode(eid)
     if (!ep) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
     return reply.code(204).send()
   })
@@ -421,12 +373,12 @@ const routes: FastifyPluginAsync = async fastify => {
   }, async (request, reply) => {
     const { id } = request.params as { id: string }
     const { fields } = request.body as { fields: string[] }
-    const exists = await queryOne('SELECT 1 FROM anime WHERE id = $1', [id])
-    if (!exists) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    if (!await catalogue.exists(id)) {
+      return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    }
     await unlockFields(pool, id, fields)
     await audit(request.user.sub, 'anime.unlock', 'anime', id, null, { fields })
-    const row = await queryOne('SELECT locked_fields FROM anime WHERE id = $1', [id])
-    return row
+    return catalogue.locksOf(id)
   })
 
   // ---- duplicate detection ----
@@ -467,8 +419,7 @@ const routes: FastifyPluginAsync = async fastify => {
     if (id === sourceId) {
       return reply.code(400).send({ type: 'about:blank', title: 'Bad Request', status: 400, detail: 'Cannot merge an entry into itself' })
     }
-    const both = await query<{ id: string, canonical_title: string }>(
-      'SELECT id, canonical_title FROM anime WHERE id = ANY($1::uuid[])', [[id, sourceId]])
+    const both = await catalogue.pair([id, sourceId])
     if (both.length !== 2) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
 
     await transaction(client => mergeAnime(client, id, sourceId))
@@ -501,17 +452,7 @@ const routes: FastifyPluginAsync = async fastify => {
     const { eid } = request.params as { eid: string }
     // Disabled ones included: this is the editor, and a source taken out of
     // playback is exactly the row somebody came here to fix.
-    const data = await query(
-      `SELECT s.id, s.kind, s.ref, s.title, s.provider, s.resolution, s.language, s.variant,
-              s.enabled, s.priority, s.is_batch, s.size_bytes, s.seeders, s.created_at,
-              u.username AS added_by
-         FROM video_sources s
-         LEFT JOIN users u ON u.id = s.added_by
-        WHERE s.episode_id = $1
-        ORDER BY s.enabled DESC, s.priority, s.created_at`,
-      [eid]
-    )
-    return { data }
+    return { data: await catalogue.sources(eid) }
   })
 
   fastify.post('/episodes/:eid/sources', {
@@ -529,9 +470,7 @@ const routes: FastifyPluginAsync = async fastify => {
     const { eid } = request.params as { eid: string }
     const body = request.body as SourceBody
 
-    const episode = await queryOne<{ id: string, number: number, anime: string }>(
-      `SELECT e.id, e.number, a.canonical_title AS anime
-         FROM episodes e JOIN anime a ON a.id = e.anime_id WHERE e.id = $1`, [eid])
+    const episode = await catalogue.episodeWithAnime(eid)
     if (!episode) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
 
     const bad = badReference(body.kind ?? '', body.ref)
@@ -539,16 +478,11 @@ const routes: FastifyPluginAsync = async fastify => {
 
     let row
     try {
-      row = await queryOne<{ id: string }>(
-        `INSERT INTO video_sources
-           (episode_id, kind, ref, title, provider, resolution, language, variant,
-            enabled, priority, is_batch, added_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, coalesce($9, true), coalesce($10, 0), coalesce($11, false), $12)
-         RETURNING id`,
-        [eid, body.kind, body.ref, body.title ?? null, body.provider ?? null, body.resolution ?? null,
-          body.language ?? null, body.variant ?? null, body.enabled ?? null, body.priority ?? null,
-          body.isBatch ?? null, request.user.sub]
-      )
+      row = await catalogue.addSource([
+        eid, body.kind, body.ref, body.title ?? null, body.provider ?? null, body.resolution ?? null,
+        body.language ?? null, body.variant ?? null, body.enabled ?? null, body.priority ?? null,
+        body.isBatch ?? null, request.user.sub
+      ])
     } catch (err) {
       // (episode_id, kind, ref) is unique — the same link twice is not two
       // sources, and saying so beats a 500.
@@ -580,7 +514,7 @@ const routes: FastifyPluginAsync = async fastify => {
     const body = request.body as SourceBody
 
     if (body.ref !== undefined) {
-      const current = await queryOne<{ kind: string }>('SELECT kind FROM video_sources WHERE id = $1', [sid])
+      const current = await catalogue.sourceKind(sid)
       const bad = badReference(body.kind ?? current?.kind ?? '', body.ref)
       if (bad) return reply.code(400).send({ type: 'about:blank', title: 'Bad Request', status: 400, detail: bad })
     }
@@ -599,8 +533,7 @@ const routes: FastifyPluginAsync = async fastify => {
     if (!sets.length) return reply.code(400).send({ type: 'about:blank', title: 'Bad Request', status: 400, detail: 'No changes' })
     values.push(sid)
 
-    const row = await queryOne<{ id: string, episode_id: string }>(
-      `UPDATE video_sources SET ${sets.join(', ')} WHERE id = $${values.length} RETURNING id, episode_id`, values)
+    const row = await catalogue.updateSource(sets, values)
     if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
 
     await audit(request.user.sub, 'episode.source.edit', 'episode', row.episode_id, null, body as Record<string, unknown>)
@@ -612,8 +545,7 @@ const routes: FastifyPluginAsync = async fastify => {
     schema: { params: { type: 'object', properties: { sid: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
     const { sid } = request.params as { sid: string }
-    const row = await queryOne<{ episode_id: string, provider: string | null }>(
-      'DELETE FROM video_sources WHERE id = $1 RETURNING episode_id, provider', [sid])
+    const row = await catalogue.removeSource(sid)
     if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
     await audit(request.user.sub, 'episode.source.remove', 'episode', row.episode_id,
       { provider: row.provider }, null)
@@ -633,14 +565,7 @@ const routes: FastifyPluginAsync = async fastify => {
     schema: { params: { type: 'object', properties: { eid: { type: 'string', format: 'uuid' } } } }
   }, async request => {
     const { eid } = request.params as { eid: string }
-    const data = await query(
-      `SELECT s.id, s.kind, s.start_sec, s.end_sec, s.votes, u.username AS submitted_by
-         FROM skip_segments s
-         LEFT JOIN users u ON u.id = s.submitted_by
-        WHERE s.episode_id = $1 ORDER BY s.kind, s.votes DESC`,
-      [eid]
-    )
-    return { data }
+    return { data: await catalogue.skips(eid) }
   })
 
   fastify.post('/episodes/:eid/skips', {
@@ -668,14 +593,11 @@ const routes: FastifyPluginAsync = async fastify => {
         type: 'about:blank', title: 'Bad Request', status: 400, detail: 'The end must come after the start'
       })
     }
-    const episode = await queryOne('SELECT 1 FROM episodes WHERE id = $1', [eid])
-    if (!episode) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    if (!await catalogue.episodeExists(eid)) {
+      return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    }
 
-    const row = await queryOne<{ id: string }>(
-      `INSERT INTO skip_segments (episode_id, kind, start_sec, end_sec, submitted_by)
-       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-      [eid, body.kind, body.start, body.end, request.user.sub]
-    )
+    const row = await catalogue.addSkip(eid, body.kind, body.start, body.end, request.user.sub)
     await audit(request.user.sub, 'episode.edit', 'episode', eid, null,
       { skip: body.kind, start: body.start, end: body.end })
     return reply.code(201).send({ id: row?.id })
@@ -686,8 +608,7 @@ const routes: FastifyPluginAsync = async fastify => {
     schema: { params: { type: 'object', properties: { sid: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
     const { sid } = request.params as { sid: string }
-    const row = await queryOne<{ episode_id: string }>(
-      'DELETE FROM skip_segments WHERE id = $1 RETURNING episode_id', [sid])
+    const row = await catalogue.removeSkip(sid)
     if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
     return { id: sid, deleted: true }
   })
@@ -697,12 +618,7 @@ const routes: FastifyPluginAsync = async fastify => {
     schema: { params: { type: 'object', properties: { eid: { type: 'string', format: 'uuid' } } } }
   }, async request => {
     const { eid } = request.params as { eid: string }
-    const data = await query(
-      `SELECT id, language, kind, format, url, object_key, source_id
-         FROM subtitle_tracks WHERE episode_id = $1 ORDER BY language, kind`,
-      [eid]
-    )
-    return { data }
+    return { data: await catalogue.subtitles(eid) }
   })
 
   fastify.post('/episodes/:eid/subtitles', {
@@ -729,14 +645,11 @@ const routes: FastifyPluginAsync = async fastify => {
     const bad = badReference('http', body.url)
     if (bad) return reply.code(400).send({ type: 'about:blank', title: 'Bad Request', status: 400, detail: bad })
 
-    const episode = await queryOne('SELECT 1 FROM episodes WHERE id = $1', [eid])
-    if (!episode) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    if (!await catalogue.episodeExists(eid)) {
+      return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    }
 
-    const row = await queryOne<{ id: string }>(
-      `INSERT INTO subtitle_tracks (episode_id, language, kind, format, url)
-       VALUES ($1, $2, coalesce($3, 'subtitles'), $4, $5) RETURNING id`,
-      [eid, body.language, body.kind ?? null, body.format, body.url]
-    )
+    const row = await catalogue.addSubtitle(eid, body.language, body.kind ?? null, body.format, body.url)
     await audit(request.user.sub, 'episode.edit', 'episode', eid, null,
       { subtitle: body.language, format: body.format })
     return reply.code(201).send({ id: row?.id })
@@ -747,8 +660,7 @@ const routes: FastifyPluginAsync = async fastify => {
     schema: { params: { type: 'object', properties: { sid: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
     const { sid } = request.params as { sid: string }
-    const row = await queryOne<{ episode_id: string }>(
-      'DELETE FROM subtitle_tracks WHERE id = $1 RETURNING episode_id', [sid])
+    const row = await catalogue.removeSubtitle(sid)
     if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
     return { id: sid, deleted: true }
   })
@@ -766,13 +678,7 @@ const routes: FastifyPluginAsync = async fastify => {
     const [stats, active, runs] = await Promise.all([
       coverage(),
       activeRun(),
-      query(`SELECT r.id, r.kind, r.scope, r.max_items, r.status, r.processed, r.total,
-                    r.updated_rows, r.counts, r.error, r.created_at, r.started_at, r.finished_at,
-                    u.username AS started_by
-               FROM metadata_runs r
-               LEFT JOIN users u ON u.id = r.started_by
-              ORDER BY r.created_at DESC
-              LIMIT 15`)
+      catalogue.metadataRuns()
     ])
     return { coverage: stats, active: active ?? null, runs }
   })
@@ -844,17 +750,7 @@ const routes: FastifyPluginAsync = async fastify => {
   fastify.get('/metadata/conflicts', {
     onRequest: fastify.requirePermission('anime.edit', { hide: true })
   }, async () => {
-    return query(
-      `SELECT c.id, c.provider, c.external_id, c.source, c.seen_count, c.first_seen, c.last_seen,
-              c.anime_id, a.canonical_title AS anime_title,
-              c.held_by, h.canonical_title AS holder_title
-         FROM mapping_conflicts c
-         JOIN anime a ON a.id = c.anime_id
-         LEFT JOIN anime h ON h.id = c.held_by
-        WHERE c.resolved_at IS NULL
-        ORDER BY c.seen_count DESC, c.last_seen DESC
-        LIMIT 100`
-    )
+    return catalogue.mappingConflicts()
   })
 
   fastify.post('/metadata/conflicts/:id/resolve', {
@@ -870,11 +766,7 @@ const routes: FastifyPluginAsync = async fastify => {
   }, async (request, reply) => {
     const { id } = request.params as { id: string }
     const { resolution } = (request.body ?? {}) as { resolution?: string }
-    const row = await queryOne<{ id: string }>(
-      `UPDATE mapping_conflicts SET resolved_at = now(), resolution = $2
-        WHERE id = $1 AND resolved_at IS NULL RETURNING id`,
-      [id, resolution ?? 'reviewed']
-    )
+    const row = await catalogue.resolveConflict(id, resolution ?? 'reviewed')
     if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
     return { id, resolved: true }
   })

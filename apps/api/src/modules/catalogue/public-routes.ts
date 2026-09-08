@@ -1,7 +1,12 @@
 // /v1/anime — catalogue browse, detail, episodes, schedule.
 // Public (no auth). Cursor pagination on (sort value, id) keyset.
 
-import { pool, query, queryOne } from '../../infrastructure/database/index.ts'
+// `pool` only travels through to the search module, which takes its
+// connection as an argument so it can be driven against a scratch database in
+// the performance tests. No SQL is written in this file.
+import { pool } from '../../infrastructure/database/index.ts'
+import { AnimeRepository, animeRepository as animeRepo } from './anime-repository.ts'
+import { episodeRepository as episodeRepo } from './episode-repository.ts'
 import { SEARCH_SORTS, recordSearch, searchAnime, suggest } from '../search/search.ts'
 import { localiseAnime, localiseEpisode } from './localise.ts'
 import { requestLanguage, coerce } from '../profiles/preferences.ts'
@@ -77,26 +82,7 @@ async function animeDetail (
   id: string,
   locale: { language: 'hu' | 'en', titles: string } = { language: 'hu', titles: 'romaji' }
 ): Promise<Record<string, unknown> | undefined> {
-  const anime = await queryOne<Record<string, unknown>>(
-    `SELECT a.*,
-        tr.title    AS title_hu,
-        tr.synopsis AS synopsis_hu,
-        (SELECT jsonb_object_agg(t.kind, t.title) FROM anime_titles t WHERE t.anime_id = a.id) AS titles,
-        (SELECT coalesce(jsonb_agg(s.synonym), '[]') FROM anime_synonyms s WHERE s.anime_id = a.id) AS synonyms,
-        (SELECT coalesce(jsonb_agg(g.name ORDER BY g.name), '[]') FROM anime_genres ag JOIN genres g ON g.id = ag.genre_id WHERE ag.anime_id = a.id) AS genres,
-        (SELECT coalesce(jsonb_agg(jsonb_build_object('name', tg.name, 'rank', at.rank) ORDER BY at.rank DESC), '[]')
-           FROM anime_tags at JOIN tags tg ON tg.id = at.tag_id WHERE at.anime_id = a.id) AS tags,
-        (SELECT coalesce(jsonb_agg(jsonb_build_object('name', c.name, 'role', ac.role, 'isMain', ac.is_main)), '[]')
-           FROM anime_companies ac JOIN companies c ON c.id = ac.company_id WHERE ac.anime_id = a.id) AS companies,
-        (SELECT coalesce(jsonb_agg(jsonb_build_object('kind', i.kind, 'key', i.object_key, 'blurhash', i.blurhash, 'color', i.dominant_color)), '[]')
-           FROM anime_images i WHERE i.anime_id = a.id AND i.is_primary) AS images,
-        (SELECT to_jsonb(m) - 'anime_id' FROM anime_mappings m WHERE m.anime_id = a.id) AS mappings
-       FROM anime a
-       LEFT JOIN anime_translations tr
-              ON tr.anime_id = a.id AND tr.language = $2 AND tr.approved
-      WHERE a.id = $1 AND a.visibility <> 'hidden'`,
-    [id, locale.language]
-  )
+  const anime = await animeRepo.detail(id, locale.language)
   if (!anime) return anime
   // The tsvector is an implementation detail of search, not part of the record.
   delete anime.search
@@ -169,18 +155,12 @@ const routes: FastifyPluginAsync = async fastify => {
     if (q.year) add('a.season_year = ?', q.year)
     if (q.format) add('a.format = ?', q.format)
     if (q.status) add('a.status = ?', q.status)
-    // Slug OR name, case-insensitively. The client shows genre names and
-    // therefore sends "Action"; matching only the slug meant every genre rail
-    // on the home page silently returned nothing and fell back to AniList,
-    // with the catalogue holding 900 Action titles. A caller should not have
-    // to know our slugging rule to ask a question about a genre.
     if (q.genre) {
       // Bound once and referenced twice, so this cannot go through add(),
-      // which substitutes only the first placeholder.
+      // which substitutes only the first placeholder. The clause itself is a
+      // subquery and lives with the rest of the SQL — see AnimeRepository.
       params.push(q.genre)
-      const n = params.length
-      where.push(`EXISTS (SELECT 1 FROM anime_genres ag JOIN genres g ON g.id = ag.genre_id
-                           WHERE ag.anime_id = a.id AND (g.slug = lower($${n}) OR lower(g.name) = lower($${n})))`)
+      where.push(AnimeRepository.genreFilter(params.length))
     }
 
     if (cursor) {
@@ -203,18 +183,7 @@ const routes: FastifyPluginAsync = async fastify => {
     }
 
     params.push(limit + 1)
-    const rows = await query(
-      `SELECT a.id, a.canonical_title, a.format, a.status, a.season, a.season_year,
-              a.episode_count, a.average_score, a.popularity, a.is_adult,
-              ${sort.column} AS sort_value,
-              img.object_key AS cover_key, img.blurhash, img.dominant_color
-       FROM anime a
-       LEFT JOIN anime_images img ON img.anime_id = a.id AND img.kind = 'cover' AND img.is_primary
-       WHERE ${where.join(' AND ')}
-       ORDER BY ${sort.column} ${sort.dir} NULLS ${sort.nulls}, a.id
-       LIMIT $${params.length}`,
-      params
-    )
+    const rows = await animeRepo.browse({ where, params, sort })
 
     const hasMore = rows.length > limit
     const data = rows.slice(0, limit)
@@ -245,23 +214,7 @@ const routes: FastifyPluginAsync = async fastify => {
     }
   }, async request => {
     const { from, to } = request.query as { from: string, to: string }
-    const data = await query(
-      `SELECT e.id AS episode_id, e.number AS episode, e.air_date,
-              a.id AS anime_id, a.canonical_title, a.format, a.is_adult,
-              img.object_key AS cover_key, m.anilist_id
-       FROM episodes e
-       JOIN anime a ON a.id = e.anime_id
-       LEFT JOIN anime_images img ON img.anime_id = a.id AND img.kind = 'cover' AND img.is_primary
-       -- the client links a row by whichever id it has, same rule as everywhere
-       LEFT JOIN anime_mappings m ON m.anime_id = a.id
-       -- only published episodes: a calendar listing something nobody can
-       -- watch yet is worse than one that waits
-       WHERE e.air_date >= $1 AND e.air_date < $2
-         AND a.visibility = 'public' AND e.visibility = 'public'
-       ORDER BY e.air_date`,
-      [from, to]
-    )
-    return { data }
+    return { data: await animeRepo.schedule(from, to) }
   })
 
   // ---- search ----
@@ -356,19 +309,7 @@ const routes: FastifyPluginAsync = async fastify => {
     )].slice(0, 50)
     if (!wanted.length) return { data: [] }
 
-    const rows = await query<{ anilist_id: number }>(
-      `SELECT a.id, m.anilist_id, a.canonical_title, a.format, a.status,
-              a.season_year, a.episode_count, a.average_score, a.is_adult,
-              t.title AS romaji, te.title AS english,
-              img.object_key AS cover_key, img.dominant_color AS cover_color
-         FROM anime_mappings m
-         JOIN anime a ON a.id = m.anime_id
-         LEFT JOIN anime_titles t ON t.anime_id = a.id AND t.kind = 'romaji'
-         LEFT JOIN anime_titles te ON te.anime_id = a.id AND te.kind = 'english'
-         LEFT JOIN anime_images img ON img.anime_id = a.id AND img.kind = 'cover' AND img.is_primary
-        WHERE m.anilist_id = ANY($1::int[]) AND a.visibility = 'public'`,
-      [wanted]
-    )
+    const rows = await animeRepo.cardsByAnilistIds(wanted)
 
     const byId = new Map(rows.map(row => [row.anilist_id, row]))
     return { data: wanted.map(id => byId.get(id)).filter(Boolean) }
@@ -392,11 +333,7 @@ const routes: FastifyPluginAsync = async fastify => {
     const { anilistId } = request.params as { anilistId: number }
     const { full } = request.query as { full?: boolean }
 
-    const row = await queryOne<{ id: string, canonical_title: string }>(
-      `SELECT a.id, a.canonical_title FROM anime_mappings m JOIN anime a ON a.id = m.anime_id
-       WHERE m.anilist_id = $1 AND a.visibility <> 'hidden'`,
-      [anilistId]
-    )
+    const row = await animeRepo.byAnilistId(anilistId)
     if (!row) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
     if (!full) return row
 
@@ -426,25 +363,18 @@ const routes: FastifyPluginAsync = async fastify => {
   }, async request => {
     const body = request.body as { anilistId: number, title: string, format?: string, status?: string, episodes?: number, isAdult?: boolean }
 
-    const existing = await queryOne<{ id: string }>(
-      'SELECT anime_id AS id FROM anime_mappings WHERE anilist_id = $1',
-      [body.anilistId]
-    )
+    const existing = await animeRepo.mappedIdFor(body.anilistId)
     if (existing) return existing
 
     // minimal stub row; the metadata importer enriches it later
-    const created = await queryOne<{ id: string }>(
-      `WITH new_anime AS (
-         INSERT INTO anime (canonical_title, format, status, episode_count, is_adult)
-         VALUES ($1, coalesce($2, 'TV')::anime_format, coalesce($3, 'FINISHED')::anime_status, $4, coalesce($5, false))
-         RETURNING id
-       )
-       INSERT INTO anime_mappings (anime_id, anilist_id)
-       SELECT id, $6 FROM new_anime
-       RETURNING anime_id AS id`,
-      [body.title, body.format ?? null, body.status ?? null, body.episodes ?? null, body.isAdult ?? null, body.anilistId]
-    )
-    return created
+    return animeRepo.createStub({
+      title: body.title,
+      format: body.format ?? null,
+      status: body.status ?? null,
+      episodes: body.episodes ?? null,
+      isAdult: body.isAdult ?? null,
+      anilistId: body.anilistId
+    })
   })
 
   fastify.get('/:id', {
@@ -479,30 +409,16 @@ const routes: FastifyPluginAsync = async fastify => {
     schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const exists = await queryOne("SELECT 1 FROM anime WHERE id = $1 AND visibility <> 'hidden'", [id])
-    if (!exists) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    if (!await animeRepo.isVisible(id)) {
+      return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    }
 
     const locale = localeOf(request)
-    const [data, counts] = await Promise.all([
-      query(
-        `SELECT e.id, e.number, e.absolute_number, e.title, e.synopsis, e.thumbnail_key,
-                e.air_date, e.duration, e.is_filler, e.is_recap,
-                -- Whether this episode can be played at all. The list is where
-                -- the client decides what to make clickable, and an episode
-                -- with nowhere to play from is a link to a dead end.
-                (SELECT count(*) FROM video_sources v
-                  WHERE v.episode_id = e.id AND v.enabled)::int AS source_count,
-                tr.title    AS title_hu,
-                tr.synopsis AS synopsis_hu
-         FROM episodes e
-         LEFT JOIN episode_translations tr
-                ON tr.episode_id = e.id AND tr.language = $2 AND tr.approved
-         WHERE e.anime_id = $1 AND e.visibility = 'public' ORDER BY e.number`,
-        [id, locale.language]
-      ),
-      queryOne<{ total: string }>('SELECT count(*)::int AS total FROM episodes WHERE anime_id = $1', [id])
+    const [data, total] = await Promise.all([
+      episodeRepo.listFor(id, locale.language),
+      episodeRepo.countFor(id)
     ])
-    return { data: data.map(row => localiseEpisode(row, locale.language)), total: Number(counts?.total ?? 0) }
+    return { data: data.map(row => localiseEpisode(row, locale.language)), total }
   })
 
   /**
@@ -521,36 +437,15 @@ const routes: FastifyPluginAsync = async fastify => {
     const { eid } = request.params as { eid: string }
     if (!UUID.test(eid)) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
 
-    const episode = await queryOne<{ id: string }>(
-      `SELECT e.id FROM episodes e JOIN anime a ON a.id = e.anime_id
-        WHERE e.id = $1 AND e.visibility = 'public' AND a.visibility <> 'hidden'`, [eid])
-    if (!episode) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
-
-    const data = await query(
-      `SELECT id, kind, ref, title, provider, resolution, language, variant, is_batch, size_bytes, seeders
-         FROM video_sources
-        WHERE episode_id = $1 AND enabled
-        ORDER BY priority, created_at`,
-      [eid]
-    )
-    return { data }
+    if (!await episodeRepo.isPlayable(eid)) {
+      return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    }
+    return { data: await episodeRepo.sourcesFor(eid) }
   })
 
   fastify.get('/:id/relations', async (request, reply) => {
     const { id } = request.params as { id: string }
-    const data = await query(
-      `SELECT r.relation, a.id, a.canonical_title, a.format, a.status,
-              img.object_key AS cover_key, m.anilist_id
-       FROM anime_relations r
-       JOIN anime a ON a.id = r.related_id
-       LEFT JOIN anime_images img ON img.anime_id = a.id AND img.kind = 'cover' AND img.is_primary
-       -- the client links a related title by whichever id it has; without the
-       -- AniList id a catalogue-only relation had nowhere to point
-       LEFT JOIN anime_mappings m ON m.anime_id = a.id
-       WHERE r.anime_id = $1`,
-      [id]
-    )
-    return { data }
+    return { data: await animeRepo.relations(id) }
   })
 
   /**
@@ -568,16 +463,7 @@ const routes: FastifyPluginAsync = async fastify => {
   fastify.get('/episodes/:eid/skips', async (request, reply) => {
     const { eid } = request.params as { eid: string }
     if (!UUID.test(eid)) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
-    const data = await query(
-      `SELECT s.id, s.kind, s.start_sec, s.end_sec, s.votes
-         FROM skip_segments s
-         JOIN episodes e ON e.id = s.episode_id
-         JOIN anime a ON a.id = e.anime_id
-        WHERE s.episode_id = $1 AND e.visibility = 'public' AND a.visibility <> 'hidden'
-        ORDER BY s.kind, s.votes DESC`,
-      [eid]
-    )
-    return { data }
+    return { data: await episodeRepo.skipsFor(eid) }
   })
 
   /**
@@ -591,16 +477,7 @@ const routes: FastifyPluginAsync = async fastify => {
   fastify.get('/episodes/:eid/subtitles', async (request, reply) => {
     const { eid } = request.params as { eid: string }
     if (!UUID.test(eid)) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
-    const data = await query(
-      `SELECT t.id, t.language, t.kind, t.format, t.url, t.object_key, t.source_id
-         FROM subtitle_tracks t
-         JOIN episodes e ON e.id = t.episode_id
-         JOIN anime a ON a.id = e.anime_id
-        WHERE t.episode_id = $1 AND e.visibility = 'public' AND a.visibility <> 'hidden'
-        ORDER BY t.language, t.kind`,
-      [eid]
-    )
-    return { data }
+    return { data: await episodeRepo.subtitlesFor(eid) }
   })
 
   /**
@@ -625,39 +502,7 @@ const routes: FastifyPluginAsync = async fastify => {
     const { id } = request.params as { id: string }
     if (!UUID.test(id)) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
 
-    const data = await query<{
-      id: string, canonical_title: string, format: string, status: string,
-      season: string | null, season_year: number | null, start_date: string | null,
-      episode_count: number | null, cover_key: string | null, anilist_id: number | null,
-      relation: string | null, depth: number
-    }>(
-      `WITH RECURSIVE walk AS (
-         SELECT $1::uuid AS id, 0 AS depth
-         UNION
-         SELECT CASE WHEN r.anime_id = w.id THEN r.related_id ELSE r.anime_id END, w.depth + 1
-           FROM walk w
-           JOIN anime_relations r ON r.anime_id = w.id OR r.related_id = w.id
-          WHERE w.depth < 2
-       ),
-       nodes AS (SELECT id, min(depth) AS depth FROM walk GROUP BY id)
-       SELECT a.id, a.canonical_title, a.format, a.status, a.season, a.season_year,
-              a.start_date, a.episode_count, n.depth,
-              img.object_key AS cover_key, m.anilist_id,
-              -- the direct edge to the title that was asked about, when there
-              -- is one; further out there is no single relation to name
-              (SELECT r.relation FROM anime_relations r
-                WHERE (r.anime_id = $1 AND r.related_id = a.id)
-                   OR (r.related_id = $1 AND r.anime_id = a.id)
-                LIMIT 1) AS relation
-         FROM nodes n
-         JOIN anime a ON a.id = n.id
-         LEFT JOIN anime_images img ON img.anime_id = a.id AND img.kind = 'cover' AND img.is_primary
-         LEFT JOIN anime_mappings m ON m.anime_id = a.id
-        WHERE a.visibility = 'public' OR a.id = $1
-        ORDER BY a.start_date NULLS LAST, a.season_year NULLS LAST, a.canonical_title
-        LIMIT 61`,
-      [id]
-    )
+    const data = await animeRepo.franchise(id)
     if (!data.length) return { data: [], truncated: false }
 
     // One over the cap means there was more; the list itself stays at the cap.
@@ -680,39 +525,12 @@ const routes: FastifyPluginAsync = async fastify => {
     // Voices are aggregated per character rather than joined flat: a character
     // with a Japanese and a Hungarian actor is one card with two credits, and
     // a flat join would return the character twice.
-    const data = await query(
-      `SELECT c.id, c.name, c.native_name, c.image_key, ac.role,
-              (SELECT coalesce(jsonb_agg(jsonb_build_object(
-                        'id', p.id, 'name', p.name, 'nativeName', p.native_name,
-                        'imageKey', p.image_key, 'language', cv.language) ORDER BY cv.language), '[]')
-                 FROM character_voices cv
-                 JOIN people p ON p.id = cv.person_id
-                WHERE cv.character_id = c.id AND cv.anime_id = ac.anime_id) AS voices
-         FROM anime_characters ac
-         JOIN characters c ON c.id = ac.character_id
-        WHERE ac.anime_id = $1
-        -- MAIN first, then SUPPORTING, then BACKGROUND; the page shows the
-        -- top of this list and never paginates it.
-        ORDER BY CASE ac.role WHEN 'MAIN' THEN 0 WHEN 'SUPPORTING' THEN 1 ELSE 2 END, c.name`,
-      [id]
-    )
-    return { data }
+    return { data: await animeRepo.characters(id) }
   })
 
   fastify.get('/:id/staff', async request => {
     const { id } = request.params as { id: string }
-    const data = await query(
-      `SELECT p.id, p.name, p.native_name, p.image_key, s.role
-         FROM anime_staff s
-         JOIN people p ON p.id = s.person_id
-        WHERE s.anime_id = $1
-        -- Director first: it is the credit anybody scanning the list wants.
-        ORDER BY CASE WHEN s.role ILIKE 'director%' THEN 0
-                      WHEN s.role ILIKE 'original creator%' THEN 1
-                      ELSE 2 END, s.role, p.name`,
-      [id]
-    )
-    return { data }
+    return { data: await animeRepo.staff(id) }
   })
 
   fastify.get('/:id/recommendations', {
@@ -725,20 +543,7 @@ const routes: FastifyPluginAsync = async fastify => {
   }, async request => {
     const { id } = request.params as { id: string }
     const { limit } = request.query as { limit?: number }
-    const data = await query(
-      `SELECT a.id, a.canonical_title, a.format::text, a.status::text, a.season_year,
-              a.episode_count, a.average_score, r.score,
-              img.object_key AS cover_key, m.anilist_id
-         FROM anime_recommendations r
-         JOIN anime a ON a.id = r.recommended_id
-         LEFT JOIN anime_images img ON img.anime_id = a.id AND img.kind = 'cover' AND img.is_primary
-         LEFT JOIN anime_mappings m ON m.anime_id = a.id
-        WHERE r.anime_id = $1 AND a.visibility = 'public'
-        ORDER BY r.score DESC, a.popularity DESC NULLS LAST
-        LIMIT $2`,
-      [id, limit ?? 20]
-    )
-    return { data }
+    return { data: await animeRepo.recommendations(id, limit ?? 20) }
   })
 }
 
