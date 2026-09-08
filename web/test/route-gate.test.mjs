@@ -219,7 +219,7 @@ describe('what the refusal says', () => {
     // does not exist, and a privileged route this viewer may not open — are
     // rendered from one branch precisely so they cannot drift apart, and a
     // distance assertion broke the moment that branch grew a second condition.
-    const branch = source.match(/gate\.kind === 'not-found'[^{]*\{([\s\S]*?)\n    \} else/)
+    const branch = source.match(/gate\.kind === 'not-found'[^{]*\{([\s\S]*?)\n {4}\} else/)
     assert.ok(branch, 'the shared not-found branch is gone')
     // Comments are allowed to discuss permissions — explaining why one is not
     // named is the point of them. What must not appear is the value.
@@ -231,7 +231,7 @@ describe('what the refusal says', () => {
   it('renders an address with no page behind it as not found, not as home', () => {
     // Falling back to the home page made every dead deep link — a renamed
     // route, a typo, a stale bookmark — look like it had worked.
-    assert.match(source, /const handler = this\.routes\[route\]\s*\n\s*if \(!handler\)/)
+    assert.match(source, /const handler = this\.routes\[route\]\s*\n\s{4}if \(!handler\)/)
     assert.doesNotMatch(source, /this\.routes\[route\] \?\? this\.routes\.home/)
   })
 

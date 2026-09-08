@@ -29,12 +29,21 @@ const PageSearch = {
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
 
+    // The page had no heading of any level. A document whose only headings are
+    // its sections gives a screen reader nothing to announce on arrival and no
+    // way to jump to the top of the content.
+    pad.append(U.el('h1', { class: 'page-title', text: T('Search') }))
+
     const years = []
     for (let y = new Date().getFullYear() + 1; y >= 1970; y--) years.push(y)
 
     const mkSelect = (label, key, options, labelMap = v => v) => {
       const select = U.el('select', {
         class: 'select',
+        // The visible <label> beside this is a sibling with no `for`, so it
+        // names the control for a sighted reader and for nobody else. Rather
+        // than mint ids for six selects, the name is put on the control.
+        'aria-label': label,
         onchange: e => { state[key] = e.target.value; reset() }
       }, [
         U.el('option', { value: '', text: T('Any') }),

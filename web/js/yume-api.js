@@ -446,6 +446,35 @@ const YumeAPI = {
     return this._request('/v1/reports', { method: 'POST', auth: true, body: { subjectType, subjectId, reason, details } })
   },
 
+  /**
+   * The notification inbox.
+   *
+   * Both of these were called and neither existed. `GET /v1/me/notifications`
+   * and `POST /v1/me/notifications/read` have been on the server the whole
+   * time; the client asked for `YumeAPI.notifications(...)` and got
+   * "is not a function", which threw out of PageNotifications.render() and
+   * left the entire Notifications route showing its error state. The admin
+   * panel's bell called the same missing method through optional chaining, so
+   * it failed silently and always showed the local count.
+   *
+   * Returns the rows, not the envelope: every caller maps or counts them.
+   */
+  notifications ({ unreadOnly = false, limit = 50 } = {}) {
+    const params = new URLSearchParams({ limit: String(limit) })
+    if (unreadOnly) params.set('unreadOnly', 'true')
+    return this._request('/v1/me/notifications?' + params.toString(), { auth: true })
+      .then(res => res.data ?? [])
+  },
+
+  /** Mark some notifications read, or all of them when given no ids. */
+  markNotificationsRead (ids) {
+    return this._request('/v1/me/notifications/read', {
+      method: 'POST',
+      auth: true,
+      body: ids?.length ? { ids } : {}
+    })
+  },
+
   admin: {
     users: ({ query, status, role, sort, limit, offset } = {}) => {
       const params = new URLSearchParams()
