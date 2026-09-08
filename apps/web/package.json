@@ -1,0 +1,10 @@
+{
+  "name": "@yume/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Yume web client — framework-free HTML/CSS/JS, served as static files",
+  "scripts": {
+    "test": "node --experimental-strip-types --test test/*.test.mjs"
+  }
+}

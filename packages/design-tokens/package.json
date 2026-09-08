@@ -1,0 +1,15 @@
+{
+  "name": "@yume/design-tokens",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Design tokens generated from the web client's stylesheet",
+  "main": "tokens.json",
+  "exports": {
+    ".": "./tokens.json",
+    "./css": "./tokens.css"
+  },
+  "scripts": {
+    "build": "node build.mjs"
+  }
+}

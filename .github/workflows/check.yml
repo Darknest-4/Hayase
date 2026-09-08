@@ -32,7 +32,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: server
+        working-directory: apps/api
 
     steps:
       - uses: actions/checkout@v4
@@ -42,10 +42,15 @@ jobs:
           # 22.6+ is required for --experimental-strip-types
           node-version: '22'
           cache: npm
-          cache-dependency-path: server/package-lock.json
+          cache-dependency-path: package-lock.json
 
+      # At the repository root, not in apps/api: this is an npm workspace, so
+      # there is one lockfile and dependencies hoist into the root
+      # node_modules. `npm ci` inside a workspace directory would refuse — the
+      # lockfile it wants is not there.
       - name: Install dependencies
         run: npm ci
+        working-directory: .
 
       - name: Typecheck
         run: npm run check
@@ -150,11 +155,11 @@ jobs:
       - name: Syntax-check every client script
         run: |
           shopt -s globstar
-          for file in web/**/*.js; do
-            case "$file" in web/js/vendor/*) continue ;; esac   # third-party, not ours
+          for file in apps/web/**/*.js; do
+            case "$file" in apps/web/js/vendor/*) continue ;; esac   # third-party, not ours
             node --check "$file" || exit 1
           done
-          echo "checked $(ls web/**/*.js | wc -l) files"
+          echo "checked $(ls apps/web/**/*.js | wc -l) files"
 
       # The client ships as plain scripts with no build step, so style drift is
       # only ever caught here. Vendored third-party code is excluded via
@@ -162,7 +167,7 @@ jobs:
       # passing one made ESLint fail with "No files matching" — so this step
       # was erroring out rather than linting anything.
       - name: Lint the client
-        run: npx --yes standard --ignore "web/js/vendor/**" "web/**/*.js" "web/test/*.mjs"
+        run: npx --yes standard --ignore "apps/web/js/vendor/**" "apps/web/**/*.js" "apps/web/test/*.mjs" "tests/e2e/*.mjs"
 
       # The engine is the one piece of client code with real logic in it —
       # everything else is rendering. It loads against a small DOM stub, so it
@@ -171,7 +176,23 @@ jobs:
       # TypeScript when it needs to check against the real rule rather than a
       # copy of it.
       - name: Client tests
-        run: node --experimental-strip-types --test web/test/*.test.mjs
+        run: node --experimental-strip-types --test apps/web/test/*.test.mjs
+
+      # The shared packages are typechecked by the API's tsconfig, which
+      # follows the import into packages/database. Nothing here compiles them
+      # separately, so this asserts the workspace links actually resolve —
+      # a broken exports map fails at import, not at typecheck.
+      - name: The workspace links resolve
+        run: |
+          npm ci
+          node --experimental-strip-types -e "
+            import('@yume/database').then(m => {
+              const want = ['createPool', 'helpers', 'Repository', 'PG', 'isUniqueViolation']
+              const missing = want.filter(k => !(k in m))
+              if (missing.length) { console.error('@yume/database is missing: ' + missing); process.exit(1) }
+              console.log('@yume/database resolves, ' + Object.keys(m).length + ' exports')
+            })
+          "
 
   # Nothing in this pipeline ever built the container, so a Dockerfile that
   # could not parse went through review, through CI and through a merge — the
@@ -189,7 +210,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build the image
-        run: docker build --tag yume:ci .
+        run: docker build --file infrastructure/docker/Dockerfile --tag yume:ci .
 
       # A syntactically valid Dockerfile that produces an image which exits on
       # start is still broken. This asks the entrypoint's interpreter to parse
@@ -202,10 +223,10 @@ jobs:
       # copying it is a blank site rather than a failed build.
       - name: The image carries the web client and the migrations
         run: |
-          docker run --rm --entrypoint sh yume:ci -c 'test -f /app/web/index.html' \
-            || { echo '::error::/app/web/index.html is missing from the image'; exit 1; }
-          docker run --rm --entrypoint sh yume:ci -c 'ls /app/db/migrations/*.sql >/dev/null' \
-            || { echo '::error::/app/db/migrations is missing from the image'; exit 1; }
+          docker run --rm --entrypoint sh yume:ci -c 'test -f /app/apps/web/index.html' \
+            || { echo '::error::/app/apps/web/index.html is missing from the image'; exit 1; }
+          docker run --rm --entrypoint sh yume:ci -c 'ls /app/database/migrations/*.sql >/dev/null' \
+            || { echo '::error::/app/database/migrations is missing from the image'; exit 1; }
 
   # The client's unit tests run against a DOM stub, which left the router, the
   # layout, the sign-in modal and the player with no automated coverage at all:
@@ -240,28 +261,27 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: server/package-lock.json
+          cache-dependency-path: package-lock.json
 
-      - name: Install server dependencies
+      - name: Install dependencies
         run: npm ci
-        working-directory: server
 
       - name: Install Playwright
-        # At the repository root: the test lives under web/, so this is where
-        # its import resolves from.
+        # At the repository root: the cross-app end-to-end tests live in
+        # tests/e2e/, and this is where their import resolves from.
         run: |
           npm install --no-save playwright@1.56
           npx playwright install --with-deps chromium
 
       - name: Apply migrations
         run: npm run migrate
-        working-directory: server
+        working-directory: apps/api
         env:
           DATABASE_URL: postgres://yume:yume@localhost:5432/yume
 
       - name: Browser smoke test
         run: npm run test:e2e
-        working-directory: server
+        working-directory: apps/api
         env:
           DATABASE_URL: postgres://yume:yume@localhost:5432/yume
           JWT_SECRET: ci-secret-not-used-for-anything-real-0123456789

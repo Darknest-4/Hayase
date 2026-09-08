@@ -3,8 +3,8 @@
 
    GENERATED FILE. Do not edit by hand: run
      node packages/design-tokens/build.mjs
-   The source is web/css/tokens.css, which is what the web client renders
-   from. web/test/design-tokens.test.mjs fails if this file falls behind it.
+   The source is apps/web/css/tokens.css, which is what the web client renders
+   from. apps/web/test/design-tokens.test.mjs fails if this file falls behind it.
    =========================================================================== */
 
 :root {

@@ -1,10 +1,10 @@
 # Keep the build context small and never ship host artifacts.
 #
 # The second half of this list is about what the running image serves. `COPY
-# web/` takes the whole document root, and web/test/ lives inside it — so the
+# apps/web/` takes the whole document root, and apps/web/test/ lives inside it — so the
 # deployment was serving nineteen test files, including the end-to-end ones
 # that spell out the admin permission model. The static layer refuses those
-# paths now (see allowedPath in server/src/app.ts); this is the other half,
+# paths now (see allowedPath in apps/api/src/app.ts); this is the other half,
 # and the better one: what is not in the image cannot be served by any future
 # misconfiguration.
 
@@ -14,8 +14,9 @@
 docs/screenshots
 
 # --- tests: needed by CI from the repository, never by the running image ---
-web/test
-server/test
+apps/web/test
+apps/api/test
+tests
 
 # --- development and CI scaffolding ---
 .github
