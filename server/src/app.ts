@@ -35,6 +35,7 @@ import roleRoutes from './routes/roles.ts'
 import catalogueRoutes from './routes/catalogue.ts'
 import { publicReadiness, adminMonitoring } from './routes/monitoring.ts'
 import reportRoutes from './routes/reports.ts'
+import securityRoutes from './routes/security.ts'
 import libraryRoutes from './routes/library.ts'
 import settingsRoutes from './routes/settings.ts'
 import translationRoutes from './routes/translations.ts'
@@ -236,6 +237,47 @@ export async function buildApp (): Promise<FastifyInstance> {
     }
   })
 
+  /*
+   * Read-only mode.
+   *
+   * The emergency lever: refuse everything that writes, keep everything that
+   * reads. For an instance under attack, mid-incident, or being restored — a
+   * site that answers but changes nothing is a far better state than one that
+   * is switched off, and it is the state you actually want while working out
+   * what happened.
+   *
+   * Three exemptions, each of them the reason the mode is survivable:
+   *
+   *   * /v1/auth — sign-in, refresh and sign-out. Locking people out of their
+   *     own sessions is not what read-only means, and an operator who cannot
+   *     sign in cannot turn it off.
+   *   * /v1/admin/config — the switch itself. Without this the mode has no
+   *     exit that is not a database console.
+   *   * /v1/admin/security — the other emergency controls, for the same reason.
+   *
+   * 503 with Retry-After, not 403: nothing is wrong with the caller or their
+   * permissions, the instance is deliberately not accepting this right now,
+   * and a client that retries later is behaving correctly.
+   *
+   * Background jobs are untouched. This is about what the site accepts from
+   * outside; freezing the worker would stop the stats and partition
+   * maintenance that keep the instance healthy while somebody works.
+   */
+  const WRITES = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+  const readOnlyExempt = /^\/v1\/(auth|admin\/(config|security))\b/
+  app.addHook('onRequest', async (request, reply) => {
+    if (!WRITES.has(request.method)) return
+    if (!/^\/(v1|graphql)\b/.test(request.url)) return
+    if (readOnlyExempt.test(request.url)) return
+    if (!await siteSettings.readOnly()) return
+    return reply.code(503).header('Retry-After', '120').send({
+      type: 'about:blank',
+      title: 'Service Unavailable',
+      status: 503,
+      detail: 'This instance is in read-only mode and is not accepting changes right now'
+    })
+  })
+
   await app.register(publicConfig, { prefix: '/v1/config' })
   await app.register(publicThemes, { prefix: '/v1/themes' })
   await app.register(adminThemes, { prefix: '/v1/admin/themes' })
@@ -253,6 +295,7 @@ export async function buildApp (): Promise<FastifyInstance> {
   await app.register(webhookRoutes, { prefix: '/v1/admin/webhooks' })
   await app.register(roleRoutes, { prefix: '/v1/admin/roles' })
   await app.register(catalogueRoutes, { prefix: '/v1/admin/catalogue' })
+  await app.register(securityRoutes, { prefix: '/v1/admin/security' })
   await app.register(publicReadiness, { prefix: '/v1/health' })
   await app.register(adminMonitoring, { prefix: '/v1/admin/monitoring' })
 

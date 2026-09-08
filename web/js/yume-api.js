@@ -616,6 +616,18 @@ const YumeAPI = {
     error: id => YumeAPI._request(`/v1/admin/errors/${id}`, { auth: true }),
     setErrorStatus: (id, status) => YumeAPI._request(`/v1/admin/errors/${id}`, { method: 'PATCH', auth: true, body: { status } }),
 
+    // Emergency controls. Each switch has an enforcement point in the server
+    // and the GET says which — see server/src/routes/security.ts.
+    security: () => YumeAPI._request('/v1/admin/security', { auth: true }),
+    setControl: (key, value, reason) =>
+      YumeAPI._request(`/v1/admin/security/${encodeURIComponent(key)}`, {
+        method: 'POST', auth: true, body: { value, reason }
+      }),
+    revokeAllSessions: reason =>
+      YumeAPI._request('/v1/admin/security/revoke-all-sessions', {
+        method: 'POST', auth: true, body: { reason }
+      }),
+
     // audit trail — who changed what, and when
     audit: ({ subjectType, subjectId, actorId, actor, action, since, limit = 50, offset = 0 } = {}) => {
       const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })

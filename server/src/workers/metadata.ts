@@ -23,6 +23,7 @@
 // paced requests, not something to abandon mid-transaction.
 
 import { query, queryOne } from '../db.ts'
+import { settings as siteSettings } from '../lib/site-settings.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 import { enrichFromAniList } from './anilist.ts'
 import { enrichDeepFromAniList } from './anilist-deep.ts'
@@ -90,12 +91,23 @@ export class RunInProgress extends Error {
   constructor () { super('A metadata run is already in progress') }
 }
 
+/** Thrown when an operator has switched external sync off. */
+export class ExternalSyncDisabled extends Error {
+  constructor () { super('External metadata sync is switched off') }
+}
+
 export async function startRun (opts: {
   kind: 'basic' | 'deep'
   scope: 'missing' | 'all'
   limit?: number | null
   startedBy?: string | null
 }): Promise<MetadataRun> {
+  // Refused at the start rather than at the first outbound request: a run row
+  // that exists and immediately dies looks like a failure, and the operator
+  // who just turned sync off would have to work out that it was their own
+  // doing.
+  if (!await siteSettings.externalSyncEnabled()) throw new ExternalSyncDisabled()
+
   try {
     const row = await queryOne<MetadataRun>(
       `INSERT INTO metadata_runs (kind, scope, max_items, started_by)
@@ -135,6 +147,17 @@ export async function handleMetadataJob (job: Job): Promise<void> {
   const run = await queryOne<MetadataRun>('SELECT * FROM metadata_runs WHERE id = $1', [runId])
   if (!run) return // the row was deleted; nothing to do and nothing to report
   if (run.status !== 'queued') return // already claimed, or cancelled before it started
+
+  // Checked here as well as at startRun: a run queued before the switch was
+  // thrown must not start afterwards. The queue is durable, so "it was allowed
+  // when it was enqueued" is not the same question as "is it allowed now".
+  if (!await siteSettings.externalSyncEnabled()) {
+    await query(
+      `UPDATE metadata_runs SET status = 'cancelled', finished_at = now(),
+              error = 'external sync was switched off before this run started'
+        WHERE id = $1`, [runId])
+    return
+  }
 
   await query("UPDATE metadata_runs SET status = 'running', started_at = now() WHERE id = $1", [runId])
 

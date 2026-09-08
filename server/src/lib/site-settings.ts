@@ -65,6 +65,34 @@ export const settings = {
     return (await settings.load()).require_login === true
   },
 
+  /**
+   * Is the instance refusing writes?
+   *
+   * The emergency lever. Absent means no, for the same reason the two above
+   * default the permissive way: a missing row is an instance nobody has
+   * configured, not one somebody froze.
+   */
+  async readOnly (): Promise<boolean> {
+    return (await settings.load()).read_only === true
+  },
+
+  /**
+   * May we talk to AniList and MyAnimeList?
+   *
+   * Absent means yes. This is the lever for an upstream that has started
+   * returning nonsense, or that has started rate-limiting us into the ground —
+   * the cost of leaving it on when it should be off is outbound traffic and
+   * bad metadata written over good.
+   */
+  async externalSyncEnabled (): Promise<boolean> {
+    return (await settings.load()).external_sync_enabled !== false
+  },
+
+  /** May we deliver outbound webhooks? Absent means yes. */
+  async webhooksEnabled (): Promise<boolean> {
+    return (await settings.load()).webhooks_enabled !== false
+  },
+
   /** The site's name, for anywhere the server renders it. */
   async siteName (): Promise<string> {
     const value = (await settings.load()).site_name
