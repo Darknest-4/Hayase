@@ -5,7 +5,7 @@
 import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
 import { T } from '../shared/i18n/i18n.js'
-import { Store } from '../entities/user/store.js'
+import { Store } from '../shared/state/store.js'
 import { U } from '../shared/lib/dom.js'
 
 export const PageList = {

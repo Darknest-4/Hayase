@@ -2,7 +2,7 @@
 // Search page — text search plus the same filters the original search route has
 // (genre, season, year, format, status, sort), with load-more pagination.
 
-import { App } from '../app/router.js'
+import { featureOn } from '../shared/lib/site-config.js'
 import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
 import { T } from '../shared/i18n/i18n.js'
@@ -117,7 +117,7 @@ export const PageSearch = {
     })
     cleanup.observe(document.getElementById('page'), { childList: true })
 
-    const imageOn = !App || App.featureOn('image_search')
+    const imageOn = featureOn('image_search')
 
     /**
      * The filter panel is collapsible, and starts collapsed on a phone.

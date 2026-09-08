@@ -58,7 +58,7 @@ before(async () => {
   storage = store.map
   install({ localStorage: store, document: { createElement: makeElement } })
   ;({ ProfileStats } = await import('../src/features/watch-history/profile-stats.js'))
-  ;({ Store } = await import('../src/entities/user/store.js'))
+  ;({ Store } = await import('../src/shared/state/store.js'))
   ;({ LibrarySync } = await import('../src/features/library-sync/library-sync.js'))
   ;({ I18n } = await import('../src/shared/i18n/i18n.js'))
   assert.ok(ProfileStats, 'profile-stats.js must export ProfileStats')

@@ -3,16 +3,16 @@
 // Notifications, Data, About) with a left-hand tab rail, Netflix/Discord
 // style. Each section is a builder that returns its content node.
 
-import { App } from '../app/router.js'
+import { navigate, refreshNotifications } from '../shared/lib/shell.js'
 import { C } from '../shared/ui/components.js'
 import { T } from '../shared/i18n/i18n.js'
 import { LibrarySync } from '../features/library-sync/library-sync.js'
 import { Onboarding } from '../features/onboarding/onboarding.js'
-import { Prefs } from '../entities/user/preferences.js'
-import { Store } from '../entities/user/store.js'
+import { Prefs } from '../shared/state/preferences.js'
+import { Store } from '../shared/state/store.js'
 import { U } from '../shared/lib/dom.js'
 import { YumeAPI } from '../shared/api/yume.js'
-import { PageThemes } from './themes.js'
+import { PageThemes } from '../features/themes/themes.js'
 
 export const PageSettings = {
   SECTIONS: [
@@ -178,7 +178,7 @@ export const PageSettings = {
         onclick: () => {
           Prefs.reset()
           U.toast(T('Language settings restored'))
-          App?.navigate?.()
+          navigate()
         }
       }, [document.createTextNode(T('Reset to default'))])
     ))
@@ -264,7 +264,7 @@ export const PageSettings = {
           onchange: e => {
             const next = { ...(Store.settings().notifPrefs ?? { airing: true, resume: true, achievement: true }), [key]: e.target.checked }
             Store.saveSettings({ notifPrefs: next })
-            App.refreshNotifBadge?.()
+            refreshNotifications()
           }
         }),
         U.el('span', { class: 'slider' })

@@ -5,6 +5,7 @@
 import { Copy } from '../shared/i18n/copy.js'
 import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
+import { configure as configureFeatures, featureOn } from '../shared/lib/site-config.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
 import { LibrarySync } from '../features/library-sync/library-sync.js'
 import { Onboarding } from '../features/onboarding/onboarding.js'
@@ -20,10 +21,10 @@ import { PageProfiles } from '../pages/profiles.js'
 import { PageSchedule } from '../pages/schedule.js'
 import { PageSearch } from '../pages/search.js'
 import { PageSettings } from '../pages/settings.js'
-import { PageW2G } from '../pages/watch-together.js'
+import { PageW2G } from '../features/watch-together/watch-together.js'
 import { PageWatch } from '../pages/watch.js'
-import { Prefs } from '../entities/user/preferences.js'
-import { Store } from '../entities/user/store.js'
+import { Prefs } from '../shared/state/preferences.js'
+import { Store } from '../shared/state/store.js'
 import { U } from '../shared/lib/dom.js'
 import { YumeAPI } from '../shared/api/yume.js'
 
@@ -317,15 +318,25 @@ export const App = {
   },
 
   // is a cross-cutting feature available? (used by pages, e.g. reviews/comments)
+  /**
+   * Is this feature available to the person looking?
+   *
+   * Kept as a method because most of the client asks through App, but the
+   * answer lives in shared/lib/features.js — the shared UI components ask the
+   * same question, and a component that imported the router to find out made
+   * the foundation depend on the application standing on it.
+   */
   featureOn (name) {
-    const cfg = this.config
-    if (!cfg) return true
-    const flag = cfg.flags['feature.' + name]
-    if (!flag || !flag.enabled) return !flag
-    const signedIn = !!YumeAPI.user()
-    if (flag.access === 'auth' && !signedIn) return false
-    if (flag.access === 'permission' && !this.perms.includes(flag.permission)) return false
-    return true
+    return featureOn(name)
+  },
+
+  /** Hand the flag reader what it needs. Called after config and permissions load. */
+  _publishFeatureState () {
+    configureFeatures({
+      config: this.config,
+      permissions: this.perms ?? [],
+      signedIn: () => !!YumeAPI.user()
+    })
   },
 
   _renderGate (page, gate, route) {
@@ -388,6 +399,7 @@ export const App = {
     await this.loadConfig()
     this._perms = null
     this.perms = YumeAPI.user() ? await YumeAPI.myPermissions() : []
+    this._publishFeatureState()
     this.refreshAdminNav()
     this.applyNavVisibility()
     this.navigate()
@@ -398,6 +410,7 @@ export const App = {
 
   async loadConfig () {
     this.config = await YumeAPI.config()
+    this._publishFeatureState()
   },
 
   // hide nav entries that are disabled or permission-gated-and-unavailable
@@ -717,6 +730,7 @@ export const App = {
     // load DB-driven site config + permissions, apply the site name, then route
     await this.loadConfig()
     this.perms = YumeAPI.user() ? await YumeAPI.myPermissions() : []
+    this._publishFeatureState()
     if (this.config?.site?.name) {
       const logoText = document.querySelector('.sidebar-logo-text')
       if (logoText) logoText.textContent = this.config.site.name.toLowerCase()

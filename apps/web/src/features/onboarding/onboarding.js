@@ -28,10 +28,10 @@
 // On a phone it renders as a bottom sheet rather than a centred dialog — see
 // .onboard-card in style.css.
 
-import { App } from '../../app/router.js'
+import { applyNavLabels, navigate } from '../../shared/lib/shell.js'
 import { C } from '../../shared/ui/components.js'
 import { I18n, T } from '../../shared/i18n/i18n.js'
-import { Prefs } from '../../entities/user/preferences.js'
+import { Prefs } from '../../shared/state/preferences.js'
 import { U } from '../../shared/lib/dom.js'
 
 export const Onboarding = {
@@ -182,8 +182,8 @@ export const Onboarding = {
       Prefs.push(answers, { done: true, skipped }).catch(() => {})
       I18n.setLanguage(answers['language.ui'])
       close()
-      App?.applyNavLabels?.()
-      App?.navigate?.()
+      applyNavLabels()
+      navigate()
       if (!skipped) U.toast(T('Saved — you can change these in Settings'))
     }
 

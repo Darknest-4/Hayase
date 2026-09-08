@@ -9,9 +9,31 @@
 // namespaced `{key}::{profileId}`. Legacy single-profile data ('animelist',
 // 'favourites', 'settings') is migrated into a first "default" profile.
 
-import { LibrarySync } from '../../features/library-sync/library-sync.js'
-import { PageAchievements } from '../../pages/achievements.js'
-import { U } from '../../shared/lib/dom.js'
+import { U } from '../lib/dom.js'
+
+/**
+ * What the store tells the rest of the app about, without knowing who is
+ * listening.
+ *
+ * It used to import the library-sync feature and the achievements page
+ * directly — a piece of shared state reaching up into a feature and a screen,
+ * which meant nothing could use the store without dragging both along, and
+ * neither could be changed without reading the store. The composition root
+ * (app/main.js) registers them at boot instead.
+ *
+ * Both default to doing nothing, so the store is usable on its own: that is
+ * what makes it testable, and what will let a second application use it.
+ */
+const observers = {
+  /** Mirror a change to the account, when the viewer is signed in. */
+  sync: null,
+  /** Which achievements are unlocked, and what they are called. */
+  achievements: null
+}
+
+export function observeStore (which) {
+  Object.assign(observers, which)
+}
 
 export const Store = {
   // ---- raw localStorage helpers ----
@@ -153,7 +175,7 @@ export const Store = {
     const prev = list[media.id] ?? { status: 'PLANNING', progress: 0, score: 0 }
     list[media.id] = { ...prev, ...patch, media: this._snapshot(media), updatedAt: Date.now() }
     this._write(this._profileKey('animelist'), list)
-    LibrarySync?.onEntry(media, list[media.id]) // mirror to the account when signed in
+    observers.sync?.onEntry(media, list[media.id]) // mirror to the account when signed in
     return list[media.id]
   },
 
@@ -161,7 +183,7 @@ export const Store = {
     const list = this.list()
     delete list[mediaId]
     this._write(this._profileKey('animelist'), list)
-    LibrarySync?.onRemove(mediaId)
+    observers.sync?.onRemove(mediaId)
   },
 
   setProgress (media, progress) {
@@ -214,7 +236,7 @@ export const Store = {
     if (seconds > 5) map[key] = Math.floor(seconds)
     else delete map[key]
     this._write(this._profileKey('resume'), map)
-    if (seconds > 5) LibrarySync?.onResume({ id: mediaId }, episode, seconds, meta)
+    if (seconds > 5) observers.sync?.onResume({ id: mediaId }, episode, seconds, meta)
   },
 
   clearResume (mediaId, episode) {
@@ -299,11 +321,11 @@ export const Store = {
     }
 
     // 3) achievement unlocks (diff against last-seen snapshot)
-    if (PageAchievements) {
-      const unlocked = PageAchievements.unlockedSlugs()
+    if (observers.achievements) {
+      const unlocked = observers.achievements.unlockedSlugs()
       const seen = state.seenAch
       for (const slug of unlocked) {
-        const meta = PageAchievements.meta(slug)
+        const meta = observers.achievements.meta(slug)
         if (!meta) continue
         // once seen, keep showing as a (read) notification so the log persists
         items.push({
@@ -380,7 +402,7 @@ export const Store = {
     this._write(this._profileKey('favourites'), favs)
     // Favourites used to live in one browser and nowhere else — the only part
     // of the library that did not follow the account to a second device.
-    LibrarySync?.onFavourite(mediaId, added)
+    observers.sync?.onFavourite(mediaId, added)
     return added
   },
 

@@ -2,7 +2,7 @@
 // Community page — platform-wide recent discussion feed (Yume API),
 // with account sign-in when the user isn't authenticated yet.
 
-import { App } from '../app/router.js'
+import { navigate } from '../shared/lib/shell.js'
 import { C } from '../shared/ui/components.js'
 import { T } from '../shared/i18n/i18n.js'
 import { U } from '../shared/lib/dom.js'
@@ -31,7 +31,7 @@ export const PageCommunity = {
     content.replaceChildren()
 
     if (!YumeAPI.user()) {
-      content.append(C.authCard(() => { App.navigate() }))
+      content.append(C.authCard(() => { navigate() }))
     }
 
     const feed = U.el('div', {}, [U.el('div', { class: 'spinner' })])

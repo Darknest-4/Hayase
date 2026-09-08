@@ -2,10 +2,10 @@
 // Watch History — per-profile chronological log of what you watched,
 // grouped by day. Recorded automatically as episode progress advances.
 
-import { App } from '../app/router.js'
+import { navigate } from '../shared/lib/shell.js'
 import { C } from '../shared/ui/components.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
-import { Store } from '../entities/user/store.js'
+import { Store } from '../shared/state/store.js'
 import { U } from '../shared/lib/dom.js'
 
 export const PageHistory = {
@@ -25,7 +25,7 @@ export const PageHistory = {
           if (!window.confirm('Clear this profile’s entire watch history?')) return
           Store.clearHistory()
           U.toast(T('History cleared'))
-          App.navigate()
+          navigate()
         }
       }, [document.createTextNode(T('Clear history'))])
     ]))

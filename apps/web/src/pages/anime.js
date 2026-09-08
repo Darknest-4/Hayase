@@ -6,12 +6,13 @@
 // icon actions; genre + tag chips; then tabs:
 // Episodes | Relations | Comments | Recommendations.
 
-import { App } from '../app/router.js'
+import { navigate, setTitle } from '../shared/lib/shell.js'
+import { featureOn } from '../shared/lib/site-config.js'
 import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
-import { Prefs } from '../entities/user/preferences.js'
-import { Store } from '../entities/user/store.js'
+import { Prefs } from '../shared/state/preferences.js'
+import { Store } from '../shared/state/store.js'
 import { U } from '../shared/lib/dom.js'
 
 export const PageAnime = {
@@ -55,7 +56,7 @@ export const PageAnime = {
     // served <title> for anything that is not a browser (routes/seo.ts); the
     // client has to repeat it because the router replaces the title on every
     // navigation.
-    App.setTitle(mainTitle)
+    setTitle(mainTitle)
     const secondary = romaji.toLowerCase().trim() === mainTitle.toLowerCase().trim() ? native : romaji
 
     const entry = Store.entry(media.id)
@@ -182,7 +183,7 @@ export const PageAnime = {
         Store.saveEntry(media, { status: 'PLANNING' })
         e.currentTarget.classList.add('active')
         U.toast(T('Added to Planning'))
-        App.navigate()
+        navigate()
       },
       inList
     ))
@@ -202,7 +203,7 @@ export const PageAnime = {
     // `feature.trailers` was a flag nothing read: an operator turning trailers
     // off — because the embeds reach a third party — kept getting them. The
     // switch is the whole reason the row exists.
-    if (media.trailer?.id && (!App || App.featureOn('trailers'))) {
+    if (media.trailer?.id && featureOn('trailers')) {
       actions.append(iconBtn(
         U.svg('<path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1-.3 2.1.3 2.4 1.3Z"/><path d="m6.2 5.3 3.1 3.9"/><path d="m12.4 3.4 3.1 4"/><path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>', 15),
         'Trailer',
@@ -391,7 +392,7 @@ export const PageAnime = {
           Store.saveEntry(media, { status: e.target.value })
           U.toast(`Set to ${U.listStatusMap[e.target.value]}`)
         }
-        App.navigate()
+        navigate()
       }
     }, [
       U.el('option', { value: '', text: entry ? T('✕ Remove from list') : T('＋ Add to List') }),

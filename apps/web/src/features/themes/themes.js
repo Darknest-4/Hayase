@@ -3,11 +3,11 @@
 // presets or a fully custom colour, and optionally tint surfaces toward the
 // accent. Applied live via CSS custom-property overrides (Store.applyTheme).
 
-import { App } from '../app/router.js'
-import { T } from '../shared/i18n/i18n.js'
-import { Store } from '../entities/user/store.js'
-import { U } from '../shared/lib/dom.js'
-import { YumeAPI } from '../shared/api/yume.js'
+import { navigate } from '../../shared/lib/shell.js'
+import { T } from '../../shared/i18n/i18n.js'
+import { Store } from '../../shared/state/store.js'
+import { U } from '../../shared/lib/dom.js'
+import { YumeAPI } from '../../shared/api/yume.js'
 
 export const PageThemes = {
   /**
@@ -91,7 +91,7 @@ export const PageThemes = {
     for (const [value, label, icon] of [['dark', 'Dark', '🌙'], ['light', 'Light', '☀️']]) {
       baseRow.append(U.el('button', {
         class: 'theme-base-opt' + (currentBase === value ? ' active' : ''),
-        onclick: () => { Store.setTheme({ base: value }); App.navigate() }
+        onclick: () => { Store.setTheme({ base: value }); navigate() }
       }, [U.el('span', { text: icon }), document.createTextNode(label)]))
     }
     pad.append(baseRow)
@@ -116,7 +116,7 @@ export const PageThemes = {
             tokens: preset.tokens ?? {},
             slug: preset.slug ?? ''
           })
-          App.navigate()
+          navigate()
         }
       }, [
         U.el('span', { class: 'theme-swatch', style: `background:${preset.accent ?? 'var(--accent)'};` }),
@@ -136,7 +136,7 @@ export const PageThemes = {
       class: 'theme-color-input',
       value: this._toHex(currentAccent) ?? '#f43f6e',
       oninput: e => { Store.setTheme({ accent: e.target.value }) },
-      onchange: () => App.navigate()
+      onchange: () => navigate()
     })
     pad.append(U.el('div', { class: 'theme-custom-row' }, [
       picker,
@@ -147,7 +147,7 @@ export const PageThemes = {
       U.el('button', {
         class: 'btn btn-secondary btn-sm',
         style: 'margin-left:auto;',
-        onclick: () => { Store.setTheme({ accent: '', tint: false }); App.navigate() }
+        onclick: () => { Store.setTheme({ accent: '', tint: false }); navigate() }
       }, [document.createTextNode(T('Reset to default'))])
     ]))
 

@@ -11,7 +11,7 @@
 //   * profile: local Store profiles vs the account's user_profiles. Sync uses
 //     the account's default server profile (created on first sign-in).
 
-import { Store } from '../../entities/user/store.js'
+import { Store } from '../../shared/state/store.js'
 import { YumeAPI } from '../../shared/api/yume.js'
 
 export const LibrarySync = {

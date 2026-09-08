@@ -5,7 +5,7 @@
 //  - ani.zip          (episode images/titles + id mappings)
 //  - filler-scrape    (filler episode markers)
 
-import { Store } from '../../entities/user/store.js'
+import { Store } from '../state/store.js'
 
 export const API = {
   AL_URL: 'https://graphql.anilist.co',

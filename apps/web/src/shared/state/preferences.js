@@ -18,9 +18,9 @@
 // pinned by apps/web/test/prefs.test.mjs, which reads the server file and asserts
 // the two agree — so they can be wrong together but never drift apart quietly.
 
-import { App } from '../../app/router.js'
+import { preferences as sitePreferences } from '../lib/site-config.js'
 import { Store } from './store.js'
-import { YumeAPI } from '../../shared/api/yume.js'
+import { YumeAPI } from '../api/yume.js'
 
 export const Prefs = {
   STORAGE_KEY: 'yume-prefs',
@@ -58,7 +58,7 @@ export const Prefs = {
    * `content.adult` as labels for anyone who was not signed in.
    */
   get spec () {
-    return this._spec ?? App?.config?.preferences ?? null
+    return this._spec ?? sitePreferences() ?? null
   },
 
   set spec (value) {

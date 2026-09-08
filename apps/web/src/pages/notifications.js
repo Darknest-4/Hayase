@@ -10,10 +10,10 @@
 // GraphQL field the client never calls, so the inbox filled up invisibly.
 // They are merged in here, newest first, and marked read on the server.
 
-import { App } from '../app/router.js'
+import { navigate, refreshNotifications } from '../shared/lib/shell.js'
 import { C } from '../shared/ui/components.js'
 import { T } from '../shared/i18n/i18n.js'
-import { Store } from '../entities/user/store.js'
+import { Store } from '../shared/state/store.js'
 import { U } from '../shared/lib/dom.js'
 import { YumeAPI } from '../shared/api/yume.js'
 
@@ -82,14 +82,14 @@ export const PageNotifications = {
         onclick: async () => {
           Store.markAllNotificationsRead()
           if (remote.some(n => !n.read)) await YumeAPI.markNotificationsRead()
-          App.navigate()
-          App.refreshNotifBadge?.()
+          navigate()
+          refreshNotifications()
         }
       }, [document.createTextNode(T('Mark all read'))]),
       U.el('button', {
         class: 'btn btn-ghost btn-sm',
         disabled: all.length ? null : '',
-        onclick: () => { if (window.confirm('Clear all notifications?')) { Store.clearNotifications(); App.navigate(); App.refreshNotifBadge?.() } }
+        onclick: () => { if (window.confirm('Clear all notifications?')) { Store.clearNotifications(); navigate(); refreshNotifications() } }
       }, [document.createTextNode(T('Clear all'))])
     ]))
 
@@ -125,7 +125,7 @@ export const PageNotifications = {
           if (n.read) return
           if (n.serverId) YumeAPI.markNotificationsRead([n.serverId])
           else Store.markNotificationRead(n.id)
-          App.refreshNotifBadge?.()
+          refreshNotifications()
         }
       }, [
         U.el('span', { class: `notif-icon notif-${n.type}`, text: n.icon }),
@@ -146,7 +146,7 @@ export const PageNotifications = {
             if (n.serverId) YumeAPI.markNotificationsRead([n.serverId])
             else Store.dismissNotification(n.id)
             row.remove()
-            App.refreshNotifBadge?.()
+            refreshNotifications()
           }
         }, [document.createTextNode('×')])
       ])

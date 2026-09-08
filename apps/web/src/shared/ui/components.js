@@ -2,10 +2,9 @@
 // Reusable render helpers: cards, horizontal sections, skeletons, modals.
 
 import { Copy } from '../i18n/copy.js'
-import { App } from '../../app/router.js'
-import { Catalogue } from '../../entities/anime/catalogue.js'
+import { featureOn, site } from '../lib/site-config.js'
 import { T } from '../i18n/i18n.js'
-import { Store } from '../../entities/user/store.js'
+import { Store } from '../state/store.js'
 import { U } from '../lib/dom.js'
 import { YumeAPI } from '../api/yume.js'
 
@@ -58,13 +57,31 @@ export const C = {
   // the same AniList source the rest of the app already uses. The chosen title
   // is credited, faintly, in the bottom-right corner.
   _spotlightPool: null,
+  _bannerSource: null,
+
+  /**
+   * Where the ambient banner images come from.
+   *
+   * Registered once at boot rather than imported here. This file is the shared
+   * UI: it knows how to draw a banner and must not know that this application
+   * resolves anime through a catalogue that falls back to AniList. Reaching
+   * for that directly is what tied the foundation to one application's data
+   * layer — and a second application (the admin panel) has no catalogue at all.
+   *
+   * With nothing registered the header simply draws without a banner, which is
+   * exactly what the admin panel wants.
+   */
+  useBannerSource (fetchPool) {
+    this._bannerSource = fetchPool
+    this._spotlightPool = null
+  },
 
   _spotlightPick () {
+    if (!this._bannerSource) return Promise.resolve(null)
     if (!this._spotlightPool) {
       this._spotlightPool = (async () => {
         try {
-          const page = await Catalogue.searchOrAniList({ sort: ['POPULARITY_DESC'], perPage: 50 })
-          return (page.media ?? []).filter(m => m.bannerImage)
+          return await this._bannerSource()
         } catch (e) { return [] }
       })()
     }
@@ -113,7 +130,7 @@ export const C = {
           // setting existed and was rendered nowhere, so the field silently did
           // nothing. An empty value falls back to the translated default rather
           // than leaving a blank line.
-          U.el('p', { class: 'footer-tagline', text: App?.config?.site?.tagline?.trim() || T('footer.tagline') })
+          U.el('p', { class: 'footer-tagline', text: site()?.tagline?.trim() || T('footer.tagline') })
         ]),
         col(T('footer.discover'), [[T('nav.home'), '#/home'], [T('nav.search'), '#/search'], [T('nav.schedule'), '#/schedule'], [T('nav.dashboard'), '#/dashboard']]),
         col(T('footer.library'), [[T('footer.myLibrary'), '#/list'], [T('footer.profile'), '#/profile'], [T('footer.watchHistory'), '#/profile?tab=history'], [T('footer.analytics'), '#/profile?tab=analytics']]),
@@ -121,7 +138,7 @@ export const C = {
         col(T('footer.yume'), [[T('nav.settings'), '#/settings'], [T('nav.notifications'), '#/notifications'], [T('nav.themes'), '#/themes']])
       ]),
       U.el('div', { class: 'footer-bottom' }, [
-        U.el('span', { text: `© ${year} ${Copy?.footer?.brand ?? (App?.config?.site?.name ?? 'Yume')} · ${T('footer.colophon')}` }),
+        U.el('span', { text: `© ${year} ${Copy?.footer?.brand ?? (site()?.name ?? 'Yume')} · ${T('footer.colophon')}` }),
         U.el('span', { class: 'footer-credits', html: 'Anime data from <a href="https://anilist.co" target="_blank" rel="noopener">AniList</a>, <a href="https://jikan.moe" target="_blank" rel="noopener">Jikan</a> &amp; <a href="https://api.ani.zip" target="_blank" rel="noopener">ani.zip</a>' })
       ])
     ])
@@ -140,7 +157,7 @@ export const C = {
 
   _attachPreview (card, media) {
     if (!window.matchMedia('(hover: hover)').matches) return
-    if (App && !App.featureOn('hover_preview')) return
+    if (!featureOn('hover_preview')) return
 
     card.addEventListener('pointerenter', () => {
       clearTimeout(this._previewTimer)
@@ -426,7 +443,7 @@ export const C = {
     // The switch is enforced on the server too now — routes/comments.ts refuses
     // every endpoint when the flag is off — so this says so rather than
     // drawing a thread whose requests would 404.
-    if (App && !App.featureOn('comments')) {
+    if (!featureOn('comments')) {
       return U.el('div', { class: 'empty-state', style: 'max-width:none;', text: T('Comments are turned off.') })
     }
     const list = U.el('div', {}, [U.el('div', { class: 'spinner' })])

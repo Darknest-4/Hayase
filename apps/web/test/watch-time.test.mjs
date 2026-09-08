@@ -15,7 +15,7 @@ import { install, storage as fakeStorage } from './support/browser.mjs'
 
 install()
 const { WatchTime } = await import('../src/features/watch-history/watch-time.js')
-const { Store } = await import('../src/entities/user/store.js')
+const { Store } = await import('../src/shared/state/store.js')
 
 /** A <video> stand-in with the handful of properties the meter reads. */
 function fakeVideo (over = {}) {

@@ -13,7 +13,7 @@
 // of provider access controls, and formats the browser cannot handle are
 // reported honestly rather than pretended away.
 
-import { Prefs } from '../../entities/user/preferences.js'
+import { Prefs } from '../../shared/state/preferences.js'
 
 export const StreamEngine = {
   /** How long a stream gets to produce data before it counts as failed. */

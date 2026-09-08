@@ -6,7 +6,7 @@ import { Charts } from '../shared/ui/charts.js'
 import { C } from '../shared/ui/components.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
 import { ProfileStats } from '../features/watch-history/profile-stats.js'
-import { Store } from '../entities/user/store.js'
+import { Store } from '../shared/state/store.js'
 import { U } from '../shared/lib/dom.js'
 import { WatchTime } from '../features/watch-history/watch-time.js'
 

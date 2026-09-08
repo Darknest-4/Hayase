@@ -6,18 +6,19 @@
 // Together button that opens a sync-room popup. An "up next" end-card offers
 // (auto)play of the following episode.
 
-import { App } from '../app/router.js'
+import { navigate } from '../shared/lib/shell.js'
+import { featureOn } from '../shared/lib/site-config.js'
 import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
 import { LibrarySync } from '../features/library-sync/library-sync.js'
-import { Prefs } from '../entities/user/preferences.js'
-import { Store } from '../entities/user/store.js'
+import { Prefs } from '../shared/state/preferences.js'
+import { Store } from '../shared/state/store.js'
 import { StreamEngine } from '../features/player/stream-engine.js'
 import { U } from '../shared/lib/dom.js'
 import { WatchTime } from '../features/watch-history/watch-time.js'
 import { YumeAPI } from '../shared/api/yume.js'
-import { PageW2G } from './watch-together.js'
+import { PageW2G } from '../features/watch-together/watch-together.js'
 
 export const PageWatch = {
   async render (root, params, arg) {
@@ -102,7 +103,7 @@ export const PageWatch = {
         const progress = Store.entry(media.id)?.progress ?? 0
         Store.setProgress(media, watched && progress === episode ? episode - 1 : episode)
         U.toast(watched ? `Episode ${episode} unmarked` : `Episode ${episode} marked as watched`)
-        App.navigate()
+        navigate()
       }
     }, [U.svg(C.CHECK, 13), document.createTextNode(watched ? 'Watched' : 'Mark watched')])
 
@@ -117,7 +118,7 @@ export const PageWatch = {
         href: `#/watch/${media.id}:${episode + 1}`
       }, [document.createTextNode(T('Next ›'))]),
       // Watch Together — opens the sync-room popup (feature-flagged)
-      (!App || App.featureOn('watch_together'))
+      featureOn('watch_together')
         ? U.el('button', {
           class: 'btn btn-secondary btn-sm w2g-open',
           onclick: () => this.openW2G()

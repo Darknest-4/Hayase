@@ -30,7 +30,7 @@ before(async () => {
     setTimeout: (fn, ms) => realSetTimeout(fn, Math.min(ms ?? 0, 1))
   })
   ;({ LibrarySync } = await import('../src/features/library-sync/library-sync.js'))
-  ;({ Store } = await import('../src/entities/user/store.js'))
+  ;({ Store } = await import('../src/shared/state/store.js'))
   ;({ YumeAPI } = await import('../src/shared/api/yume.js'))
   assert.ok(LibrarySync, 'library-sync.js must export LibrarySync')
 })

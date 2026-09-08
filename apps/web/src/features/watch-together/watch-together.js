@@ -3,10 +3,10 @@
 // Playback sync runs over the /ws socket; PageWatch picks up the ?w2g=
 // param and relays play/pause/seek between room members.
 
-import { C } from '../shared/ui/components.js'
-import { T } from '../shared/i18n/i18n.js'
-import { U } from '../shared/lib/dom.js'
-import { YumeAPI } from '../shared/api/yume.js'
+import { C } from '../../shared/ui/components.js'
+import { T } from '../../shared/i18n/i18n.js'
+import { U } from '../../shared/lib/dom.js'
+import { YumeAPI } from '../../shared/api/yume.js'
 
 export const PageW2G = {
   // one live socket shared with the watch page

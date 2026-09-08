@@ -10,13 +10,13 @@
 // are a copy of the server's, and apps/web/test/achievements.test.mjs fails if the
 // two drift apart.
 
-import { C } from '../shared/ui/components.js'
-import { I18n, T } from '../shared/i18n/i18n.js'
-import { LibrarySync } from '../features/library-sync/library-sync.js'
-import { Store } from '../entities/user/store.js'
-import { U } from '../shared/lib/dom.js'
-import { WatchTime } from '../features/watch-history/watch-time.js'
-import { YumeAPI } from '../shared/api/yume.js'
+import { C } from '../../shared/ui/components.js'
+import { I18n, T } from '../../shared/i18n/i18n.js'
+import { LibrarySync } from '../library-sync/library-sync.js'
+import { Store } from '../../shared/state/store.js'
+import { U } from '../../shared/lib/dom.js'
+import { WatchTime } from '../watch-history/watch-time.js'
+import { YumeAPI } from '../../shared/api/yume.js'
 
 export const PageAchievements = {
   // Each achievement: { slug, name, desc, icon, tier, target, value(ctx) }

@@ -25,7 +25,7 @@
 
 import { I18n } from '../../shared/i18n/i18n.js'
 import { LibrarySync } from '../library-sync/library-sync.js'
-import { Store } from '../../entities/user/store.js'
+import { Store } from '../../shared/state/store.js'
 
 export const ProfileStats = {
   // Kept per profile: two people sharing a browser must not see each other's

@@ -30,7 +30,7 @@
 // timer did not run (throttled tab, sleeping machine), and only the interval
 // itself is credited.
 
-import { Store } from '../../entities/user/store.js'
+import { Store } from '../../shared/state/store.js'
 
 export const WatchTime = {
   /** How often the meter ticks while playing. */

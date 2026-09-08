@@ -27,7 +27,7 @@
 // apps/web/test/i18n.test.mjs lists orphans so that stays visible.
 
 import { Copy } from './copy.js'
-import { Prefs } from '../../entities/user/preferences.js'
+import { Prefs } from '../state/preferences.js'
 
 export const I18n = {
   /** Registered dictionaries: { hu: { 'Start Watching': 'Megnézem' } } */

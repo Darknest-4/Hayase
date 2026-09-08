@@ -4,14 +4,14 @@
 // in settings.dashboard. Everything renders from Store snapshots, so the
 // dashboard works offline with no network calls.
 
-import { App } from '../app/router.js'
+import { navigate } from '../shared/lib/shell.js'
 import { C } from '../shared/ui/components.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
 import { ProfileStats } from '../features/watch-history/profile-stats.js'
-import { Store } from '../entities/user/store.js'
+import { Store } from '../shared/state/store.js'
 import { U } from '../shared/lib/dom.js'
 import { WatchTime } from '../features/watch-history/watch-time.js'
-import { PageAchievements } from './achievements.js'
+import { PageAchievements } from '../features/achievements/achievements.js'
 
 export const PageDashboard = {
   // registry: order here is the default order
@@ -84,7 +84,7 @@ export const PageDashboard = {
   _editor (layout) {
     const wrap = U.el('div', { class: 'dash-editor' })
     const meta = new Map(this.WIDGETS.map(w => [w.key, w]))
-    const rerender = () => { this._saveLayout(layout); App.navigate() }
+    const rerender = () => { this._saveLayout(layout); navigate() }
 
     layout.forEach((w, i) => {
       wrap.append(U.el('div', { class: 'dash-editor-row' }, [
