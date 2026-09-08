@@ -13,7 +13,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const WEB = fileURLToPath(new URL('../../', import.meta.url))
-const ENTRY = join(WEB, 'js/main.js')
+const ENTRY = join(WEB, 'src/app/main.js')
 
 const SPEC = /(?:^|\n)\s*(?:import|export)[\s\S]*?from\s+['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)|(?:^|\n)\s*import\s+['"]([^'"]+)['"]/g
 

@@ -33,7 +33,7 @@ import { parse, print, Kind } from 'graphql'
 import type { DocumentNode, FieldNode, FragmentDefinitionNode, SelectionSetNode } from 'graphql'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const API_JS = readFileSync(join(here, '../../web/js/api.js'), 'utf8')
+const API_JS = readFileSync(join(here, '../../web/src/shared/api/anilist.js'), 'utf8')
 
 /**
  * Pull the GraphQL documents out of the client.

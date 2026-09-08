@@ -14,8 +14,8 @@ import { describe, it, beforeEach, mock } from 'node:test'
 import { install, storage as fakeStorage } from './support/browser.mjs'
 
 install()
-const { WatchTime } = await import('../js/watch-time.js')
-const { Store } = await import('../js/store.js')
+const { WatchTime } = await import('../src/features/watch-history/watch-time.js')
+const { Store } = await import('../src/entities/user/store.js')
 
 /** A <video> stand-in with the handful of properties the meter reads. */
 function fakeVideo (over = {}) {

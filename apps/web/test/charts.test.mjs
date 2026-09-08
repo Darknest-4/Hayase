@@ -40,7 +40,7 @@ let Charts
 
 before(async () => {
   install({ document: svgDocument() })
-  ;({ Charts } = await import('../js/charts.js'))
+  ;({ Charts } = await import('../src/shared/ui/charts.js'))
   assert.ok(Charts, 'charts.js must export Charts')
 })
 

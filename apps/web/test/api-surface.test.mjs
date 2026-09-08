@@ -21,11 +21,11 @@ import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const JS = join(here, '..', 'js')
-const api = readFileSync(join(JS, 'yume-api.js'), 'utf8')
+const SRC = join(here, '..', 'src')
+const api = readFileSync(join(SRC, 'shared/api/yume.js'), 'utf8')
 
 /** Every client script except the vendored third-party ones. */
-function scripts (dir = JS, out = []) {
+function scripts (dir = SRC, out = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === 'vendor') continue
     const path = join(dir, entry.name)

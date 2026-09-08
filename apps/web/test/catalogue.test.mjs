@@ -20,9 +20,9 @@ import { describe, it, before, beforeEach, mock } from 'node:test'
 import { install } from './support/browser.mjs'
 
 install()
-const { Catalogue: CATALOGUE } = await import('../js/catalogue.js')
-const { YumeAPI } = await import('../js/yume-api.js')
-const { API } = await import('../js/api.js')
+const { Catalogue: CATALOGUE } = await import('../src/entities/anime/catalogue.js')
+const { YumeAPI } = await import('../src/shared/api/yume.js')
+const { API } = await import('../src/shared/api/anilist.js')
 
 /**
  * Objects built inside the vm get that realm's Object.prototype, and

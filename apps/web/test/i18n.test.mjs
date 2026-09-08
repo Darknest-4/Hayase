@@ -15,7 +15,7 @@ import { describe, it, beforeEach } from 'node:test'
 
 import { install } from './support/browser.mjs'
 
-const HU_JS = new URL('../i18n/hu.js', import.meta.url)
+const HU_JS = new URL('../src/shared/i18n/hu.js', import.meta.url)
 
 const documentElement = {
   _attrs: {},
@@ -24,9 +24,9 @@ const documentElement = {
 }
 install({ document: { documentElement } })
 
-const { I18n, T } = await import('../js/i18n.js')
-const { Copy } = await import('../copy.js')
-await import('../i18n/hu.js')
+const { I18n, T } = await import('../src/shared/i18n/i18n.js')
+const { Copy } = await import('../src/shared/i18n/copy.js')
+await import('../src/shared/i18n/hu.js')
 
 // Every registered dictionary, kept so a case can take one away and put it
 // back. The client used to be classic scripts, so "without the Hungarian

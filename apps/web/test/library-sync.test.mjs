@@ -29,9 +29,9 @@ before(async () => {
     // not have to wait it out for every one of these cases.
     setTimeout: (fn, ms) => realSetTimeout(fn, Math.min(ms ?? 0, 1))
   })
-  ;({ LibrarySync } = await import('../js/library-sync.js'))
-  ;({ Store } = await import('../js/store.js'))
-  ;({ YumeAPI } = await import('../js/yume-api.js'))
+  ;({ LibrarySync } = await import('../src/features/library-sync/library-sync.js'))
+  ;({ Store } = await import('../src/entities/user/store.js'))
+  ;({ YumeAPI } = await import('../src/shared/api/yume.js'))
   assert.ok(LibrarySync, 'library-sync.js must export LibrarySync')
 })
 

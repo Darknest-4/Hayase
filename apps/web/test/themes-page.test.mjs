@@ -15,9 +15,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 
-const SOURCE = readFileSync(new URL('../js/pages/themes.js', import.meta.url), 'utf8')
-const STORE = readFileSync(new URL('../js/store.js', import.meta.url), 'utf8')
-const APP = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8')
+const SOURCE = readFileSync(new URL('../src/pages/themes.js', import.meta.url), 'utf8')
+const STORE = readFileSync(new URL('../src/entities/user/store.js', import.meta.url), 'utf8')
+const APP = readFileSync(new URL('../src/app/router.js', import.meta.url), 'utf8')
 
 describe('the theme picker', () => {
   it('reads the site theme list', () => {
