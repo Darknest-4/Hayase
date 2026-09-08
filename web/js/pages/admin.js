@@ -2477,6 +2477,11 @@ const PageAdmin = {
       }
     }).catch(() => alertsBox.replaceChildren())
 
+    // ---- components ----
+    const compBox = U.el('div')
+    content.append(compBox)
+    this.renderComponents(compBox)
+
     // ---- diagnostics ----
     const diagBox = U.el('div')
     content.append(diagBox)
@@ -2504,6 +2509,98 @@ const PageAdmin = {
         box.replaceChildren(U.el('div', { class: 'mon-trend-label', text: label }), U.el('div', { class: 'mon-trend-empty', text: 'unavailable' }))
       })
     }
+  },
+
+  // ---- components: what the platform is made of, and what breaks with what ----
+
+  COMPONENT_DOT: { operational: '🟢', degraded: '🟡', down: '🔴', unknown: '⚪' },
+
+  /**
+   * The dependency graph, laid out by depth.
+   *
+   * Columns are "how far from the foundation": the database sits alone on the
+   * left, everything that stands on it in the next column, and so on. That is
+   * the shape an operator needs when several rows are red — it says which one
+   * to fix first, because fixing anything to its right will not help.
+   *
+   * Every card says what its status was measured from. A component that
+   * cannot be measured says `unknown`, and the page says so rather than
+   * rounding it up to green.
+   */
+  async renderComponents (box) {
+    box.replaceChildren(
+      U.el('h2', { class: 'detail-section-title', text: 'Components & dependency graph' }),
+      U.el('div', { class: 'spinner' })
+    )
+    let data
+    try {
+      data = await YumeAPI.admin.monitoring.components()
+    } catch (e) {
+      box.replaceChildren(U.el('h2', { class: 'detail-section-title', text: 'Components & dependency graph' }), C.errorState(e))
+      return
+    }
+
+    const { components = [], summary = {} } = data
+    const byId = new Map(components.map(c => [c.id, c]))
+
+    // Depth = longest path to something with no dependencies. Longest rather
+    // than shortest so a component always sits to the right of everything it
+    // needs, however many ways there are to reach it.
+    const depthOf = (id, seen = new Set()) => {
+      if (seen.has(id)) return 0 // a cycle would otherwise never terminate
+      seen.add(id)
+      const deps = byId.get(id)?.dependsOn ?? []
+      return deps.length ? 1 + Math.max(...deps.map(d => depthOf(d, new Set(seen)))) : 0
+    }
+
+    const columns = []
+    for (const c of components) {
+      const d = depthOf(c.id)
+      ;(columns[d] ??= []).push(c)
+    }
+
+    box.replaceChildren(U.el('h2', { class: 'detail-section-title', text: 'Components & dependency graph' }))
+    box.append(U.el('div', { class: 'comp-summary' }, [
+      U.el('span', { class: 'tone-green', text: `${summary.operational ?? 0} operational` }),
+      summary.degraded ? U.el('span', { class: 'tone-amber', text: `${summary.degraded} degraded` }) : null,
+      summary.down ? U.el('span', { class: 'tone-red', text: `${summary.down} down` }) : null,
+      summary.unknown ? U.el('span', { text: `${summary.unknown} not measurable` }) : null
+    ]))
+
+    const graph = U.el('div', { class: 'comp-graph' })
+    columns.forEach((column, depth) => {
+      graph.append(U.el('div', { class: 'comp-column' }, [
+        U.el('div', {
+          class: 'comp-column-label',
+          text: depth === 0 ? 'Foundation' : `Depends on ${depth} layer${depth === 1 ? '' : 's'}`
+        }),
+        ...column.map(c => this.componentCard(c, byId))
+      ]))
+    })
+    box.append(graph)
+  },
+
+  componentCard (c, byId) {
+    const name = id => byId.get(id)?.name ?? id
+    return U.el('div', { class: 'comp-card s-' + c.status }, [
+      U.el('div', { class: 'comp-card-head' }, [
+        U.el('span', { class: 'comp-dot', text: this.COMPONENT_DOT[c.status] ?? '⚪' }),
+        U.el('span', { class: 'comp-name', text: c.name }),
+        U.el('code', { class: 'comp-id', text: c.id, title: `errors from here are coded ${c.errorPrefix}-<status>` })
+      ]),
+      U.el('div', { class: 'comp-detail', text: c.detail }),
+      c.dependsOn.length
+        ? U.el('div', { class: 'comp-edge', text: '↳ needs ' + c.dependsOn.map(name).join(', ') })
+        : null,
+      // The two lines that make the graph worth drawing rather than listing.
+      c.failingDependencies.length
+        ? U.el('div', { class: 'comp-edge comp-blocked', text: '⚠ blocked by ' + c.failingDependencies.map(name).join(', ') })
+        : null,
+      c.affects.length
+        ? U.el('div', { class: 'comp-edge comp-blast', text: '→ would affect ' + c.affects.map(name).join(', ') })
+        : null,
+      U.el('code', { class: 'comp-measured', text: c.measuredBy, title: c.measuredBy })
+    ])
   },
 
   // ---- diagnostics: admin-triggered, bounded benchmarks ----

@@ -570,6 +570,9 @@ const YumeAPI = {
       history: (metric, hours = 24) => YumeAPI._request(`/v1/admin/monitoring/history?metric=${encodeURIComponent(metric)}&hours=${hours}`, { auth: true }),
       thresholds: () => YumeAPI._request('/v1/admin/monitoring/thresholds', { auth: true }),
       queues: () => YumeAPI._request('/v1/admin/monitoring/queues', { auth: true }),
+      // The component registry: what the platform is made of, what each part
+      // depends on, and a measured status for each.
+      components: () => YumeAPI._request('/v1/admin/monitoring/components', { auth: true }),
       alerts: () => YumeAPI._request('/v1/admin/monitoring/alerts', { auth: true }),
       diagnostics: () => YumeAPI._request('/v1/admin/monitoring/diagnostics', { auth: true }),
       diagnostic: id => YumeAPI._request('/v1/admin/monitoring/diagnostics/' + id, { auth: true }),
