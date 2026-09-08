@@ -3,7 +3,7 @@
 // on the data routes). One profile is always the default; the last profile
 // cannot be deleted.
 
-import { query, queryOne, transaction } from '../db.ts'
+import { query, queryOne, transaction } from '../infrastructure/database/index.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
 

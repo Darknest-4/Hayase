@@ -10,7 +10,7 @@
 // awaited rather than fired and forgotten, so the row lands before the
 // response, but a failure only logs.
 
-import { query } from '../db.ts'
+import { query } from '../infrastructure/database/index.ts'
 
 export type AuditAction =
   | 'user.status'

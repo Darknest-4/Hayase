@@ -116,7 +116,7 @@ describe('the plan', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
   let pool: { query: (sql: string, params?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }>, end: () => Promise<void> }
 
   const load = async (): Promise<typeof pool> => {
-    pool ??= (await import('../src/db.ts')).pool as never
+    pool ??= (await import('../src/infrastructure/database/index.ts')).pool as never
     return pool
   }
 

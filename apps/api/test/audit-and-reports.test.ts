@@ -53,7 +53,7 @@ describe('audit trail and moderation queue', { skip: HAS_DB ? false : 'no DATABA
   const as = (token: string): Record<string, string> => ({ authorization: `Bearer ${token}` })
 
   before(async () => {
-    const [{ buildApp }, db] = await Promise.all([import('../src/app.ts'), import('../src/db.ts')])
+    const [{ buildApp }, db] = await Promise.all([import('../src/app.ts'), import('../src/infrastructure/database/index.ts')])
     app = await buildApp()
     pool = db.pool
     await app.ready()

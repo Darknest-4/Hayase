@@ -21,7 +21,7 @@
 // Creating the partitions here makes `npm run migrate` leave behind a database
 // that can actually be written to, which is what applying a schema is for.
 
-import { query } from '../db.ts'
+import { query } from '../infrastructure/database/index.ts'
 
 /**
  * The partitioned tables and how long their data is kept.

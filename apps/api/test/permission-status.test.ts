@@ -21,7 +21,7 @@ import { dirname, join } from 'node:path'
 import { after, describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-import { pool, query } from '../src/db.ts'
+import { pool, query } from '../src/infrastructure/database/index.ts'
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..', 'src')
 const HAS_DB = Boolean(process.env.DATABASE_URL)

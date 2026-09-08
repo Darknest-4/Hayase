@@ -15,7 +15,7 @@ import { randomUUID } from 'node:crypto'
 import { GraphQLError, type ValidationRule } from 'graphql'
 
 import { config } from './config.ts'
-import { query } from './db.ts'
+import { query } from './infrastructure/database/index.ts'
 import { errorCode } from './lib/error-codes.ts'
 import { recordError } from './lib/errors.ts'
 import { noIndexPath } from './lib/seo.ts'
@@ -124,7 +124,7 @@ export async function buildApp (): Promise<FastifyInstance> {
           ctx.username = payload.username
           const profileHeader = request.headers['x-profile-id']
           if (typeof profileHeader === 'string') {
-            const { queryOne } = await import('./db.ts')
+            const { queryOne } = await import('./infrastructure/database/index.ts')
             const owned = await queryOne('SELECT 1 FROM user_profiles WHERE id = $1 AND user_id = $2', [profileHeader, payload.sub])
             if (owned) ctx.profileId = profileHeader
           }

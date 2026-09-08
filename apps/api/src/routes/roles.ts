@@ -2,7 +2,7 @@
 // Permission-gated (roles.manage). The full permission catalogue and every
 // role's granted slugs are readable here; individual grants toggle live.
 
-import { query, queryOne } from '../db.ts'
+import { query, queryOne } from '../infrastructure/database/index.ts'
 import { invalidatePermissions } from '../plugins/auth.ts'
 import { audit } from '../lib/audit.ts'
 import { emitEvent } from '../lib/webhooks.ts'

@@ -22,7 +22,7 @@
 // is cooperative and lands at a batch boundary — a run is a long sequence of
 // paced requests, not something to abandon mid-transaction.
 
-import { query, queryOne } from '../db.ts'
+import { query, queryOne } from '../infrastructure/database/index.ts'
 import { settings as siteSettings } from '../lib/site-settings.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 import { enrichFromAniList } from './anilist.ts'

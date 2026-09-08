@@ -9,8 +9,8 @@ import { createHash, randomBytes } from 'node:crypto'
 import { config } from '../config.ts'
 import { AUTH_LIMIT, REFRESH_LIMIT } from '../plugins/security.ts'
 import { invalidateSession, revokeTokens } from '../plugins/auth.ts'
-import { query, queryOne, transaction } from '../db.ts'
-import { onUniqueViolation } from '../lib/db-errors.ts'
+import { query, queryOne, transaction } from '../infrastructure/database/index.ts'
+import { onUniqueViolation } from '@yume/database'
 import { hashPassword, verifyPassword } from '../lib/password.ts'
 import { deliverReset } from '../lib/reset-delivery.ts'
 import { settings as siteSettings } from '../lib/site-settings.ts'
@@ -149,8 +149,8 @@ const routes: FastifyPluginAsync = async fastify => {
     // The check above is a courtesy, not a guarantee: two registrations racing
     // each other both pass it, and the unique index is what actually decides.
     // onUniqueViolation turns the loser into the same 409 the sequential path
-    // gives — see lib/db-errors.ts for why this is a shared helper and not a
-    // fifth hand-written try/catch.
+    // gives — see packages/database/src/errors.ts for why this is a shared
+    // helper and not a fifth hand-written try/catch.
     const user = await onUniqueViolation(
       async () => transaction(async client => {
         const { rows } = await client.query<{ id: string }>(

@@ -3,7 +3,7 @@
 // Child collections (titles, genres, images, mappings) use mercurius
 // loaders so nested queries stay free of N+1s.
 
-import { query, queryOne } from '../db.ts'
+import { query, queryOne } from '../infrastructure/database/index.ts'
 
 import type { MercuriusContext, MercuriusLoaders, IResolvers } from 'mercurius'
 

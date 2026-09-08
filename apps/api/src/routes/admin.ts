@@ -2,7 +2,7 @@
 // Every route is permission-gated and every mutation is written to
 // moderation_actions / audit_logs.
 
-import { query, queryOne, transaction } from '../db.ts'
+import { query, queryOne, transaction } from '../infrastructure/database/index.ts'
 import { overview } from '../lib/dashboard.ts'
 import { auditTrail } from '../lib/audit.ts'
 import { errorGroups, errorOccurrences, setErrorGroupStatus } from '../lib/errors.ts'

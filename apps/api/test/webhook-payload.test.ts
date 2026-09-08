@@ -44,7 +44,7 @@ describe('webhook payloads', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () =>
   let received: Received[] = []
 
   before(async () => {
-    const [db, hooks] = await Promise.all([import('../src/db.ts'), import('../src/lib/webhooks.ts')])
+    const [db, hooks] = await Promise.all([import('../src/infrastructure/database/index.ts'), import('../src/lib/webhooks.ts')])
     pool = db.pool
     deliver = hooks.deliver
 

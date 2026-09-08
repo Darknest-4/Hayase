@@ -8,7 +8,7 @@
 // network fetch (fetchMediaBatch) and the DB write (upsertMedia) are split so
 // the mapping/upsert can be unit-tested without touching the network.
 
-import { pool, transaction } from '../db.ts'
+import { pool, transaction } from '../infrastructure/database/index.ts'
 import { resolveFields, applyResolution, CURRENT_COLUMNS, type CurrentRow } from '../lib/metadata.ts'
 
 import type pg from 'pg'

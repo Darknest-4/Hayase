@@ -1,7 +1,7 @@
 // /v1/anime — catalogue browse, detail, episodes, schedule.
 // Public (no auth). Cursor pagination on (sort value, id) keyset.
 
-import { pool, query, queryOne } from '../db.ts'
+import { pool, query, queryOne } from '../infrastructure/database/index.ts'
 import { SEARCH_SORTS, recordSearch, searchAnime, suggest } from '../lib/search.ts'
 import { localiseAnime, localiseEpisode } from '../lib/localise.ts'
 import { requestLanguage, coerce } from '../lib/preferences.ts'

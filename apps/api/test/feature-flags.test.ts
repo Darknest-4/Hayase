@@ -51,7 +51,7 @@ describe('feature flags', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
   before(async () => {
     const [{ buildApp }, db, ff] = await Promise.all([
       import('../src/app.ts'),
-      import('../src/db.ts'),
+      import('../src/infrastructure/database/index.ts'),
       import('../src/lib/feature-flags.ts')
     ])
     app = await buildApp()

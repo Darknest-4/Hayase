@@ -3,7 +3,7 @@
 // the inbox write is the source of truth either way.
 // Job payload: { userId, type, data }
 
-import { query } from '../db.ts'
+import { query } from '../infrastructure/database/index.ts'
 import { publish } from '../lib/ws.ts'
 
 import type { Job } from '../lib/queue.ts'

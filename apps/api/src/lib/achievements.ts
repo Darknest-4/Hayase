@@ -19,7 +19,7 @@
 // the two lists disagree — the same arrangement as the design tokens, for the
 // same reason: two copies of a list are two lists.
 
-import { query, queryOne } from '../db.ts'
+import { query, queryOne } from '../infrastructure/database/index.ts'
 
 export type Tier = 'bronze' | 'silver' | 'gold'
 

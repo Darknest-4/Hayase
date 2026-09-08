@@ -10,7 +10,7 @@
 // entries is not going to happen; translating the 200 that people actually
 // open is a week of work and covers most of what anyone reads.
 
-import { query, queryOne } from '../db.ts'
+import { query, queryOne } from '../infrastructure/database/index.ts'
 import { audit } from '../lib/audit.ts'
 import { UI_LANGUAGES } from '../lib/preferences.ts'
 

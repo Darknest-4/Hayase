@@ -1,6 +1,6 @@
 import { buildApp } from './app.ts'
 import { config } from './config.ts'
-import { pool } from './db.ts'
+import { pool } from './infrastructure/database/index.ts'
 
 const app = await buildApp()
 

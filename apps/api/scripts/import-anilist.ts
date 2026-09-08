@@ -15,7 +15,7 @@
 // shows its progress and can cancel it. Both go through one `metadata_runs`
 // row, so only one pass can be in flight at a time and every pass is recorded.
 
-import { pool, queryOne } from '../src/db.ts'
+import { pool, queryOne } from '../src/infrastructure/database/index.ts'
 import { retryMappingConflicts } from '../src/workers/anilist.ts'
 import { handleMetadataJob, RunInProgress, startRun } from '../src/workers/metadata.ts'
 

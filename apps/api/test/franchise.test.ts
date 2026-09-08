@@ -48,7 +48,7 @@ describe('franchise / watch order', { skip: HAS_DB ? false : 'no DATABASE_URL' }
   }
 
   before(async () => {
-    const [{ buildApp }, db] = await Promise.all([import('../src/app.ts'), import('../src/db.ts')])
+    const [{ buildApp }, db] = await Promise.all([import('../src/app.ts'), import('../src/infrastructure/database/index.ts')])
     app = await buildApp()
     pool = db.pool as never
     await app.ready()

@@ -10,7 +10,7 @@
 
 import { readFile } from 'node:fs/promises'
 
-import { pool, query } from '../db.ts'
+import { pool, query } from '../infrastructure/database/index.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 
 import type { Job } from '../lib/queue.ts'

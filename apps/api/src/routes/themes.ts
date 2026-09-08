@@ -11,7 +11,7 @@
 // twelve hex values, and it meant an operator could not put their own palette
 // in front of their own viewers without publishing a package.
 
-import { query, queryOne, transaction } from '../db.ts'
+import { query, queryOne, transaction } from '../infrastructure/database/index.ts'
 import { audit } from '../lib/audit.ts'
 import { badToken, validColour } from '../lib/colour.ts'
 

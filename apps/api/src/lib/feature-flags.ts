@@ -18,7 +18,7 @@
 // comments off does not have comments, and saying "forbidden" would describe a
 // permission problem the caller could do something about.
 
-import { query } from '../db.ts'
+import { query } from '../infrastructure/database/index.ts'
 
 const TTL_MS = 30_000
 

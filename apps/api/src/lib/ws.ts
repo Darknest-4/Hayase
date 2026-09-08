@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto'
 import websocket from '@fastify/websocket'
 import fp from 'fastify-plugin'
 
-import { query, queryOne } from '../db.ts'
+import { query, queryOne } from '../infrastructure/database/index.ts'
 import { broadcast, start as startPubSub, stop as stopPubSub } from './pubsub.ts'
 
 import type { FastifyInstance } from 'fastify'

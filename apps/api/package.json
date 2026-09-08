@@ -1,5 +1,5 @@
 {
-  "name": "@yume/server",
+  "name": "@yume/api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -26,6 +26,7 @@
     "@fastify/rate-limit": "^11.2.0",
     "@fastify/static": "^10.1.0",
     "@fastify/websocket": "^11.0.1",
+    "@yume/database": "*",
     "fastify": "^5.1.0",
     "fastify-plugin": "^5.0.1",
     "graphql": "^16.14.2",

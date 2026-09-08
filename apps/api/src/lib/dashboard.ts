@@ -14,7 +14,7 @@
 // dead jobs — get no comparison at all, because the past value was never
 // recorded and there is no honest way to produce one.
 
-import { query, queryOne } from '../db.ts'
+import { query, queryOne } from '../infrastructure/database/index.ts'
 
 export interface Kpi {
   key: string

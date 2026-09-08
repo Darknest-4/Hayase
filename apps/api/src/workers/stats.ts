@@ -4,7 +4,7 @@
 //   { rollupDay: 'YYYY-MM-DD' } → recompute watch_stats_daily for a day
 //   { trending: true }    → recompute anime.trending from recent activity
 
-import { query } from '../db.ts'
+import { query } from '../infrastructure/database/index.ts'
 import { grantNew } from '../lib/achievements.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 

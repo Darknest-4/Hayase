@@ -41,7 +41,7 @@ describe('MAL id collisions', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () =
   }
 
   before(async () => {
-    const db = await import('../src/db.ts')
+    const db = await import('../src/infrastructure/database/index.ts')
     pool = db.pool as never
     ;({ writeMalId } = await import('../src/workers/anilist.ts'))
   })

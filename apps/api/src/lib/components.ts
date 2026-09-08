@@ -25,7 +25,7 @@
 // The dependency edges are declared, and the reverse edges (what breaks if
 // this breaks) are derived from them so the two cannot disagree.
 
-import { query, queryOne } from '../db.ts'
+import { query, queryOne } from '../infrastructure/database/index.ts'
 import { probePostgres, probeWorker, safeDetail } from './probes.ts'
 
 export type ComponentStatus = 'operational' | 'degraded' | 'down' | 'unknown'

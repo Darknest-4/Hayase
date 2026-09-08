@@ -4,7 +4,7 @@
 // and, unlike the public /v1/anime routes, these see hidden entries so
 // operators can find and restore them.
 
-import { query, queryOne, pool, transaction } from '../db.ts'
+import { query, queryOne, pool, transaction } from '../infrastructure/database/index.ts'
 import { audit } from '../lib/audit.ts'
 import { enqueue } from '../lib/queue.ts'
 import { activeRun, coverage, requestCancel, startRun, RunInProgress } from '../workers/metadata.ts'

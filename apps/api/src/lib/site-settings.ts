@@ -20,7 +20,7 @@
 // against one database, where flipping `require_login` for a second would
 // hand unrelated suites a 401.
 
-import { query } from '../db.ts'
+import { query } from '../infrastructure/database/index.ts'
 
 const TTL_MS = 30_000
 

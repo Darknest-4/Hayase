@@ -10,7 +10,7 @@
 // row and the clock, which keeps the state machine unit-testable; `evaluate`
 // applies those decisions to the database and emits webhooks.
 
-import { query } from '../db.ts'
+import { query } from '../infrastructure/database/index.ts'
 import { enqueue } from './queue.ts'
 import { emitEvent } from './webhooks.ts'
 

@@ -26,7 +26,7 @@
 // All five were empty before this existed. The tables have been in the schema
 // since migration 0002; nothing ever wrote to them.
 
-import { pool, transaction } from '../db.ts'
+import { pool, transaction } from '../infrastructure/database/index.ts'
 
 import type pg from 'pg'
 

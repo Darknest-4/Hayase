@@ -10,7 +10,7 @@ import fastifyJwt from '@fastify/jwt'
 import fp from 'fastify-plugin'
 
 import { config } from '../config.ts'
-import { query } from '../db.ts'
+import { query } from '../infrastructure/database/index.ts'
 import { flags } from '../lib/feature-flags.ts'
 
 import type { FastifyReply, FastifyRequest, preHandlerHookHandler } from 'fastify'

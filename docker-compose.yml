@@ -23,7 +23,9 @@ services:
       # client on a different origin, e.g. CORS_ORIGINS=https://app.example.com
       # CORS_ORIGINS: ''
       # Only the Docker network may set X-Forwarded-For. Never `true`: that
-      # trusts the header from anyone and makes rate limiting bypassable.
+      # trusts the header from anyone and makes rate limiting bypassable, and
+      # never a bare hop count — Fastify 5.12 reads that as "trust nobody",
+      # which puts every client into one rate-limit bucket. Address or subnet.
       TRUST_PROXY: ${TRUST_PROXY:-172.16.0.0/12}
       # This site's public address. Used for the canonical link, the Open Graph
       # URL and the Sitemap: line in robots.txt. Leave it unset and those are

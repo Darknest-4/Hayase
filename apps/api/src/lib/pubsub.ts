@@ -26,7 +26,7 @@ import { randomUUID } from 'node:crypto'
 import pg from 'pg'
 
 import { config } from '../config.ts'
-import { query } from '../db.ts'
+import { query } from '../infrastructure/database/index.ts'
 
 /** One Postgres notification channel carries everything; the app channel is inside. */
 const NOTIFY_CHANNEL = 'yume_ws'

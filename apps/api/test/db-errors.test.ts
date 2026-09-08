@@ -12,7 +12,7 @@ import { describe, it } from 'node:test'
 const {
   PG, isUniqueViolation, isForeignKeyViolation, violatedConstraint,
   onUniqueViolation, retryOnCollision
-} = await import('../src/lib/db-errors.ts')
+} = await import('@yume/database')
 
 /** What node-postgres actually throws: an Error carrying code and constraint. */
 const pgError = (code: string, constraint?: string): Error => {

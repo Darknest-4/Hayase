@@ -42,9 +42,10 @@ function jwtSecret (): string {
  *
  * The safe default is to trust nobody and use the real socket address.
  * Deployments behind a reverse proxy set TRUST_PROXY to that proxy's address
- * or subnet (e.g. the Docker network), or to a hop count.
+ * or subnet (e.g. the Docker network). A bare hop count is refused — see the
+ * comment on the check below for what Fastify does with one now.
  */
-function trustProxy (): boolean | string[] | number {
+function trustProxy (): boolean | string[] {
   const raw = process.env.TRUST_PROXY?.trim()
   if (!raw || raw === 'false') return false
 
@@ -54,14 +55,45 @@ function trustProxy (): boolean | string[] | number {
     if (isProd) {
       throw new Error(
         'TRUST_PROXY=true trusts X-Forwarded-For from any client, which lets anyone bypass rate limiting. ' +
-        'Set it to your proxy\'s address or subnet (e.g. TRUST_PROXY=172.16.0.0/12) or a hop count (TRUST_PROXY=1).'
+        'Set it to your proxy\'s address or subnet, e.g. TRUST_PROXY=172.16.0.0/12'
       )
     }
     return true
   }
 
-  const hops = Number(raw)
-  if (Number.isInteger(hops) && hops > 0) return hops
+  /*
+   * A bare hop count is refused, and this is a change.
+   *
+   * It used to be supported — TRUST_PROXY=1 meant "believe the last entry of
+   * X-Forwarded-For" — and Fastify honoured it. As of Fastify 5.12 a numeric
+   * trustProxy trusts *nobody*:
+   *
+   *     if (typeof tp === 'number') {
+   *       // Hop-count-only trust cannot validate the immediate peer.
+   *       return function () { return false }
+   *     }
+   *
+   * They are right, and the reason matters here. A hop count cannot check who
+   * the immediate peer is, so a client connecting directly can supply as many
+   * hops as it likes and be believed. Failing closed is the correct answer.
+   *
+   * But failing closed *silently* is not, for this application. With nobody
+   * trusted, request.ip is the reverse proxy's own address for every request,
+   * and the rate limiter keys on request.ip — so the entire internet shares one
+   * bucket. The limit still "works"; it just protects nothing and locks
+   * everybody out together. That is a worse failure than the one the hop count
+   * was trying to avoid, and it is invisible until it happens.
+   *
+   * So the misconfiguration is refused at boot instead, where somebody is
+   * looking. There is a correct value and the message names it.
+   */
+  if (/^\d+$/.test(raw)) {
+    throw new Error(
+      `TRUST_PROXY=${raw} is a hop count, which Fastify no longer honours: since 5.12 a numeric ` +
+      'value trusts nobody, so request.ip becomes the proxy and every client shares one rate-limit ' +
+      'bucket. Set the proxy\'s address or subnet instead, e.g. TRUST_PROXY=172.16.0.0/12'
+    )
+  }
 
   return raw.split(',').map(entry => entry.trim()).filter(Boolean)
 }

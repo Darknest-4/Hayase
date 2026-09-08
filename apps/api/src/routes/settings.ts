@@ -13,7 +13,7 @@
 // What may be stored is decided entirely by lib/preferences.ts. This file
 // contains no list of keys.
 
-import { query, queryOne } from '../db.ts'
+import { query, queryOne } from '../infrastructure/database/index.ts'
 import { PREFERENCES, coerce, isPreferenceKey, resolve } from '../lib/preferences.ts'
 
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'

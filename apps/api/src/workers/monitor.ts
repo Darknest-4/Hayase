@@ -10,7 +10,7 @@
 // Everything is best-effort: a failing collector degrades to a missing metric,
 // it never fails the job or blocks the others.
 
-import { query, queryOne } from '../db.ts'
+import { query, queryOne } from '../infrastructure/database/index.ts'
 import { evaluate, pruneResolvedAlerts } from '../lib/alerts.ts'
 import { formatReport, runDiagnostics } from '../lib/diagnostics.ts'
 import { collectHost } from '../lib/metrics.ts'

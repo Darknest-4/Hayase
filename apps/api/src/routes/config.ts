@@ -4,7 +4,7 @@
 //   PATCH /v1/admin/config/flags/:key    — toggle / edit a feature flag
 //   PATCH /v1/admin/config/settings/:key — set a global site setting
 
-import { query, queryOne } from '../db.ts'
+import { query, queryOne } from '../infrastructure/database/index.ts'
 import { settings as siteSettings } from '../lib/site-settings.ts'
 import { flags as featureFlags } from '../lib/feature-flags.ts'
 import { configured as passwordResetConfigured } from '../lib/reset-delivery.ts'

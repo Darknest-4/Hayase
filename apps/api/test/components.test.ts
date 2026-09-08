@@ -26,7 +26,7 @@ describe('component registry', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () 
 
   before(async () => {
     const [db, mod] = await Promise.all([
-      import('../src/db.ts'),
+      import('../src/infrastructure/database/index.ts'),
       import('../src/lib/components.ts')
     ])
     pool = db.pool

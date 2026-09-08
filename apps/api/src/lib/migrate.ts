@@ -6,7 +6,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { pool } from '../db.ts'
+import { pool } from '../infrastructure/database/index.ts'
 import { check as checkEncoding } from './db-encoding.ts'
 import { ensurePartitions } from './partitions.ts'
 

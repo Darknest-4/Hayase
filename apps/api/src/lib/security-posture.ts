@@ -21,7 +21,7 @@
 //     different answers and only one of them is honest.
 
 import { config } from '../config.ts'
-import { query, queryOne } from '../db.ts'
+import { query, queryOne } from '../infrastructure/database/index.ts'
 import { settings } from './site-settings.ts'
 
 export type Verdict = 'pass' | 'warn' | 'fail' | 'skipped' | 'unknown'

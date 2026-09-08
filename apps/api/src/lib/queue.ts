@@ -2,7 +2,7 @@
 // runWorker() is the poll loop used by the worker entrypoint.
 // Payloads carry ids, not data — handlers re-read state from the DB.
 
-import { pool, query, queryOne } from '../db.ts'
+import { pool, query, queryOne } from '../infrastructure/database/index.ts'
 
 export type QueueName = 'stats' | 'notify' | 'maintenance' | 'import' | 'search-index' | 'ext-review' | 'webhook' | 'monitor' | 'metadata'
 

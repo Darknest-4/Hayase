@@ -10,7 +10,7 @@
 // Direction matters: most metrics are "higher is worse" (cpu, latency), which
 // is what compare() assumes.
 
-import { queryOne } from '../db.ts'
+import { queryOne } from '../infrastructure/database/index.ts'
 
 export type Level = 'green' | 'yellow' | 'red'
 

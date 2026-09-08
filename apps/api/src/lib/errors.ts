@@ -10,7 +10,7 @@
 
 import { createHash } from 'node:crypto'
 
-import { query, queryOne } from '../db.ts'
+import { query, queryOne } from '../infrastructure/database/index.ts'
 
 export type ErrorSource = 'api' | 'worker' | 'web' | 'desktop' | 'mobile'
 

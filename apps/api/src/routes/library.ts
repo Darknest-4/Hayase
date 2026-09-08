@@ -1,7 +1,7 @@
 // /v1/me — per-profile library, progress, continue-watching.
 // All routes require auth + X-Profile-Id header (must belong to the user).
 
-import { query, queryOne } from '../db.ts'
+import { query, queryOne } from '../infrastructure/database/index.ts'
 import { enqueue } from '../lib/queue.ts'
 import { WRITE_LIMIT } from '../plugins/security.ts'
 import { recomputeProfileStats } from '../workers/stats.ts'

@@ -42,6 +42,21 @@ try {
   chromium = null
 }
 
+/*
+ * Skipping is for a developer without a browser installed. It is NOT for CI.
+ *
+ * These files report `# tests 0 / # fail 0 / exit 0` when playwright cannot be
+ * imported, which reads as a pass in every summary that matters — and this
+ * repository has already lost days to a pipeline that was green while checking
+ * nothing. A missing browser in CI is a broken job, not an absent one.
+ */
+if (!chromium && process.env.CI) {
+  throw new Error(
+    'playwright could not be imported and CI is set. The end-to-end job must ' +
+    'run these tests, not skip them — install playwright before this step.'
+  )
+}
+
 const REASON = !chromium
   ? 'playwright is not installed'
   : !process.env.DATABASE_URL
@@ -73,7 +88,7 @@ describe('responsive layout', { skip: REASON }, () => {
     process.env.LOG_LEVEL ??= 'warn'
     const [{ buildApp }, db] = await Promise.all([
       import('../../apps/api/src/app.ts'),
-      import('../../apps/api/src/db.ts')
+      import('../../apps/api/src/infrastructure/database/index.ts')
     ])
     server = await buildApp()
     pool = db.pool

@@ -1,7 +1,7 @@
 // /v1/admin/webhooks — CRUD + test fire for outbound webhooks.
 // Permission-gated (admin.webhooks.manage). Secrets are never returned.
 
-import { query, queryOne } from '../db.ts'
+import { query, queryOne } from '../infrastructure/database/index.ts'
 import { deliver, WEBHOOK_EVENTS, type WebhookEvent } from '../lib/webhooks.ts'
 import { checkOutboundUrl } from '../lib/ssrf.ts'
 

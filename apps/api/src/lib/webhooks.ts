@@ -7,7 +7,7 @@
 
 import { createHmac, randomUUID } from 'node:crypto'
 
-import { query, queryOne } from '../db.ts'
+import { query, queryOne } from '../infrastructure/database/index.ts'
 import { enqueue } from './queue.ts'
 import { settings } from './site-settings.ts'
 import { checkOutboundUrl } from './ssrf.ts'

@@ -25,7 +25,7 @@ describe('event table partitions', { skip: REASON }, () => {
 
   before(async () => {
     const [db, partitions] = await Promise.all([
-      import('../src/db.ts'),
+      import('../src/infrastructure/database/index.ts'),
       import('../src/lib/partitions.ts')
     ])
     pool = db.pool

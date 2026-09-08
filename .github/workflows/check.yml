@@ -42,10 +42,15 @@ jobs:
           # 22.6+ is required for --experimental-strip-types
           node-version: '22'
           cache: npm
-          cache-dependency-path: apps/api/package-lock.json
+          cache-dependency-path: package-lock.json
 
+      # At the repository root, not in apps/api: this is an npm workspace, so
+      # there is one lockfile and dependencies hoist into the root
+      # node_modules. `npm ci` inside a workspace directory would refuse — the
+      # lockfile it wants is not there.
       - name: Install dependencies
         run: npm ci
+        working-directory: .
 
       - name: Typecheck
         run: npm run check
@@ -162,7 +167,7 @@ jobs:
       # passing one made ESLint fail with "No files matching" — so this step
       # was erroring out rather than linting anything.
       - name: Lint the client
-        run: npx --yes standard --ignore "apps/web/js/vendor/**" "apps/web/**/*.js" "apps/web/test/*.mjs"
+        run: npx --yes standard --ignore "apps/web/js/vendor/**" "apps/web/**/*.js" "apps/web/test/*.mjs" "tests/e2e/*.mjs"
 
       # The engine is the one piece of client code with real logic in it —
       # everything else is rendering. It loads against a small DOM stub, so it
@@ -172,6 +177,22 @@ jobs:
       # copy of it.
       - name: Client tests
         run: node --experimental-strip-types --test apps/web/test/*.test.mjs
+
+      # The shared packages are typechecked by the API's tsconfig, which
+      # follows the import into packages/database. Nothing here compiles them
+      # separately, so this asserts the workspace links actually resolve —
+      # a broken exports map fails at import, not at typecheck.
+      - name: The workspace links resolve
+        run: |
+          npm ci
+          node --experimental-strip-types -e "
+            import('@yume/database').then(m => {
+              const want = ['createPool', 'helpers', 'Repository', 'PG', 'isUniqueViolation']
+              const missing = want.filter(k => !(k in m))
+              if (missing.length) { console.error('@yume/database is missing: ' + missing); process.exit(1) }
+              console.log('@yume/database resolves, ' + Object.keys(m).length + ' exports')
+            })
+          "
 
   # Nothing in this pipeline ever built the container, so a Dockerfile that
   # could not parse went through review, through CI and through a merge — the
@@ -240,15 +261,14 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: apps/api/package-lock.json
+          cache-dependency-path: package-lock.json
 
-      - name: Install server dependencies
+      - name: Install dependencies
         run: npm ci
-        working-directory: apps/api
 
       - name: Install Playwright
-        # At the repository root: the test lives under apps/web/, so this is where
-        # its import resolves from.
+        # At the repository root: the cross-app end-to-end tests live in
+        # tests/e2e/, and this is where their import resolves from.
         run: |
           npm install --no-save playwright@1.56
           npx playwright install --with-deps chromium

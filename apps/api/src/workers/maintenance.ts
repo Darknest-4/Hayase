@@ -2,7 +2,7 @@
 // event tables and prunes expired data per the retention policy
 // (docs/database.md).
 
-import { query } from '../db.ts'
+import { query } from '../infrastructure/database/index.ts'
 // Partition creation is shared with the migration runner, which has to leave a
 // freshly applied schema in a writable state rather than waiting for the first
 // run of this job. See lib/partitions.ts.

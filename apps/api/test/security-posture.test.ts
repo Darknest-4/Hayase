@@ -29,7 +29,7 @@ describe('security posture', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () =>
 
   before(async () => {
     const [db, sp] = await Promise.all([
-      import('../src/db.ts'),
+      import('../src/infrastructure/database/index.ts'),
       import('../src/lib/security-posture.ts')
     ])
     pool = db.pool

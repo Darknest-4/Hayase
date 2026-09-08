@@ -16,7 +16,7 @@ import { writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { pool } from '../src/db.ts'
+import { pool } from '../src/infrastructure/database/index.ts'
 import { applyFillerData, generateEpisodes, importFile } from '../src/workers/importer.ts'
 import { recomputeTrending } from '../src/workers/stats.ts'
 

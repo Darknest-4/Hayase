@@ -22,7 +22,7 @@ describe('admin dashboard', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => 
   let data: Awaited<ReturnType<typeof overview>>
 
   before(async () => {
-    const db = await import('../src/db.ts')
+    const db = await import('../src/infrastructure/database/index.ts')
     pool = db.pool as never
     data = await overview(7)
   })

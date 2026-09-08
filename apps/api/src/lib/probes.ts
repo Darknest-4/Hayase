@@ -12,7 +12,7 @@
 import net from 'node:net'
 
 import { config } from '../config.ts'
-import { query } from '../db.ts'
+import { query } from '../infrastructure/database/index.ts'
 
 export type ServiceStatus = 'green' | 'yellow' | 'red' | 'not_configured'
 

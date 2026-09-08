@@ -13,7 +13,7 @@
 //     out of an importer, which means it is not trusted. It is escaped at the
 //     point of use by lib/seo.ts and nowhere else.
 
-import { query, queryOne } from '../db.ts'
+import { query, queryOne } from '../infrastructure/database/index.ts'
 import { settings as siteSettings } from '../lib/site-settings.ts'
 import {
   escapeHtml, publicOrigin, summarise, template, withMeta, type PageMeta

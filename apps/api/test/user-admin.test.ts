@@ -56,7 +56,7 @@ describe('account administration', { skip: HAS_DB ? false : 'no DATABASE_URL' },
   const as = (token: string): Record<string, string> => ({ authorization: `Bearer ${token}` })
 
   before(async () => {
-    const [{ buildApp }, db] = await Promise.all([import('../src/app.ts'), import('../src/db.ts')])
+    const [{ buildApp }, db] = await Promise.all([import('../src/app.ts'), import('../src/infrastructure/database/index.ts')])
     app = await buildApp()
     pool = db.pool
     await app.ready()

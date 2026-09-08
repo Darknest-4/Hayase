@@ -13,7 +13,7 @@
 // GET says where. A control whose "enforced by" is empty does not belong in
 // this file.
 
-import { query, queryOne, transaction } from '../db.ts'
+import { query, queryOne, transaction } from '../infrastructure/database/index.ts'
 import { posture } from '../lib/security-posture.ts'
 import { settings as siteSettings } from '../lib/site-settings.ts'
 

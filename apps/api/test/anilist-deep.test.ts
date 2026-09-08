@@ -43,7 +43,7 @@ describe('deep AniList metadata', { skip: HAS_DB ? false : 'no DATABASE_URL' }, 
   }
 
   before(async () => {
-    const [db, { buildApp }] = await Promise.all([import('../src/db.ts'), import('../src/app.ts')])
+    const [db, { buildApp }] = await Promise.all([import('../src/infrastructure/database/index.ts'), import('../src/app.ts')])
     pool = db.pool as never
     ;({ upsertDeep } = await import('../src/workers/anilist-deep.ts'))
     app = await buildApp()

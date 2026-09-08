@@ -1,0 +1,16 @@
+{
+  "name": "@yume/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "PostgreSQL client, query helpers, transaction scope and the repository base",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10"
+  }
+}

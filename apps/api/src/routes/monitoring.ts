@@ -11,7 +11,7 @@
 // Neither endpoint collects anything: the monitor worker owns collection and
 // these read the last stored snapshot, so polling them is cheap.
 
-import { query, queryOne } from '../db.ts'
+import { query, queryOne } from '../infrastructure/database/index.ts'
 import { components } from '../lib/components.ts'
 import { activeAlerts, alertHistory } from '../lib/alerts.ts'
 import { isRunning } from '../lib/diagnostics.ts'

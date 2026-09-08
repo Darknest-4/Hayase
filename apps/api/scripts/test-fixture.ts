@@ -23,7 +23,7 @@
 // account and must never be created on a real deployment — that is what the
 // bootstrap in registration is for.
 
-import { pool } from '../src/db.ts'
+import { pool } from '../src/infrastructure/database/index.ts'
 
 const USERNAME = 'ci_fixture_admin'
 

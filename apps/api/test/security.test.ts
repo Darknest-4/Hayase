@@ -165,6 +165,6 @@ describe('production secret validation', () => {
 // so it is swallowed; failing to close one is what actually costs something.
 after(async () => {
   for (const app of opened) await app.close().catch(() => {})
-  const { pool } = await import('../src/db.ts')
+  const { pool } = await import('../src/infrastructure/database/index.ts')
   await pool.end()
 })

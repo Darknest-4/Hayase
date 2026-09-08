@@ -1,7 +1,7 @@
 // /v1/reports — user-facing content reporting. The moderation queue that
 // consumes these lives under /v1/admin/reports.
 
-import { queryOne } from '../db.ts'
+import { queryOne } from '../infrastructure/database/index.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 
 import type { FastifyPluginAsync } from 'fastify'

@@ -98,7 +98,7 @@ describe('what the web root serves', () => {
       '/..%2fserver%2fsrc%2fconfig.ts',
       '/%2e%2e/%2e%2e/.env',
       '/js/../../apps/api/src/config.ts',
-      '/js/%2e%2e/%2e%2e/apps/api/src/db.ts'
+      '/js/%2e%2e/%2e%2e/apps/api/src/config.ts'
     ]) {
       assert.equal(await served(url), false, `${url} escaped the document root`)
     }

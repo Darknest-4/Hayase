@@ -2,7 +2,7 @@
 // Threading uses the materialised path column; this API exposes one level
 // of nesting (top-level + replies), which is what the client renders.
 
-import { query, queryOne, transaction } from '../db.ts'
+import { query, queryOne, transaction } from '../infrastructure/database/index.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 import { notify } from '../workers/notify.ts'
 

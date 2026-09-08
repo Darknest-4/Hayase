@@ -2,7 +2,7 @@
 // Schedules its own recurring jobs (maintenance hourly, trending hourly,
 // daily rollup) by enqueueing with dedupe keys.
 
-import { pool } from '../db.ts'
+import { pool } from '../infrastructure/database/index.ts'
 import { recordError } from '../lib/errors.ts'
 import { drain, enqueue, runWorker } from '../lib/queue.ts'
 import { handleWebhookJob } from '../lib/webhooks.ts'

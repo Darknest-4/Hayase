@@ -3,11 +3,11 @@
 
 import { randomBytes } from 'node:crypto'
 
-import { query, queryOne } from '../db.ts'
+import { query, queryOne } from '../infrastructure/database/index.ts'
 import { presence } from '../lib/ws.ts'
 import { emitEvent } from '../lib/webhooks.ts'
 
-import { retryOnCollision } from '../lib/db-errors.ts'
+import { retryOnCollision } from '@yume/database'
 
 import type { FastifyPluginAsync } from 'fastify'
 

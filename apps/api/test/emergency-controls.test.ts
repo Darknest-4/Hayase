@@ -77,7 +77,7 @@ describe('emergency controls', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () 
   before(async () => {
     const [{ buildApp }, db, ss] = await Promise.all([
       import('../src/app.ts'),
-      import('../src/db.ts'),
+      import('../src/infrastructure/database/index.ts'),
       import('../src/lib/site-settings.ts')
     ])
     app = await buildApp()

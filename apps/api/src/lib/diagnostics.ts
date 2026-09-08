@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { config } from '../config.ts'
-import { query } from '../db.ts'
+import { query } from '../infrastructure/database/index.ts'
 import { DISK_PATH } from './metrics.ts'
 import { probeAll } from './probes.ts'
 
