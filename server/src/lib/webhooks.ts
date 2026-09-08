@@ -5,10 +5,11 @@
 //                            HMAC-signed JSON for generic endpoints
 // Every event type is individually subscribable per webhook.
 
-import { createHmac } from 'node:crypto'
+import { createHmac, randomUUID } from 'node:crypto'
 
 import { query, queryOne } from '../db.ts'
 import { enqueue } from './queue.ts'
+import { settings } from './site-settings.ts'
 import { checkOutboundUrl } from './ssrf.ts'
 
 import type { Job } from './queue.ts'
@@ -18,6 +19,7 @@ export const WEBHOOK_EVENTS = [
   'user.registered',        // new account
   'user.moderated',         // suspend/ban/restore
   'user.deleted',           // an account deleted itself — carries no identifying data beyond the name
+  'user.roles.changed',     // a role was granted or revoked on an account
   'user.password_reset_requested', // a reset was asked for — NEVER carries the token
   'comment.created',        // new top-level comment or reply
   'report.created',         // content reported
@@ -43,8 +45,12 @@ export async function emitEvent (event: WebhookEvent, data: Record<string, unkno
     'SELECT id FROM webhooks WHERE enabled AND $1 = ANY(events)',
     [event]
   )
+  const at = new Date().toISOString()
   for (const hook of hooks) {
-    await enqueue('webhook', { webhookId: hook.id, event, data, at: new Date().toISOString() })
+    // One id per (event, webhook), minted here so it survives every retry of
+    // the delivery job — that is what makes it usable for deduplication on
+    // the receiving side.
+    await enqueue('webhook', { webhookId: hook.id, event, data, at, deliveryId: randomUUID() })
   }
 }
 
@@ -71,7 +77,18 @@ const field = (name: string, value: unknown, inline = true) =>
 function renderEmbed (event: WebhookEvent, d: Record<string, unknown>): Embed {
   switch (event) {
     case 'user.registered':
-      return { title: '👤 New user registered', color: COLORS.success, fields: [field('Username', d.username)] }
+      return {
+        title: '👤 New user registered',
+        color: COLORS.success,
+        fields: [
+          field('Username', d.username),
+          field('Account #', d.totalUsers),
+          // The bootstrap promotes the first account on an instance with no
+          // administrator. That is the single most consequential thing this
+          // system does without anybody approving it, so it is said out loud.
+          ...(d.promotedToAdmin ? [field('⚠️ Promoted', 'first account — granted admin', false)] : [])
+        ]
+      }
     // The name is all this carries. Nothing that identifies the person
     // survives the deletion, so nothing that identifies them is announced.
     case 'user.deleted':
@@ -85,7 +102,26 @@ function renderEmbed (event: WebhookEvent, d: Record<string, unknown>): Embed {
       return {
         title: `🔨 User ${d.action}`,
         color: d.action === 'restore' ? COLORS.success : COLORS.danger,
-        fields: [field('User', d.username), field('Action', d.action), field('Reason', d.reason, false)]
+        fields: [
+          field('User', d.username),
+          field('Action', d.action),
+          field('By', d.by),
+          field('Member since', d.memberSince),
+          field('Sessions ended', d.sessionsRevoked),
+          field('Reason', d.reason, false)
+        ]
+      }
+
+    case 'user.roles.changed':
+      return {
+        title: d.granted ? '🔼 Role granted' : '🔽 Role revoked',
+        color: d.granted ? COLORS.warn : COLORS.info,
+        fields: [
+          field('User', d.username),
+          field('Role', d.role),
+          field('By', d.by),
+          field('Reason', d.reason, false)
+        ]
       }
     case 'comment.created':
       return {
@@ -135,13 +171,24 @@ function renderEmbed (event: WebhookEvent, d: Record<string, unknown>): Embed {
       return {
         title: '⚠️ Background job failed permanently',
         color: COLORS.danger,
-        fields: [field('Queue', d.queue), field('Job', d.jobId), field('Error', d.error, false)]
+        fields: [
+          field('Queue', d.queue),
+          field('Job', d.jobId),
+          field('Attempts', d.attempts),
+          field('Dead in queue', d.deadInQueue),
+          field('Error', d.error, false)
+        ]
       }
     case 'config.changed':
       return {
         title: '⚙️ Site configuration changed',
         color: COLORS.rose,
-        fields: [field('Setting', d.key), field('New value', d.value), field('Changed by', d.by)]
+        fields: [
+          field('Setting', d.key),
+          field('Was', d.previous),
+          field('Now', d.value),
+          field('Changed by', d.by)
+        ]
       }
     case 'monitor.alert':
       return {
@@ -179,27 +226,134 @@ function renderEmbed (event: WebhookEvent, d: Record<string, unknown>): Embed {
 
 // ---- delivery ----
 
-export async function deliver (webhookId: string, event: WebhookEvent, data: Record<string, unknown>, at: string): Promise<void> {
-  const hook = await queryOne<{ id: string, url: string, format: string, secret: string | null, enabled: boolean, failure_count: number }>(
-    'SELECT id, url, format, secret, enabled, failure_count FROM webhooks WHERE id = $1',
+/**
+ * Where this instance lives, for the envelope.
+ *
+ * `PUBLIC_URL` is optional and is only ever used to build links — a receiver
+ * that gets `report.created` should be able to click through to the queue
+ * instead of going and finding it. It is a public address by definition, so
+ * it is the one piece of deployment information that belongs in an outbound
+ * payload; nothing else about the environment is included, and no credential
+ * ever is.
+ */
+const PUBLIC_URL = (process.env.PUBLIC_URL ?? '').replace(/\/+$/, '')
+
+/** A deep link into the admin panel, when the event has somewhere to point. */
+const ADMIN_SECTION: Partial<Record<WebhookEvent, string>> = {
+  'user.registered': 'users',
+  'user.moderated': 'users',
+  'user.deleted': 'users',
+  'user.roles.changed': 'users',
+  'user.password_reset_requested': 'users',
+  'report.created': 'reports',
+  'report.resolved': 'reports',
+  'comment.created': 'reports',
+  'job.failed': 'overview',
+  'config.changed': 'config',
+  'monitor.alert': 'monitoring',
+  'monitor.recovered': 'monitoring',
+  'metadata.synced': 'metadata',
+  'catalogue.imported': 'catalogue',
+  'catalogue.changed': 'catalogue',
+  'stats.daily': 'overview',
+  'stats.trending': 'overview',
+  'webhook.test': 'webhooks'
+}
+
+function links (event: WebhookEvent): Record<string, string> | undefined {
+  if (!PUBLIC_URL) return undefined
+  const section = ADMIN_SECTION[event]
+  const out: Record<string, string> = { site: PUBLIC_URL }
+  if (section) out.admin = `${PUBLIC_URL}/#/admin?s=${section}`
+  return out
+}
+
+/**
+ * The envelope every non-Discord receiver gets.
+ *
+ * It used to be `{ event, data, at }` and nothing else, which left a receiver
+ * unable to answer three ordinary questions: have I already processed this,
+ * which of my several Yume instances sent it, and is this the first attempt or
+ * the fifth. All three are things only the sender knows.
+ *
+ * `id` is stable across retries of the same delivery — that is the point of it
+ * — so a receiver can key on it and stay idempotent when a timeout makes us
+ * send something it already handled.
+ */
+interface Envelope {
+  id: string
+  event: WebhookEvent
+  at: string
+  sentAt: string
+  attempt: number
+  instance: { name: string, environment: string, url?: string }
+  webhook: { id: string, name: string }
+  data: Record<string, unknown>
+  links?: Record<string, string> | undefined
+}
+
+export async function deliver (
+  webhookId: string,
+  event: WebhookEvent,
+  data: Record<string, unknown>,
+  at: string,
+  meta: { deliveryId?: string | undefined, attempt?: number | undefined } = {}
+): Promise<void> {
+  const hook = await queryOne<{ id: string, name: string, url: string, format: string, secret: string | null, enabled: boolean, failure_count: number }>(
+    'SELECT id, name, url, format, secret, enabled, failure_count FROM webhooks WHERE id = $1',
     [webhookId]
   )
   if (!hook?.enabled) return
+
+  const sentAt = new Date().toISOString()
+  const deliveryId = meta.deliveryId ?? randomUUID()
+  const attempt = meta.attempt ?? 1
+  const instanceName = await settings.siteName()
+  const linkSet = links(event)
+
+  const envelope: Envelope = {
+    id: deliveryId,
+    event,
+    at,
+    sentAt,
+    attempt,
+    instance: {
+      name: instanceName,
+      environment: process.env.NODE_ENV ?? 'development',
+      ...(PUBLIC_URL ? { url: PUBLIC_URL } : {})
+    },
+    webhook: { id: hook.id, name: hook.name },
+    data,
+    links: linkSet
+  }
 
   let body: string
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
 
   if (hook.format === 'discord') {
     body = JSON.stringify({
-      username: 'Yume',
-      embeds: [{ ...renderEmbed(event, data), timestamp: at, footer: { text: event } }]
+      username: instanceName,
+      embeds: [{
+        ...renderEmbed(event, data),
+        timestamp: at,
+        // The footer is where a reader looks to answer "which instance is
+        // this and what exactly fired" — a channel often watches more than
+        // one, and the event name alone did not say.
+        footer: { text: `${instanceName} · ${event}${attempt > 1 ? ` · retry ${attempt}` : ''}` },
+        ...(linkSet?.admin ? { url: linkSet.admin } : {})
+      }]
     })
   } else {
-    body = JSON.stringify({ event, data, at })
+    body = JSON.stringify(envelope)
     if (hook.secret) {
       headers['X-Yume-Signature'] = 'sha256=' + createHmac('sha256', hook.secret).update(body).digest('hex')
     }
     headers['X-Yume-Event'] = event
+    // Named headers as well as body fields: a receiver routing on the event
+    // or discarding a duplicate should not have to parse the body first.
+    headers['X-Yume-Delivery'] = deliveryId
+    headers['X-Yume-Timestamp'] = sentAt
+    headers['X-Yume-Attempt'] = String(attempt)
   }
 
   const started = Date.now()
@@ -214,7 +368,7 @@ export async function deliver (webhookId: string, event: WebhookEvent, data: Rec
     await query(
       `INSERT INTO webhook_deliveries (webhook_id, event, payload, status_code, error, duration_ms)
        VALUES ($1, $2, $3, NULL, $4, 0)`,
-      [hook.id, event, { event, data, at }, `refused: ${verdict.reason}`]
+      [hook.id, event, envelope, `refused: ${verdict.reason}`]
     )
     // Disable it outright. A webhook aimed inward is either a mistake or an
     // attempt, and retrying either one forever helps nobody.
@@ -237,7 +391,7 @@ export async function deliver (webhookId: string, event: WebhookEvent, data: Rec
   await query(
     `INSERT INTO webhook_deliveries (webhook_id, event, payload, status_code, error, duration_ms)
      VALUES ($1, $2, $3, $4, $5, $6)`,
-    [hook.id, event, { event, data, at }, statusCode, error, Date.now() - started]
+    [hook.id, event, envelope, statusCode, error, Date.now() - started]
   )
 
   if (error) {
@@ -255,6 +409,14 @@ export async function deliver (webhookId: string, event: WebhookEvent, data: Rec
 }
 
 export async function handleWebhookJob (job: Job): Promise<void> {
-  const { webhookId, event, data, at } = job.payload as { webhookId: string, event: WebhookEvent, data: Record<string, unknown>, at: string }
-  await deliver(webhookId, event, data ?? {}, at ?? new Date().toISOString())
+  const { webhookId, event, data, at, deliveryId } = job.payload as {
+    webhookId: string, event: WebhookEvent, data: Record<string, unknown>, at: string, deliveryId?: string
+  }
+  // The id is minted when the event is fanned out, not here, so every retry of
+  // this job carries the same one and a receiver can recognise a repeat.
+  // `attempts` counts the failures so far, so the first send is attempt 1.
+  await deliver(webhookId, event, data ?? {}, at ?? new Date().toISOString(), {
+    deliveryId,
+    attempt: (job.attempts ?? 0) + 1
+  })
 }

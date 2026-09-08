@@ -460,40 +460,170 @@ const PageAdmin = {
   // audit_logs was written from day one and had no reader. An audit log nobody
   // can read is storage, not accountability.
 
-  async renderAudit (content) {
-    const state = { subjectType: '' }
-    const rows = U.el('div', { class: 'audit-rows' })
+  /**
+   * The audit trail.
+   *
+   * It filtered by subject type and printed the `after` object as raw JSON —
+   * the least useful of the three things somebody arrives knowing, and a
+   * format that says what a value became without ever saying what it was.
+   * "Who did this", "what happened to this thing" and "what happened around
+   * the time it broke" were all unanswerable here.
+   *
+   * A row now reads as a sentence and opens into the actual change.
+   */
+  AUDIT_WINDOWS: [['', 'Any time'], ['1', 'Last 24 hours'], ['7', 'Last 7 days'], ['30', 'Last 30 days']],
 
-    const bar = U.el('div', { class: 'admin-toolbar' }, [
-      U.el('select', {
-        class: 'select',
-        onchange: e => { state.subjectType = e.target.value; load() }
-      }, [['', 'Everything'], ['user', 'Users'], ['role', 'Roles'], ['anime', 'Anime'],
-        ['episode', 'Episodes'], ['config', 'Config'], ['webhook', 'Webhooks'], ['theme', 'Themes']]
-        .map(([v, l]) => U.el('option', { value: v, text: l, selected: v === state.subjectType })))
-    ])
+  async renderAudit (content) {
+    const state = { subjectType: '', action: '', actor: '', days: '', offset: 0 }
+    const PAGE = 50
+    const rows = U.el('div', { class: 'audit-rows' })
+    const pager = U.el('div', { class: 'admin-pager' })
+    let actionOptions = [['', 'Any action']]
+
+    const pick = (value, options, onchange) => U.el('select', {
+      class: 'select',
+      onchange: e => { onchange(e.target.value); state.offset = 0; load() }
+    }, options.map(([v, l]) => U.el('option', { value: v, text: l, selected: v === value })))
+
+    const actorInput = U.el('input', {
+      class: 'input',
+      placeholder: 'Who did it…',
+      style: 'max-width:12rem;',
+      oninput: U.debounce(e => { state.actor = e.target.value.trim(); state.offset = 0; load() })
+    })
+
+    const bar = U.el('div', { class: 'admin-toolbar' })
+
+    const paintBar = () => bar.replaceChildren(
+      pick(state.subjectType, [['', 'Everything'], ['user', 'Users'], ['role', 'Roles'], ['anime', 'Anime'],
+        ['episode', 'Episodes'], ['config', 'Config'], ['webhook', 'Webhooks'], ['theme', 'Themes'],
+        ['metadata_run', 'Metadata runs']], v => { state.subjectType = v }),
+      // Built from what this instance has actually recorded, so it cannot
+      // drift from the set of actions the server writes.
+      pick(state.action, actionOptions, v => { state.action = v }),
+      pick(state.days, this.AUDIT_WINDOWS, v => { state.days = v }),
+      actorInput
+    )
 
     const load = async () => {
       rows.replaceChildren(U.el('div', { class: 'spinner' }))
+      pager.replaceChildren()
       try {
-        const { data } = await YumeAPI.admin.audit({ subjectType: state.subjectType, limit: 100 })
+        const since = state.days
+          ? new Date(Date.now() - Number(state.days) * 86400000).toISOString()
+          : undefined
+        const { data, total, actions } = await YumeAPI.admin.audit({
+          subjectType: state.subjectType,
+          action: state.action,
+          actor: state.actor,
+          since,
+          limit: PAGE,
+          offset: state.offset
+        })
+
+        if (actions && actionOptions.length === 1) {
+          actionOptions = [['', 'Any action'], ...actions.map(a => [a.action, `${a.action} (${a.n})`])]
+          paintBar()
+        }
+
         rows.replaceChildren()
-        if (!data.length) { rows.append(U.el('div', { class: 'empty-state', text: 'Nothing recorded yet.' })); return }
-        for (const r of data) {
-          const after = r.after && Object.keys(r.after).length ? JSON.stringify(r.after) : ''
-          rows.append(U.el('div', { class: 'audit-row' }, [
-            U.el('span', { class: 'audit-action', text: r.action }),
-            U.el('span', { class: 'audit-subject', text: r.subject_type }),
-            U.el('span', { class: 'audit-actor', text: r.actor ?? 'system' }),
-            U.el('span', { class: 'audit-detail', text: after, title: after }),
-            U.el('time', { class: 'audit-when', text: U.relTime(r.created_at), title: new Date(r.created_at).toLocaleString() })
-          ]))
+        if (!data.length) {
+          rows.append(U.el('div', { class: 'empty-state', text: 'Nothing recorded for that.' }))
+          return
+        }
+        for (const r of data) rows.append(this.auditRow(r))
+
+        if (Number(total) > PAGE) {
+          const to = Math.min(state.offset + data.length, Number(total))
+          pager.replaceChildren(
+            U.el('button', {
+              class: 'btn btn-sm btn-ghost',
+              disabled: state.offset === 0,
+              onclick: () => { state.offset = Math.max(0, state.offset - PAGE); load() }
+            }, [document.createTextNode('← Newer')]),
+            U.el('span', { class: 'admin-pager-label', text: `${state.offset + 1}–${to} of ${total}` }),
+            U.el('button', {
+              class: 'btn btn-sm btn-ghost',
+              disabled: to >= Number(total),
+              onclick: () => { state.offset += PAGE; load() }
+            }, [document.createTextNode('Older →')])
+          )
         }
       } catch (e) { rows.replaceChildren(U.el('div', { class: 'error-state', text: e.message })) }
     }
 
-    content.replaceChildren(bar, rows)
+    paintBar()
+    content.replaceChildren(bar, rows, pager)
     load()
+  },
+
+  /**
+   * One recorded change.
+   *
+   * The summary is the fields that moved, not the whole object: `before` and
+   * `after` hold only what changed, so listing the keys and their two values
+   * is the entire content of the record in a form somebody can read.
+   */
+  auditRow (r) {
+    const before = r.before && typeof r.before === 'object' ? r.before : {}
+    const after = r.after && typeof r.after === 'object' ? r.after : {}
+    const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])]
+
+    const show = v => {
+      if (v === undefined) return '—'
+      if (v === null) return 'null'
+      return typeof v === 'string' ? v : JSON.stringify(v)
+    }
+
+    // A key whose value moved is drawn as a change. Everything else — a key
+    // present on one side only, or one carried on both without changing — is
+    // context the action recorded, and is drawn as a plain line. Rendering
+    // those as "— → demo" invents a transition that never happened; dropping
+    // them loses which role a grant was about, since only `granted` moves.
+    const line = k => {
+      const had = Object.prototype.hasOwnProperty.call(before, k)
+      const has = Object.prototype.hasOwnProperty.call(after, k)
+      if (!had || !has || show(before[k]) === show(after[k])) {
+        const value = show(has ? after[k] : before[k])
+        return U.el('div', { class: 'audit-diff-row audit-diff-note' }, [
+          U.el('span', { class: 'audit-diff-key', text: k }),
+          U.el('span', { class: 'audit-diff-after', text: value, title: value })
+        ])
+      }
+      return U.el('div', { class: 'audit-diff-row' }, [
+        U.el('span', { class: 'audit-diff-key', text: k }),
+        U.el('span', { class: 'audit-diff-before', text: show(before[k]), title: show(before[k]) }),
+        U.el('span', { class: 'audit-diff-arrow', text: '→' }),
+        U.el('span', { class: 'audit-diff-after', text: show(after[k]), title: show(after[k]) })
+      ])
+    }
+
+    const lines = keys.map(line).filter(Boolean)
+    const diff = lines.length ? U.el('div', { class: 'audit-diff' }, lines) : null
+
+    const head = U.el('div', { class: 'audit-row-head' }, [
+      U.el('span', { class: 'audit-action', text: r.action }),
+      U.el('span', { class: 'audit-subject', text: r.subject_type }),
+      U.el('span', { class: 'audit-actor', text: r.actor ?? (r.actor_type === 'system' ? 'system' : 'deleted account') }),
+      U.el('time', { class: 'audit-when', text: U.relTime(r.created_at), title: new Date(r.created_at).toLocaleString() })
+    ])
+
+    // The id is what links a row to the thing it happened to, and it is the
+    // one field somebody copies out of this screen.
+    const subject = r.subject_id
+      ? U.el('button', {
+        class: 'audit-subject-id',
+        type: 'button',
+        title: 'Copy the subject id',
+        onclick: () => {
+          navigator.clipboard?.writeText(String(r.subject_id))
+            .then(() => U.toast('Subject id copied'))
+            .catch(() => U.toast('Could not copy', 'error'))
+        }
+      }, [document.createTextNode(String(r.subject_id).slice(0, 8) + '…')])
+      : null
+
+    return U.el('div', { class: 'audit-row' }, [head, subject, diff])
   },
 
   // ---- Roles & permissions (fine-grained RBAC) ----
@@ -2760,101 +2890,422 @@ const PageAdmin = {
     window.App.navigate()
   },
 
-  async renderUsers (content, search = '') {
+  /**
+   * Accounts.
+   *
+   * This was a search box and a list of names with Suspend and Ban beside
+   * each. Everything else an operator needs — is this account new, does it
+   * have a role, has anybody acted on it before, how much of the site has it
+   * actually used — was recorded and unreachable, so the answer to every real
+   * question was a database query.
+   *
+   * Now the row carries the shape of the account and the panel behind it
+   * carries the rest, including the two things that could not be done at all:
+   * giving somebody a role, and signing them out without banning them.
+   */
+  USER_SORTS: [['newest', 'Newest first'], ['oldest', 'Oldest first'], ['active', 'Recently active'], ['name', 'Name A–Z']],
+
+  async renderUsers (content, state = {}) {
+    const q = { query: '', status: '', role: '', sort: 'newest', offset: 0, ...state }
+    const PAGE = 50
+
     const input = U.el('input', {
       class: 'input search-input-big',
       placeholder: 'Search by username or email…',
-      value: search,
-      oninput: U.debounce(e => this.renderUsers(content, e.target.value.trim()))
+      value: q.query,
+      oninput: U.debounce(e => this.renderUsers(content, { ...q, query: e.target.value.trim(), offset: 0 }))
     })
 
+    const pick = (value, options, onchange) => U.el('select', {
+      class: 'select',
+      onchange: e => onchange(e.target.value)
+    }, options.map(([v, l]) => U.el('option', { value: v, text: l, selected: v === value })))
+
     try {
-      const { data } = await YumeAPI.admin.users(search || undefined)
-      content.replaceChildren(U.el('div', { class: 'filters' }, [input]))
-      if (search) input.focus()
+      const [{ data, totals }, roleList] = await Promise.all([
+        YumeAPI.admin.users({ ...q, limit: PAGE }),
+        // Only to populate the filter; a failure here must not take the list
+        // with it, so the filter degrades to "any role" instead.
+        YumeAPI.admin.roles().then(r => r.data ?? r.roles ?? []).catch(() => [])
+      ])
 
-      for (const user of data) {
-        const statusBadge = U.el('span', {
-          class: 'badge' + (user.status === 'active' ? '' : ' badge-theme'),
-          text: user.status
-        })
-        const actions = U.el('div', { class: 'progress-controls' })
+      const bar = U.el('div', { class: 'admin-toolbar user-toolbar' }, [
+        input,
+        pick(q.status, [['', 'Any status'], ['active', 'Active'], ['suspended', 'Suspended'], ['banned', 'Banned']],
+          v => this.renderUsers(content, { ...q, status: v, offset: 0 })),
+        pick(q.role, [['', 'Any role'], ...roleList.map(r => [r.slug, r.name ?? r.slug])],
+          v => this.renderUsers(content, { ...q, role: v, offset: 0 })),
+        pick(q.sort, this.USER_SORTS, v => this.renderUsers(content, { ...q, sort: v, offset: 0 }))
+      ])
 
-        const act = (status, label) => U.el('button', {
-          class: 'btn btn-sm ' + (status === 'active' ? 'btn-secondary' : 'btn-ghost'),
-          onclick: async () => {
-            const reason = window.prompt(`Reason for "${label}" on ${user.username}:`)
-            if (!reason || reason.length < 3) return
-            try {
-              await YumeAPI.admin.setUserStatus(user.id, status, reason)
-              U.toast(`${user.username}: ${label}`)
-              this.renderUsers(content, search)
-            } catch (e) { U.toast(e.message, 'error') }
-          }
-        }, [document.createTextNode(label)])
+      // The counts are of the filtered set, not the whole table, so they say
+      // what the filter actually selected rather than repeating a constant.
+      const tally = U.el('div', { class: 'user-tally' }, [
+        U.el('span', { class: 'user-tally-item', text: `${totals?.total ?? 0} matching` }),
+        U.el('span', { class: 'user-tally-item tone-green', text: `${totals?.active ?? 0} active` }),
+        U.el('span', { class: 'user-tally-item tone-amber', text: `${totals?.suspended ?? 0} suspended` }),
+        U.el('span', { class: 'user-tally-item tone-red', text: `${totals?.banned ?? 0} banned` })
+      ])
 
-        if (user.status === 'active') actions.append(act('suspended', 'Suspend'), act('banned', 'Ban'))
-        else actions.append(act('active', 'Restore'))
+      content.replaceChildren(bar, tally)
+      if (q.query) input.focus()
 
-        content.append(U.el('div', { class: 'list-row', style: 'cursor:default;' }, [
-          U.el('div', { class: 'list-row-grow' }, [
-            U.el('div', { class: 'list-row-title' }, [
-              document.createTextNode(user.username + ' '),
-              statusBadge,
-              ...(user.roles.filter(r => r !== 'user').map(role => U.el('span', { class: 'badge badge-outline', style: 'margin-left:.35rem;', text: role })))
-            ]),
-            U.el('div', { class: 'list-row-sub', text: `${user.email} • joined ${U.airDate(user.created_at)}${user.last_login_at ? ' • last seen ' + U.relTime(new Date(user.last_login_at)) : ''}` })
-          ]),
-          actions
+      for (const user of data) content.append(this.userRow(user, content, q))
+
+      if (!data.length) {
+        content.append(U.el('div', { class: 'empty-state', text: 'No users match.' }))
+      }
+
+      const total = Number(totals?.total ?? 0)
+      if (total > PAGE) {
+        const from = q.offset + 1
+        const to = Math.min(q.offset + data.length, total)
+        content.append(U.el('div', { class: 'admin-pager' }, [
+          U.el('button', {
+            class: 'btn btn-sm btn-ghost',
+            disabled: q.offset === 0,
+            onclick: () => this.renderUsers(content, { ...q, offset: Math.max(0, q.offset - PAGE) })
+          }, [document.createTextNode('← Previous')]),
+          U.el('span', { class: 'admin-pager-label', text: `${from}–${to} of ${total}` }),
+          U.el('button', {
+            class: 'btn btn-sm btn-ghost',
+            disabled: to >= total,
+            onclick: () => this.renderUsers(content, { ...q, offset: q.offset + PAGE })
+          }, [document.createTextNode('Next →')])
         ]))
       }
-      if (!data.length) content.append(U.el('div', { class: 'empty-state', text: 'No users match.' }))
     } catch (e) {
       content.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
     }
   },
 
-  async renderReports (content) {
+  /** One account in the list: identity, shape, and the way into the detail. */
+  userRow (user, content, q) {
+    const tone = user.status === 'active' ? '' : user.status === 'banned' ? ' badge-bad' : ' badge-theme'
+    const roles = (user.roles ?? []).filter(r => r !== 'user')
+
+    // Facts, not decoration: each one is a reason to open the account or to
+    // leave it alone.
+    const facts = []
+    if (roles.length) facts.push(roles.join(', '))
+    facts.push(`joined ${U.airDate(user.created_at)}`)
+    if (user.last_login_at) facts.push(`seen ${U.relTime(new Date(user.last_login_at))}`)
+    else facts.push('never signed in')
+    if (user.active_sessions > 0) facts.push(`${user.active_sessions} session${user.active_sessions === 1 ? '' : 's'}`)
+    if (user.comments > 0) facts.push(`${user.comments} comment${user.comments === 1 ? '' : 's'}`)
+    if (!user.email_verified_at) facts.push('unverified email')
+
+    const open = () => this.userPanel(user.id, () => this.renderUsers(content, q))
+
+    return U.el('div', { class: 'list-row user-row', onclick: open }, [
+      U.el('div', { class: 'list-row-grow' }, [
+        U.el('div', { class: 'list-row-title' }, [
+          document.createTextNode(user.username + ' '),
+          U.el('span', { class: 'badge' + tone, text: user.status }),
+          ...(user.reports_against > 0
+            ? [U.el('span', { class: 'badge badge-bad', style: 'margin-left:.35rem;', text: `${user.reports_against} reported` })]
+            : [])
+        ]),
+        U.el('div', { class: 'list-row-sub', text: facts.join(' • ') })
+      ]),
+      U.el('button', {
+        class: 'btn btn-sm btn-secondary',
+        onclick: e => { e.stopPropagation(); open() }
+      }, [document.createTextNode('Manage')])
+    ])
+  },
+
+  /**
+   * One account, in full.
+   *
+   * Opened as a modal rather than a route because it is a place you look and
+   * then leave, and losing the list's filters and page on the way back would
+   * make triaging a queue of accounts painful.
+   */
+  async userPanel (id, reload) {
+    const body = U.el('div', { class: 'user-panel' }, [U.el('div', { class: 'spinner' })])
+    C.modalPanel('Account', [body])
+
+    const load = async () => {
+      try {
+        const d = await YumeAPI.admin.user(id)
+        body.replaceChildren(...this.userPanelBody(d, { reload, refresh: load }))
+      } catch (e) {
+        body.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+      }
+    }
+    await load()
+  },
+
+  userPanelBody (d, { reload, refresh }) {
+    const a = d.account
+    const held = new Set((d.roles ?? []).map(r => r.slug))
+
+    const ask = (question, preset = '') => {
+      const reason = window.prompt(question, preset)
+      return reason && reason.trim().length >= 3 ? reason.trim() : null
+    }
+
+    const run = async (fn, ok) => {
+      try { await fn(); U.toast(ok); await refresh(); reload?.() } catch (e) { U.toast(e.message, 'error') }
+    }
+
+    // ---- identity ----
+    const head = U.el('div', { class: 'user-panel-head' }, [
+      U.el('div', { class: 'user-panel-name' }, [
+        U.el('h3', { text: a.username }),
+        U.el('span', { class: 'badge' + (a.status === 'active' ? '' : a.status === 'banned' ? ' badge-bad' : ' badge-theme'), text: a.status })
+      ]),
+      U.el('div', { class: 'user-panel-sub', text: a.email })
+    ])
+
+    // ---- the numbers ----
+    const hours = Math.round(Number(d.activity?.watched_sec ?? 0) / 360) / 10
+    const stat = (label, value, sub) => U.el('div', { class: 'user-stat' }, [
+      U.el('div', { class: 'user-stat-value', text: String(value) }),
+      U.el('div', { class: 'user-stat-label', text: label }),
+      sub ? U.el('div', { class: 'user-stat-sub', text: sub }) : null
+    ])
+
+    const stats = U.el('div', { class: 'user-stats' }, [
+      stat('Profiles', d.profiles?.length ?? 0),
+      stat('Episodes finished', d.activity?.episodes_finished ?? 0),
+      stat('Hours watched', hours),
+      stat('Comments', d.activity?.comments ?? 0),
+      stat('Reports filed', d.activity?.reports_filed ?? 0),
+      stat('Reports against', d.activity?.reports_against ?? 0),
+      stat('Sessions', d.sessions?.active ?? 0, `${d.sessions?.total ?? 0} ever · ${d.sessions?.devices ?? 0} devices`)
+    ])
+
+    // ---- account facts ----
+    const fact = (label, value) => U.el('div', { class: 'user-fact' }, [
+      U.el('span', { class: 'user-fact-label', text: label }),
+      U.el('span', { class: 'user-fact-value', text: value })
+    ])
+    const facts = U.el('div', { class: 'user-facts' }, [
+      fact('Joined', new Date(a.created_at).toLocaleString()),
+      fact('Last sign-in', a.last_login_at ? new Date(a.last_login_at).toLocaleString() : 'never'),
+      fact('Last watched', d.activity?.last_watched_at ? U.relTime(new Date(d.activity.last_watched_at)) : 'never'),
+      fact('Email verified', a.email_verified_at ? new Date(a.email_verified_at).toLocaleDateString() : 'no'),
+      fact('Password set', a.has_password ? 'yes' : 'no (external sign-in only)'),
+      fact('Two-factor', a.mfa_enabled ? 'enabled' : 'off')
+    ])
+
+    // ---- roles: the thing that could not be done at all ----
+    const roleBox = U.el('div', { class: 'user-roles' }, (d.allRoles ?? []).map(role => {
+      const on = held.has(role.slug)
+      return U.el('button', {
+        class: 'user-role' + (on ? ' on' : ''),
+        type: 'button',
+        title: on ? `Revoke ${role.slug}` : `Grant ${role.slug}`,
+        onclick: () => {
+          const reason = ask(`${on ? 'Revoke' : 'Grant'} "${role.slug}" ${on ? 'from' : 'to'} ${a.username} — why?`)
+          if (!reason) return
+          run(() => YumeAPI.admin.setUserRole(a.id, role.slug, !on, reason),
+            `${a.username}: ${role.slug} ${on ? 'revoked' : 'granted'}`)
+        }
+      }, [
+        U.el('span', { class: 'user-role-dot' }),
+        document.createTextNode(role.name ?? role.slug)
+      ])
+    }))
+
+    // ---- actions ----
+    const act = (label, cls, fn) => U.el('button', { class: 'btn btn-sm ' + cls, onclick: fn }, [document.createTextNode(label)])
+    const status = (next, label) => act(label, next === 'active' ? 'btn-secondary' : 'btn-ghost', () => {
+      const reason = ask(`Reason for "${label}" on ${a.username}:`)
+      if (!reason) return
+      run(() => YumeAPI.admin.setUserStatus(a.id, next, reason), `${a.username}: ${label}`)
+    })
+
+    const actions = U.el('div', { class: 'user-actions' }, [
+      ...(a.status === 'active' ? [status('suspended', 'Suspend'), status('banned', 'Ban')] : [status('active', 'Restore')]),
+      // Not a punishment and not visible as one: the proportionate answer to a
+      // shared password, which previously had no answer but a ban.
+      act('Sign out everywhere', 'btn-ghost', () => {
+        const reason = ask(`Sign ${a.username} out of every session — why?`, 'Credentials possibly compromised')
+        if (!reason) return
+        run(() => YumeAPI.admin.revokeUserSessions(a.id, reason), `${a.username}: signed out`)
+      })
+    ])
+
+    // ---- history ----
+    const historyRows = (d.moderation ?? []).map(m => U.el('div', { class: 'user-history-row' }, [
+      U.el('span', { class: 'user-history-action', text: m.action }),
+      U.el('span', { class: 'user-history-reason', text: m.reason, title: m.reason }),
+      U.el('span', { class: 'user-history-by', text: m.moderator ?? 'system' }),
+      U.el('time', { class: 'user-history-when', text: U.relTime(new Date(m.created_at)), title: new Date(m.created_at).toLocaleString() })
+    ]))
+
+    // Role grants and sign-outs live here rather than in the moderation
+    // history: that table's vocabulary is disciplinary, and a promotion is not
+    // a punishment. Both are still questions somebody asks of an account, so
+    // both are on the same screen.
+    const auditRows = (d.audit ?? []).map(a2 => {
+      const after = a2.after && Object.keys(a2.after).length ? JSON.stringify(a2.after) : ''
+      return U.el('div', { class: 'user-history-row' }, [
+        U.el('span', { class: 'user-history-action', text: a2.action }),
+        U.el('span', { class: 'user-history-reason', text: after, title: after }),
+        U.el('span', { class: 'user-history-by', text: a2.actor ?? 'system' }),
+        U.el('time', { class: 'user-history-when', text: U.relTime(new Date(a2.created_at)), title: new Date(a2.created_at).toLocaleString() })
+      ])
+    })
+
+    const securityRows = (d.security ?? []).map(e => U.el('div', { class: 'user-history-row' }, [
+      U.el('span', { class: 'user-history-action', text: e.event }),
+      U.el('span', { class: 'user-history-reason', text: `${e.n}×` }),
+      U.el('span', { class: 'user-history-by', text: '' }),
+      U.el('time', { class: 'user-history-when', text: U.relTime(new Date(e.last_at)), title: new Date(e.last_at).toLocaleString() })
+    ]))
+
+    const section = (title, rows, empty) => U.el('div', { class: 'user-section' }, [
+      U.el('h4', { class: 'user-section-title', text: title }),
+      rows.length ? U.el('div', { class: 'user-history' }, rows) : U.el('div', { class: 'user-section-empty', text: empty })
+    ])
+
+    return [
+      head,
+      stats,
+      facts,
+      U.el('div', { class: 'user-section' }, [
+        U.el('h4', { class: 'user-section-title', text: 'Roles' }),
+        roleBox,
+        U.el('p', { class: 'user-section-note', text: 'A role hands over every permission it carries. The last administrator cannot be demoted.' })
+      ]),
+      U.el('div', { class: 'user-section' }, [
+        U.el('h4', { class: 'user-section-title', text: 'Actions' }),
+        actions
+      ]),
+      section('Moderation history', historyRows, 'Nothing has ever been done to this account.'),
+      section('Administrative changes', auditRows, 'No roles granted, no sessions ended.'),
+      section('Sign-in events', securityRows, 'No recorded sign-in activity.')
+    ]
+  },
+
+  /**
+   * The moderation queue.
+   *
+   * It showed the open reports and nothing else: no way to see what had been
+   * decided, no way to see who decided it, and no context beyond the report
+   * itself. A first report from somebody who has never filed one reads very
+   * differently from the ninth from a reporter whose last eight were
+   * dismissed, and that difference decides most of these.
+   */
+  REPORT_TABS: [['open', 'Open'], ['reviewing', 'Reviewing'], ['resolved', 'Resolved'], ['dismissed', 'Dismissed'], ['all', 'Everything']],
+
+  async renderReports (content, state = {}) {
+    const q = { status: 'open', subjectType: '', offset: 0, ...state }
+    const PAGE = 50
+
     try {
-      const { data } = await YumeAPI.admin.reports('open')
-      content.replaceChildren()
+      const { data, totals } = await YumeAPI.admin.reports({ ...q, limit: PAGE })
+
+      const tabs = U.el('div', { class: 'report-tabs' }, this.REPORT_TABS.map(([value, label]) => {
+        const count = value === 'all' ? totals?.total : totals?.[value]
+        return U.el('button', {
+          class: 'report-tab' + (q.status === value ? ' on' : ''),
+          type: 'button',
+          onclick: () => this.renderReports(content, { ...q, status: value, offset: 0 })
+        }, [
+          document.createTextNode(label),
+          U.el('span', { class: 'report-tab-count', text: String(count ?? 0) })
+        ])
+      }))
+
+      const kinds = U.el('select', {
+        class: 'select',
+        onchange: e => this.renderReports(content, { ...q, subjectType: e.target.value, offset: 0 })
+      }, [['', 'Any kind'], ['comment', 'Comments'], ['review', 'Reviews'], ['post', 'Posts'], ['user', 'Users']]
+        .map(([v, l]) => U.el('option', { value: v, text: l, selected: v === q.subjectType })))
+
+      content.replaceChildren(U.el('div', { class: 'admin-toolbar' }, [tabs, kinds]))
 
       if (!data.length) {
-        content.append(U.el('div', { class: 'empty-state', text: 'Moderation queue is empty. ✨' }))
+        content.append(U.el('div', {
+          class: 'empty-state',
+          text: q.status === 'open' ? 'Moderation queue is empty. ✨' : 'Nothing here.'
+        }))
         return
       }
 
-      for (const report of data) {
-        const act = (action, label, primary = false) => U.el('button', {
-          class: 'btn btn-sm ' + (primary ? 'btn-primary' : 'btn-ghost'),
-          onclick: async () => {
-            const reason = window.prompt(`Reason (${label}):`, action === 'dismiss' ? 'Not a violation' : '')
-            if (!reason || reason.length < 3) return
-            try {
-              await YumeAPI.admin.resolveReport(report.id, action, reason)
-              U.toast(`Report ${label.toLowerCase()}ed`)
-              this.renderReports(content)
-            } catch (e) { U.toast(e.message, 'error') }
-          }
-        }, [document.createTextNode(label)])
+      for (const report of data) content.append(this.reportCard(report, content, q))
 
-        content.append(U.el('div', { class: 'comment', style: 'max-width:none;' }, [
-          U.el('div', { class: 'comment-head' }, [
-            U.el('span', { class: 'comment-author', text: report.reason.toUpperCase() }),
-            U.el('span', { class: 'comment-context', text: `${report.subject_type} • reported by ${report.reporter}` }),
-            U.el('span', { class: 'comment-time', text: U.relTime(new Date(report.created_at)) })
-          ]),
-          report.excerpt ? U.el('div', { class: 'comment-body', style: 'background:var(--bg-sunken);border-radius:6px;padding:.5rem .75rem;margin:.35rem 0;', text: report.excerpt }) : null,
-          report.details ? U.el('div', { class: 'list-row-sub', text: 'Details: ' + report.details }) : null,
-          U.el('div', { style: 'display:flex;gap:.5rem;margin-top:.6rem;' }, [
-            ...(report.subject_type in { comment: 1, post: 1, review: 1 } ? [act('hide', 'Hide', true)] : []),
-            act('dismiss', 'Dismiss')
-          ])
+      const total = Number(q.status === 'all' ? totals?.total : totals?.[q.status]) || data.length
+      if (total > PAGE) {
+        const to = Math.min(q.offset + data.length, total)
+        content.append(U.el('div', { class: 'admin-pager' }, [
+          U.el('button', {
+            class: 'btn btn-sm btn-ghost',
+            disabled: q.offset === 0,
+            onclick: () => this.renderReports(content, { ...q, offset: Math.max(0, q.offset - PAGE) })
+          }, [document.createTextNode('← Previous')]),
+          U.el('span', { class: 'admin-pager-label', text: `${q.offset + 1}–${to} of ${total}` }),
+          U.el('button', {
+            class: 'btn btn-sm btn-ghost',
+            disabled: to >= total,
+            onclick: () => this.renderReports(content, { ...q, offset: q.offset + PAGE })
+          }, [document.createTextNode('Next →')])
         ]))
       }
     } catch (e) {
       content.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
     }
+  },
+
+  reportCard (report, content, q) {
+    const act = (action, label, primary = false) => U.el('button', {
+      class: 'btn btn-sm ' + (primary ? 'btn-primary' : 'btn-ghost'),
+      onclick: async () => {
+        const reason = window.prompt(`Reason (${label}):`, action === 'dismiss' ? 'Not a violation' : '')
+        if (!reason || reason.trim().length < 3) return
+        try {
+          await YumeAPI.admin.resolveReport(report.id, action, reason.trim())
+          U.toast(`Report ${label.toLowerCase()}ed`)
+          this.renderReports(content, q)
+        } catch (e) { U.toast(e.message, 'error') }
+      }
+    }, [document.createTextNode(label)])
+
+    // What the reporter's record says. Shown only when there is a record to
+    // speak of: "1 report filed" on a first-time reporter is noise.
+    const filed = Number(report.reporter_total ?? 0)
+    const dismissed = Number(report.reporter_dismissed ?? 0)
+    const marks = []
+    if (filed > 1) marks.push(`${filed} filed`)
+    if (dismissed > 0) marks.push(`${dismissed} dismissed`)
+    if (Number(report.subject_reports ?? 0) > 1) marks.push(`reported ${report.subject_reports}×`)
+
+    const resolved = report.status !== 'open' && report.status !== 'reviewing'
+
+    return U.el('div', { class: 'report-card' }, [
+      U.el('div', { class: 'report-head' }, [
+        U.el('span', { class: 'report-reason', text: String(report.reason).toUpperCase() }),
+        U.el('span', { class: 'badge badge-outline', text: report.subject_type }),
+        U.el('span', { class: 'report-by', text: `by ${report.reporter}` }),
+        ...marks.map(m => U.el('span', { class: 'report-mark', text: m })),
+        U.el('time', {
+          class: 'report-when',
+          text: U.relTime(new Date(report.created_at)),
+          title: new Date(report.created_at).toLocaleString()
+        })
+      ]),
+      report.excerpt ? U.el('div', { class: 'report-excerpt', text: report.excerpt }) : null,
+      report.details ? U.el('div', { class: 'report-details', text: report.details }) : null,
+      resolved
+        // The decision, and who made it. Absent before, which made a resolved
+        // report indistinguishable from one nobody had looked at.
+        ? U.el('div', { class: 'report-outcome' }, [
+          U.el('span', { class: 'badge' + (report.status === 'resolved' ? '' : ' badge-outline'), text: report.status }),
+          U.el('span', {
+            class: 'report-outcome-by',
+            text: `${report.resolver ?? 'unknown'}${report.resolved_at ? ' · ' + U.relTime(new Date(report.resolved_at)) : ''}`
+          })
+        ])
+        : U.el('div', { class: 'report-actions' }, [
+          ...(report.subject_type in { comment: 1, post: 1, review: 1 } ? [act('hide', 'Hide', true)] : []),
+          act('dismiss', 'Dismiss')
+        ])
+    ])
   },
 
   // ---- webhooks ----
@@ -2862,6 +3313,13 @@ const PageAdmin = {
   EVENT_LABELS: {
     'user.registered': 'New user registered',
     'user.moderated': 'User suspended/banned/restored',
+    'user.deleted': 'Account deleted itself',
+    'user.roles.changed': 'Role granted or revoked',
+    'user.password_reset_requested': 'Password reset requested',
+    'catalogue.changed': 'Anime or episode changed',
+    'config.changed': 'Setting or feature flag changed',
+    'monitor.alert': 'A metric or service started alerting',
+    'monitor.recovered': 'A metric or service recovered',
     'comment.created': 'New comment',
     'report.created': 'Content reported',
     'report.resolved': 'Report resolved',

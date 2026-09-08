@@ -12,9 +12,16 @@
 // Nothing errored; it just looked broken.
 //
 // The block lives at the end of the file now. This keeps it there.
+//
+// The second thing checked here has the same shape: a mistake that changes
+// what the page looks like and reports nothing. `var(--text-dim)` is not an
+// error — CSS resolves an undefined custom property to nothing and the
+// declaration is simply dropped — so a plausible-looking token that was never
+// defined produces unstyled text rather than a failure. Fifteen of them
+// shipped in one sitting before this existed.
 
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -92,5 +99,49 @@ describe('responsive overrides are not shadowed', () => {
     const lastMedia = Math.max(...all.filter(r => r.inMedia).map(r => r.line))
     const lastPlain = Math.max(...all.filter(r => !r.inMedia).map(r => r.line))
     assert.ok(lastMedia > lastPlain, `last breakpoint (${lastMedia}) must come after the last component rule (${lastPlain})`)
+  })
+})
+
+describe('design tokens the stylesheet asks for', () => {
+  const TOKENS = readFileSync(join(here, '../css/tokens.css'), 'utf8')
+
+  /**
+   * Every custom property *defined* anywhere the browser will see.
+   *
+   * The client scripts count too: a value that only exists per element — a
+   * progress ring's percentage, a card's own accent — is set as an inline
+   * style rather than in the sheet, and it is no less defined for that.
+   */
+  const inlineSources = readdirSync(join(here, '../js'), { recursive: true })
+    .filter(name => String(name).endsWith('.js') && !String(name).startsWith('vendor'))
+    .map(name => readFileSync(join(here, '../js', String(name)), 'utf8'))
+
+  const defined = new Set(
+    [TOKENS, CSS, ...inlineSources]
+      .flatMap(source => [...source.matchAll(/(--[a-z0-9-]+)\s*:/gi)])
+      .map(m => m[1])
+  )
+
+  it('defines a palette at all', () => {
+    // Without this the assertion below passes by finding nothing to check.
+    assert.ok(defined.size > 30, `only ${defined.size} custom properties found`)
+  })
+
+  it('never reads a token nothing defines', () => {
+    const missing = new Map()
+    // `var(--x, fallback)` is deliberate and fine — the fallback is the
+    // author saying what to do when it is absent. Only a bare reference is a
+    // claim that the token exists.
+    for (const match of CSS.matchAll(/var\(\s*(--[a-z0-9-]+)\s*\)/gi)) {
+      const name = match[1]
+      if (defined.has(name)) continue
+      const line = CSS.slice(0, match.index).split('\n').length
+      if (!missing.has(name)) missing.set(name, line)
+    }
+    assert.deepEqual(
+      [...missing].map(([name, line]) => `${name} (style.css:${line})`),
+      [],
+      'these resolve to nothing and silently drop the declaration'
+    )
   })
 })

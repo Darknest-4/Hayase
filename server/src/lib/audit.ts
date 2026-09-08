@@ -14,6 +14,15 @@ import { query } from '../db.ts'
 
 export type AuditAction =
   | 'user.status'
+  // Who may do what. A role grant hands somebody every permission that role
+  // carries, which makes it the most consequential thing that can be done to
+  // an account short of banning it — and until now the only way to do it was
+  // an INSERT by hand, which left no record at all.
+  | 'user.role.grant' | 'user.role.revoke'
+  // Ending every session an account has. Recorded because it is indeed
+  // visible to the person it happens to, and "who signed me out" is a fair
+  // question.
+  | 'user.sessions.revoke'
   | 'role.permission.grant' | 'role.permission.revoke'
   | 'anime.create' | 'anime.edit' | 'anime.delete' | 'anime.merge' | 'anime.unlock'
   | 'episode.create' | 'episode.edit' | 'episode.delete'
@@ -65,25 +74,67 @@ export async function audit (
   }
 }
 
+export interface AuditFilter {
+  subjectType?: string | undefined
+  subjectId?: string | undefined
+  actorId?: string | undefined
+  /** Match on the actor's name instead of their id — what somebody actually knows. */
+  actor?: string | undefined
+  /** One action, or a prefix with a trailing dot: `anime.` matches every anime action. */
+  action?: string | undefined
+  /** ISO timestamp; nothing older is returned. */
+  since?: string | undefined
+  limit?: number | undefined
+  offset?: number | undefined
+}
+
+/**
+ * Read the trail.
+ *
+ * Filtering used to be by subject type alone, which is the least useful of
+ * the three things somebody arrives knowing. The question is nearly always
+ * one of "what did this person do", "what happened to this thing" or "what
+ * happened on the day it broke", and only the second was answerable.
+ *
+ * The count is of the whole filtered set rather than the page, so the screen
+ * can say how much there is instead of stopping at a limit and leaving an
+ * operator to wonder whether that was all of it.
+ */
 export async function auditTrail (
-  filter: { subjectType?: string, subjectId?: string, actorId?: string, limit?: number } = {}
-): Promise<unknown[]> {
+  filter: AuditFilter = {}
+): Promise<{ data: unknown[], total: number }> {
   const where: string[] = []
   const params: unknown[] = []
   const add = (clause: string, value: unknown): void => { params.push(value); where.push(clause.replace('?', `$${params.length}`)) }
   if (filter.subjectType) add('a.subject_type = ?', filter.subjectType)
   if (filter.subjectId) add('a.subject_id = ?', filter.subjectId)
   if (filter.actorId) add('a.actor_id = ?', filter.actorId)
-  params.push(Math.min(200, filter.limit ?? 50))
+  if (filter.actor) add('u.username ILIKE ?', `%${filter.actor}%`)
+  // A trailing dot means "this family of actions" — `anime.` is how somebody
+  // asks what has been done to the catalogue without listing eight actions.
+  if (filter.action) {
+    if (filter.action.endsWith('.')) add('a.action LIKE ?', filter.action + '%')
+    else add('a.action = ?', filter.action)
+  }
+  if (filter.since) add('a.created_at >= ?', filter.since)
 
-  return query(
-    `SELECT a.id, a.action, a.subject_type, a.subject_id, a.before, a.after, a.created_at,
-            u.username AS actor
-       FROM audit_logs a
-       LEFT JOIN users u ON u.id = a.actor_id
-     ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-      ORDER BY a.created_at DESC
-      LIMIT $${params.length}`,
+  const clause = where.length ? 'WHERE ' + where.join(' AND ') : ''
+
+  const counted = await query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM audit_logs a LEFT JOIN users u ON u.id = a.actor_id ${clause}`,
     params
   )
+
+  params.push(Math.min(200, filter.limit ?? 50), filter.offset ?? 0)
+  const data = await query(
+    `SELECT a.id, a.action, a.subject_type, a.subject_id, a.before, a.after, a.created_at,
+            u.username AS actor, a.actor_type
+       FROM audit_logs a
+       LEFT JOIN users u ON u.id = a.actor_id
+     ${clause}
+      ORDER BY a.created_at DESC
+      LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params
+  )
+  return { data, total: Number(counted[0]?.n ?? 0) }
 }

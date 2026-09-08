@@ -587,6 +587,37 @@ const C = {
     return close
   },
 
+  /**
+   * A modal you read rather than fill in.
+   *
+   * modalShell() below always draws a Save button, because every caller it was
+   * written for submits something. A panel that shows what is known about a
+   * thing and acts through its own buttons has nothing to save, and a Save
+   * button that does nothing is worse than no button.
+   *
+   * Wider than the form modal for the same reason: this holds tables.
+   */
+  modalPanel (title, nodes) {
+    const backdrop = U.el('div', {
+      class: 'modal-backdrop',
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-label': title,
+      onclick: e => { if (e.target === backdrop) backdrop.close() }
+    }, [
+      U.el('div', { class: 'search-modal', style: 'padding:1.25rem;max-width:52rem;width:min(52rem,calc(100vw - 2rem));' }, [
+        U.el('div', { style: 'display:flex;align-items:center;gap:.75rem;margin:0 0 1rem;' }, [
+          U.el('h3', { style: 'margin:0;font-size:1.1rem;font-weight:800;flex-grow:1;', text: title }),
+          U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => backdrop.close() }, [document.createTextNode(T('Close'))])
+        ]),
+        U.el('div', { class: 'modal-panel-body', style: 'max-height:72vh;overflow-y:auto;' }, nodes)
+      ])
+    ])
+    document.body.append(backdrop)
+    backdrop.close = this.trapModal(backdrop)
+    return backdrop
+  },
+
   // generic form modal (shared by developer portal and admin webhooks)
   modalShell (title, fields, onSubmit) {
     const submit = U.el('button', { class: 'btn btn-primary btn-sm', onclick: onSubmit }, [document.createTextNode(T('Save'))])
