@@ -1,4 +1,4 @@
-/* global C, Catalogue, MutationObserver, PageW2G, Store, U, YumeAPI, document, location, window, T, I18n */
+/* global MutationObserver, document, location, window */
 // Watch page — modern embedded player. Progress is tracked automatically:
 // the exact second you reached is saved per profile and resumed next time,
 // history is logged the moment you start, and the episode is marked watched
@@ -6,7 +6,20 @@
 // Together button that opens a sync-room popup. An "up next" end-card offers
 // (auto)play of the following episode.
 
-const PageWatch = {
+import { App } from '../app.js'
+import { Catalogue } from '../catalogue.js'
+import { C } from '../components.js'
+import { I18n, T } from '../i18n.js'
+import { LibrarySync } from '../library-sync.js'
+import { Prefs } from '../prefs.js'
+import { Store } from '../store.js'
+import { StreamEngine } from '../stream-engine.js'
+import { U } from '../util.js'
+import { WatchTime } from '../watch-time.js'
+import { YumeAPI } from '../yume-api.js'
+import { PageW2G } from './w2g.js'
+
+export const PageWatch = {
   async render (root, params, arg) {
     // route: #/watch/{animeId}:{episode}?src=<encoded-url>[&w2g=code]
     // The id is an AniList id or a Yume catalogue uuid — Number() on the latter
@@ -89,7 +102,7 @@ const PageWatch = {
         const progress = Store.entry(media.id)?.progress ?? 0
         Store.setProgress(media, watched && progress === episode ? episode - 1 : episode)
         U.toast(watched ? `Episode ${episode} unmarked` : `Episode ${episode} marked as watched`)
-        window.App.navigate()
+        App.navigate()
       }
     }, [U.svg(C.CHECK, 13), document.createTextNode(watched ? 'Watched' : 'Mark watched')])
 
@@ -104,7 +117,7 @@ const PageWatch = {
         href: `#/watch/${media.id}:${episode + 1}`
       }, [document.createTextNode(T('Next ›'))]),
       // Watch Together — opens the sync-room popup (feature-flagged)
-      (!window.App || window.App.featureOn('watch_together'))
+      (!App || App.featureOn('watch_together'))
         ? U.el('button', {
           class: 'btn btn-secondary btn-sm w2g-open',
           onclick: () => this.openW2G()
@@ -265,14 +278,14 @@ const PageWatch = {
     // One provider offering one variant is not a choice; showing a switch with
     // a single option makes the player look busier without giving the viewer
     // anything to do.
-    const subtitleCount = window.StreamEngine?.subtitleTracks(this._video)?.length ?? 0
+    const subtitleCount = StreamEngine?.subtitleTracks(this._video)?.length ?? 0
     if (variants.length < 2 && providers.length < 2 && subtitleCount === 0) {
       host.replaceChildren()
       return
     }
 
     const active = this._activeCandidate
-    const wanted = window.Prefs?.get('playback.variant') ?? 'any'
+    const wanted = Prefs?.get('playback.variant') ?? 'any'
     const row = []
 
     if (variants.length > 1) {
@@ -295,7 +308,7 @@ const PageWatch = {
     // that can be turned off. This is the third thing a viewer reaches for
     // mid-episode, after "wrong version" and "this source is stuttering", so
     // it belongs in the same row rather than behind a settings screen.
-    const subtitleTracks = window.StreamEngine?.subtitleTracks(this._video) ?? []
+    const subtitleTracks = StreamEngine?.subtitleTracks(this._video) ?? []
     if (subtitleTracks.length) {
       const showing = subtitleTracks.find(t => t.showing)
       const chips = [
@@ -327,11 +340,11 @@ const PageWatch = {
               // Remember the language, not the index: the next episode is a
               // different stream whose track order is nobody's to predict.
               if (track?.language) {
-                const code = window.StreamEngine.languageCode(track.language)
-                if (code) window.Prefs?.set({ 'playback.subtitles': code })
+                const code = StreamEngine.languageCode(track.language)
+                if (code) Prefs?.set({ 'playback.subtitles': code })
               }
             } else {
-              window.Prefs?.set({ 'playback.subtitles': 'off' })
+              Prefs?.set({ 'playback.subtitles': 'off' })
             }
             this.mountVariantBar(media, episode)
           })
@@ -368,7 +381,7 @@ const PageWatch = {
    * playback to show an error.
    */
   async switchTo (choice, media, episode) {
-    const engine = window.StreamEngine
+    const engine = StreamEngine
     const context = this._playContext
     if (!engine || !context || !this._candidates?.length) return
 
@@ -384,11 +397,11 @@ const PageWatch = {
 
     // Remember a sub/dub switch; a provider switch is a one-off and is not
     // worth turning into a standing preference.
-    if (choice.variant) window.Prefs?.set({ 'playback.variant': choice.variant })
+    if (choice.variant) Prefs?.set({ 'playback.variant': choice.variant })
 
     const ranked = engine.rank(playable, {
-      variant: choice.variant ?? window.Prefs?.get('playback.variant'),
-      subtitles: window.Prefs?.get('playback.subtitles')
+      variant: choice.variant ?? Prefs?.get('playback.variant'),
+      subtitles: Prefs?.get('playback.subtitles')
     })
 
     try {
@@ -456,7 +469,7 @@ const PageWatch = {
    * failure only reaches the user once nothing is left.
    */
   async startPlayback (video, media, episode, src, giveUp) {
-    const engine = window.StreamEngine
+    const engine = StreamEngine
     const manual = String(src ?? '')
       .split('\n').map(u => u.trim()).filter(Boolean)
       .map(url => ({ url, title: T('Manual source'), source: { slug: 'manual', name: 'Manual URL', accuracy: 'low', health: 'unknown' } }))
@@ -480,8 +493,8 @@ const PageWatch = {
     // here, where it decides the order candidates are tried in. Without it the
     // setting would be a label with nothing behind it.
     const prefs = {
-      variant: window.Prefs?.get('playback.variant') ?? 'any',
-      subtitles: window.Prefs?.get('playback.subtitles') ?? null
+      variant: Prefs?.get('playback.variant') ?? 'any',
+      subtitles: Prefs?.get('playback.subtitles') ?? null
     }
 
     const { results, errors } = await engine.candidates(media, episode, { sources: [...registered, ...manual], prefs })
@@ -702,11 +715,11 @@ const PageWatch = {
       // The measurement is the verdict, and the server is told so directly.
       // Until this call existed, `watch_history`, `xp_events` and every
       // rollup built on them stayed empty on every deployment.
-      window.LibrarySync?.onEpisodeCompleted(media, episode, video.currentTime, video.duration)
+      LibrarySync?.onEpisodeCompleted(media, episode, video.currentTime, video.duration)
       U.toast(I18n.f('Episode {n} marked as watched', { n: episode }))
     }
 
-    const detachMeter = window.WatchTime?.attach(video, {
+    const detachMeter = WatchTime?.attach(video, {
       animeId: media.id,
       episode,
       onComplete: creditEpisode
@@ -1120,5 +1133,3 @@ const PageWatch = {
     skipBtn.classList.remove('hidden')
   }
 }
-
-window.PageWatch = PageWatch

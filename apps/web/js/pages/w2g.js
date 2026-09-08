@@ -1,9 +1,14 @@
-/* global U, WebSocket, YumeAPI, document, sessionStorage, window, T */
+/* global WebSocket, document, sessionStorage, window */
 // Watch Together — create/join rooms (Yume API) and watch in sync.
 // Playback sync runs over the /ws socket; PageWatch picks up the ?w2g=
 // param and relays play/pause/seek between room members.
 
-const PageW2G = {
+import { C } from '../components.js'
+import { T } from '../i18n.js'
+import { U } from '../util.js'
+import { YumeAPI } from '../yume-api.js'
+
+export const PageW2G = {
   // one live socket shared with the watch page
   socket: null,
   room: null,
@@ -50,7 +55,7 @@ const PageW2G = {
   },
 
   async render (root, params, arg) {
-    root.append(window.C.spotlight(T('Watch Together'), { subtitle: T('Synced rooms — play, pause and seeks stay together') }))
+    root.append(C.spotlight(T('Watch Together'), { subtitle: T('Synced rooms — play, pause and seeks stay together') }))
     const pad = U.el('div', { class: 'page-pad', style: 'max-width:44rem;' })
     root.append(pad)
 
@@ -161,5 +166,3 @@ const PageW2G = {
     }
   }
 }
-
-window.PageW2G = PageW2G

@@ -1,9 +1,15 @@
-/* global Store, U, YumeAPI, document, window, T */
+/* global document */
 // Theme Engine — pick a base (dark/light), choose an accent from curated
 // presets or a fully custom colour, and optionally tint surfaces toward the
 // accent. Applied live via CSS custom-property overrides (Store.applyTheme).
 
-const PageThemes = {
+import { App } from '../app.js'
+import { T } from '../i18n.js'
+import { Store } from '../store.js'
+import { U } from '../util.js'
+import { YumeAPI } from '../yume-api.js'
+
+export const PageThemes = {
   /**
    * The themes this deployment offers.
    *
@@ -85,7 +91,7 @@ const PageThemes = {
     for (const [value, label, icon] of [['dark', 'Dark', '🌙'], ['light', 'Light', '☀️']]) {
       baseRow.append(U.el('button', {
         class: 'theme-base-opt' + (currentBase === value ? ' active' : ''),
-        onclick: () => { Store.setTheme({ base: value }); window.App.navigate() }
+        onclick: () => { Store.setTheme({ base: value }); App.navigate() }
       }, [U.el('span', { text: icon }), document.createTextNode(label)]))
     }
     pad.append(baseRow)
@@ -110,7 +116,7 @@ const PageThemes = {
             tokens: preset.tokens ?? {},
             slug: preset.slug ?? ''
           })
-          window.App.navigate()
+          App.navigate()
         }
       }, [
         U.el('span', { class: 'theme-swatch', style: `background:${preset.accent ?? 'var(--accent)'};` }),
@@ -130,7 +136,7 @@ const PageThemes = {
       class: 'theme-color-input',
       value: this._toHex(currentAccent) ?? '#f43f6e',
       oninput: e => { Store.setTheme({ accent: e.target.value }) },
-      onchange: () => window.App.navigate()
+      onchange: () => App.navigate()
     })
     pad.append(U.el('div', { class: 'theme-custom-row' }, [
       picker,
@@ -141,7 +147,7 @@ const PageThemes = {
       U.el('button', {
         class: 'btn btn-secondary btn-sm',
         style: 'margin-left:auto;',
-        onclick: () => { Store.setTheme({ accent: '', tint: false }); window.App.navigate() }
+        onclick: () => { Store.setTheme({ accent: '', tint: false }); App.navigate() }
       }, [document.createTextNode(T('Reset to default'))])
     ]))
 
@@ -185,5 +191,3 @@ const PageThemes = {
     return U.toHex(value)
   }
 }
-
-window.PageThemes = PageThemes

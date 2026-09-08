@@ -1,4 +1,3 @@
-/* global window */
 // ============================================================================
 // CENTRAL COPY CATALOG — every fixed piece of text on the site lives here.
 // Change a label once here and it updates everywhere it is used. Read in the
@@ -8,7 +7,7 @@
 // page code. Keep the keys; edit the values.
 // ============================================================================
 
-window.Copy = {
+export const Copy = {
   // left sidebar + mobile bottom bar
   nav: {
     home: 'Home',

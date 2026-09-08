@@ -1,4 +1,4 @@
-/* global App, window, document, U, C, Catalogue, Store, T, I18n */
+/* global window, document */
 // Anime detail page — faithful to the original Hayase layout:
 // content scrolls over the global banner; cover bottom-aligned next to a
 // huge title; chips tinted with the cover's dominant color (score chip
@@ -6,7 +6,15 @@
 // icon actions; genre + tag chips; then tabs:
 // Episodes | Relations | Comments | Recommendations.
 
-const PageAnime = {
+import { App } from '../app.js'
+import { Catalogue } from '../catalogue.js'
+import { C } from '../components.js'
+import { I18n, T } from '../i18n.js'
+import { Prefs } from '../prefs.js'
+import { Store } from '../store.js'
+import { U } from '../util.js'
+
+export const PageAnime = {
   async render (root, params, id) {
     root.append(U.el('div', { class: 'spinner' }))
 
@@ -87,7 +95,7 @@ const PageAnime = {
     // writes it. An unexplained English paragraph on a Hungarian site reads as
     // the site being broken; the same paragraph labelled as an untranslated one
     // reads as what it is, and costs one line to say.
-    const wantLang = window.Prefs?.get('language.content') ?? 'hu'
+    const wantLang = Prefs?.get('language.content') ?? 'hu'
     const gotLang = media._lang?.synopsis ?? null
     const descNote = descText && gotLang && gotLang !== wantLang && gotLang !== 'unknown'
       ? U.el('p', { class: 'detail-desc-note', text: T('This description has not been translated yet.') })
@@ -174,7 +182,7 @@ const PageAnime = {
         Store.saveEntry(media, { status: 'PLANNING' })
         e.currentTarget.classList.add('active')
         U.toast(T('Added to Planning'))
-        window.App.navigate()
+        App.navigate()
       },
       inList
     ))
@@ -194,7 +202,7 @@ const PageAnime = {
     // `feature.trailers` was a flag nothing read: an operator turning trailers
     // off — because the embeds reach a third party — kept getting them. The
     // switch is the whole reason the row exists.
-    if (media.trailer?.id && (!window.App || window.App.featureOn('trailers'))) {
+    if (media.trailer?.id && (!App || App.featureOn('trailers'))) {
       actions.append(iconBtn(
         U.svg('<path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1-.3 2.1.3 2.4 1.3Z"/><path d="m6.2 5.3 3.1 3.9"/><path d="m12.4 3.4 3.1 4"/><path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>', 15),
         'Trailer',
@@ -383,7 +391,7 @@ const PageAnime = {
           Store.saveEntry(media, { status: e.target.value })
           U.toast(`Set to ${U.listStatusMap[e.target.value]}`)
         }
-        window.App.navigate()
+        App.navigate()
       }
     }, [
       U.el('option', { value: '', text: entry ? T('✕ Remove from list') : T('＋ Add to List') }),
@@ -675,5 +683,3 @@ function ratingColor (score) {
   if (score >= 60) return 'hsl(45 85% 42%)'
   return 'hsl(0 65% 45%)'
 }
-
-window.PageAnime = PageAnime

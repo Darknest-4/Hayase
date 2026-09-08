@@ -31,8 +31,8 @@ RUN npm ci --omit=dev
 # /app/packages, /app/database — and that is load-bearing, not tidiness. Two
 # paths are resolved relative to the source file at runtime:
 #
-#   src/lib/migrate.ts  ../../../../database/migrations
-#   src/app.ts          ../../web              (the WEB_ROOT default)
+#   src/infrastructure/migrations/migrate.ts  ../../../../../database/migrations
+#   src/app.ts                                ../../web   (the WEB_ROOT default)
 #
 # and the workspace symlink /app/node_modules/@yume/database points at
 # ../../packages/database. All three are correct in a checkout and in the image

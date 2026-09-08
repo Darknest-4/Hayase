@@ -144,7 +144,7 @@ describe('SEO', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
     // be a second frontend to keep in step with the first.
     const id = await makeAnime()
     const body = (await app.inject({ url: `/anime/${id}` })).body
-    assert.match(body, /<script src="\/js\/app\.js">/)
+    assert.match(body, /<script type="module" src="\/js\/main\.js">/)
     assert.match(body, /id="page"/)
   })
 

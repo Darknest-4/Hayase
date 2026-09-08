@@ -12,35 +12,34 @@
 
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { describe, it, beforeEach } from 'node:test'
-import { createContext, runInNewContext } from 'node:vm'
+import { describe, it, beforeEach, mock } from 'node:test'
+
+import { install, storage as fakeStorage } from './support/browser.mjs'
 
 const SERVER_SPEC = new URL('../../api/src/modules/profiles/preferences.ts', import.meta.url)
-const CLIENT = new URL('../js/prefs.js', import.meta.url)
 
-/** A minimal localStorage, so the module under test has somewhere to write. */
-function fakeStorage () {
-  const map = new Map()
-  return {
-    getItem: key => (map.has(key) ? map.get(key) : null),
-    setItem: (key, value) => map.set(key, String(value)),
-    removeItem: key => map.delete(key),
-    _map: map
-  }
-}
+install()
+const { Prefs: PREFS } = await import('../js/prefs.js')
+const { Store } = await import('../js/store.js')
 
+/**
+ * Put the preference module into a known state.
+ *
+ * There is one Prefs per process now rather than one per vm realm, so "load a
+ * fresh copy" is "reset what it remembers and swap the globals it reads" —
+ * both of which it does at call time, which is what makes this honest. The
+ * profile id comes from Store, so that is stubbed rather than injected.
+ */
 function loadPrefs ({ languages = ['hu-HU'], storage = fakeStorage() } = {}) {
-  const context = createContext({
-    window: { navigator: { language: languages[0], languages } },
-    localStorage: storage,
-    Store: { activeProfileId: () => 'profile-1' },
-    console
-  })
-  runInNewContext(readFileSync(CLIENT, 'utf8'), context)
-  return { Prefs: context.Prefs ?? context.window.Prefs, storage, context }
+  install({ localStorage: storage, navigator: { language: languages[0], languages } })
+  mock.restoreAll()
+  mock.method(Store, 'activeProfileId', () => 'profile-1')
+  PREFS._cache = null
+  PREFS._listeners.clear()
+  return { Prefs: PREFS, storage }
 }
 
-/** Cross-realm values compare by structure after a JSON round trip. */
+/** Kept from the vm days: several assertions compare against plain literals. */
 const plain = value => JSON.parse(JSON.stringify(value))
 
 // ---------------------------------------------------------------------------
@@ -132,7 +131,7 @@ describe('reading and writing', () => {
     // A household can have a Hungarian child profile and an English adult one
     // on the same login; a shared key would collapse them into each other.
     Prefs.set({ 'language.ui': 'en' }, { sync: false })
-    assert.ok([...storage._map.keys()].some(k => k.includes('profile-1')))
+    assert.ok([...storage.map.keys()].some(k => k.includes('profile-1')))
   })
 
   it('rejects an unknown key instead of storing it', () => {

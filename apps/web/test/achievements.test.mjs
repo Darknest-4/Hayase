@@ -9,38 +9,30 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { before, describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { runInNewContext } from 'node:vm'
+import { before, describe, it } from 'node:test'
+
+import { install } from './support/browser.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
-// The client catalogue is built inside the vm realm, so deepEqual compares it
-// against a different Array.prototype and fails on identical data.
-const plain = value => JSON.parse(JSON.stringify(value))
 const { CATALOGUE, evaluate } = await import('../../api/src/modules/library/achievements.ts')
 
 let clientCatalogue
 
-before(() => {
-  const window = {}
-  const context = {
-    window,
-    document: { createElement: () => ({ style: {}, dataset: {}, append () {}, setAttribute () {} }) },
-    console,
-    Store: { list: () => ({}), history: () => [], favourites: () => [], activeProfile: () => null },
-    U: { el: () => ({ append () {} }) },
-    T: k => k,
-    I18n: { locale: () => 'en' }
-  }
-  context.globalThis = context
-  runInNewContext(readFileSync(join(here, '../js/pages/achievements.js'), 'utf8'), context)
-  clientCatalogue = window.PageAchievements.CATALOG
+before(async () => {
+  // The page module only has to *load* — CATALOG is a static array on it, and
+  // none of the rendering runs. It used to be given hand-written Store, U, T
+  // and I18n stand-ins because a vm realm has no imports; as a module it
+  // brings its own, and the browser stub is all it needs.
+  install()
+  const { PageAchievements } = await import('../js/pages/achievements.js')
+  clientCatalogue = PageAchievements.CATALOG
 })
 
 describe('the two catalogues agree', () => {
   it('lists the same achievements in the same order', () => {
-    assert.deepEqual(plain(clientCatalogue.map(a => a.slug)), CATALOGUE.map(a => a.slug))
+    assert.deepEqual(clientCatalogue.map(a => a.slug), CATALOGUE.map(a => a.slug))
   })
 
   it('agrees on every target', () => {

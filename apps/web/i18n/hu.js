@@ -1,4 +1,4 @@
-/* global window, I18n */
+/* global window */
 // Magyar fordítás.
 //
 // A kulcs az angol eredeti — ha egy sor hiányzik innen, az angol szöveg
@@ -7,6 +7,8 @@
 // Amit szándékosan NEM fordítunk: tulajdonnevek és rövidítések (Yume, AniList,
 // MyAnimeList, AL, MAL), illetve a demóadatok. Ezek magyarul is ugyanúgy
 // hangzanak, és a lefordításuk csak zavart okozna.
+
+import { I18n } from '../js/i18n.js'
 
 I18n.register('hu', {
   // ---------------------------------------------------------------- navigáció
@@ -473,7 +475,7 @@ I18n.register('hu', {
     'Ez a forrás nem indult el — marad a mostani'
 })
 
-if (typeof window !== 'undefined' && !window.I18n) {
+if (typeof window !== 'undefined' && !I18n) {
   // A szótár a modul után töltődik, de ha valami mégis megelőzné, ne dőljön el
   // az oldal egy hiányzó globális miatt.
   console.warn('[i18n] a magyar szótár az I18n modul előtt töltődött be')

@@ -6,16 +6,12 @@
 // that the scale is honest, and that no two gridlines claim the same number.
 
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
 import { before, describe, it } from 'node:test'
-import { fileURLToPath } from 'node:url'
-import { runInNewContext } from 'node:vm'
 
-const here = dirname(fileURLToPath(import.meta.url))
+import { install } from './support/browser.mjs'
 
-/** Just enough DOM to build SVG in. */
-function makeContext () {
+/** Just enough DOM to build SVG in — nodes that remember their own tag. */
+function svgDocument () {
   const make = tag => ({
     tag,
     attrs: {},
@@ -26,14 +22,7 @@ function makeContext () {
     getAttribute (k) { return this.attrs[k] },
     append (...kids) { this.children.push(...kids) }
   })
-  const window = {}
-  const context = {
-    window,
-    document: { createElement: make, createElementNS: (_ns, tag) => make(tag) },
-    console
-  }
-  context.globalThis = context
-  return context
+  return { createElement: make, createElementNS: (_ns, tag) => make(tag) }
 }
 
 /** Every node of a given tag, at any depth. */
@@ -49,11 +38,10 @@ const axisLabels = svg => findAll(svg, 'text')
 
 let Charts
 
-before(() => {
-  const context = makeContext()
-  runInNewContext(readFileSync(join(here, '../js/charts.js'), 'utf8'), context)
-  Charts = context.window.Charts
-  assert.ok(Charts, 'the script must expose window.Charts')
+before(async () => {
+  install({ document: svgDocument() })
+  ;({ Charts } = await import('../js/charts.js'))
+  assert.ok(Charts, 'charts.js must export Charts')
 })
 
 describe('lines', () => {

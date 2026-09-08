@@ -1,4 +1,3 @@
-/* global window, YumeAPI, API */
 // The catalogue resolver — which source answers a request for an anime.
 //
 // The database has held a full catalogue schema for a long time: titles,
@@ -26,7 +25,10 @@
 // only in our catalogue — no AniList mapping — is now reachable, which it was
 // not: search dropped those rows because the route could not link to them.
 
-const Catalogue = {
+import { API } from './api.js'
+import { YumeAPI } from './yume-api.js'
+
+export const Catalogue = {
   UUID: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
 
   isYumeId (id) {
@@ -519,5 +521,3 @@ const Catalogue = {
     return []
   }
 }
-
-window.Catalogue = Catalogue

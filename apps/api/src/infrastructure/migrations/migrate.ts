@@ -10,7 +10,12 @@ import { pool } from '../database/index.ts'
 import { check as checkEncoding } from './db-encoding.ts'
 import { ensurePartitions } from './partitions.ts'
 
-const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../database/migrations')
+// Five levels: src/infrastructure/migrations -> src -> apps/api -> apps -> the
+// repository root, which is also /app in the image because the Dockerfile
+// mirrors this layout. Counted rather than guessed — this file moved one level
+// deeper in the module restructure and the old four broke every fresh install,
+// silently, because every database in use had already been migrated.
+const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../../database/migrations')
 
 /** Arbitrary constant identifying this runner's advisory lock. */
 const MIGRATION_LOCK_KEY = 8_274_119

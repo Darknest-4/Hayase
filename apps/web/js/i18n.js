@@ -1,4 +1,4 @@
-/* global window, document */
+/* global document */
 // Translation for a framework-free client.
 //
 // ---------------------------------------------------------------------------
@@ -26,9 +26,21 @@
 // And an English string edited in place silently orphans its translation.
 // apps/web/test/i18n.test.mjs lists orphans so that stays visible.
 
-const I18n = {
+import { Copy } from '../copy.js'
+import { Prefs } from './prefs.js'
+
+export const I18n = {
   /** Registered dictionaries: { hu: { 'Start Watching': 'Megnézem' } } */
   _dicts: Object.create(null),
+
+  /**
+   * The copy catalogue that dotted keys resolve against.
+   *
+   * A property rather than the direct import T() used to reach for, so that
+   * "what does this render with no catalogue behind it" is a question the code
+   * can be asked. It is the same object either way in the browser.
+   */
+  copy: Copy,
 
   /** Current language. Kept here rather than read from Prefs on every T(). */
   _lang: 'hu',
@@ -148,7 +160,7 @@ const I18n = {
    * opinion about the router and stays testable without one.
    */
   init (onLanguageChange) {
-    const prefs = window.Prefs
+    const prefs = Prefs
     if (prefs) {
       this.setLanguage(prefs.language())
       prefs.onChange(changed => {
@@ -178,9 +190,9 @@ const I18n = {
  * `fallback` is kept from the original signature: callers pass it to supply a
  * default when a catalog key is missing.
  */
-function T (key, fallbackOrContext) {
+export function T (key, fallbackOrContext) {
   const fromCatalog = typeof key === 'string' && key.includes('.')
-    ? String(key).split('.').reduce((o, k) => (o == null ? undefined : o[k]), (typeof window !== 'undefined' ? window.Copy : undefined))
+    ? String(key).split('.').reduce((o, k) => (o == null ? undefined : o[k]), I18n.copy)
     : undefined
 
   if (typeof fromCatalog === 'string') return I18n.t(fromCatalog)
@@ -191,9 +203,3 @@ function T (key, fallbackOrContext) {
   if (translated !== key) return translated
   return fromCatalog ?? (typeof fallbackOrContext === 'string' && key.includes('.') ? fallbackOrContext : translated)
 }
-
-if (typeof window !== 'undefined') {
-  window.I18n = I18n
-  window.T = T
-}
-if (typeof module !== 'undefined' && module.exports) module.exports = { I18n, T }

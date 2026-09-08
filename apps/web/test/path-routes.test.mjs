@@ -13,111 +13,32 @@
 
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
 import { before, beforeEach, describe, it } from 'node:test'
-import { fileURLToPath } from 'node:url'
-import { runInNewContext } from 'node:vm'
 
-const here = dirname(fileURLToPath(import.meta.url))
+import { install } from './support/browser.mjs'
 
-const element = () => ({
-  style: {},
-  dataset: {},
-  classList: { add () {}, remove () {}, toggle () {}, contains: () => false },
-  children: [],
-  hidden: false,
-  append () {},
-  prepend () {},
-  replaceChildren () {},
-  remove () {},
-  addEventListener () {},
-  removeEventListener () {},
-  setAttribute () {},
-  getAttribute: () => null,
-  querySelector: () => null,
-  querySelectorAll: () => [],
-  focus () {},
-  scrollTo () {}
-})
+const INDEX = new URL('../index.html', import.meta.url)
 
 let App
-let context
 /** Every replaceState the app performed, in order. */
-let replaced
+let replaced = []
 
-before(() => {
-  const window = {
-    location: { hash: '#/home', pathname: '/', search: '' },
-    history: { replaceState (_state, _title, url) { replaced.push(url) } },
-    addEventListener () {}
-  }
-  const noop = () => {}
-  const quiet = new Proxy({}, { get: () => () => undefined })
-  context = {
-    window,
-    document: {
-      createElement: () => element(),
-      createTextNode: t => ({ textContent: t }),
-      getElementById: () => element(),
-      querySelector: () => element(),
-      querySelectorAll: () => [],
-      addEventListener () {},
-      documentElement: element(),
-      body: element()
-    },
-    console,
-    setTimeout,
-    clearTimeout,
-    URLSearchParams,
-    URL,
-    Promise,
-    JSON,
-    Date,
-    Math,
-    Object,
-    Array,
-    Set,
-    Map,
-    fetch: async () => ({ ok: false, status: 503, json: async () => ({}) }),
-    requestAnimationFrame: fn => fn(),
-    C: new Proxy({}, { get: () => () => element() }),
-    U: new Proxy({ el: () => element() }, { get: (t, k) => k in t ? t[k] : () => undefined }),
-    T: k => k,
-    I18n: new Proxy({ locale: () => 'en' }, { get: (t, k) => k in t ? t[k] : () => undefined })
-  }
-  context.globalThis = context
-  window.YumeAPI = {
-    user: () => null,
-    myPermissions: async () => [],
-    available: async () => false,
-    config: async () => null,
-    base: () => ''
-  }
-  Object.assign(context, {
-    YumeAPI: window.YumeAPI,
-    Store: quiet,
-    Prefs: quiet,
-    Catalogue: quiet,
-    Onboarding: quiet,
-    LibrarySync: quiet,
-    ExtensionHost: quiet
+const location = { hash: '#/home', pathname: '/', search: '' }
+
+before(async () => {
+  install({
+    location,
+    history: { replaceState (_state, _title, url) { replaced.push(url) } }
   })
-  context.localStorage = { getItem: () => null, setItem: noop, removeItem: noop }
-  window.localStorage = context.localStorage
-  window.sessionStorage = context.localStorage
-  window.matchMedia = () => ({ matches: false, addEventListener: noop })
-  window.PageAdmin = { SECTIONS: [] }
-  replaced = []
-  runInNewContext(readFileSync(join(here, '../js/app.js'), 'utf8'), context)
-  App = context.window.App ?? context.App
-  assert.ok(App, 'app.js must expose App')
+  ;({ App } = await import('../js/app.js'))
+  assert.ok(App, 'app.js must export App')
 })
 
 beforeEach(() => { replaced = [] })
 
 /** Put the fake browser at an address and ask the router where that is. */
 function at (hash, pathname = '/', search = '') {
-  Object.assign(context.window.location, { hash, pathname, search })
+  Object.assign(location, { hash, pathname, search })
   return App.parseHash()
 }
 
@@ -164,8 +85,8 @@ describe('reading a path address', () => {
 
   it('survives a location with no pathname at all', () => {
     // Not hypothetical: several client tests construct exactly this window.
-    Object.assign(context.window.location, { hash: '', search: '' })
-    delete context.window.location.pathname
+    Object.assign(location, { hash: '', search: '' })
+    delete location.pathname
     assert.equal(App.parseHash().route, 'home')
   })
 })
@@ -197,7 +118,7 @@ describe('normalising a path address', () => {
 })
 
 describe('what index.html asks the browser for', () => {
-  const html = readFileSync(join(here, '../index.html'), 'utf8')
+  const html = readFileSync(INDEX, 'utf8')
 
   it('asks for its scripts and styles from the root', () => {
     // Relative asset URLs resolve against the document, so on /anime/123 the
@@ -210,7 +131,7 @@ describe('what index.html asks the browser for', () => {
   })
 
   it('keeps the markers the server replaces the head between', () => {
-    // Without them lib/seo.ts silently serves the generic head, which is a
+    // Without them modules/seo/meta.ts silently serves the generic head, which is a
     // regression nothing else would notice.
     assert.ok(html.includes('<!--yume:seo-->'), 'the opening SEO marker is gone')
     assert.ok(html.includes('<!--/yume:seo-->'), 'the closing SEO marker is gone')

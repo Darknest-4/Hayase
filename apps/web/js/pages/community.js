@@ -1,10 +1,16 @@
-/* global window, U, C, YumeAPI, T */
+/* global window */
 // Community page — platform-wide recent discussion feed (Yume API),
 // with account sign-in when the user isn't authenticated yet.
 
-const PageCommunity = {
+import { App } from '../app.js'
+import { C } from '../components.js'
+import { T } from '../i18n.js'
+import { U } from '../util.js'
+import { YumeAPI } from '../yume-api.js'
+
+export const PageCommunity = {
   async render (root) {
-    root.append(window.C.spotlight(T('Community'), { subtitle: T('Live discussion across the whole platform') }))
+    root.append(C.spotlight(T('Community'), { subtitle: T('Live discussion across the whole platform') }))
     const pad = U.el('div', { class: 'page-pad', style: 'max-width:56rem;' })
     root.append(pad)
 
@@ -25,7 +31,7 @@ const PageCommunity = {
     content.replaceChildren()
 
     if (!YumeAPI.user()) {
-      content.append(C.authCard(() => { window.App.navigate() }))
+      content.append(C.authCard(() => { App.navigate() }))
     }
 
     const feed = U.el('div', {}, [U.el('div', { class: 'spinner' })])
@@ -57,5 +63,3 @@ const PageCommunity = {
     }
   }
 }
-
-window.PageCommunity = PageCommunity

@@ -1,4 +1,4 @@
-/* global window, localStorage, YumeAPI, Store */
+/* global window, localStorage */
 // Viewer preferences on the client.
 //
 // Same shape as the server's lib/preferences.ts, and the same storage story as
@@ -18,7 +18,11 @@
 // pinned by apps/web/test/prefs.test.mjs, which reads the server file and asserts
 // the two agree — so they can be wrong together but never drift apart quietly.
 
-const Prefs = {
+import { App } from './app.js'
+import { Store } from './store.js'
+import { YumeAPI } from './yume-api.js'
+
+export const Prefs = {
   STORAGE_KEY: 'yume-prefs',
 
   DEFAULTS: {
@@ -54,7 +58,7 @@ const Prefs = {
    * `content.adult` as labels for anyone who was not signed in.
    */
   get spec () {
-    return this._spec ?? window.App?.config?.preferences ?? null
+    return this._spec ?? App?.config?.preferences ?? null
   },
 
   set spec (value) {
@@ -170,7 +174,7 @@ const Prefs = {
     this._write({})
     this._cache = null
     this._emit(this.DEFAULTS)
-    if (window.YumeAPI?.user()) {
+    if (YumeAPI?.user()) {
       this._req('/v1/me/settings', { method: 'DELETE' }).catch(() => {})
     }
   },
@@ -223,7 +227,7 @@ const Prefs = {
    * nothing more than untouched defaults.
    */
   async pull () {
-    if (!window.YumeAPI?.user()) return null
+    if (!YumeAPI?.user()) return null
     try {
       const { settings, onboarding, spec } = await this._req('/v1/me/settings')
       if (Array.isArray(spec)) this.spec = spec
@@ -241,7 +245,7 @@ const Prefs = {
 
   /** Mirror a change up. Failures are silent — the local value already applied. */
   async push (settings, onboarding) {
-    if (!window.YumeAPI?.user()) return
+    if (!YumeAPI?.user()) return
     try {
       const body = { settings }
       if (onboarding) body.onboarding = onboarding
@@ -269,6 +273,3 @@ const Prefs = {
     return this.DEFAULTS['language.ui']
   }
 }
-
-if (typeof window !== 'undefined') window.Prefs = Prefs
-if (typeof module !== 'undefined' && module.exports) module.exports = Prefs

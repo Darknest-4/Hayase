@@ -1,4 +1,4 @@
-/* global window, document, U, C, T, I18n, Prefs */
+/* global document */
 // First-run wizard: three short steps, then it never appears again.
 //
 // ---------------------------------------------------------------------------
@@ -28,7 +28,13 @@
 // On a phone it renders as a bottom sheet rather than a centred dialog — see
 // .onboard-card in style.css.
 
-const Onboarding = {
+import { App } from './app.js'
+import { C } from './components.js'
+import { I18n, T } from './i18n.js'
+import { Prefs } from './prefs.js'
+import { U } from './util.js'
+
+export const Onboarding = {
   /** Built from the preference spec, so a new onboarding question is one
    *  `onboarding: true` in lib/preferences.ts plus a step entry here. */
   STEPS: [
@@ -78,7 +84,7 @@ const Onboarding = {
   /** Should the wizard run? Called once after boot. */
   due () {
     if (this._open) return false
-    if (!window.Prefs) return false
+    if (!Prefs) return false
     return !Prefs.onboarded()
   },
 
@@ -176,8 +182,8 @@ const Onboarding = {
       Prefs.push(answers, { done: true, skipped }).catch(() => {})
       I18n.setLanguage(answers['language.ui'])
       close()
-      window.App?.applyNavLabels?.()
-      window.App?.navigate?.()
+      App?.applyNavLabels?.()
+      App?.navigate?.()
       if (!skipped) U.toast(T('Saved — you can change these in Settings'))
     }
 
@@ -255,6 +261,3 @@ const Onboarding = {
     ])
   }
 }
-
-if (typeof window !== 'undefined') window.Onboarding = Onboarding
-if (typeof module !== 'undefined' && module.exports) module.exports = Onboarding

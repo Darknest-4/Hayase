@@ -1,9 +1,17 @@
-/* global C, Charts, U, YumeAPI, confirm, document, history, window, I18n */
+/* global confirm, document, history, window */
 // Admin dashboard — overview analytics, user management and the
 // moderation queue. Only reachable with the right permissions; the
 // server enforces them regardless.
 
-const PageAdmin = {
+import { App } from '../app.js'
+import { Charts } from '../charts.js'
+import { C } from '../components.js'
+import { I18n } from '../i18n.js'
+import { Store } from '../store.js'
+import { U } from '../util.js'
+import { YumeAPI } from '../yume-api.js'
+
+export const PageAdmin = {
   /**
    * The admin surface, grouped.
    *
@@ -118,7 +126,7 @@ const PageAdmin = {
       badge.classList.toggle('hidden', !count)
     }
     let local = 0
-    try { local = window.Store?.unreadCount?.() ?? 0 } catch (e) { /* no data */ }
+    try { local = Store?.unreadCount?.() ?? 0 } catch (e) { /* no data */ }
     paint(local)
     YumeAPI.notifications?.({ unreadOnly: true, limit: 100 })
       ?.then(rows => paint(local + rows.length))
@@ -231,7 +239,7 @@ const PageAdmin = {
         U.svg('<path d="M23.5 4.5A13 13 0 1 0 27.5 21 10.5 10.5 0 0 1 23.5 4.5Z" fill="currentColor" stroke="none"/>', 18)
       ]),
       U.el('span', { class: 'admin-nav-brand' }, [
-        U.el('span', { class: 'admin-nav-brand-name', text: window.App?.config?.site?.name ?? 'Yume' }),
+        U.el('span', { class: 'admin-nav-brand-name', text: App?.config?.site?.name ?? 'Yume' }),
         U.el('span', { class: 'admin-nav-brand-sub', text: 'Admin panel' })
       ]),
       collapseBtn
@@ -1026,7 +1034,7 @@ const PageAdmin = {
     content.replaceChildren()
 
     const settings = data.settings ?? {}
-    const applyLive = async () => { await window.App.loadConfig(); window.App.applyNavVisibility(); window.App.refreshAdminNav() }
+    const applyLive = async () => { await App.loadConfig(); App.applyNavVisibility(); App.refreshAdminNav() }
 
     // ---------- global settings ----------
     content.append(U.el('h2', { class: 'detail-section-title', text: 'Global' }))
@@ -3219,7 +3227,7 @@ const PageAdmin = {
   /** Move to another section from a link inside a panel. */
   goto (key) {
     window.location.hash = `#/admin?s=${key}`
-    window.App.navigate()
+    App.navigate()
   },
 
   /**
@@ -3779,5 +3787,3 @@ const PageAdmin = {
     })
   }
 }
-
-window.PageAdmin = PageAdmin

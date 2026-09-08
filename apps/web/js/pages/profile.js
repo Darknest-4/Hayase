@@ -1,9 +1,19 @@
-/* global window, document, U, C, Store, PageAnalytics, PageAchievements, PageHistory, T, I18n */
+/* global document */
 // Profile — a hub for everything personal to the active profile. Overview
 // shows identity + headline stats; the Analytics, Achievements and History
 // tabs embed those modules' bodies so they don't need their own routes.
 
-const PageProfile = {
+import { C } from '../components.js'
+import { I18n, T } from '../i18n.js'
+import { ProfileStats } from '../profile-stats.js'
+import { Store } from '../store.js'
+import { U } from '../util.js'
+import { WatchTime } from '../watch-time.js'
+import { PageAchievements } from './achievements.js'
+import { PageAnalytics } from './analytics.js'
+import { PageHistory } from './history.js'
+
+export const PageProfile = {
   TABS: [
   // Labels are stored in English and translated where they are rendered, not
   // here: this literal is evaluated once when the script loads, so a T() call
@@ -67,7 +77,7 @@ const PageProfile = {
     // so the number grew by watching nothing. WatchTime.minutesFor() uses
     // real playback seconds and only falls back to the old estimate for
     // episodes credited before the meter existed.
-    const watch = window.WatchTime.minutesFor(entries)
+    const watch = WatchTime.minutesFor(entries)
     const minutesWatched = watch.totalMinutes
     const scored = entries.filter(e => e.score > 0)
     const meanScore = scored.length ? (scored.reduce((sum, e) => sum + e.score, 0) / scored.length).toFixed(1) : null
@@ -92,7 +102,7 @@ const PageProfile = {
         U.el('span', { text: label })
       ])))
     pad.append(cards)
-    window.ProfileStats?.hydrate(cards)
+    ProfileStats?.hydrate(cards)
 
     // ---- status breakdown ----
     pad.append(U.el('h2', { class: 'detail-section-title', text: T('Library breakdown') }))
@@ -140,5 +150,3 @@ const PageProfile = {
     }
   }
 }
-
-window.PageProfile = PageProfile

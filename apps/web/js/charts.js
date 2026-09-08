@@ -1,9 +1,9 @@
-/* global window, document */
+/* global document */
 // Tiny dependency-free SVG chart helpers used by the Analytics page.
 // Theme-aware (uses design tokens via currentColor/var()), accessible
 // (title + role), responsive (viewBox scales).
 
-const Charts = {
+export const Charts = {
   _svg (w, h, children, label) {
     const ns = 'http://www.w3.org/2000/svg'
     const svg = document.createElementNS(ns, 'svg')
@@ -246,5 +246,3 @@ const Charts = {
     return wrap
   }
 }
-
-window.Charts = Charts

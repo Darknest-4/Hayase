@@ -1,8 +1,14 @@
-/* global C, Catalogue, Store, U, document, window, T */
+/* global document, window */
 // My List page — the locally stored anime list with status tabs,
 // inline progress controls and favourites.
 
-const PageList = {
+import { Catalogue } from '../catalogue.js'
+import { C } from '../components.js'
+import { T } from '../i18n.js'
+import { Store } from '../store.js'
+import { U } from '../util.js'
+
+export const PageList = {
   render (root, params) {
     const total = Object.keys(Store.list()).length
     root.append(C.spotlight(T('Library'), { subtitle: total ? `${total} ${total === 1 ? 'title' : 'titles'} tracked` : 'Your anime, tracked' }))
@@ -119,5 +125,3 @@ const PageList = {
     renderContent()
   }
 }
-
-window.PageList = PageList

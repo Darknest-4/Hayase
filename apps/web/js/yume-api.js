@@ -4,7 +4,7 @@
 // comments/community, themes and playback data.
 // Configure the endpoint in Settings; default assumes local development.
 
-const YumeAPI = {
+export const YumeAPI = {
   base () {
     const saved = localStorage.getItem('yume-api')
     if (saved) return saved
@@ -672,5 +672,3 @@ const YumeAPI = {
     }
   }
 }
-
-window.YumeAPI = YumeAPI

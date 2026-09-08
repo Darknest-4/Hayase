@@ -1,8 +1,14 @@
-/* global C, Catalogue, MutationObserver, U, window, T */
+/* global MutationObserver, window */
 // Search page — text search plus the same filters the original search route has
 // (genre, season, year, format, status, sort), with load-more pagination.
 
-const PageSearch = {
+import { App } from '../app.js'
+import { Catalogue } from '../catalogue.js'
+import { C } from '../components.js'
+import { T } from '../i18n.js'
+import { U } from '../util.js'
+
+export const PageSearch = {
   GENRES: ['Action', 'Adventure', 'Comedy', 'Drama', 'Ecchi', 'Fantasy', 'Horror', 'Mahou Shoujo', 'Mecha', 'Music', 'Mystery', 'Psychological', 'Romance', 'Sci-Fi', 'Slice of Life', 'Sports', 'Supernatural', 'Thriller'],
   FORMATS: ['TV', 'TV_SHORT', 'MOVIE', 'SPECIAL', 'OVA', 'ONA'],
   STATUSES: ['RELEASING', 'FINISHED', 'NOT_YET_RELEASED', 'CANCELLED'],
@@ -111,7 +117,7 @@ const PageSearch = {
     })
     cleanup.observe(document.getElementById('page'), { childList: true })
 
-    const imageOn = !window.App || window.App.featureOn('image_search')
+    const imageOn = !App || App.featureOn('image_search')
 
     /**
      * The filter panel is collapsible, and starts collapsed on a phone.
@@ -209,5 +215,3 @@ const PageSearch = {
     load(false)
   }
 }
-
-window.PageSearch = PageSearch

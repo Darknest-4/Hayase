@@ -10,37 +10,29 @@
 // tests pin the merge rules instead.
 
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { before, beforeEach, describe, it } from 'node:test'
-import { fileURLToPath } from 'node:url'
-import { runInNewContext } from 'node:vm'
+import { before, beforeEach, describe, it, mock } from 'node:test'
 
-const here = dirname(fileURLToPath(import.meta.url))
+import { install } from './support/browser.mjs'
 
-// The module builds its objects inside the vm realm, so deepEqual compares
-// them against a different Object.prototype and fails on identical data.
+/** Kept from the vm days: several assertions compare against plain literals. */
 const plain = value => JSON.parse(JSON.stringify(value))
 
-let context, LibrarySync, store, requests
+const realSetTimeout = globalThis.setTimeout
 
-before(() => {
-  const window = {}
-  context = {
-    window,
+let LibrarySync, Store, YumeAPI, store, requests, reply
+
+before(async () => {
+  install({
+    CustomEvent: class { constructor (type) { this.type = type } },
     document: { createElement: () => ({ style: {}, dataset: {}, append () {}, setAttribute () {} }) },
-    console,
-    localStorage: { getItem: () => null, setItem () {}, removeItem () {} },
-    setTimeout: (fn, ms) => setTimeout(fn, Math.min(ms ?? 0, 1)),
-    clearTimeout,
-    CustomEvent: class { constructor (type) { this.type = type } }
-  }
-  context.globalThis = context
-  context.window.addEventListener = () => {}
-  context.window.dispatchEvent = () => {}
-  runInNewContext(readFileSync(join(here, '../js/library-sync.js'), 'utf8'), context)
-  LibrarySync = window.LibrarySync
-  assert.ok(LibrarySync, 'library-sync.js must expose LibrarySync')
+    // The push is debounced by half a second. Clamped so settle() below does
+    // not have to wait it out for every one of these cases.
+    setTimeout: (fn, ms) => realSetTimeout(fn, Math.min(ms ?? 0, 1))
+  })
+  ;({ LibrarySync } = await import('../js/library-sync.js'))
+  ;({ Store } = await import('../js/store.js'))
+  ;({ YumeAPI } = await import('../js/yume-api.js'))
+  assert.ok(LibrarySync, 'library-sync.js must export LibrarySync')
 })
 
 beforeEach(() => {
@@ -54,48 +46,44 @@ beforeEach(() => {
     resume: {},
     entries: {}
   }
-  context.Store = {
-    favourites: () => store.favourites,
-    setFavourites: ids => { store.favourites = ids },
-    getResume: (id, ep) => store.resume[`${id}:${ep}`] ?? 0,
-    setResume: (id, ep, seconds) => { store.resume[`${id}:${ep}`] = seconds },
-    entry: () => null,
-    saveEntry: () => {}
-  }
-  // The module reaches for `window.YumeAPI` in enabled() and bare `YumeAPI`
-  // elsewhere; in a vm those are two different lookups, so both are set.
-  const api = {
-    user: () => ({ id: 'u1' }),
-    yumeAnimeId: async media => 'uuid-for-' + media.id,
-    // The episode lookup the progress path makes before it can PATCH.
-    _request: async () => ({ data: [{ id: 'episode-uuid', number: 1 }] })
-  }
-  context.YumeAPI = api
-  context.window.YumeAPI = api
+  mock.restoreAll()
+  mock.method(Store, 'favourites', () => store.favourites)
+  mock.method(Store, 'setFavourites', ids => { store.favourites = ids })
+  mock.method(Store, 'getResume', (id, ep) => store.resume[`${id}:${ep}`] ?? 0)
+  mock.method(Store, 'setResume', (id, ep, seconds) => { store.resume[`${id}:${ep}`] = seconds })
+  mock.method(Store, 'entry', () => null)
+  mock.method(Store, 'saveEntry', () => {})
+  // One YumeAPI now rather than two lookups into a vm realm: the module used
+  // to reach for `window.YumeAPI` in enabled() and bare `YumeAPI` elsewhere,
+  // which in a vm were different objects and had to be set twice.
+  mock.method(YumeAPI, 'user', () => ({ id: 'u1' }))
+  mock.method(YumeAPI, 'yumeAnimeId', async media => 'uuid-for-' + media.id)
+  // The episode lookup the progress path makes before it can PATCH.
+  mock.method(YumeAPI, '_request', async () => ({ data: [{ id: 'episode-uuid', number: 1 }] }))
   LibrarySync._profileId = 'server-profile'
   LibrarySync._muted = false
   LibrarySync._timers = {}
   LibrarySync._epCache = {}
   LibrarySync._req = async (path, opts = {}) => {
     requests.push({ path, method: opts.method ?? 'GET', body: opts.body })
-    return context.__reply?.(path) ?? { data: [] }
+    return reply?.(path) ?? { data: [] }
   }
 })
 
-const settle = () => new Promise(resolve => setTimeout(resolve, 20))
+const settle = () => new Promise(resolve => realSetTimeout(resolve, 20))
 
 describe('favourites', () => {
   it('unions the two sides instead of letting one win', async () => {
     // Two devices with different favourites are two halves of one list.
     store.favourites = [1, 2]
-    context.__reply = () => ({ data: [{ anilist_id: 2 }, { anilist_id: 3 }] })
+    reply = () => ({ data: [{ anilist_id: 2 }, { anilist_id: 3 }] })
     await LibrarySync.pullFavourites()
     assert.deepEqual(plain(store.favourites).sort((a, b) => a - b), [1, 2, 3])
   })
 
   it('pushes what only the browser had', async () => {
     store.favourites = [1, 2]
-    context.__reply = () => ({ data: [{ anilist_id: 2 }] })
+    reply = () => ({ data: [{ anilist_id: 2 }] })
     await LibrarySync.pullFavourites()
     await settle()
     const puts = requests.filter(r => r.method === 'PUT')
@@ -107,7 +95,7 @@ describe('favourites', () => {
     // The pull calls setFavourites, which would otherwise fire onFavourite
     // for every title and push the whole list back up.
     store.favourites = []
-    context.__reply = () => ({ data: [{ anilist_id: 7 }, { anilist_id: 8 }] })
+    reply = () => ({ data: [{ anilist_id: 7 }, { anilist_id: 8 }] })
     await LibrarySync.pullFavourites()
     await settle()
     assert.equal(requests.filter(r => r.method === 'PUT').length, 0)
@@ -133,7 +121,7 @@ describe('favourites', () => {
     // This path knows the id and nothing else, so a stub made here would be
     // titled "Unknown" — the library push resolves with the full media object.
     let asked = null
-    context.YumeAPI.yumeAnimeId = async (media, opts) => { asked = opts; return 'uuid' }
+    mock.method(YumeAPI, 'yumeAnimeId', async (media, opts) => { asked = opts; return 'uuid' })
     LibrarySync.onFavourite(42, true)
     await settle()
     assert.equal(asked.create, false)
@@ -148,7 +136,7 @@ describe('favourites', () => {
 
   it('survives the server being unreachable', async () => {
     store.favourites = [5]
-    context.__reply = () => { throw new Error('offline') }
+    reply = () => { throw new Error('offline') }
     await LibrarySync.pullFavourites()
     assert.deepEqual(plain(store.favourites), [5], 'a failed pull must not empty the local list')
   })
@@ -159,7 +147,7 @@ describe('resume positions', () => {
     // Overwriting a live position from a background sync yanks the viewer
     // backwards mid-episode.
     store.resume['16498:1'] = 300
-    context.__reply = () => ({
+    reply = () => ({
       data: [
         { anilist_id: 16498, episode: 1, position_sec: 60 },
         { anilist_id: 16498, episode: 2, position_sec: 120 }
@@ -171,19 +159,19 @@ describe('resume positions', () => {
   })
 
   it('ignores rows it cannot map back to a title', async () => {
-    context.__reply = () => ({ data: [{ anilist_id: null, episode: 1, position_sec: 90 }] })
+    reply = () => ({ data: [{ anilist_id: null, episode: 1, position_sec: 90 }] })
     await LibrarySync.pullResume()
     assert.deepEqual(plain(store.resume), {})
   })
 
   it('ignores a position too short to be worth resuming', async () => {
-    context.__reply = () => ({ data: [{ anilist_id: 1, episode: 1, position_sec: 3 }] })
+    reply = () => ({ data: [{ anilist_id: 1, episode: 1, position_sec: 3 }] })
     await LibrarySync.pullResume()
     assert.deepEqual(plain(store.resume), {})
   })
 
   it('does not push the positions it just pulled back up', async () => {
-    context.__reply = () => ({ data: [{ anilist_id: 1, episode: 1, position_sec: 500 }] })
+    reply = () => ({ data: [{ anilist_id: 1, episode: 1, position_sec: 500 }] })
     await LibrarySync.pullResume()
     await settle()
     assert.equal(requests.filter(r => r.method === 'PATCH').length, 0)

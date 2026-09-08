@@ -10,13 +10,9 @@
 // the last one won.
 
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
 import { describe, it, before } from 'node:test'
-import { fileURLToPath } from 'node:url'
-import { runInNewContext } from 'node:vm'
 
-const here = dirname(fileURLToPath(import.meta.url))
+import { install } from './support/browser.mjs'
 
 /** A DOM stub recording exactly what U.el does to an element. */
 function makeElement (tag) {
@@ -40,21 +36,12 @@ function makeElement (tag) {
 
 let U
 
-before(() => {
-  const window = {}
-  const context = {
-    window,
-    document: { createElement: makeElement },
-    console,
-    navigator: { language: 'en' },
-    Intl,
-    setTimeout,
-    clearTimeout
-  }
-  context.globalThis = context
-  runInNewContext(readFileSync(join(here, '../js/util.js'), 'utf8'), context)
-  U = window.U ?? context.U
-  assert.ok(U?.el, 'util.js must expose el()')
+before(async () => {
+  // The stubs go on globalThis before the import: util.js is a module now, and
+  // a module can touch the DOM while it is still evaluating.
+  install({ document: { createElement: makeElement } })
+  ;({ U } = await import('../js/util.js'))
+  assert.ok(U?.el, 'util.js must export el()')
 })
 
 describe('boolean attributes', () => {

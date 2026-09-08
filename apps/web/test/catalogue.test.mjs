@@ -15,13 +15,14 @@
 // no server, no network.
 
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { describe, it, before, beforeEach } from 'node:test'
-import { fileURLToPath } from 'node:url'
-import { runInNewContext } from 'node:vm'
+import { describe, it, before, beforeEach, mock } from 'node:test'
 
-const here = dirname(fileURLToPath(import.meta.url))
+import { install } from './support/browser.mjs'
+
+install()
+const { Catalogue: CATALOGUE } = await import('../js/catalogue.js')
+const { YumeAPI } = await import('../js/yume-api.js')
+const { API } = await import('../js/api.js')
 
 /**
  * Objects built inside the vm get that realm's Object.prototype, and
@@ -68,32 +69,36 @@ let Catalogue
 let calls
 
 /** Stubs for the two things the resolver talks to. */
+/**
+ * Point the resolver at stubbed collaborators.
+ *
+ * It used to be loaded into a fresh vm realm with hand-written YumeAPI and
+ * API objects in it. As a module it imports the real ones, so the stubs are
+ * installed on those objects instead — same isolation, and the stub now has
+ * to match a method that actually exists, which the realm version did not.
+ */
 function load ({ catalogueMedia, catalogueEpisodes, catalogueRelations, episodeSources, apiMedia, apiEpisodes, byIds, browse, text, schedule } = {}) {
   calls = { catalogue: 0, anilist: 0, aniZip: 0 }
-  const window = {}
-  const context = {
-    window,
-    console,
-    YumeAPI: {
-      async catalogueMedia (id) { calls.catalogue++; return catalogueMedia ? catalogueMedia(id) : null },
-      async catalogueEpisodes (id) { return catalogueEpisodes ? catalogueEpisodes(id) : null },
-      async catalogueRelations (id) { return catalogueRelations ? catalogueRelations(id) : null },
-      async episodeSources (id) { return episodeSources ? episodeSources(id) : null },
-      async catalogueByAniListIds (ids) { calls.byIds = ids; return byIds ? byIds(ids) : null },
-      async browseCatalogue (f) { calls.browse = f; return browse ? browse(f) : null },
-      async searchCatalogue (q, f) { calls.text = { q, f }; return text ? text(q, f) : null },
-      async catalogueSchedule (from, to) { calls.schedule = { from, to }; return schedule ? schedule(from, to) : null }
-    },
-    API: {
-      async media (id) { calls.anilist++; return apiMedia ? apiMedia(id) : { id, _fromAniList: true } },
-      async episodes (media) { calls.aniZip++; return apiEpisodes ? apiEpisodes(media) : [{ episode: 1, _fromAniZip: true }] },
-      async search (v) { calls.anilistSearch = v; return { media: [{ id: 1, _fromAniList: true }] } },
-      async schedule (from, to) { calls.anilistSchedule = { from, to }; return [{ episode: 1, _fromAniList: true }] }
-    }
-  }
-  context.globalThis = context
-  runInNewContext(readFileSync(join(here, '../js/catalogue.js'), 'utf8'), context)
-  return window.Catalogue
+  mock.restoreAll()
+  for (const [name, impl] of Object.entries({
+    catalogueMedia: async id => { calls.catalogue++; return catalogueMedia ? catalogueMedia(id) : null },
+    catalogueEpisodes: async id => (catalogueEpisodes ? catalogueEpisodes(id) : null),
+    catalogueRelations: async id => (catalogueRelations ? catalogueRelations(id) : null),
+    episodeSources: async id => (episodeSources ? episodeSources(id) : null),
+    catalogueByAniListIds: async ids => { calls.byIds = ids; return byIds ? byIds(ids) : null },
+    browseCatalogue: async f => { calls.browse = f; return browse ? browse(f) : null },
+    searchCatalogue: async (q, f) => { calls.text = { q, f }; return text ? text(q, f) : null },
+    catalogueSchedule: async (from, to) => { calls.schedule = { from, to }; return schedule ? schedule(from, to) : null }
+  })) mock.method(YumeAPI, name, impl)
+
+  for (const [name, impl] of Object.entries({
+    media: async id => { calls.anilist++; return apiMedia ? apiMedia(id) : { id, _fromAniList: true } },
+    episodes: async media => { calls.aniZip++; return apiEpisodes ? apiEpisodes(media) : [{ episode: 1, _fromAniZip: true }] },
+    search: async v => { calls.anilistSearch = v; return { media: [{ id: 1, _fromAniList: true }] } },
+    schedule: async (from, to) => { calls.anilistSchedule = { from, to }; return [{ episode: 1, _fromAniList: true }] }
+  })) mock.method(API, name, impl)
+
+  return CATALOGUE
 }
 
 before(() => { Catalogue = load() })

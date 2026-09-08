@@ -1,4 +1,4 @@
-/* global window, document, U, Store, T, YumeAPI */
+/* global window, document */
 // Notification Center — a filterable inbox from two sources.
 //
 // Local signals: airing episodes for library titles, stalled
@@ -10,7 +10,14 @@
 // GraphQL field the client never calls, so the inbox filled up invisibly.
 // They are merged in here, newest first, and marked read on the server.
 
-const PageNotifications = {
+import { App } from '../app.js'
+import { C } from '../components.js'
+import { T } from '../i18n.js'
+import { Store } from '../store.js'
+import { U } from '../util.js'
+import { YumeAPI } from '../yume-api.js'
+
+export const PageNotifications = {
   FILTERS: [
   // Labels are stored in English and translated where they are rendered, not
   // here: this literal is evaluated once when the script loads, so a T() call
@@ -62,7 +69,7 @@ const PageNotifications = {
     const all = [...remote, ...local].sort((a, b) => b.at - a.at)
     const unread = all.filter(n => !n.read).length
 
-    root.append(window.C.spotlight(T('Notifications'), { subtitle: unread ? `${unread} unread` : 'All caught up' }))
+    root.append(C.spotlight(T('Notifications'), { subtitle: unread ? `${unread} unread` : 'All caught up' }))
 
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
@@ -75,14 +82,14 @@ const PageNotifications = {
         onclick: async () => {
           Store.markAllNotificationsRead()
           if (remote.some(n => !n.read)) await YumeAPI.markNotificationsRead()
-          window.App.navigate()
-          window.App.refreshNotifBadge?.()
+          App.navigate()
+          App.refreshNotifBadge?.()
         }
       }, [document.createTextNode(T('Mark all read'))]),
       U.el('button', {
         class: 'btn btn-ghost btn-sm',
         disabled: all.length ? null : '',
-        onclick: () => { if (window.confirm('Clear all notifications?')) { Store.clearNotifications(); window.App.navigate(); window.App.refreshNotifBadge?.() } }
+        onclick: () => { if (window.confirm('Clear all notifications?')) { Store.clearNotifications(); App.navigate(); App.refreshNotifBadge?.() } }
       }, [document.createTextNode(T('Clear all'))])
     ]))
 
@@ -118,7 +125,7 @@ const PageNotifications = {
           if (n.read) return
           if (n.serverId) YumeAPI.markNotificationsRead([n.serverId])
           else Store.markNotificationRead(n.id)
-          window.App.refreshNotifBadge?.()
+          App.refreshNotifBadge?.()
         }
       }, [
         U.el('span', { class: `notif-icon notif-${n.type}`, text: n.icon }),
@@ -139,7 +146,7 @@ const PageNotifications = {
             if (n.serverId) YumeAPI.markNotificationsRead([n.serverId])
             else Store.dismissNotification(n.id)
             row.remove()
-            window.App.refreshNotifBadge?.()
+            App.refreshNotifBadge?.()
           }
         }, [document.createTextNode('×')])
       ])
@@ -147,5 +154,3 @@ const PageNotifications = {
     }
   }
 }
-
-window.PageNotifications = PageNotifications

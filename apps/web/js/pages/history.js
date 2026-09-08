@@ -1,11 +1,17 @@
-/* global window, document, U, C, Store, T, I18n */
+/* global window, document */
 // Watch History — per-profile chronological log of what you watched,
 // grouped by day. Recorded automatically as episode progress advances.
 
-const PageHistory = {
+import { App } from '../app.js'
+import { C } from '../components.js'
+import { I18n, T } from '../i18n.js'
+import { Store } from '../store.js'
+import { U } from '../util.js'
+
+export const PageHistory = {
   render (root) {
     const profile = Store.activeProfile()
-    root.append(window.C.spotlight(T('Watch History'), { subtitle: profile ? `${profile.avatar ?? ''} ${profile.name}` : null }))
+    root.append(C.spotlight(T('Watch History'), { subtitle: profile ? `${profile.avatar ?? ''} ${profile.name}` : null }))
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
     this.body(pad)
@@ -19,7 +25,7 @@ const PageHistory = {
           if (!window.confirm('Clear this profile’s entire watch history?')) return
           Store.clearHistory()
           U.toast(T('History cleared'))
-          window.App.navigate()
+          App.navigate()
         }
       }, [document.createTextNode(T('Clear history'))])
     ]))
@@ -65,5 +71,3 @@ const PageHistory = {
     }
   }
 }
-
-window.PageHistory = PageHistory

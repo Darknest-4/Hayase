@@ -1,4 +1,4 @@
-/* global window, localStorage, Store */
+/* global localStorage */
 // Profile numbers: the account's, when there is an account.
 //
 // ---------------------------------------------------------------------------
@@ -23,7 +23,11 @@
 // trade a correct number for a blank screen, and the difference between the
 // two numbers is usually nothing.
 
-const ProfileStats = {
+import { I18n } from './i18n.js'
+import { LibrarySync } from './library-sync.js'
+import { Store } from './store.js'
+
+export const ProfileStats = {
   // Kept per profile: two people sharing a browser must not see each other's
   // totals flash up before the fetch lands.
   _key () {
@@ -51,7 +55,7 @@ const ProfileStats = {
    * previous answer in place, because a stale number beats a blank one.
    */
   async refresh () {
-    const row = await window.LibrarySync?.stats?.()
+    const row = await LibrarySync?.stats?.()
     if (!row) return this.cached()
     const clean = {
       minutes: Number(row.minutes_watched) || 0,
@@ -94,7 +98,7 @@ const ProfileStats = {
         if (node) node.textContent = String(value)
       }
       set('watchTime', this.formatMinutes(row.minutes))
-      set('episodes', row.episodes.toLocaleString(window.I18n?.locale?.() ?? 'hu-HU'))
+      set('episodes', row.episodes.toLocaleString(I18n?.locale?.() ?? 'hu-HU'))
       set('completed', row.completed)
       if (row.meanScore != null) set('meanScore', row.meanScore.toFixed(1))
       set('level', row.level)
@@ -106,5 +110,3 @@ const ProfileStats = {
     return fresh
   }
 }
-
-window.ProfileStats = ProfileStats

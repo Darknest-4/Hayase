@@ -1,4 +1,4 @@
-/* global window, document, getComputedStyle, I18n */
+/* global document, getComputedStyle */
 // Small DOM + formatting helpers shared by every page.
 
 // T() — the single text lookup — is defined in apps/web/js/i18n.js, which loads
@@ -8,7 +8,9 @@
 // Nothing calls T() at load time, only while rendering, so the later
 // definition is in place long before the first call.
 
-const U = {
+import { I18n } from './i18n.js'
+
+export const U = {
   // createElement helper: U.el('div', { class: 'foo', onclick: fn }, [children...])
   el (tag, attrs = {}, children = []) {
     const node = document.createElement(tag)
@@ -188,5 +190,3 @@ const U = {
     }
   }
 }
-
-window.U = U

@@ -1,4 +1,4 @@
-/* global window, localStorage, YumeAPI, Store */
+/* global window, localStorage */
 // Library sync: when signed into a Yume account, mirror the local per-profile
 // library (status + episode progress) and resume positions to the server, and
 // pull the account's library back on sign-in so it follows the user across
@@ -11,7 +11,10 @@
 //   * profile: local Store profiles vs the account's user_profiles. Sync uses
 //     the account's default server profile (created on first sign-in).
 
-const LibrarySync = {
+import { Store } from './store.js'
+import { YumeAPI } from './yume-api.js'
+
+export const LibrarySync = {
   // AniList-style client statuses ↔ server library_status enum
   STATUS_TO_DB: { CURRENT: 'WATCHING', PLANNING: 'PLANNING', COMPLETED: 'COMPLETED', PAUSED: 'PAUSED', DROPPED: 'DROPPED', REPEATING: 'REWATCHING' },
   STATUS_FROM_DB: { WATCHING: 'CURRENT', PLANNING: 'PLANNING', COMPLETED: 'COMPLETED', PAUSED: 'PAUSED', DROPPED: 'DROPPED', REWATCHING: 'REPEATING' },
@@ -23,7 +26,7 @@ const LibrarySync = {
   status: 'off', // off | syncing | synced | error (for the Settings UI)
 
   enabled () {
-    return !!(window.YumeAPI?.user() && this._profileId)
+    return !!(YumeAPI?.user() && this._profileId)
   },
 
   // server request scoped to the sync profile
@@ -35,7 +38,7 @@ const LibrarySync = {
 
   // resolve (or create) the account's sync profile, then pull the library
   async init () {
-    if (!window.YumeAPI?.user()) { this._profileId = null; this.status = 'off'; return }
+    if (!YumeAPI?.user()) { this._profileId = null; this.status = 'off'; return }
     this.status = 'syncing'
     try {
       const { data } = await YumeAPI._request('/v1/profiles', { auth: true })
@@ -296,5 +299,3 @@ const LibrarySync = {
     return this._epCache[uuid].find(e => Number(e.number) === Number(episode))?.id ?? null
   }
 }
-
-window.LibrarySync = LibrarySync

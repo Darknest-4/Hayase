@@ -14,38 +14,21 @@
 // like "nothing found" rather than like a bug.
 
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
 import { describe, it, before } from 'node:test'
-import { fileURLToPath } from 'node:url'
-import { runInNewContext } from 'node:vm'
 
-const here = dirname(fileURLToPath(import.meta.url))
+import { install } from './support/browser.mjs'
 
-/** Just enough DOM for the engine to load and for playability to probe codecs. */
-function makeContext () {
-  const video = {
-    canPlayType: (type) => (/mp4|webm|mpegurl/i.test(type) ? 'probably' : '')
-  }
-  const window = {}
-  const context = {
-    window,
-    document: { createElement: () => video },
-    console,
-    setTimeout,
-    clearTimeout
-  }
-  context.globalThis = context
-  return context
+/** Just enough DOM for playability to probe codecs. */
+const videoElement = {
+  canPlayType: type => (/mp4|webm|mpegurl/i.test(type) ? 'probably' : '')
 }
 
 let engine
 
-before(() => {
-  const context = makeContext()
-  runInNewContext(readFileSync(join(here, '../js/stream-engine.js'), 'utf8'), context)
-  engine = context.window.StreamEngine
-  assert.ok(engine, 'the script must expose window.StreamEngine')
+before(async () => {
+  install({ document: { createElement: () => videoElement } })
+  ;({ StreamEngine: engine } = await import('../js/stream-engine.js'))
+  assert.ok(engine, 'stream-engine.js must export StreamEngine')
 })
 
 const source = { slug: 'demo', name: 'Demo', accuracy: 'high', health: 'good' }

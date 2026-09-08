@@ -1,4 +1,4 @@
-/* global window, document, U, Store, T, I18n */
+/* global document */
 // Achievements & Badges.
 //
 // Signed in, the server decides: it measures the profile against its own
@@ -10,7 +10,15 @@
 // are a copy of the server's, and apps/web/test/achievements.test.mjs fails if the
 // two drift apart.
 
-const PageAchievements = {
+import { C } from '../components.js'
+import { I18n, T } from '../i18n.js'
+import { LibrarySync } from '../library-sync.js'
+import { Store } from '../store.js'
+import { U } from '../util.js'
+import { WatchTime } from '../watch-time.js'
+import { YumeAPI } from '../yume-api.js'
+
+export const PageAchievements = {
   // Each achievement: { slug, name, desc, icon, tier, target, value(ctx) }
   // `value(ctx)` returns current progress toward `target`; unlocked when >=.
   CATALOG: [
@@ -34,7 +42,7 @@ const PageAchievements = {
 
   render (root) {
     const profile = Store.activeProfile()
-    root.append(window.C.spotlight(T('Achievements'), { subtitle: profile ? `${profile.avatar ?? ''} ${profile.name}` : null }))
+    root.append(C.spotlight(T('Achievements'), { subtitle: profile ? `${profile.avatar ?? ''} ${profile.name}` : null }))
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
     this.body(pad)
@@ -55,9 +63,9 @@ const PageAchievements = {
 
   /** Ask the server for the catalogue and this profile's progress. */
   async _fromServer () {
-    if (!window.YumeAPI?.user?.() || !window.LibrarySync?.enabled?.()) return null
+    if (!YumeAPI?.user?.() || !LibrarySync?.enabled?.()) return null
     try {
-      const { data, context } = await window.LibrarySync._req('/v1/me/achievements')
+      const { data, context } = await LibrarySync._req('/v1/me/achievements')
       if (!Array.isArray(data) || !data.length) return null
       return {
         context: context ?? {},
@@ -174,7 +182,7 @@ const PageAchievements = {
       // so the number grew by watching nothing. WatchTime.minutesFor() uses
       // real playback seconds and only falls back to the old estimate for
       // episodes credited before the meter existed.
-      minutes: window.WatchTime.minutesFor(entries).totalMinutes,
+      minutes: WatchTime.minutesFor(entries).totalMinutes,
       completed: entries.filter(e => e.status === 'COMPLETED').length,
       library: entries.length,
       planning: entries.filter(e => e.status === 'PLANNING').length,
@@ -187,5 +195,3 @@ const PageAchievements = {
     }
   }
 }
-
-window.PageAchievements = PageAchievements
