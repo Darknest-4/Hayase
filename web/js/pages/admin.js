@@ -35,6 +35,7 @@ const PageAdmin = {
     { key: 'monitoring', group: 'system', label: 'Infrastructure', sub: 'VPS health & services', perm: 'system.metrics.view', render: 'renderMonitoring', icon: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>' },
     { key: 'webhooks', group: 'system', label: 'Webhooks', sub: 'Outbound integrations', perm: 'admin.webhooks.manage', render: 'renderWebhooks', icon: '<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>' },
     { key: 'themes', group: 'system', label: 'Themes', sub: 'Colours viewers can choose', perm: 'theme.publish', render: 'renderThemes', icon: '<circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2a10 10 0 0 0 0 20 2 2 0 0 0 2-2v-1a2 2 0 0 1 2-2h2a4 4 0 0 0 4-4 10 10 0 0 0-10-11"/>' },
+    { key: 'security', group: 'system', label: 'Security', sub: 'Emergency controls', perm: 'security.manage', render: 'renderSecurity', icon: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>' },
     { key: 'config', group: 'system', label: 'Site config', sub: 'Feature flags & settings', perm: 'settings.system', render: 'renderConfig', icon: '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>' }
   ],
 
@@ -780,6 +781,127 @@ const PageAdmin = {
   },
 
   // ---- Site Config: feature flags + global settings ----
+  /**
+   * Emergency controls.
+   *
+   * The levers an operator pulls when something is going wrong, so the screen
+   * is built around two things: saying plainly what is currently held back,
+   * and making each pull deliberate.
+   *
+   * Every control names the file that enforces it. That line is not decoration
+   * — this platform has shipped switches that switched nothing, and a control
+   * that cannot say where it bites is the next one.
+   */
+  async renderSecurity (content) {
+    const load = async () => {
+      content.replaceChildren(U.el('div', { class: 'spinner' }))
+      try {
+        const { controls, context, engaged } = await YumeAPI.admin.security()
+        content.replaceChildren()
+
+        // The state of the instance, first and unmissable. An operator opening
+        // this screen mid-incident needs to know what is already engaged
+        // before they consider engaging anything else.
+        content.append(U.el('div', { class: 'sec-state ' + (engaged.length ? 'engaged' : 'normal') }, [
+          U.el('div', { class: 'sec-state-title', text: engaged.length ? 'Controls engaged' : 'Operating normally' }),
+          U.el('div', {
+            class: 'sec-state-sub',
+            text: engaged.length
+              ? engaged.map(k => controls.find(c => c.key === k)?.label ?? k).join(' · ')
+              : 'Nothing is being held back.'
+          })
+        ]))
+
+        content.append(U.el('div', { class: 'sec-context' }, [
+          U.el('span', { text: `${context?.sessions ?? 0} active sessions` }),
+          U.el('span', { text: `${context?.hooks ?? 0} enabled webhooks` }),
+          U.el('span', { text: `${context?.runs ?? 0} metadata runs in flight` })
+        ]))
+
+        for (const c of controls) content.append(this.securityControl(c, load))
+
+        content.append(this.revokeAllCard(load))
+      } catch (e) {
+        content.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+      }
+    }
+    await load()
+  },
+
+  securityControl (c, reload) {
+    const toggle = U.el('button', {
+      class: 'btn btn-sm ' + (c.engaged ? 'btn-primary' : 'btn-secondary'),
+      onclick: async () => {
+        const next = !c.value
+        // A reason, always. These are the changes somebody asks about
+        // afterwards, and an audit row saying only what changed answers half
+        // the question.
+        const reason = window.prompt(
+          `${next === c.safe ? 'Release' : 'Engage'} "${c.label}" — why?`,
+          next === c.safe ? 'Incident resolved' : '')
+        if (!reason || reason.trim().length < 3) return
+        try {
+          await YumeAPI.admin.setControl(c.key, next, reason.trim())
+          U.toast(`${c.label}: ${next === c.safe ? 'released' : 'engaged'}`)
+          reload()
+        } catch (e) { U.toast(e.message, 'error') }
+      }
+    }, [document.createTextNode(c.engaged ? 'Release' : 'Engage')])
+
+    return U.el('div', { class: 'sec-control' + (c.engaged ? ' on' : '') }, [
+      U.el('div', { class: 'sec-control-main' }, [
+        U.el('div', { class: 'sec-control-head' }, [
+          U.el('span', { class: 'sec-control-label', text: c.label }),
+          U.el('span', { class: 'badge' + (c.engaged ? ' badge-bad' : ''), text: c.engaged ? 'engaged' : 'normal' })
+        ]),
+        U.el('p', { class: 'sec-control-desc', text: c.description }),
+        U.el('code', { class: 'sec-control-where', text: c.enforcedBy, title: c.enforcedBy })
+      ]),
+      toggle
+    ])
+  },
+
+  /**
+   * Signing everybody out.
+   *
+   * An action, not a switch, and the only thing on this screen that cannot be
+   * undone — so it asks twice, and the second time it asks the operator to
+   * type the words rather than hit Enter on a prompt they have stopped
+   * reading.
+   */
+  revokeAllCard (reload) {
+    return U.el('div', { class: 'sec-control sec-danger' }, [
+      U.el('div', { class: 'sec-control-main' }, [
+        U.el('div', { class: 'sec-control-head' }, [
+          U.el('span', { class: 'sec-control-label', text: 'Revoke every session' }),
+          U.el('span', { class: 'badge badge-bad', text: 'irreversible' })
+        ]),
+        U.el('p', {
+          class: 'sec-control-desc',
+          text: 'Signs every account out of every device, including yours. For a leaked token or a signing key you no longer trust.'
+        }),
+        U.el('code', {
+          class: 'sec-control-where',
+          text: 'sessions revoked and every token_version bumped in one transaction'
+        })
+      ]),
+      U.el('button', {
+        class: 'btn btn-sm btn-danger',
+        onclick: async () => {
+          const reason = window.prompt('Sign every account out of every device — why?')
+          if (!reason || reason.trim().length < 3) return
+          const typed = window.prompt('This signs you out too. Type REVOKE to confirm.')
+          if (typed !== 'REVOKE') { U.toast('Cancelled'); return }
+          try {
+            const { revoked } = await YumeAPI.admin.revokeAllSessions(reason.trim())
+            U.toast(`${revoked} sessions revoked — signing you out`)
+            reload()
+          } catch (e) { U.toast(e.message, 'error') }
+        }
+      }, [document.createTextNode('Revoke all')])
+    ])
+  },
+
   async renderConfig (content) {
     let data
     try {

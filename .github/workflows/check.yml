@@ -116,6 +116,17 @@ jobs:
           DATABASE_URL: postgres://yume:yume@localhost:5432/yume
           JWT_SECRET: ci-secret-not-used-for-anything-real-0123456789
 
+      # Its own step because it cannot share a database with anything. The
+      # operation revokes every session and bumps every account's token
+      # version, so run among the parallel suites it invalidated the tokens
+      # they were holding and failed fourteen of their tests. The blast radius
+      # is the feature; there is no version of it scoped to one caller.
+      - name: Instance-wide operations (serialised, own database state)
+        run: npm run test:exclusive
+        env:
+          DATABASE_URL: postgres://yume:yume@localhost:5432/yume
+          JWT_SECRET: ci-secret-not-used-for-anything-real-0123456789
+
       - name: Worker drains end to end
         run: npm run worker:once
         env:

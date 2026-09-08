@@ -41,6 +41,12 @@ export type WebhookEvent = typeof WEBHOOK_EVENTS[number]
 
 /** Fan out an event to every enabled webhook subscribed to it. */
 export async function emitEvent (event: WebhookEvent, data: Record<string, unknown>): Promise<void> {
+  // The emergency stop, checked before anything is queued rather than at
+  // delivery: a receiver that has started paging somebody every thirty seconds
+  // should stop being sent to immediately, and jobs already in the queue for
+  // it are refused at deliver() below by the same switch.
+  if (!await settings.webhooksEnabled()) return
+
   const hooks = await query<{ id: string }>(
     'SELECT id FROM webhooks WHERE enabled AND $1 = ANY(events)',
     [event]
@@ -304,6 +310,9 @@ export async function deliver (
     [webhookId]
   )
   if (!hook?.enabled) return
+  // Again here: the queue is durable, so a delivery enqueued before the switch
+  // was thrown would otherwise still go out, possibly hours later.
+  if (!await settings.webhooksEnabled()) return
 
   const sentAt = new Date().toISOString()
   const deliveryId = meta.deliveryId ?? randomUUID()

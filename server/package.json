@@ -17,6 +17,7 @@
     "test": "node --experimental-strip-types --test test/*.test.ts",
     "test:integration": "node --experimental-strip-types --test test/integration.test.ts",
     "test:adversarial": "node --experimental-strip-types --test test/adversarial.test.ts test/ssrf.test.ts test/db-errors.test.ts test/client-queries.test.ts",
+    "test:exclusive": "node --experimental-strip-types --test-concurrency=1 --test test/*.exclusive.ts",
     "test:e2e": "node --experimental-strip-types --test ../web/test/e2e/*.test.mjs"
   },
   "dependencies": {
