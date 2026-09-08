@@ -256,11 +256,56 @@ export async function buildApp (): Promise<FastifyInstance> {
   await app.register(publicReadiness, { prefix: '/v1/health' })
   await app.register(adminMonitoring, { prefix: '/v1/admin/monitoring' })
 
+  /*
+   * What of the web root is actually the client.
+   *
+   * `web/` is the document root, and it holds more than the browser runs:
+   * web/test/ lives there, so nineteen test files — including the end-to-end
+   * ones, which spell out the admin permission model and the security
+   * invariants they check — were downloadable from the deployment. `COPY web/`
+   * put them in the image too.
+   *
+   * An allowlist rather than a list of things to exclude. Excluding is a
+   * promise to remember every future directory somebody adds under web/;
+   * allowing is a statement of what the page loads, which is short, changes
+   * rarely, and fails closed.
+   *
+   * A refused path is not an error: it falls through to the SPA handler and
+   * gets index.html, exactly like any other address with no file behind it. A
+   * probe learns nothing about what is there — which is the same reason
+   * `/.env` and `/../server/src/config.ts` already answered with the page
+   * rather than with a 403 that would have confirmed the path shape.
+   *
+   * This is about not shipping what the browser has no use for. It is *not*
+   * an attempt to hide the client's own code: the browser has to download and
+   * run js/ and css/ for the site to work, so anything served there is
+   * readable by anybody who loads the page, and no amount of server
+   * configuration changes that.
+   */
+  const CLIENT_DIRS = ['assets', 'css', 'i18n', 'js']
+  const CLIENT_FILES = ['index.html', 'copy.js', 'favicon.ico', 'robots.txt', 'manifest.webmanifest']
+
+  const allowedPath = (pathName: string): boolean => {
+    const clean = pathName.replace(/^\/+/, '')
+    if (clean === '' || CLIENT_FILES.includes(clean)) return true
+    const top = clean.split('/')[0]
+    return top !== undefined && CLIENT_DIRS.includes(top)
+  }
+
   // Serve the static web client from the same origin so the whole app runs as
   // one container/port (WEB_ROOT overrides; defaults to the repo's web/).
   const webRoot = process.env.WEB_ROOT ?? join(dirname(fileURLToPath(import.meta.url)), '../../web')
   if (existsSync(webRoot)) {
-    await app.register(fastifyStatic, { root: webRoot, index: 'index.html' })
+    await app.register(fastifyStatic, {
+      root: webRoot,
+      index: 'index.html',
+      // Never a directory index. It is off by default; saying so is cheap and
+      // the failure mode — an index of the client's whole asset tree — is the
+      // kind that arrives by upgrade rather than by edit.
+      list: false,
+      dotfiles: 'ignore',
+      allowedPath
+    })
     // SPA fallback: any non-API GET that isn't a real file returns index.html
     app.setNotFoundHandler((request, reply) => {
       if (request.method === 'GET' && !/^\/(v1|graphql|graphiql|ws)\b/.test(request.url)) {
