@@ -13,33 +13,44 @@ backend with a scalable database. Two ideas are inherited and kept sacred:
 ## Repository layout
 
 ```
-├─ docs/                  Architecture, database, API and operations docs
-│  ├─ telepites.md        Deploying to an Ubuntu VPS with Docker (Hungarian)
-│  ├─ architecture.md     Services, queue, search, catalogue precedence,
-│  │                      publishing workflow, scaling, ADRs
-│  ├─ database.md         Schema guide: domains, ER, indexing, partitioning
-│  ├─ api.md              REST + GraphQL reference
-│  ├─ security.md         Threat model and the controls that answer it
-│  ├─ backup.md           Backup, restore and what has not been rehearsed
-│  └─ redis.md            Why Redis is carried but not adopted
-├─ db/
-│  ├─ migrations/         PostgreSQL 16 schema — 23 migrations, ~100
-│  │                      relations, every one commented with its reasoning
-│  └─ *.sh               Backup, restore and cron scripts (POSIX sh)
-├─ server/                API gateway — Fastify 5 + TypeScript on Node 22
-│  ├─ src/                No build step: --experimental-strip-types
-│  └─ test/               17 suites, including the adversarial one
+├─ apps/
+│  ├─ api/                API gateway — Fastify 5 + TypeScript on Node 22
+│  │  ├─ src/             No build step: --experimental-strip-types
+│  │  └─ test/            26 suites, including the adversarial one
+│  └─ web/                Web client — framework-free HTML/CSS/JS SPA
+│     ├─ js/catalogue.js  Which source answers: our database, then AniList
+│     ├─ js/i18n.js       One text lookup: copy catalogue + translation
+│     ├─ i18n/hu.js       Hungarian dictionary, keyed by the English source
+│     └─ test/            Engine, resolver, i18n and DOM-helper tests
 ├─ packages/
 │  └─ design-tokens/      Design tokens shared with native surfaces
-├─ web/                   Web client — framework-free HTML/CSS/JS SPA
-│  ├─ js/catalogue.js     Which source answers: our database, then AniList
-│  ├─ js/i18n.js          One text lookup: copy catalogue + translation
-│  ├─ i18n/hu.js          Hungarian dictionary, keyed by the English source
-│  └─ test/               Engine, resolver, i18n and DOM-helper tests
-├─ .github/workflows/     CI: typecheck, tests, migrations, worker, lint
-├─ Caddyfile              TLS termination in front of the app
+├─ database/
+│  └─ migrations/         PostgreSQL 16 schema — 35 migrations, ~130
+│                         relations, every one commented with its reasoning
+├─ infrastructure/
+│  ├─ docker/Dockerfile   Single-stage image; mirrors this layout under /app
+│  └─ reverse-proxy/      Caddy: TLS termination in front of the app
+├─ scripts/
+│  └─ database/           Backup, restore and cron scripts (POSIX sh)
+├─ tests/
+│  └─ e2e/                Browser tests that boot the API and drive the client
+├─ docs/
+│  ├─ architecture/       Services, queue, search, catalogue precedence, SEO
+│  ├─ api/                REST + GraphQL reference
+│  ├─ database/           Schema guide and the search design
+│  ├─ security/           Threat model and the controls that answer it
+│  ├─ deployment/         Deploying to an Ubuntu VPS with Docker (Hungarian)
+│  ├─ integrations/       Streaming sources, Discord bot
+│  └─ operations/         Monitoring, backup, Redis, status snapshots
+├─ .github/workflows/     CI: typecheck, tests, migrations, worker, lint, image
 └─ docker-compose.yml     app · worker · caddy · backup · postgres
 ```
+
+Two paths are resolved relative to their own source file at runtime — the
+migration directory and the web root — so the container image mirrors this
+layout under `/app` rather than flattening it. See the comment in
+`infrastructure/docker/Dockerfile`.
+
 
 **Infrastructure is deliberately small.** Four times over, the obvious
 component was declined in favour of what Postgres already does:
@@ -47,7 +58,7 @@ component was declined in favour of what Postgres already does:
 instead of OpenSearch, a `jobs` table with `FOR UPDATE SKIP LOCKED` instead of
 RabbitMQ, and content-addressed files on disk instead of MinIO. Each decision
 is written next to the code that implements it. Redis is still read from the
-environment for a health probe and nothing else — see `docs/redis.md`.
+environment for a health probe and nothing else — see `docs/operations/redis.md`.
 
 
 ## Screenshots
@@ -400,7 +411,7 @@ for reproducible shots. Click any section below to expand it. Full gallery in
 Deploying to a server rather than hacking on it? The whole stack — API, web
 client, Postgres, worker, HTTPS and verified daily backups — comes up with
 `docker compose up -d --build` once `.env` has a `JWT_SECRET` and a
-`POSTGRES_PASSWORD`. Step by step, in Hungarian: [`docs/telepites.md`](docs/telepites.md).
+`POSTGRES_PASSWORD`. Step by step, in Hungarian: [`docs/deployment/telepites.md`](docs/deployment/telepites.md).
 
 The rest of this section is the local development loop.
 
@@ -409,7 +420,7 @@ docker compose up -d                 # postgres (app/worker/caddy optional)
 cd server
 cp .env.example .env                 # JWT_SECRET and POSTGRES_PASSWORD are required
 npm install
-npm run migrate                      # applies db/migrations in order, idempotent
+npm run migrate                      # applies database/migrations in order, idempotent
 npm run dev                          # API on :4000, no build step
 ```
 
@@ -418,7 +429,7 @@ npm run dev                          # API on :4000, no build step
 ```sh
 npm test                             # every server suite
 npm run test:adversarial             # forgery, injection, SSRF, IDOR, races
-node --test ../web/test/*.test.mjs   # engine, catalogue resolver, DOM helper
+node --test ../apps/web/test/*.test.mjs   # engine, catalogue resolver, DOM helper
 ```
 
 The adversarial suite needs `DATABASE_URL`; without one it skips itself, which
@@ -485,7 +496,7 @@ would take the titles away from them.
 
 Preferences live in `user_settings`, keyed **per profile** — one household can
 have a Hungarian child profile and an English adult profile on one login. The
-list of preferences is declared once, in `server/src/lib/preferences.ts`;
+list of preferences is declared once, in `apps/api/src/lib/preferences.ts`;
 `GET /v1/config` publishes it, and both the settings screen and the onboarding
 wizard render from it, so adding a preference is one entry and nothing else
 changes.
@@ -542,10 +553,10 @@ systems and are now one function.
 
 Hungarian needs the database to be UTF-8. Under `SQL_ASCII`, `lower('Á')`
 stays `'Á'`, `ILIKE` misses accented matches, and `length()` counts bytes —
-and `server/src/lib/search.ts` matches on `lower()` and `ILIKE` in all three of
+and `apps/api/src/lib/search.ts` matches on `lower()` and `ILIKE` in all three of
 its tiers. Encoding cannot be changed after `initdb`, so it is pinned in
 `docker-compose.yml`, stated explicitly in `db/restore.sh`, and checked at
-migration time: `server/src/lib/db-encoding.ts` **refuses to create a schema**
+migration time: `apps/api/src/lib/db-encoding.ts` **refuses to create a schema**
 on a non-UTF-8 database and warns loudly on one that already has data —
 failing closed while it is free to fix, and never turning a text defect into
 an outage.
@@ -569,7 +580,7 @@ a flat 24 minutes the instant an episode was credited, whether it was watched
 or skipped; and achievements built on it rewarded *marking* rather than
 watching.
 
-`web/js/watch-time.js` measures instead. A meter ticks only while the video is
+`apps/web/js/watch-time.js` measures instead. A meter ticks only while the video is
 genuinely playing — not paused, not seeking, not stalled mid-buffer — and every
 tick is bounded, because a throttled background tab or a sleeping laptop
 produces one tick with an hour of wall clock behind it.
@@ -609,7 +620,7 @@ The catalogue is the source of truth for anime data; AniList, ani.zip and
 Jikan are the fallback. Nothing imported is published until somebody publishes
 it — this platform serves a Hungarian audience and a Hungarian subtitle
 arrives days after an episode does, so both `anime.visibility` and
-`episodes.visibility` default to `hidden`. See `docs/architecture.md`.
+`episodes.visibility` default to `hidden`. See `docs/architecture/architecture.md`.
 
 Delivered:
 - [x] **Hungarian/English on one domain** — four independent language axes
@@ -658,7 +669,7 @@ Remaining:
 - [x] Search over Postgres — typo-tolerant tsvector + trigram over titles and
       synonyms. OpenSearch was declined rather than deferred: it earns its
       place by solving a problem that exists now, and this one does not yet
-      (`docs/search.md`)
+      (`docs/database/search.md`)
 - [x] Catalogue as the source of truth: the detail and watch pages read our
       database first and fall back to a provider only on a miss; routes accept
       a Yume id or an AniList id, so a title that exists only here is reachable

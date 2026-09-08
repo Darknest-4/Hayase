@@ -1,0 +1,41 @@
+{
+  "name": "@yume/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Yume API gateway — Fastify REST/GraphQL service",
+  "scripts": {
+    "dev": "node --watch --experimental-strip-types src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "migrate": "node --experimental-strip-types src/lib/migrate.ts",
+    "check": "tsc --noEmit",
+    "worker": "node --experimental-strip-types src/workers/index.ts",
+    "worker:once": "node --experimental-strip-types src/workers/index.ts --once",
+    "seed": "node --experimental-strip-types scripts/seed.ts",
+    "import:anilist": "node --experimental-strip-types scripts/import-anilist.ts",
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "test:integration": "node --experimental-strip-types --test test/integration.test.ts",
+    "test:adversarial": "node --experimental-strip-types --test test/adversarial.test.ts test/ssrf.test.ts test/db-errors.test.ts test/client-queries.test.ts",
+    "test:exclusive": "node --experimental-strip-types --test-concurrency=1 --test test/*.exclusive.ts",
+    "test:e2e": "node --experimental-strip-types --test ../../tests/e2e/*.test.mjs"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.1",
+    "@fastify/jwt": "^9.0.1",
+    "@fastify/rate-limit": "^11.2.0",
+    "@fastify/static": "^10.1.0",
+    "@fastify/websocket": "^11.0.1",
+    "fastify": "^5.1.0",
+    "fastify-plugin": "^5.0.1",
+    "graphql": "^16.14.2",
+    "mercurius": "^16.10.0",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.7.2"
+  }
+}

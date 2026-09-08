@@ -6,15 +6,15 @@
 // Why this exists
 // ---------------------------------------------------------------------------
 // This package described itself as the single source of truth, and it was not
-// one: nothing imports it, the client's own `web/css/tokens.css` is what every
+// one: nothing imports it, the client's own `apps/web/css/tokens.css` is what every
 // surface actually renders from, and the two had already drifted — seven
 // tokens missing here, and `--card-w` holding two different values.
 //
-// So the direction is inverted to match reality. `web/css/tokens.css` is the
+// So the direction is inverted to match reality. `apps/web/css/tokens.css` is the
 // source, because it is the file that is used; this package is generated from
 // it, for surfaces that cannot read CSS (a native client, a design tool).
 //
-// `web/test/design-tokens.test.mjs` fails when the two disagree, so drift
+// `apps/web/test/design-tokens.test.mjs` fails when the two disagree, so drift
 // cannot land again without somebody being told about it.
 
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -22,7 +22,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
-export const SOURCE = join(here, '..', '..', 'web', 'css', 'tokens.css')
+export const SOURCE = join(here, '..', '..', 'apps', 'web', 'css', 'tokens.css')
 export const CSS_OUT = join(here, 'tokens.css')
 export const JSON_OUT = join(here, 'tokens.json')
 
@@ -60,8 +60,8 @@ function render ({ dark, lightOverrides }) {
 
    GENERATED FILE. Do not edit by hand: run
      node packages/design-tokens/build.mjs
-   The source is web/css/tokens.css, which is what the web client renders
-   from. web/test/design-tokens.test.mjs fails if this file falls behind it.
+   The source is apps/web/css/tokens.css, which is what the web client renders
+   from. apps/web/test/design-tokens.test.mjs fails if this file falls behind it.
    =========================================================================== */
 
 :root {

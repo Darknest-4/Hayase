@@ -5,7 +5,7 @@
 services:
   # the whole app (API + static web client) in one container
   app:
-    build: .
+    build: { context: ., dockerfile: infrastructure/docker/Dockerfile }
     restart: unless-stopped
     depends_on:
       postgres:
@@ -48,7 +48,7 @@ services:
   # time-partitioned tables start failing once existing partitions run out),
   # delivers webhooks, computes stats rollups and collects VPS metrics.
   worker:
-    build: .
+    build: { context: ., dockerfile: infrastructure/docker/Dockerfile }
     restart: unless-stopped
     depends_on:
       postgres:
@@ -84,7 +84,7 @@ services:
   # Run once: docker compose --profile seed run --rm seed
   # Downloads the official dump by default; never runs on normal `up`.
   seed:
-    build: .
+    build: { context: ., dockerfile: infrastructure/docker/Dockerfile }
     profiles: ['seed']
     depends_on:
       postgres:
@@ -99,7 +99,7 @@ services:
   # Run after seed: docker compose --profile enrich run --rm enrich
   # Rate-limited by AniList — expect this to take a while for the full catalogue.
   enrich:
-    build: .
+    build: { context: ., dockerfile: infrastructure/docker/Dockerfile }
     profiles: ['enrich']
     depends_on:
       postgres:
@@ -121,7 +121,7 @@ services:
       ACME_EMAIL: ${ACME_EMAIL:-}
     ports: ['80:80', '443:443', '443:443/udp']
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./infrastructure/reverse-proxy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddydata:/data
       - caddyconfig:/config
     healthcheck:
@@ -152,7 +152,7 @@ services:
       #   BACKUP_SYNC_CMD='rclone copy "$$1" remote:yume-backups'
       BACKUP_SYNC_CMD: ${BACKUP_SYNC_CMD:-}
     volumes:
-      - ./db:/db:ro
+      - ./scripts/database:/db:ro
       - backups:/backups
     working_dir: /
     command: ['/db/backup-cron.sh']
@@ -169,7 +169,7 @@ services:
       # host ran initdb, and a database that comes up as SQL_ASCII cannot fold
       # accented letters — lower('Á') stays 'Á', so Hungarian search misses.
       # Encoding cannot be changed after initdb, only by dump and restore, so
-      # it has to be right the first time. server/src/lib/db-encoding.ts
+      # it has to be right the first time. apps/api/src/lib/db-encoding.ts
       # refuses to create a schema on a database that got this wrong.
       POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C.UTF-8'
     # NOT published to the host: every service reaches Postgres over the compose
