@@ -26,7 +26,7 @@ before(async () => {
   // and I18n stand-ins because a vm realm has no imports; as a module it
   // brings its own, and the browser stub is all it needs.
   install()
-  const { PageAchievements } = await import('../js/pages/achievements.js')
+  const { PageAchievements } = await import('../src/features/achievements/achievements.js')
   clientCatalogue = PageAchievements.CATALOG
 })
 
@@ -118,7 +118,7 @@ describe('evaluating a profile', () => {
 })
 
 describe('the screen', () => {
-  const source = readFileSync(join(here, '../js/pages/achievements.js'), 'utf8')
+  const source = readFileSync(join(here, '../src/features/achievements/achievements.js'), 'utf8')
 
   it('prefers the server and falls back to the browser', () => {
     assert.match(source, /_fromServer\(\)/)

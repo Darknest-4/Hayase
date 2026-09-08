@@ -378,8 +378,8 @@ export async function buildApp (): Promise<FastifyInstance> {
    * readable by anybody who loads the page, and no amount of server
    * configuration changes that.
    */
-  const CLIENT_DIRS = ['assets', 'css', 'i18n', 'js']
-  const CLIENT_FILES = ['index.html', 'copy.js', 'favicon.ico', 'robots.txt', 'manifest.webmanifest']
+  const CLIENT_DIRS = ['assets', 'css', 'src']
+  const CLIENT_FILES = ['index.html', 'favicon.ico', 'robots.txt', 'manifest.webmanifest']
 
   const allowedPath = (pathName: string): boolean => {
     const clean = pathName.replace(/^\/+/, '')

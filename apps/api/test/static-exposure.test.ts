@@ -57,7 +57,10 @@ describe('what the web root serves', () => {
     // index.html is checked separately: it *is* the fallback body, so
     // "returned something other than the shell" cannot be the question for it.
     assert.equal((await app.inject({ url: '/' })).body, spa, 'the root does not serve the page')
-    for (const url of ['/copy.js', '/js/app.js', '/css/style.css', '/js/yume-api.js', '/i18n/hu.js']) {
+    for (const url of [
+      '/src/app/router.js', '/src/shared/api/yume.js', '/src/shared/i18n/hu.js',
+      '/src/shared/i18n/copy.js', '/css/style.css'
+    ]) {
       assert.ok(await served(url), `${url} is not being served`)
     }
   })
@@ -85,7 +88,7 @@ describe('what the web root serves', () => {
   })
 
   test('does not list directories', async () => {
-    for (const url of ['/js/', '/css/', '/test/', '/assets/']) {
+    for (const url of ['/src/', '/css/', '/test/', '/assets/']) {
       const res = await app.inject({ url })
       assert.equal(res.body, spa, `${url} returned something other than the page`)
     }
@@ -97,8 +100,8 @@ describe('what the web root serves', () => {
       '/../.env',
       '/..%2fserver%2fsrc%2fconfig.ts',
       '/%2e%2e/%2e%2e/.env',
-      '/js/../../apps/api/src/config.ts',
-      '/js/%2e%2e/%2e%2e/apps/api/src/config.ts'
+      '/src/../../apps/api/src/config.ts',
+      '/src/%2e%2e/%2e%2e/apps/api/src/config.ts'
     ]) {
       assert.equal(await served(url), false, `${url} escaped the document root`)
     }

@@ -30,7 +30,7 @@ before(async () => {
     location,
     history: { replaceState (_state, _title, url) { replaced.push(url) } }
   })
-  ;({ App } = await import('../js/app.js'))
+  ;({ App } = await import('../src/app/router.js'))
   assert.ok(App, 'app.js must export App')
 })
 

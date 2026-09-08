@@ -27,7 +27,7 @@ let engine
 
 before(async () => {
   install({ document: { createElement: () => videoElement } })
-  ;({ StreamEngine: engine } = await import('../js/stream-engine.js'))
+  ;({ StreamEngine: engine } = await import('../src/features/player/stream-engine.js'))
   assert.ok(engine, 'stream-engine.js must export StreamEngine')
 })
 

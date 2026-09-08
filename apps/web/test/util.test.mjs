@@ -40,7 +40,7 @@ before(async () => {
   // The stubs go on globalThis before the import: util.js is a module now, and
   // a module can touch the DOM while it is still evaluating.
   install({ document: { createElement: makeElement } })
-  ;({ U } = await import('../js/util.js'))
+  ;({ U } = await import('../src/shared/lib/dom.js'))
   assert.ok(U?.el, 'util.js must export el()')
 })
 

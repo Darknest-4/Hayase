@@ -19,8 +19,8 @@ import { install, storage as fakeStorage } from './support/browser.mjs'
 const SERVER_SPEC = new URL('../../api/src/modules/profiles/preferences.ts', import.meta.url)
 
 install()
-const { Prefs: PREFS } = await import('../js/prefs.js')
-const { Store } = await import('../js/store.js')
+const { Prefs: PREFS } = await import('../src/shared/state/preferences.js')
+const { Store } = await import('../src/shared/state/store.js')
 
 /**
  * Put the preference module into a known state.

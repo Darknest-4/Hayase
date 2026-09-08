@@ -14,7 +14,7 @@ let Engine
 
 before(async () => {
   install({ document: { createElement: () => ({ canPlayType: () => '' }) } })
-  ;({ StreamEngine: Engine } = await import('../js/stream-engine.js'))
+  ;({ StreamEngine: Engine } = await import('../src/features/player/stream-engine.js'))
 })
 
 const classify = (raw, subs = []) => Engine.classifyVariant(raw, subs)

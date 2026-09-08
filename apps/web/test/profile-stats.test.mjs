@@ -57,10 +57,10 @@ before(async () => {
   const store = fakeStorage()
   storage = store.map
   install({ localStorage: store, document: { createElement: makeElement } })
-  ;({ ProfileStats } = await import('../js/profile-stats.js'))
-  ;({ Store } = await import('../js/store.js'))
-  ;({ LibrarySync } = await import('../js/library-sync.js'))
-  ;({ I18n } = await import('../js/i18n.js'))
+  ;({ ProfileStats } = await import('../src/features/watch-history/profile-stats.js'))
+  ;({ Store } = await import('../src/shared/state/store.js'))
+  ;({ LibrarySync } = await import('../src/features/library-sync/library-sync.js'))
+  ;({ I18n } = await import('../src/shared/i18n/i18n.js'))
   assert.ok(ProfileStats, 'profile-stats.js must export ProfileStats')
 })
 
@@ -206,7 +206,7 @@ describe('patching a rendered card row', () => {
 })
 
 describe('the screens that use it', () => {
-  const source = name => readFileSync(join(here, `../js/pages/${name}.js`), 'utf8')
+  const source = name => readFileSync(join(here, `../src/pages/${name}.js`), 'utf8')
 
   for (const page of ['profile', 'analytics', 'dashboard']) {
     it(`${page} marks its cards and hydrates them`, () => {
@@ -220,7 +220,7 @@ describe('the screens that use it', () => {
     // Used to look for a <script> tag in index.html. There is one now — the
     // module entry — so the question is asked of the import graph, which also
     // answers it more honestly: a tag could exist for a file nothing imported.
-    assert.ok(reachableFromEntry().has('js/profile-stats.js'),
+    assert.ok(reachableFromEntry().has('src/features/watch-history/profile-stats.js'),
       'nothing in the module graph imports profile-stats.js')
   })
 })

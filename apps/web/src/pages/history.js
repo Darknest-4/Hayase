@@ -1,0 +1,73 @@
+/* global window, document */
+// Watch History — per-profile chronological log of what you watched,
+// grouped by day. Recorded automatically as episode progress advances.
+
+import { navigate } from '../shared/lib/shell.js'
+import { C } from '../shared/ui/components.js'
+import { I18n, T } from '../shared/i18n/i18n.js'
+import { Store } from '../shared/state/store.js'
+import { U } from '../shared/lib/dom.js'
+
+export const PageHistory = {
+  render (root) {
+    const profile = Store.activeProfile()
+    root.append(C.spotlight(T('Watch History'), { subtitle: profile ? `${profile.avatar ?? ''} ${profile.name}` : null }))
+    const pad = U.el('div', { class: 'page-pad' })
+    root.append(pad)
+    this.body(pad)
+  },
+
+  body (pad) {
+    pad.append(U.el('div', { style: 'display:flex;justify-content:flex-end;margin-bottom:.5rem;' }, [
+      U.el('button', {
+        class: 'btn btn-ghost btn-sm',
+        onclick: () => {
+          if (!window.confirm('Clear this profile’s entire watch history?')) return
+          Store.clearHistory()
+          U.toast(T('History cleared'))
+          navigate()
+        }
+      }, [document.createTextNode(T('Clear history'))])
+    ]))
+
+    const history = Store.history()
+    if (!history.length) {
+      pad.append(U.el('div', { class: 'empty-state', text: T('Nothing watched yet on this profile. Play an episode and it shows up here.') }))
+      return
+    }
+
+    // group by calendar day
+    const groups = new Map()
+    for (const item of history) {
+      const key = new Date(item.at).toDateString()
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key).push(item)
+    }
+
+    const today = new Date().toDateString()
+    const yesterday = new Date(Date.now() - 86400000).toDateString()
+
+    for (const [key, items] of groups) {
+      let label = new Date(key).toLocaleDateString(I18n.locale(), { weekday: 'long', month: 'short', day: 'numeric' })
+      if (key === today) label = 'Today'
+      else if (key === yesterday) label = 'Yesterday'
+
+      pad.append(U.el('h2', { class: 'detail-section-title', style: 'margin-bottom:.5rem;', text: label }))
+
+      for (const item of items) {
+        const media = item.media
+        pad.append(U.el('a', {
+          class: 'list-row',
+          href: `#/watch/${media.id}:${item.episode}`
+        }, [
+          U.el('img', { src: media.coverImage?.large ?? '', alt: U.title(media), loading: 'lazy' }),
+          U.el('div', { class: 'list-row-grow' }, [
+            U.el('div', { class: 'list-row-title', text: U.title(media) }),
+            U.el('div', { class: 'list-row-sub', text: `Episode ${item.episode} • ${new Date(item.at).toLocaleTimeString(I18n.locale(), { hour: '2-digit', minute: '2-digit' })}` })
+          ]),
+          U.svg(C.PLAY, 16)
+        ]))
+      }
+    }
+  }
+}

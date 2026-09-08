@@ -112,9 +112,9 @@ describe('design tokens the stylesheet asks for', () => {
    * progress ring's percentage, a card's own accent — is set as an inline
    * style rather than in the sheet, and it is no less defined for that.
    */
-  const inlineSources = readdirSync(join(here, '../js'), { recursive: true })
+  const inlineSources = readdirSync(join(here, '../src'), { recursive: true })
     .filter(name => String(name).endsWith('.js') && !String(name).startsWith('vendor'))
-    .map(name => readFileSync(join(here, '../js', String(name)), 'utf8'))
+    .map(name => readFileSync(join(here, '../src', String(name)), 'utf8'))
 
   const defined = new Set(
     [TOKENS, CSS, ...inlineSources]

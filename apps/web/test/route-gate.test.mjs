@@ -33,9 +33,9 @@ const SECTIONS = [
 
 before(async () => {
   install()
-  ;({ App } = await import('../js/app.js'))
-  ;({ YumeAPI } = await import('../js/yume-api.js'))
-  ;({ PageAdmin } = await import('../js/pages/admin.js'))
+  ;({ App } = await import('../src/app/router.js'))
+  ;({ YumeAPI } = await import('../src/shared/api/yume.js'))
+  ;({ PageAdmin } = await import('../src/pages/admin.js'))
   assert.ok(App, 'app.js must export App')
 })
 
@@ -122,7 +122,7 @@ describe('failing closed', () => {
 })
 
 describe('what the refusal says', () => {
-  const source = readFileSync(join(here, '../js/app.js'), 'utf8')
+  const source = readFileSync(join(here, '../src/app/router.js'), 'utf8')
 
   it('answers a privileged route as "not found", naming no permission', () => {
     // A 403 that names the missing grant is a map for somebody probing: it

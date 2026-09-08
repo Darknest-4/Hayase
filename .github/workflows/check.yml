@@ -150,14 +150,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      # the client ships as plain scripts with no build step, so a parse check
-      # is what protects it
+      # The client ships as ES modules with no build step, so a parse check is
+      # what protects it. --input-type=module because these files use import
+      # and export: --check alone parses them as scripts and rejects both.
       - name: Syntax-check every client script
         run: |
           shopt -s globstar
           for file in apps/web/**/*.js; do
-            case "$file" in apps/web/js/vendor/*) continue ;; esac   # third-party, not ours
-            node --check "$file" || exit 1
+            case "$file" in apps/web/src/features/player/vendor/*) continue ;; esac   # third-party, not ours
+            node --input-type=module --check < "$file" || { echo "::error::$file does not parse"; exit 1; }
           done
           echo "checked $(ls apps/web/**/*.js | wc -l) files"
 
@@ -167,7 +168,7 @@ jobs:
       # passing one made ESLint fail with "No files matching" — so this step
       # was erroring out rather than linting anything.
       - name: Lint the client
-        run: npx --yes standard --ignore "apps/web/js/vendor/**" "apps/web/**/*.js" "apps/web/test/*.mjs" "tests/e2e/*.mjs"
+        run: npx --yes standard --ignore "apps/web/src/features/player/vendor/**" "apps/web/**/*.js" "apps/web/test/**/*.mjs" "tests/e2e/*.mjs"
 
       # The engine is the one piece of client code with real logic in it —
       # everything else is rendering. It loads against a small DOM stub, so it
