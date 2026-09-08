@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import { test, describe } from 'node:test'
 
-import { buildSearchSql, prepareQuery, normaliseQuery, searchAnime, recordSearch, SEARCH_SORTS } from '../src/lib/search.ts'
+import { buildSearchSql, prepareQuery, normaliseQuery, searchAnime, recordSearch, SEARCH_SORTS } from '../src/modules/search/search.ts'
 
 /** Minimal stand-in for a pg pool that records what it was asked to run. */
 function fakeDb (rows: unknown[] = []): { query: (...a: unknown[]) => Promise<{ rows: unknown[] }>, calls: Array<{ sql: string, params: unknown[] }> } {

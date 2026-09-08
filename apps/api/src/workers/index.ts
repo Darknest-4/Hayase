@@ -3,15 +3,20 @@
 // daily rollup) by enqueueing with dedupe keys.
 
 import { pool } from '../infrastructure/database/index.ts'
-import { recordError } from '../lib/errors.ts'
-import { drain, enqueue, runWorker } from '../lib/queue.ts'
-import { handleWebhookJob } from '../lib/webhooks.ts'
-import { handleImportJob } from './importer.ts'
-import { handleMaintenanceJob } from './maintenance.ts'
-import { handleMetadataJob } from './metadata.ts'
-import { handleMonitorJob } from './monitor.ts'
-import { handleNotifyJob } from './notify.ts'
-import { handleStatsJob } from './stats.ts'
+import { recordError } from '../errors/reporting.ts'
+import { drain, enqueue, runWorker } from '../infrastructure/queue/index.ts'
+import { handleWebhookJob } from '../modules/webhooks/delivery.ts'
+import { announceDeadJobs } from '../modules/webhooks/subscriptions.ts'
+import { handleImportJob } from '../integrations/anilist/importer.ts'
+import { handleMaintenanceJob } from '../infrastructure/maintenance.ts'
+import { handleMetadataJob } from '../modules/metadata/worker.ts'
+import { handleMonitorJob } from '../modules/system/monitor-worker.ts'
+import { handleNotifyJob } from '../modules/notifications/worker.ts'
+import { handleStatsJob } from '../modules/system/stats-worker.ts'
+
+// Who hears about a job that ran out of retries. The queue reports; this
+// decides what that means. See modules/webhooks/subscriptions.ts.
+announceDeadJobs()
 
 const handlers = {
   stats: handleStatsJob,

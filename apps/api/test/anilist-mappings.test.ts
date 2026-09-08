@@ -24,7 +24,7 @@ process.env.JWT_SECRET ??= 'mapping-test-secret-long-enough-0123456789'
 
 describe('MAL id collisions', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
   let pool: pg.Pool
-  let writeMalId: typeof import('../src/workers/anilist.ts').writeMalId
+  let writeMalId: typeof import('../src/integrations/anilist/sync.ts').writeMalId
   const made: string[] = []
   // Far above anything the real catalogue holds, so a collision here is ours.
   const freeMalId = (): number => 90_000_000 + Math.floor(Math.random() * 9_000_000)
@@ -43,7 +43,7 @@ describe('MAL id collisions', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () =
   before(async () => {
     const db = await import('../src/infrastructure/database/index.ts')
     pool = db.pool as never
-    ;({ writeMalId } = await import('../src/workers/anilist.ts'))
+    ;({ writeMalId } = await import('../src/integrations/anilist/sync.ts'))
   })
 
   after(async () => {
@@ -123,7 +123,7 @@ describe('MAL id collisions', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () =
     // The end the whole change exists for. Before, upsertMedia raised here and
     // the batch was lost; now the row gets its synopsis, cover and score, and
     // only the MAL id is withheld.
-    const { loadCaches, upsertMedia } = await import('../src/workers/anilist.ts')
+    const { loadCaches, upsertMedia } = await import('../src/integrations/anilist/sync.ts')
     const mal = freeMalId()
     const holder = await anime(mal)
     const claimant = await anime()
@@ -163,7 +163,7 @@ describe('MAL id collisions', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () =
   test('--retry-conflicts attaches an id once the collision is resolved', async () => {
     // The gap the ordinary run cannot close: a conflicted row already has its
     // synopsis, so `onlyMissing` will never look at it again.
-    const { retryMappingConflicts } = await import('../src/workers/anilist.ts')
+    const { retryMappingConflicts } = await import('../src/integrations/anilist/sync.ts')
     const mal = freeMalId()
     const holder = await anime(mal)
     const claimant = await anime()

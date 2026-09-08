@@ -1,7 +1,7 @@
 -- ============================================================================
 -- 0008 — Durable job queue (Postgres-backed)
 -- ============================================================================
--- The queue abstraction (apps/api/src/lib/queue.ts) has two drivers:
+-- The queue abstraction (apps/api/src/infrastructure/queue/index.ts) has two drivers:
 --  * PgQueue (this table, FOR UPDATE SKIP LOCKED) — default; durable,
 --    transactional with the data it acts on, zero extra infrastructure.
 --  * RabbitMQ — drop-in for higher fan-out once volume demands it.

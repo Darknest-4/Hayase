@@ -3,12 +3,12 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { collectHost, diskUsage, memory } from '../src/lib/metrics.ts'
-import { overall, safeDetail } from '../src/lib/probes.ts'
-import { DEFAULTS, compare, worst } from '../src/lib/thresholds.ts'
-import { toSamples } from '../src/workers/monitor.ts'
+import { collectHost, diskUsage, memory } from '../src/infrastructure/observability/host-metrics.ts'
+import { overall, safeDetail } from '../src/infrastructure/observability/probes.ts'
+import { DEFAULTS, compare, worst } from '../src/modules/system/thresholds.ts'
+import { toSamples } from '../src/modules/system/monitor-worker.ts'
 
-import type { ProbeResult } from '../src/lib/probes.ts'
+import type { ProbeResult } from '../src/infrastructure/observability/probes.ts'
 
 describe('thresholds', () => {
   it('classifies below warn as green, at/above warn as yellow, at/above crit as red', () => {

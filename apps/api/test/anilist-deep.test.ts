@@ -25,7 +25,7 @@ process.env.JWT_SECRET ??= 'deep-test-secret-long-enough-0123456789'
 describe('deep AniList metadata', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
   let pool: pg.Pool
   let app: FastifyInstance
-  let upsertDeep: typeof import('../src/workers/anilist-deep.ts').upsertDeep
+  let upsertDeep: typeof import('../src/integrations/anilist/deep-sync.ts').upsertDeep
   const made: string[] = []
   const madeCharacters: number[] = []
   const madePeople: number[] = []
@@ -45,7 +45,7 @@ describe('deep AniList metadata', { skip: HAS_DB ? false : 'no DATABASE_URL' }, 
   before(async () => {
     const [db, { buildApp }] = await Promise.all([import('../src/infrastructure/database/index.ts'), import('../src/app.ts')])
     pool = db.pool as never
-    ;({ upsertDeep } = await import('../src/workers/anilist-deep.ts'))
+    ;({ upsertDeep } = await import('../src/integrations/anilist/deep-sync.ts'))
     app = await buildApp()
     await app.ready()
   })

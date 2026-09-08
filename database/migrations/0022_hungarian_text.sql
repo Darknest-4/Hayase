@@ -21,7 +21,7 @@
 --      than by changing the database default — see the comment at the bottom.
 --
 -- None of this works correctly unless the database is UTF8. That is enforced
--- in apps/api/src/lib/db-encoding.ts, which refuses to create a schema on a
+-- in apps/api/src/infrastructure/migrations/db-encoding.ts, which refuses to create a schema on a
 -- database that cannot store the text in the first place.
 -- ============================================================================
 

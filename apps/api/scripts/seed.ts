@@ -17,8 +17,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { pool } from '../src/infrastructure/database/index.ts'
-import { applyFillerData, generateEpisodes, importFile } from '../src/workers/importer.ts'
-import { recomputeTrending } from '../src/workers/stats.ts'
+import { applyFillerData, generateEpisodes, importFile } from '../src/integrations/anilist/importer.ts'
+import { recomputeTrending } from '../src/modules/system/stats-worker.ts'
 
 // official dump (published as a GitHub release asset); overridable via
 // SEED_URL or a CLI arg (a local file path also works)

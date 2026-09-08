@@ -496,7 +496,7 @@ would take the titles away from them.
 
 Preferences live in `user_settings`, keyed **per profile** — one household can
 have a Hungarian child profile and an English adult profile on one login. The
-list of preferences is declared once, in `apps/api/src/lib/preferences.ts`;
+list of preferences is declared once, in `apps/api/src/modules/profiles/preferences.ts`;
 `GET /v1/config` publishes it, and both the settings screen and the onboarding
 wizard render from it, so adding a preference is one entry and nothing else
 changes.
@@ -553,10 +553,10 @@ systems and are now one function.
 
 Hungarian needs the database to be UTF-8. Under `SQL_ASCII`, `lower('Á')`
 stays `'Á'`, `ILIKE` misses accented matches, and `length()` counts bytes —
-and `apps/api/src/lib/search.ts` matches on `lower()` and `ILIKE` in all three of
+and `apps/api/src/modules/search/search.ts` matches on `lower()` and `ILIKE` in all three of
 its tiers. Encoding cannot be changed after `initdb`, so it is pinned in
 `docker-compose.yml`, stated explicitly in `db/restore.sh`, and checked at
-migration time: `apps/api/src/lib/db-encoding.ts` **refuses to create a schema**
+migration time: `apps/api/src/infrastructure/migrations/db-encoding.ts` **refuses to create a schema**
 on a non-UTF-8 database and warns loudly on one that already has data —
 failing closed while it is free to fix, and never turning a text defect into
 an outage.

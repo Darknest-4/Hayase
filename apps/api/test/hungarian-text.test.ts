@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict'
 import { describe, it, before, after } from 'node:test'
 
-import { assess } from '../src/lib/db-encoding.ts'
+import { assess } from '../src/infrastructure/migrations/db-encoding.ts'
 
 describe('encoding policy', () => {
   const utf8 = { serverEncoding: 'UTF8', collate: 'C.UTF-8', ctype: 'C.UTF-8', freshDatabase: false }

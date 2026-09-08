@@ -11,7 +11,7 @@
 -- Two halves, and they share one rule.
 --
 --   * Registration promotes an account when the instance has no administrator
---     (see apps/api/src/routes/auth.ts).
+--     (see apps/api/src/modules/auth/routes.ts).
 --   * This migration does the same for an instance that already has users —
 --     which is the case this was written for: the database exists and the
 --     operator is already registered.

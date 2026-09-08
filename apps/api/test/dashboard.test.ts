@@ -11,7 +11,7 @@
 import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 
-import { overview } from '../src/lib/dashboard.ts'
+import { overview } from '../src/modules/system/dashboard.ts'
 
 import type pg from 'pg'
 

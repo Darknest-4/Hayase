@@ -18,7 +18,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 // The client catalogue is built inside the vm realm, so deepEqual compares it
 // against a different Array.prototype and fails on identical data.
 const plain = value => JSON.parse(JSON.stringify(value))
-const { CATALOGUE, evaluate } = await import('../../api/src/lib/achievements.ts')
+const { CATALOGUE, evaluate } = await import('../../api/src/modules/library/achievements.ts')
 
 let clientCatalogue
 

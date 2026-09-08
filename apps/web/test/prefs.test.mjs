@@ -1,7 +1,7 @@
 // Client preferences, and the pin that keeps them honest.
 //
 // apps/web/js/prefs.js repeats the defaults and allowed values that
-// apps/api/src/lib/preferences.ts declares. That duplication is deliberate — the
+// apps/api/src/modules/profiles/preferences.ts declares. That duplication is deliberate — the
 // client has to answer Prefs.get() before it has ever spoken to a server, so
 // it cannot wait for the spec to arrive — but a duplicate that drifts is worse
 // than no duplicate at all: the settings screen would save one thing and the
@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs'
 import { describe, it, beforeEach } from 'node:test'
 import { createContext, runInNewContext } from 'node:vm'
 
-const SERVER_SPEC = new URL('../../api/src/lib/preferences.ts', import.meta.url)
+const SERVER_SPEC = new URL('../../api/src/modules/profiles/preferences.ts', import.meta.url)
 const CLIENT = new URL('../js/prefs.js', import.meta.url)
 
 /** A minimal localStorage, so the module under test has somewhere to write. */

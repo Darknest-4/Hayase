@@ -47,7 +47,7 @@ bővítmény‑rendszerrel.
 | **Auth** | `@fastify/jwt` access token (15 perc) + forgó refresh token (30 nap), RBAC `fastify.requirePermission(slug)` |
 | **GraphQL** | `mercurius` (a REST mellett) |
 | **Realtime** | `@fastify/websocket` — értesítés, chat, watch‑together |
-| **Adatbázis** | PostgreSQL 16, `pg` pool, saját migrációs futtató (`apps/api/src/lib/migrate.ts`), havi particionált log‑táblák |
+| **Adatbázis** | PostgreSQL 16, `pg` pool, saját migrációs futtató (`apps/api/src/infrastructure/migrations/migrate.ts`), havi particionált log‑táblák |
 | **Háttérmunka** | Job queue + worker‑ök (statisztika, import, review, webhook‑kézbesítés) |
 | **Katalógus‑adat** | Böngészéskor AniList/Jikan/ani.zip közvetlenül (localStorage cache); a saját DB 25 672 animével + 388 611 epizóddal seedelve |
 
@@ -143,7 +143,7 @@ bővítmény‑rendszerrel.
 - [x] Igazolva: 13 motor‑teszt + 8 valós watch‑oldal teszt (köztük „két halott forráson át a harmadik játszik")
 
 ### Metadata engine + Search 2.0 (kész) — [`../database/search.md`](../database/search.md)
-- [x] **Megszűnt a néma felülírás**: az AniList‑importőr eddig `coalesce`‑szal ráírt a kézzel javított címre/leírásra — most **minden automatikus írás a konfliktus‑feloldó rétegen megy át** (`apps/api/src/lib/metadata.ts`)
+- [x] **Megszűnt a néma felülírás**: az AniList‑importőr eddig `coalesce`‑szal ráírt a kézzel javított címre/leírásra — most **minden automatikus írás a konfliktus‑feloldó rétegen megy át** (`apps/api/src/modules/catalogue/metadata.ts`)
 - [x] **Ember‑zár (`anime.locked_fields`)**: amit az admin a katalógus‑szerkesztőben ment, az **zárolódik**, és automatikus forrás soha nem írja felül; csak ember oldhatja fel („Release" gomb / `POST …/unlock`)
 - [x] **Forrás‑rangsor** (`anime.metadata_sources`): `manual` 100 > `anilist` 60 > `mal` 50 > `aod` 30 > `stub` 10 > ismeretlen 0 — alacsonyabb rangú forrás nem írja felül a magasabbat, de **saját mezőjét bármelyik frissítheti**
 - [x] **Semmi nem törlődik hiány miatt**: `null`/üres bejövő érték kihagyva; üres tárolt mezőt bárki kitölthet
@@ -464,7 +464,7 @@ a személyzet a rejtett bejegyzést is megtalálja és visszaállíthassa.
 ```bash
 # Postgres (socket: /var/tmp/yume-pg, DB: yume, role: dev)
 DATABASE_URL="postgres://dev@localhost/yume?host=/var/tmp/yume-pg" \
-  node --experimental-strip-types apps/api/src/lib/migrate.ts   # migrációk
+  node --experimental-strip-types apps/api/src/infrastructure/migrations/migrate.ts   # migrációk
 DATABASE_URL=… PORT=4000 JWT_SECRET=dev-only-jwt-secret \
   node --experimental-strip-types apps/api/src/index.ts          # API
 # web kliens: bármely statikus szerver a web/ könyvtárra
@@ -515,7 +515,7 @@ docker compose --profile enrich run --rm enrich   # seed UTÁN
 Az importőr 50‑esével kéri le az AniList GraphQL‑t (`id_in`), rate‑limit‑tudatosan
 (429/`retry-after` kezelve, `AL_DELAY_MS` pacing), és az `anilist_id` alapján a
 meglévő sorokra írja a mezőket (idempotens). Alapból csak a leírás nélküli
-sorokat frissíti; `--all` mindet újra. Modul: `apps/api/src/workers/anilist.ts`
+sorokat frissíti; `--all` mindet újra. Modul: `apps/api/src/integrations/anilist/sync.ts`
 (`enrichFromAniList`, `upsertMedia`), script: `scripts/import-anilist.ts`.
 A ~16k leképezett anime a rate‑limit miatt ~15–30 perc, egyszeri.
 

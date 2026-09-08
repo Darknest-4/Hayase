@@ -3,8 +3,8 @@
 Two layers that share one goal: the catalogue holds one correct entry per
 anime, and a user can find it by any name they know it under.
 
-- **Metadata engine** — `apps/api/src/lib/metadata.ts`
-- **Search** — `apps/api/src/lib/search.ts`
+- **Metadata engine** — `apps/api/src/modules/catalogue/metadata.ts`
+- **Search** — `apps/api/src/modules/search/search.ts`
 - Schema — `database/migrations/0017_metadata_search.sql`
 
 ---

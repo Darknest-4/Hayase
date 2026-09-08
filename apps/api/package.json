@@ -8,7 +8,7 @@
     "dev": "node --watch --experimental-strip-types src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "migrate": "node --experimental-strip-types src/lib/migrate.ts",
+    "migrate": "node --experimental-strip-types src/infrastructure/migrations/migrate.ts",
     "check": "tsc --noEmit",
     "worker": "node --experimental-strip-types src/workers/index.ts",
     "worker:once": "node --experimental-strip-types src/workers/index.ts --once",

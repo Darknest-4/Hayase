@@ -4,7 +4,7 @@
 // form, nothing outside a browser could be told which anime a URL was about —
 // every crawler, link preview and share sheet saw index.html's generic <head>.
 // The server now answers the path form with the app plus a <head> about that
-// anime (apps/api/src/routes/seo.ts) and the sitemap points at it, which only
+// anime (apps/api/src/modules/seo/routes.ts) and the sitemap points at it, which only
 // works if the client agrees that the path names a route.
 //
 // What is checked here is the agreement, and the two ways it could go wrong:

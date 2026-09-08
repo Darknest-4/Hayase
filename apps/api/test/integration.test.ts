@@ -182,7 +182,7 @@ describe('API integration', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => 
 
       // The permission cache is deliberately short-lived rather than
       // invalidated from outside, so the grant lands within its TTL.
-      const auth = await import('../src/plugins/auth.ts')
+      const auth = await import('../src/middleware/auth.ts')
       auth.invalidatePermissions()
 
       const after = await app.inject({ url: '/v1/admin/catalogue', headers: { authorization: `Bearer ${token}` } })

@@ -34,7 +34,7 @@ const App = {
     // the only spelling, no crawler, link preview or share sheet could ever be
     // told which anime a URL was about — every one of them saw index.html's
     // generic <head>. The server now also answers "/anime/123" with the app
-    // and a <head> about that anime (apps/api/src/routes/seo.ts), and the
+    // and a <head> about that anime (apps/api/src/modules/seo/routes.ts), and the
     // sitemap points at that form, so the router has to understand it too.
     //
     // Only a name that is actually a route counts. Anything else — a typo, a
@@ -55,7 +55,7 @@ const App = {
    * Set the browser tab's title.
    *
    * `null` restores the site's own. The server puts the anime's name in the
-   * served <title> for a crawler (apps/api/src/routes/seo.ts); this is the same
+   * served <title> for a crawler (apps/api/src/modules/seo/routes.ts); this is the same
    * courtesy for the person with fifteen tabs open, who otherwise sees the
    * same word on all of them.
    */

@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import { test, describe } from 'node:test'
 
-import { resolveFields, normaliseTitle, rankOf, MANAGED_FIELDS } from '../src/lib/metadata.ts'
+import { resolveFields, normaliseTitle, rankOf, MANAGED_FIELDS } from '../src/modules/catalogue/metadata.ts'
 
 const AT = new Date('2026-08-21T12:00:00.000Z')
 

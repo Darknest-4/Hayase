@@ -12,7 +12,7 @@
 // ---------------------------------------------------------------------------
 // About the duplicated defaults
 // ---------------------------------------------------------------------------
-// DEFAULTS below repeats what apps/api/src/lib/preferences.ts declares. That
+// DEFAULTS below repeats what apps/api/src/modules/profiles/preferences.ts declares. That
 // duplication is deliberate: the client has to answer `Prefs.get()` before it
 // has ever spoken to a server, so it cannot wait for the spec to arrive. It is
 // pinned by apps/web/test/prefs.test.mjs, which reads the server file and asserts

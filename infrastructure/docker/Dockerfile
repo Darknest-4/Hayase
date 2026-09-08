@@ -59,4 +59,4 @@ USER node
 # The publish step is idempotent and deliberately non-fatal: it skips quietly
 # when no administrator account exists yet (a fresh install, before anyone has
 # registered), and one bad package must not keep the whole app from booting.
-CMD ["sh", "-c", "node --experimental-strip-types src/lib/migrate.ts && node --experimental-strip-types src/index.ts"]
+CMD ["sh", "-c", "node --experimental-strip-types src/infrastructure/migrations/migrate.ts && node --experimental-strip-types src/index.ts"]

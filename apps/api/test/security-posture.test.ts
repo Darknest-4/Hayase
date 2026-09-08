@@ -24,13 +24,13 @@ process.env.JWT_SECRET ??= 'posture-secret-long-enough-0123456789'
 
 describe('security posture', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
   let pool: pg.Pool
-  let posture: typeof import('../src/lib/security-posture.ts').posture
+  let posture: typeof import('../src/modules/security/posture.ts').posture
   const hookIds: string[] = []
 
   before(async () => {
     const [db, sp] = await Promise.all([
       import('../src/infrastructure/database/index.ts'),
-      import('../src/lib/security-posture.ts')
+      import('../src/modules/security/posture.ts')
     ])
     pool = db.pool
     posture = sp.posture
@@ -139,7 +139,7 @@ describe('security posture', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () =>
     // Broken through the reader the check actually calls. A module namespace
     // binding cannot be reassigned, and `settings` is a plain exported object
     // for exactly this reason — see the header of lib/site-settings.ts.
-    const { settings } = await import('../src/lib/site-settings.ts')
+    const { settings } = await import('../src/modules/settings/site-settings.ts')
     mock.method(settings, 'requiresLogin', async () => { throw new Error('the reader is broken') })
     try {
       const { checks, summary } = await posture()

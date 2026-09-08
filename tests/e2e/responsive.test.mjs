@@ -107,7 +107,7 @@ describe('responsive layout', { skip: REASON }, () => {
       `INSERT INTO user_roles (user_id, role_id)
        SELECT u.id, r.id FROM users u, roles r WHERE u.username = $1 AND r.slug = 'admin'
        ON CONFLICT DO NOTHING`, [username])
-    const auth = await import('../../apps/api/src/plugins/auth.ts')
+    const auth = await import('../../apps/api/src/middleware/auth.ts')
     auth.invalidatePermissions()
 
     browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM ?? undefined })

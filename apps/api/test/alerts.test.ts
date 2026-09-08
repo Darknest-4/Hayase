@@ -2,11 +2,11 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { decide, humanDuration } from '../src/lib/alerts.ts'
-import { formatReport } from '../src/lib/diagnostics.ts'
+import { decide, humanDuration } from '../src/modules/system/alerts.ts'
+import { formatReport } from '../src/modules/system/diagnostics.ts'
 
-import type { AlertOptions, AlertRow, Reading } from '../src/lib/alerts.ts'
-import type { DiagnosticReport, TestResult } from '../src/lib/diagnostics.ts'
+import type { AlertOptions, AlertRow, Reading } from '../src/modules/system/alerts.ts'
+import type { DiagnosticReport, TestResult } from '../src/modules/system/diagnostics.ts'
 
 const OPTIONS: AlertOptions = { debounceCycles: 3, recoveryCycles: 2, cooldownMs: 30 * 60_000 }
 const NOW = Date.UTC(2026, 7, 21, 12, 0, 0)

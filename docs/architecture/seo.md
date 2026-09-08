@@ -21,7 +21,7 @@ receives is the same `index.html` it always was.
 | `#/anime/21` | the app's own links | nothing — the fragment stays in the browser |
 | `/anime/21` | the sitemap, shared links, crawlers | the id, so it can answer with real metadata |
 
-`apps/api/src/routes/seo.ts` answers the second with `index.html` and a `<head>`
+`apps/api/src/modules/seo/routes.ts` answers the second with `index.html` and a `<head>`
 about *that* anime. `apps/web/js/app.js` understands both (`parseHash()` falls back
 to `location.pathname`) and rewrites the path form into the hash form on arrival
 (`normalisePath()`), so a human never ends up with two URLs for one page.
@@ -98,8 +98,8 @@ live on someone else's domain. So:
 
 | File | Role |
 |---|---|
-| `apps/api/src/lib/seo.ts` | escaping, origin resolution, the head block, the `index.html` template cache, `noIndexPath` |
-| `apps/api/src/routes/seo.ts` | `/robots.txt`, `/sitemap.xml`, `/anime/:id` |
+| `apps/api/src/modules/seo/meta.ts` | escaping, origin resolution, the head block, the `index.html` template cache, `noIndexPath` |
+| `apps/api/src/modules/seo/routes.ts` | `/robots.txt`, `/sitemap.xml`, `/anime/:id` |
 | `apps/api/src/app.ts` | registers the routes; the global `X-Robots-Tag` hook |
 | `apps/web/index.html` | the replaceable head block, root-absolute asset references |
 | `apps/web/js/app.js` | `parseHash()` path fallback, `normalisePath()`, `setTitle()` |

@@ -241,7 +241,7 @@ describe('SEO', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
   test('a private instance publishes nothing at all', async () => {
     // require_login is a shared row and the suite runs in parallel, so the
     // reader is replaced rather than the setting written. See lib/site-settings.ts.
-    const { settings } = await import('../src/lib/site-settings.ts')
+    const { settings } = await import('../src/modules/settings/site-settings.ts')
     mock.method(settings, 'requiresLogin', async () => true)
     try {
       const robots = await app.inject({ url: '/robots.txt' })

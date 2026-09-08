@@ -35,7 +35,7 @@ process.env.WEBHOOK_ALLOWED_HOSTS = '127.0.0.1'
 
 describe('webhook payloads', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
   let pool: pg.Pool
-  let deliver: typeof import('../src/lib/webhooks.ts').deliver
+  let deliver: typeof import('../src/modules/webhooks/delivery.ts').deliver
   let server: ReturnType<typeof createServer>
   let base = ''
   const hookIds: string[] = []
@@ -44,7 +44,7 @@ describe('webhook payloads', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () =>
   let received: Received[] = []
 
   before(async () => {
-    const [db, hooks] = await Promise.all([import('../src/infrastructure/database/index.ts'), import('../src/lib/webhooks.ts')])
+    const [db, hooks] = await Promise.all([import('../src/infrastructure/database/index.ts'), import('../src/modules/webhooks/delivery.ts')])
     pool = db.pool
     deliver = hooks.deliver
 

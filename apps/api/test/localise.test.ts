@@ -10,7 +10,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { localiseAnime, localiseEpisode, pick, resolveSynopsis, resolveTitle } from '../src/lib/localise.ts'
+import { localiseAnime, localiseEpisode, pick, resolveSynopsis, resolveTitle } from '../src/modules/catalogue/localise.ts'
 
 describe('pick', () => {
   it('takes the first candidate that has something in it', () => {
