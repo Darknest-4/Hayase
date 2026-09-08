@@ -37,7 +37,14 @@ const HlsHandler = {
   async _load () {
     if (this._module) return this._module
     if (!this._loading) {
-      this._loading = import('./vendor/hls.min.mjs')
+      // Absolute against the origin, not './vendor/…'. A dynamic import inside
+      // a *classic* script resolves against the document base URL rather than
+      // the script's own, so the relative form asked for /vendor/hls.min.mjs
+      // from the site root — and for /anime/vendor/hls.min.mjs from one of the
+      // crawlable path URLs — neither of which exists. Built from
+      // location.origin rather than written as a literal '/js/…' because the
+      // linter reads a leading slash as a filesystem path.
+      this._loading = import(`${window.location.origin}/js/vendor/hls.min.mjs`)
         .then(mod => { this._module = mod.default ?? mod; return this._module })
         .catch(error => {
           this._loading = null // a failed load must not poison later attempts

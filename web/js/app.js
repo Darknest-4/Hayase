@@ -22,10 +22,62 @@ const App = {
 
   parseHash () {
     // "#/anime/123?x=y" -> { route: 'anime', arg: '123', params }
-    const hash = window.location.hash.replace(/^#\/?/, '') || 'home'
-    const [path, query] = hash.split('?')
-    const [route, arg] = path.split('/')
-    return { route: route || 'home', arg, params: new URLSearchParams(query ?? '') }
+    const hash = window.location.hash.replace(/^#\/?/, '')
+    if (hash) {
+      const [path, query] = hash.split('?')
+      const [route, arg] = path.split('/')
+      return { route: route || 'home', arg, params: new URLSearchParams(query ?? '') }
+    }
+    // No fragment: read the path instead.
+    //
+    // A fragment never reaches the server, so for as long as "#/anime/123" was
+    // the only spelling, no crawler, link preview or share sheet could ever be
+    // told which anime a URL was about — every one of them saw index.html's
+    // generic <head>. The server now also answers "/anime/123" with the app
+    // and a <head> about that anime (server/src/routes/seo.ts), and the
+    // sitemap points at that form, so the router has to understand it too.
+    //
+    // Only a name that is actually a route counts. Anything else — a typo, a
+    // path from an older deployment — is home, which is what the SPA fallback
+    // already implied by serving this page for it.
+    const [route, arg] = String(window.location.pathname || '/').replace(/^\/+/, '').split('/')
+    const params = new URLSearchParams(window.location.search ?? '')
+    if (route && this.routes[route]) return { route, arg, params }
+    return { route: 'home', arg: undefined, params }
+  },
+
+  /** The site's own name, once the configuration has arrived. */
+  siteName () {
+    return this.config?.site?.name ?? 'Yume'
+  },
+
+  /**
+   * Set the browser tab's title.
+   *
+   * `null` restores the site's own. The server puts the anime's name in the
+   * served <title> for a crawler (server/src/routes/seo.ts); this is the same
+   * courtesy for the person with fifteen tabs open, who otherwise sees the
+   * same word on all of them.
+   */
+  setTitle (text) {
+    document.title = text ? `${text} — ${this.siteName()}` : this.siteName()
+  },
+
+  /**
+   * Rewrite a path URL into the app's own hash form, once, on arrival.
+   *
+   * Without this the address bar keeps saying /anime/123 while the viewer
+   * clicks through to something else, and every later link is resolved against
+   * that path. replaceState fires neither hashchange nor popstate, so this
+   * runs before the first navigate() and leaves nothing behind.
+   */
+  normalisePath () {
+    if (window.location.hash) return
+    const { route, arg, params } = this.parseHash()
+    if (route === 'home' && !arg) return
+    const query = params.toString()
+    const target = `/#/${route}${arg ? '/' + arg : ''}${query ? '?' + query : ''}`
+    window.history?.replaceState?.(null, '', target)
   },
 
   // pages folded into a hub keep working as deep links via a redirect
@@ -49,6 +101,12 @@ const App = {
 
     // banner only persists on home; pages set their own
     if (route !== 'home') U.setBanner(null)
+
+    // The tab title goes back to the site's own on every navigation. A page
+    // with something better to say — the anime detail page — sets it after its
+    // data arrives, and this is what un-sets it on the way out; otherwise the
+    // tab keeps naming a show the viewer left three pages ago.
+    this.setTitle(null)
 
     /*
      * The administration panel gets the window to itself.
@@ -610,6 +668,7 @@ const App = {
     this.refreshProfileAvatar()
     this.refreshNotifBadge()
     this.initProfileSwitcher()
+    this.normalisePath()
     this.applyNavLabels()
     this.initSearchModal()
     this.initMobileMore()
@@ -621,7 +680,7 @@ const App = {
     if (this.config?.site?.name) {
       const logoText = document.querySelector('.sidebar-logo-text')
       if (logoText) logoText.textContent = this.config.site.name.toLowerCase()
-      document.title = this.config.site.name
+      this.setTitle(null)
     }
     await this.applyDefaultTheme()
     this.refreshAdminNav()

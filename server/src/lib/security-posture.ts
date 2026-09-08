@@ -130,6 +130,41 @@ const DEFINITIONS: Definition[] = [
 
   // ---- who holds power ----
   {
+    id: 'public-url',
+    group: 'Secrets & transport',
+    title: 'The public address is configured, not taken from the request',
+    looksAt: 'PUBLIC_URL',
+    weight: 'normal',
+    run: async () => {
+      // Without it, robots.txt, the sitemap and every canonical link are built
+      // from the Host header — which the *client* chooses. A crawler following
+      // a link with a forged Host is then told the canonical home of these
+      // pages is somebody else's domain, and hands them the ranking.
+      //
+      // Only checked in production: in development the host is whatever the
+      // developer typed, and flagging that would be noise.
+      if (!config.isProd) {
+        return { verdict: 'skipped', found: 'development instance: nothing here is crawled' }
+      }
+      const value = process.env.PUBLIC_URL?.trim()
+      if (!value) {
+        return {
+          verdict: 'warn',
+          found: 'unset — canonical and sitemap URLs are built from the Host header the caller sent',
+          remedy: 'Set PUBLIC_URL to this site’s address, e.g. https://yume.example.com'
+        }
+      }
+      if (!/^https:\/\//i.test(value)) {
+        return {
+          verdict: 'warn',
+          found: `set to a plain-http address (${value})`,
+          remedy: 'Use the https address, or search engines will index the insecure one'
+        }
+      }
+      return { verdict: 'pass', found: `set to ${value}` }
+    }
+  },
+  {
     id: 'administrators',
     group: 'Accounts',
     title: 'Exactly the administrators you expect',

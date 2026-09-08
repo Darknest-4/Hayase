@@ -18,6 +18,7 @@ import { config } from './config.ts'
 import { query } from './db.ts'
 import { errorCode } from './lib/error-codes.ts'
 import { recordError } from './lib/errors.ts'
+import { noIndexPath } from './lib/seo.ts'
 import { settings as siteSettings } from './lib/site-settings.ts'
 import { schema, resolvers, loaders } from './graphql/schema.ts'
 import wsPlugin from './lib/ws.ts'
@@ -37,6 +38,7 @@ import catalogueRoutes from './routes/catalogue.ts'
 import { publicReadiness, adminMonitoring } from './routes/monitoring.ts'
 import reportRoutes from './routes/reports.ts'
 import securityRoutes from './routes/security.ts'
+import seoRoutes from './routes/seo.ts'
 import libraryRoutes from './routes/library.ts'
 import settingsRoutes from './routes/settings.ts'
 import translationRoutes from './routes/translations.ts'
@@ -400,6 +402,16 @@ export async function buildApp (): Promise<FastifyInstance> {
       dotfiles: 'ignore',
       allowedPath
     })
+    /**
+     * robots.txt, sitemap.xml, and /anime/:id with a real <head>.
+     *
+     * Registered after fastify-static so it shares the same resolved webRoot,
+     * and it wins over the static wildcard because find-my-way prefers a
+     * literal segment to a `*`. See lib/seo.ts for why a path-shaped anime
+     * route exists alongside the client's own #/anime/:id.
+     */
+    await app.register(seoRoutes, { webRoot })
+
     // SPA fallback: any non-API GET that isn't a real file returns index.html
     app.setNotFoundHandler((request, reply) => {
       if (request.method === 'GET' && !/^\/(v1|graphql|graphiql|ws)\b/.test(request.url)) {
@@ -412,6 +424,20 @@ export async function buildApp (): Promise<FastifyInstance> {
 
   app.addHook('onSend', async (request, reply, payload) => {
     reply.header('X-Request-Id', request.id)
+
+    /**
+     * Keep the API and the operator surface out of search indexes.
+     *
+     * `/admin` is not an API path — it is an ordinary client route, and the
+     * SPA fallback answers it with index.html and a 200. Without this, a
+     * crawler indexes an instance's admin panel, and the sign-in refusal it
+     * renders is no comfort: the URL is then a public fact. The route also
+     * emits <meta name="robots">, because a crawler that reads only one of the
+     * two exists in both directions.
+     */
+    if (noIndexPath(request.url) && !reply.getHeader('X-Robots-Tag')) {
+      reply.header('X-Robots-Tag', 'noindex')
+    }
 
     /**
      * RFC 9457 says a problem document is served as application/problem+json.

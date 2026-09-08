@@ -6,17 +6,29 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- The per-page <head>. Everything between these two markers is replaced
+       by server/src/routes/seo.ts when a crawlable path is requested (today
+       /anime/:id); what is written here is what an ordinary page gets, and
+       what is served if the SEO route is not running at all. Do not remove
+       the markers — without them the replacement silently does nothing. -->
+  <!--yume:seo-->
   <title>Yume</title>
   <meta name="description" content="Yume — anime tracking and discovery." />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Yume" />
+  <meta property="og:title" content="Yume" />
+  <meta property="og:description" content="Yume — anime tracking and discovery." />
+  <meta name="twitter:card" content="summary" />
+  <!--/yume:seo-->
   <link rel="preconnect" href="https://graphql.anilist.co/">
   <link rel="preconnect" href="https://api.jikan.moe/">
   <link rel="preconnect" href="https://www.youtube-nocookie.com">
-  <link rel="icon" href="assets/yume.svg" />
+  <link rel="icon" href="/assets/yume.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/tokens.css">
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/style.css">
 </head>
 
 <body>
@@ -116,50 +128,50 @@
   <!-- toast container -->
   <div class="toasts" id="toasts"></div>
 
-  <script src="copy.js"></script>
-  <script src="js/util.js"></script>
-  <script src="js/store.js"></script>
+  <script src="/copy.js"></script>
+  <script src="/js/util.js"></script>
+  <script src="/js/store.js"></script>
   <!-- Preferences and translation load before every page module: the pages
        call T() while rendering, and hu.js registers itself into I18n at
        load time, so the order here is load-bearing. -->
-  <script src="js/prefs.js"></script>
-  <script src="js/i18n.js"></script>
-  <script src="i18n/hu.js"></script>
-  <script src="js/api.js"></script>
-  <script src="js/yume-api.js"></script>
+  <script src="/js/prefs.js"></script>
+  <script src="/js/i18n.js"></script>
+  <script src="/i18n/hu.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/yume-api.js"></script>
   <!-- the catalogue resolver: decides whether our database or an external
        provider answers a request for an anime. Needs both API and YumeAPI. -->
-  <script src="js/catalogue.js"></script>
-  <script src="js/library-sync.js"></script>
-  <script src="js/stream-engine.js"></script>
-  <script src="js/watch-time.js"></script>
-  <script src="js/profile-stats.js"></script>
+  <script src="/js/catalogue.js"></script>
+  <script src="/js/library-sync.js"></script>
+  <script src="/js/stream-engine.js"></script>
+  <script src="/js/watch-time.js"></script>
+  <script src="/js/profile-stats.js"></script>
   <!-- HLS support. The player itself (js/vendor/hls.min.mjs) is fetched only
        when an HLS stream is actually encountered, so this costs nothing on a
        page that never plays one. -->
-  <script src="js/hls-handler.js"></script>
-  <script src="js/components.js"></script>
-  <script src="js/charts.js"></script>
-  <script src="js/pages/home.js"></script>
-  <script src="js/pages/search.js"></script>
-  <script src="js/pages/anime.js"></script>
-  <script src="js/pages/schedule.js"></script>
-  <script src="js/pages/list.js"></script>
-  <script src="js/pages/watch.js"></script>
-  <script src="js/pages/community.js"></script>
-  <script src="js/pages/w2g.js"></script>
-  <script src="js/pages/profile.js"></script>
-  <script src="js/pages/profiles.js"></script>
-  <script src="js/pages/history.js"></script>
-  <script src="js/pages/analytics.js"></script>
-  <script src="js/pages/achievements.js"></script>
-  <script src="js/pages/notifications.js"></script>
-  <script src="js/pages/themes.js"></script>
-  <script src="js/pages/dashboard.js"></script>
-  <script src="js/pages/admin.js"></script>
-  <script src="js/pages/settings.js"></script>
-  <script src="js/onboarding.js"></script>
-  <script src="js/app.js"></script>
+  <script src="/js/hls-handler.js"></script>
+  <script src="/js/components.js"></script>
+  <script src="/js/charts.js"></script>
+  <script src="/js/pages/home.js"></script>
+  <script src="/js/pages/search.js"></script>
+  <script src="/js/pages/anime.js"></script>
+  <script src="/js/pages/schedule.js"></script>
+  <script src="/js/pages/list.js"></script>
+  <script src="/js/pages/watch.js"></script>
+  <script src="/js/pages/community.js"></script>
+  <script src="/js/pages/w2g.js"></script>
+  <script src="/js/pages/profile.js"></script>
+  <script src="/js/pages/profiles.js"></script>
+  <script src="/js/pages/history.js"></script>
+  <script src="/js/pages/analytics.js"></script>
+  <script src="/js/pages/achievements.js"></script>
+  <script src="/js/pages/notifications.js"></script>
+  <script src="/js/pages/themes.js"></script>
+  <script src="/js/pages/dashboard.js"></script>
+  <script src="/js/pages/admin.js"></script>
+  <script src="/js/pages/settings.js"></script>
+  <script src="/js/onboarding.js"></script>
+  <script src="/js/app.js"></script>
 </body>
 
 </html>
