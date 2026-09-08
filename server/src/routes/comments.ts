@@ -12,6 +12,11 @@ import { WRITE_LIMIT } from '../plugins/security.ts'
 const SUBJECT_TYPES = ['anime', 'episode', 'post', 'review'] as const
 
 const routes: FastifyPluginAsync = async fastify => {
+  // The kill switch, enforced. `feature.comments` used to gate only the
+  // client's own routing, so turning off the comment surface — threads, replies and likes
+  // removed the buttons and left every endpoint answering normally.
+  fastify.addHook('onRequest', fastify.requireFeature('feature.comments'))
+
   fastify.get('/', {
     schema: {
       querystring: {

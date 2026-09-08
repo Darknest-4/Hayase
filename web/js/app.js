@@ -82,7 +82,20 @@ const App = {
       return
     }
 
-    const handler = this.routes[route] ?? this.routes.home
+    /*
+     * An address with no page behind it says so.
+     *
+     * This used to fall back to the home page, which made every dead deep
+     * link — a renamed route, a typo, a stale bookmark, a link from somewhere
+     * else — look like it had worked. The viewer got the landing page and no
+     * reason to think they had not arrived where they meant to.
+     */
+    const handler = this.routes[route]
+    if (!handler) {
+      this._renderGate(page, { kind: 'not-found' }, route)
+      if (!this.CHROMELESS.includes(route)) page.append(C.footer())
+      return
+    }
     try {
       await handler(page, params, arg) // async pages (e.g. admin) finish before the footer lands
     } catch (e) {
@@ -248,10 +261,12 @@ const App = {
         U.el('p', { class: 'gate-sub', text: T('This section needs a signed-in account.') }),
         C.authCard(() => { this.afterAuth() })
       )
-    } else if (gate.kind === 'permission' && this.PRIVILEGED.includes(route)) {
-      // Deliberately indistinguishable from a route that does not exist. Naming
-      // the missing permission here would confirm the panel exists and say
-      // exactly which grant to go after — a 403 wearing a friendlier face.
+    } else if (gate.kind === 'not-found' || (gate.kind === 'permission' && this.PRIVILEGED.includes(route))) {
+      // One branch for two cases on purpose. A privileged route the viewer may
+      // not open has to be indistinguishable from a route that does not exist —
+      // naming the missing permission would confirm the panel is there and say
+      // exactly which grant to go after, a 403 wearing a friendlier face — and
+      // the way to keep the two identical is to render them from one place.
       wrap.append(
         U.el('div', { class: 'gate-icon', text: '🔍' }),
         U.el('h1', { class: 'gate-title', text: T('Page not found') }),

@@ -12,6 +12,11 @@ import { retryOnCollision } from '../lib/db-errors.ts'
 import type { FastifyPluginAsync } from 'fastify'
 
 const routes: FastifyPluginAsync = async fastify => {
+  // The kill switch, enforced. `feature.watch_together` used to gate only the
+  // client's own routing, so turning off watch-together rooms
+  // removed the buttons and left every endpoint answering normally.
+  fastify.addHook('onRequest', fastify.requireFeature('feature.watch_together'))
+
   fastify.post('/', {
     preHandler: fastify.authenticate,
     schema: {

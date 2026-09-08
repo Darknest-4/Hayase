@@ -11,6 +11,7 @@ import fp from 'fastify-plugin'
 
 import { config } from '../config.ts'
 import { query } from '../db.ts'
+import { flags } from '../lib/feature-flags.ts'
 
 import type { FastifyReply, FastifyRequest, preHandlerHookHandler } from 'fastify'
 
@@ -46,6 +47,7 @@ declare module 'fastify' {
   interface FastifyInstance {
     authenticate: preHandlerHookHandler
     requirePermission: (slug: string, options?: { hide?: boolean }) => preHandlerHookHandler
+    requireFeature: (key: string) => preHandlerHookHandler
   }
 }
 
@@ -222,6 +224,27 @@ export default fp(async fastify => {
    * lets a legitimate user ask for access, while a blanket 404 turns every
    * permission mistake into a support ticket about a broken link.
    */
+  /**
+   * Refuse the route when its feature is switched off.
+   *
+   * The flag table was projected to the client and enforced nowhere, so
+   * turning a feature off took its page away and left its API answering
+   * normally. This is the other half.
+   *
+   * 404 rather than 403: an instance with comments turned off does not have
+   * comments. "Forbidden" would describe a permission the caller might
+   * acquire, which is not what happened.
+   *
+   * No authentication is required to be refused — the switch is about the
+   * instance, not the caller — so this runs before any auth hook and costs one
+   * cached map lookup.
+   */
+  fastify.decorate('requireFeature', (key: string) =>
+    async function (request: FastifyRequest, reply: FastifyReply) {
+      if (await flags.enabled(key)) return
+      return await reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    })
+
   fastify.decorate('requirePermission', (slug: string, options?: { hide?: boolean }) =>
     async function (request: FastifyRequest, reply: FastifyReply) {
       if (!await verify(request, reply)) return
