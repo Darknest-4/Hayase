@@ -49,7 +49,7 @@ describe('revoking every session', { skip: HAS_DB ? false : 'no DATABASE_URL' },
         `INSERT INTO user_roles (user_id, role_id)
          SELECT u.id, r.id FROM users u, roles r WHERE u.username = $1 AND r.slug = $2
          ON CONFLICT DO NOTHING`, [username, role])
-      const auth = await import('../src/plugins/auth.ts')
+      const auth = await import('../src/middleware/auth.ts')
       auth.invalidatePermissions()
     }
     return { token: (res.json() as { accessToken: string }).accessToken, username }

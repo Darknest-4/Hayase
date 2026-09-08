@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import { test, describe } from 'node:test'
 
-import { fingerprint } from '../src/lib/errors.ts'
+import { fingerprint } from '../src/errors/reporting.ts'
 
 const stackIn = (file: string, line = 42): string =>
   `Error: boom\n    at handler (file:///app/apps/api/src/routes/${file}:${line}:11)\n    at run (node_modules/fastify/lib/x.js:1:1)`

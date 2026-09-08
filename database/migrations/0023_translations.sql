@@ -16,7 +16,7 @@
 -- Hungarian title written by hand would survive exactly until the next AniList
 -- sync and then vanish, with nothing to show what happened. The project
 -- already knows this problem — anime.locked_fields exists, and
--- apps/api/src/lib/metadata.ts opens with "fields a human edited. Automatic
+-- apps/api/src/modules/catalogue/metadata.ts opens with "fields a human edited. Automatic
 -- sources never overwrite them."
 --
 -- So: human text lives in its own table, which no importer writes.

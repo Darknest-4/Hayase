@@ -1,4 +1,4 @@
-/* global window, document */
+/* global document */
 // Streaming engine — the layer between "the catalogue has a reference" and
 // "the player has a video".
 //
@@ -13,7 +13,9 @@
 // of provider access controls, and formats the browser cannot handle are
 // reported honestly rather than pretended away.
 
-const StreamEngine = {
+import { Prefs } from './prefs.js'
+
+export const StreamEngine = {
   /** How long a stream gets to produce data before it counts as failed. */
   START_TIMEOUT_MS: 12_000,
 
@@ -408,8 +410,8 @@ const StreamEngine = {
       track.dataset.engine = '1'
       video.append(track)
     }
-    this.selectSubtitleTrack(video, window.Prefs?.get('playback.subtitles') ?? null)
-    this.selectAudioTrack(video, window.Prefs?.get('playback.audio') ?? null)
+    this.selectSubtitleTrack(video, Prefs?.get('playback.subtitles') ?? null)
+    this.selectAudioTrack(video, Prefs?.get('playback.audio') ?? null)
   },
 
   /**
@@ -550,5 +552,3 @@ const StreamEngine = {
     }
   }
 }
-
-window.StreamEngine = StreamEngine

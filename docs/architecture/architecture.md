@@ -199,7 +199,7 @@ of them silently.
 
 ### Provider precedence
 
-`apps/api/src/lib/metadata.ts` ranks sources; higher wins, and a field written by
+`apps/api/src/modules/catalogue/metadata.ts` ranks sources; higher wins, and a field written by
 a higher-ranked source is not overwritten by a lower one.
 
 | rank | source | |

@@ -9,11 +9,13 @@
 // one adds time that was never watched, and each one is silent.
 
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { describe, it, beforeEach } from 'node:test'
-import { createContext, runInNewContext } from 'node:vm'
+import { describe, it, beforeEach, mock } from 'node:test'
 
-const SRC = new URL('../js/watch-time.js', import.meta.url)
+import { install, storage as fakeStorage } from './support/browser.mjs'
+
+install()
+const { WatchTime } = await import('../js/watch-time.js')
+const { Store } = await import('../js/store.js')
 
 /** A <video> stand-in with the handful of properties the meter reads. */
 function fakeVideo (over = {}) {
@@ -38,36 +40,33 @@ function fakeVideo (over = {}) {
 }
 
 /**
- * Load the module with controllable time and timers, so a test can advance an
- * hour without waiting for one.
+ * Point the module at fresh storage, with controllable time and timers, so a
+ * test can advance an hour without waiting for one.
+ *
+ * There is one WatchTime per process now rather than one per vm realm. It
+ * holds no state of its own — everything lives in localStorage and is read on
+ * each call — so swapping the storage is the whole reset. Date.now and the
+ * interval timers are mocked rather than replaced as globals: overriding the
+ * real Date for a whole process breaks the test runner itself.
  */
 function load () {
-  const storage = new Map()
+  const store = fakeStorage()
+  const storage = store.map
   let now = 1_000_000
   const timers = new Set()
 
-  const context = createContext({
-    window: {},
-    document: {
-      hidden: false,
-      addEventListener () {},
-      removeEventListener () {}
-    },
-    localStorage: {
-      getItem: k => (storage.has(k) ? storage.get(k) : null),
-      setItem: (k, v) => storage.set(k, String(v)),
-      removeItem: k => storage.delete(k)
-    },
-    Store: { activeProfileId: () => 'p1' },
-    Date: { now: () => now },
-    setInterval: (fn, ms) => { const t = { fn, ms }; timers.add(t); return t },
-    clearInterval: t => timers.delete(t),
-    console
+  install({
+    localStorage: store,
+    document: { hidden: false, addEventListener () {}, removeEventListener () {} }
   })
-  runInNewContext(readFileSync(SRC, 'utf8'), context)
+  mock.restoreAll()
+  mock.method(Store, 'activeProfileId', () => 'p1')
+  mock.method(Date, 'now', () => now)
+  mock.method(globalThis, 'setInterval', (fn, ms) => { const t = { fn, ms }; timers.add(t); return t })
+  mock.method(globalThis, 'clearInterval', t => timers.delete(t))
 
   return {
-    WatchTime: context.WatchTime ?? context.window.WatchTime,
+    WatchTime,
     storage,
     /** Advance the clock and fire every live timer once per interval. */
     advance (ms, { fireTicks = true } = {}) {
@@ -122,21 +121,18 @@ describe('storage', () => {
   })
 
   it('survives storage that throws', () => {
-    const context = createContext({
-      window: {},
-      document: { hidden: false, addEventListener () {}, removeEventListener () {} },
+    // A browser in private mode, or with site data blocked.
+    install({
       localStorage: {
         getItem: () => { throw new Error('blocked') },
         setItem: () => { throw new Error('blocked') },
         removeItem: () => {}
       },
-      Store: { activeProfileId: () => 'p1' },
-      console
+      document: { hidden: false, addEventListener () {}, removeEventListener () {} }
     })
-    runInNewContext(readFileSync(SRC, 'utf8'), context)
-    const W = context.WatchTime ?? context.window.WatchTime
-    assert.doesNotThrow(() => W.add('a', 1, 10))
-    assert.equal(W.totalSeconds(), 0)
+    mock.method(Store, 'activeProfileId', () => 'p1')
+    assert.doesNotThrow(() => WatchTime.add('a', 1, 10))
+    assert.equal(WatchTime.totalSeconds(), 0)
   })
 })
 

@@ -35,7 +35,7 @@ process.env.AUTH_RATE_LIMIT_MAX ??= '200'
 describe('emergency controls', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
   let app: FastifyInstance
   let pool: pg.Pool
-  let siteSettings: typeof import('../src/lib/site-settings.ts').settings
+  let siteSettings: typeof import('../src/modules/settings/site-settings.ts').settings
   const usernames: string[] = []
   let adminToken = ''
   let plainToken = ''
@@ -54,7 +54,7 @@ describe('emergency controls', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () 
         `INSERT INTO user_roles (user_id, role_id)
          SELECT u.id, r.id FROM users u, roles r WHERE u.username = $1 AND r.slug = $2
          ON CONFLICT DO NOTHING`, [username, role])
-      const auth = await import('../src/plugins/auth.ts')
+      const auth = await import('../src/middleware/auth.ts')
       auth.invalidatePermissions()
     }
     const { rows } = await pool.query('SELECT id FROM users WHERE username = $1', [username])
@@ -78,7 +78,7 @@ describe('emergency controls', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () 
     const [{ buildApp }, db, ss] = await Promise.all([
       import('../src/app.ts'),
       import('../src/infrastructure/database/index.ts'),
-      import('../src/lib/site-settings.ts')
+      import('../src/modules/settings/site-settings.ts')
     ])
     app = await buildApp()
     pool = db.pool
@@ -241,8 +241,8 @@ describe('emergency controls', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () 
   test('a run queued before the switch does not start after it', async () => {
     // The queue is durable: "it was allowed when it was enqueued" is not the
     // same question as "is it allowed now".
-    const { startRun } = await import('../src/workers/metadata.ts')
-    const { handleMetadataJob } = await import('../src/workers/metadata.ts')
+    const { startRun } = await import('../src/modules/metadata/worker.ts')
+    const { handleMetadataJob } = await import('../src/modules/metadata/worker.ts')
 
     await pool.query("DELETE FROM metadata_runs WHERE status IN ('queued','running')")
     const run = await startRun({ kind: 'basic', scope: 'missing', limit: 1 })
@@ -268,7 +268,7 @@ describe('emergency controls', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () 
        VALUES ($1, 'https://example.invalid/hook', 'json', ARRAY['user.registered']::text[], true)
        RETURNING id`, [name])
 
-    const { emitEvent } = await import('../src/lib/webhooks.ts')
+    const { emitEvent } = await import('../src/modules/webhooks/delivery.ts')
     const depth = async (): Promise<number> => {
       const { rows } = await pool.query(
         "SELECT count(*)::int AS n FROM jobs WHERE queue = 'webhook' AND done_at IS NULL")

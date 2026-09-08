@@ -6,22 +6,15 @@
 // dub, and a word-boundary that goes missing would pass every happy-path test.
 
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import { describe, it, before } from 'node:test'
-import { createContext, runInNewContext } from 'node:vm'
+
+import { install } from './support/browser.mjs'
 
 let Engine
 
-before(() => {
-  // The client modules are plain scripts that assign globals, so they are run
-  // in a fresh realm rather than imported.
-  const context = createContext({
-    window: {},
-    document: { createElement: () => ({ canPlayType: () => '' }) },
-    console
-  })
-  runInNewContext(readFileSync(new URL('../js/stream-engine.js', import.meta.url), 'utf8'), context)
-  Engine = context.StreamEngine ?? context.window.StreamEngine
+before(async () => {
+  install({ document: { createElement: () => ({ canPlayType: () => '' }) } })
+  ;({ StreamEngine: Engine } = await import('../js/stream-engine.js'))
 })
 
 const classify = (raw, subs = []) => Engine.classifyVariant(raw, subs)

@@ -1,4 +1,4 @@
-/* global window, localStorage, U, crypto */
+/* global localStorage, crypto */
 // Local persistence: profiles + per-profile anime list, favourites, watch
 // progress, history and settings. Everything is stored in localStorage so
 // the site works without any account; when signed into a Yume account the
@@ -9,7 +9,11 @@
 // namespaced `{key}::{profileId}`. Legacy single-profile data ('animelist',
 // 'favourites', 'settings') is migrated into a first "default" profile.
 
-const Store = {
+import { LibrarySync } from './library-sync.js'
+import { PageAchievements } from './pages/achievements.js'
+import { U } from './util.js'
+
+export const Store = {
   // ---- raw localStorage helpers ----
   _read (key, fallback) {
     try {
@@ -149,7 +153,7 @@ const Store = {
     const prev = list[media.id] ?? { status: 'PLANNING', progress: 0, score: 0 }
     list[media.id] = { ...prev, ...patch, media: this._snapshot(media), updatedAt: Date.now() }
     this._write(this._profileKey('animelist'), list)
-    window.LibrarySync?.onEntry(media, list[media.id]) // mirror to the account when signed in
+    LibrarySync?.onEntry(media, list[media.id]) // mirror to the account when signed in
     return list[media.id]
   },
 
@@ -157,7 +161,7 @@ const Store = {
     const list = this.list()
     delete list[mediaId]
     this._write(this._profileKey('animelist'), list)
-    window.LibrarySync?.onRemove(mediaId)
+    LibrarySync?.onRemove(mediaId)
   },
 
   setProgress (media, progress) {
@@ -210,7 +214,7 @@ const Store = {
     if (seconds > 5) map[key] = Math.floor(seconds)
     else delete map[key]
     this._write(this._profileKey('resume'), map)
-    if (seconds > 5) window.LibrarySync?.onResume({ id: mediaId }, episode, seconds, meta)
+    if (seconds > 5) LibrarySync?.onResume({ id: mediaId }, episode, seconds, meta)
   },
 
   clearResume (mediaId, episode) {
@@ -295,11 +299,11 @@ const Store = {
     }
 
     // 3) achievement unlocks (diff against last-seen snapshot)
-    if (window.PageAchievements) {
-      const unlocked = window.PageAchievements.unlockedSlugs()
+    if (PageAchievements) {
+      const unlocked = PageAchievements.unlockedSlugs()
       const seen = state.seenAch
       for (const slug of unlocked) {
-        const meta = window.PageAchievements.meta(slug)
+        const meta = PageAchievements.meta(slug)
         if (!meta) continue
         // once seen, keep showing as a (read) notification so the log persists
         items.push({
@@ -376,7 +380,7 @@ const Store = {
     this._write(this._profileKey('favourites'), favs)
     // Favourites used to live in one browser and nowhere else — the only part
     // of the library that did not follow the account to a second device.
-    window.LibrarySync?.onFavourite(mediaId, added)
+    LibrarySync?.onFavourite(mediaId, added)
     return added
   },
 
@@ -477,5 +481,3 @@ const Store = {
     localStorage.clear()
   }
 }
-
-window.Store = Store

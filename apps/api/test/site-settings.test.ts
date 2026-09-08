@@ -19,7 +19,7 @@ import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
 import { after, before, describe, mock, test } from 'node:test'
 
-import { settings } from '../src/lib/site-settings.ts'
+import { settings } from '../src/modules/settings/site-settings.ts'
 
 import type { FastifyInstance } from 'fastify'
 import type pg from 'pg'
@@ -180,7 +180,7 @@ describe('site settings actually govern the server', { skip: HAS_DB ? false : 'n
       `INSERT INTO user_roles (user_id, role_id)
        SELECT u.id, r.id FROM users u, roles r WHERE u.username = $1 AND r.slug = 'admin'
        ON CONFLICT DO NOTHING`, [admin])
-    const auth = await import('../src/plugins/auth.ts')
+    const auth = await import('../src/middleware/auth.ts')
     auth.invalidatePermissions()
 
     try {

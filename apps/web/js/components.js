@@ -1,7 +1,15 @@
-/* global Catalogue, HTMLElement, Store, T, U, document, getComputedStyle, requestAnimationFrame, window */
+/* global HTMLElement, document, getComputedStyle, requestAnimationFrame, window */
 // Reusable render helpers: cards, horizontal sections, skeletons, modals.
 
-const C = {
+import { Copy } from '../copy.js'
+import { App } from './app.js'
+import { Catalogue } from './catalogue.js'
+import { T } from './i18n.js'
+import { Store } from './store.js'
+import { U } from './util.js'
+import { YumeAPI } from './yume-api.js'
+
+export const C = {
   HEART: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
   PLAY: '<polygon points="6 3 20 12 6 21 6 3"/>',
   PLUS: '<path d="M5 12h14"/><path d="M12 5v14"/>',
@@ -105,7 +113,7 @@ const C = {
           // setting existed and was rendered nowhere, so the field silently did
           // nothing. An empty value falls back to the translated default rather
           // than leaving a blank line.
-          U.el('p', { class: 'footer-tagline', text: window.App?.config?.site?.tagline?.trim() || T('footer.tagline') })
+          U.el('p', { class: 'footer-tagline', text: App?.config?.site?.tagline?.trim() || T('footer.tagline') })
         ]),
         col(T('footer.discover'), [[T('nav.home'), '#/home'], [T('nav.search'), '#/search'], [T('nav.schedule'), '#/schedule'], [T('nav.dashboard'), '#/dashboard']]),
         col(T('footer.library'), [[T('footer.myLibrary'), '#/list'], [T('footer.profile'), '#/profile'], [T('footer.watchHistory'), '#/profile?tab=history'], [T('footer.analytics'), '#/profile?tab=analytics']]),
@@ -113,7 +121,7 @@ const C = {
         col(T('footer.yume'), [[T('nav.settings'), '#/settings'], [T('nav.notifications'), '#/notifications'], [T('nav.themes'), '#/themes']])
       ]),
       U.el('div', { class: 'footer-bottom' }, [
-        U.el('span', { text: `© ${year} ${window.Copy?.footer?.brand ?? (window.App?.config?.site?.name ?? 'Yume')} · ${T('footer.colophon')}` }),
+        U.el('span', { text: `© ${year} ${Copy?.footer?.brand ?? (App?.config?.site?.name ?? 'Yume')} · ${T('footer.colophon')}` }),
         U.el('span', { class: 'footer-credits', html: 'Anime data from <a href="https://anilist.co" target="_blank" rel="noopener">AniList</a>, <a href="https://jikan.moe" target="_blank" rel="noopener">Jikan</a> &amp; <a href="https://api.ani.zip" target="_blank" rel="noopener">ani.zip</a>' })
       ])
     ])
@@ -132,7 +140,7 @@ const C = {
 
   _attachPreview (card, media) {
     if (!window.matchMedia('(hover: hover)').matches) return
-    if (window.App && !window.App.featureOn('hover_preview')) return
+    if (App && !App.featureOn('hover_preview')) return
 
     card.addEventListener('pointerenter', () => {
       clearTimeout(this._previewTimer)
@@ -337,7 +345,6 @@ const C = {
 
   // ---- Yume account sign-in/register card ----
   authCard (onAuthed = () => {}) {
-    /* global YumeAPI */
     const wrap = U.el('div', { class: 'setting-card' })
 
     const render = () => {
@@ -419,7 +426,7 @@ const C = {
     // The switch is enforced on the server too now — routes/comments.ts refuses
     // every endpoint when the flag is off — so this says so rather than
     // drawing a thread whose requests would 404.
-    if (window.App && !window.App.featureOn('comments')) {
+    if (App && !App.featureOn('comments')) {
       return U.el('div', { class: 'empty-state', style: 'max-width:none;', text: T('Comments are turned off.') })
     }
     const list = U.el('div', {}, [U.el('div', { class: 'spinner' })])
@@ -723,5 +730,3 @@ const C = {
     document.body.append(backdrop)
   }
 }
-
-window.C = C

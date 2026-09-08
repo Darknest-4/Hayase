@@ -1,4 +1,4 @@
-/* global window, document */
+/* global document */
 // HLS playback for the streaming engine.
 //
 // The engine has had a `registerHandler` seam since it was written, but no
@@ -22,7 +22,9 @@
 // a player that stops working because someone else's CDN went down is not a
 // player.
 
-const HlsHandler = {
+import { StreamEngine } from './stream-engine.js'
+
+export const HlsHandler = {
   /** Resolved module, or a promise while it is loading. Loaded at most once. */
   _module: null,
   _loading: null,
@@ -37,14 +39,7 @@ const HlsHandler = {
   async _load () {
     if (this._module) return this._module
     if (!this._loading) {
-      // Absolute against the origin, not './vendor/…'. A dynamic import inside
-      // a *classic* script resolves against the document base URL rather than
-      // the script's own, so the relative form asked for /vendor/hls.min.mjs
-      // from the site root — and for /anime/vendor/hls.min.mjs from one of the
-      // crawlable path URLs — neither of which exists. Built from
-      // location.origin rather than written as a literal '/js/…' because the
-      // linter reads a leading slash as a filesystem path.
-      this._loading = import(`${window.location.origin}/js/vendor/hls.min.mjs`)
+      this._loading = import('./vendor/hls.min.mjs')
         .then(mod => { this._module = mod.default ?? mod; return this._module })
         .catch(error => {
           this._loading = null // a failed load must not poison later attempts
@@ -118,12 +113,11 @@ const HlsHandler = {
 
   /** Register with the engine. Safe to call more than once. */
   install () {
-    const engine = window.StreamEngine
+    const engine = StreamEngine
     if (!engine?.registerHandler) return false
     engine.registerHandler('hls', (video, result) => this.attach(video, result))
     return true
   }
 }
 
-window.HlsHandler = HlsHandler
 HlsHandler.install()

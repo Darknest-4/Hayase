@@ -1,10 +1,19 @@
-/* global window, document, U, C, Store, T, I18n */
+/* global document */
 // Dashboard — a personal landing overview assembled from local data. Widgets
 // can be reordered and toggled (Edit layout); the layout persists per profile
 // in settings.dashboard. Everything renders from Store snapshots, so the
 // dashboard works offline with no network calls.
 
-const PageDashboard = {
+import { App } from '../app.js'
+import { C } from '../components.js'
+import { I18n, T } from '../i18n.js'
+import { ProfileStats } from '../profile-stats.js'
+import { Store } from '../store.js'
+import { U } from '../util.js'
+import { WatchTime } from '../watch-time.js'
+import { PageAchievements } from './achievements.js'
+
+export const PageDashboard = {
   // registry: order here is the default order
   WIDGETS: [
   // Labels are stored in English and translated where they are rendered, not
@@ -24,7 +33,7 @@ const PageDashboard = {
     const profile = Store.activeProfile()
     const layout = this._layout()
 
-    root.append(window.C.spotlight(`${this._greeting()}, ${profile?.name ?? 'Dreamer'}`, {
+    root.append(C.spotlight(`${this._greeting()}, ${profile?.name ?? 'Dreamer'}`, {
       subtitle: T('Your dashboard'),
       actions: U.el('a', {
         class: 'btn btn-secondary btn-sm',
@@ -75,7 +84,7 @@ const PageDashboard = {
   _editor (layout) {
     const wrap = U.el('div', { class: 'dash-editor' })
     const meta = new Map(this.WIDGETS.map(w => [w.key, w]))
-    const rerender = () => { this._saveLayout(layout); window.App.navigate() }
+    const rerender = () => { this._saveLayout(layout); App.navigate() }
 
     layout.forEach((w, i) => {
       wrap.append(U.el('div', { class: 'dash-editor-row' }, [
@@ -145,7 +154,7 @@ const PageDashboard = {
     // so the number grew by watching nothing. WatchTime.minutesFor() uses
     // real playback seconds and only falls back to the old estimate for
     // episodes credited before the meter existed.
-    const minutes = window.WatchTime.minutesFor(entries).totalMinutes
+    const minutes = WatchTime.minutesFor(entries).totalMinutes
     const hours = Math.floor(minutes / 60)
     const cards = U.el('div', { class: 'stat-cards', style: 'margin:0;' }, [
       [entries.length, 'In library', null],
@@ -154,14 +163,14 @@ const PageDashboard = {
       [hours >= 24 ? `${Math.floor(hours / 24)}d ${hours % 24}h` : `${hours}h`, T('Watch time'), 'watchTime']
     ].map(([v, l, stat]) => U.el('div', { class: 'stat-card', 'data-stat': stat }, [U.el('b', { text: String(v) }), U.el('span', { text: l })])))
     // Local numbers first, the account's own totals when they arrive.
-    window.ProfileStats?.hydrate(cards)
+    ProfileStats?.hydrate(cards)
     return this._section('Quick stats', cards, { link: '#/profile?tab=analytics', linkText: 'Analytics →' })
   },
 
   _widget_achievements () {
-    if (!window.PageAchievements) return null
-    const ctx = window.PageAchievements._context()
-    const near = window.PageAchievements.CATALOG
+    if (!PageAchievements) return null
+    const ctx = PageAchievements._context()
+    const near = PageAchievements.CATALOG
       .map(a => { const v = Math.max(0, Math.floor(a.value(ctx))); return { ...a, current: v, pct: Math.min(100, Math.round(v / a.target * 100)) } })
       .filter(a => a.current < a.target)
       .sort((a, b) => b.pct - a.pct)
@@ -223,5 +232,3 @@ const PageDashboard = {
     return 'Good evening'
   }
 }
-
-window.PageDashboard = PageDashboard

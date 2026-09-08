@@ -14,125 +14,39 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { before, describe, it } from 'node:test'
+import { before, describe, it, mock } from 'node:test'
+
+import { install } from './support/browser.mjs'
 import { fileURLToPath } from 'node:url'
-import { runInNewContext } from 'node:vm'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
-/** A DOM node stub that answers anything asked of it. */
-const element = () => ({
-  style: {},
-  dataset: {},
-  classList: { add () {}, remove () {}, toggle () {}, contains: () => false },
-  children: [],
-  hidden: false,
-  append () {},
-  prepend () {},
-  replaceChildren () {},
-  remove () {},
-  addEventListener () {},
-  removeEventListener () {},
-  setAttribute () {},
-  getAttribute: () => null,
-  querySelector: () => null,
-  querySelectorAll: () => [],
-  focus () {},
-  scrollTo () {}
-})
+let App, YumeAPI, PageAdmin
 
-let App
-let context
+/** The section list a loaded admin panel would present. */
+const SECTIONS = [
+  { perm: 'admin.analytics.view' },
+  { perm: 'admin.users.manage' },
+  { perm: 'community.moderate' },
+  { perm: 'roles.manage' }
+]
 
-/** The app object, with just enough of a browser around it to construct. */
-before(() => {
-  const window = { location: { hash: '#/home' }, addEventListener () {} }
-  context = {
-    window,
-    document: {
-      createElement: () => element(),
-      createTextNode: t => ({ textContent: t }),
-      // A stub element rather than null: App.init() wires listeners onto
-      // several nodes, and this file is not testing that it finds them.
-      getElementById: () => element(),
-      querySelector: () => element(),
-      querySelectorAll: () => [],
-      addEventListener () {},
-      documentElement: element(),
-      body: element()
-    },
-    console,
-    setTimeout,
-    clearTimeout,
-    URLSearchParams,
-    URL,
-    Promise,
-    JSON,
-    Date,
-    Math,
-    Object,
-    Array,
-    Set,
-    Map,
-    fetch: async () => ({ ok: false, status: 503, json: async () => ({}) }),
-    requestAnimationFrame: fn => fn(),
-    C: {},
-    U: { el: () => ({ append () {} }) },
-    T: k => k,
-    I18n: new Proxy({ locale: () => 'en' }, { get: (t, k) => k in t ? t[k] : () => undefined })
-  }
-  context.globalThis = context
-
-  // app.js calls App.init() when it loads, which reaches for most of the
-  // client. None of that is what this file tests, so the collaborators are
-  // stubbed rather than loaded — a real Store would drag in localStorage, the
-  // catalogue and the router.
-  const noop = () => {}
-  const quiet = new Proxy({}, { get: () => () => undefined })
-  window.YumeAPI = {
-    user: () => null,
-    myPermissions: async () => [],
-    available: async () => false,
-    config: async () => null,
-    base: () => ''
-  }
-  Object.assign(context, {
-    YumeAPI: window.YumeAPI,
-    Store: quiet,
-    Prefs: quiet,
-    Catalogue: quiet,
-    Onboarding: quiet,
-    LibrarySync: quiet,
-    ExtensionHost: quiet
-  })
-  for (const key of ['Store', 'Prefs', 'Catalogue', 'Onboarding', 'LibrarySync', 'ExtensionHost']) window[key] = context[key]
-  context.C = new Proxy({}, { get: () => () => ({ append: noop, classList: { add: noop, remove: noop, toggle: noop } }) })
-  context.U = new Proxy({ el: () => ({ append: noop, classList: { add: noop, remove: noop, toggle: noop }, children: [] }) },
-    { get: (target, key) => key in target ? target[key] : () => undefined })
-  context.localStorage = { getItem: () => null, setItem: noop, removeItem: noop }
-  window.localStorage = context.localStorage
-  window.sessionStorage = context.localStorage
-  window.matchMedia = () => ({ matches: false, addEventListener: noop })
-  // The panel's own section list is the source of truth the gate reads.
-  window.PageAdmin = {
-    SECTIONS: [
-      { key: 'overview', perm: 'admin.analytics.view' },
-      { key: 'users', perm: 'admin.users.manage' },
-      { key: 'reports', perm: 'community.moderate' },
-      { key: 'roles', perm: 'roles.manage' }
-    ]
-  }
-  runInNewContext(readFileSync(join(here, '../js/app.js'), 'utf8'), context)
-  App = window.App ?? context.App
-  assert.ok(App, 'app.js must expose App')
+before(async () => {
+  install()
+  ;({ App } = await import('../js/app.js'))
+  ;({ YumeAPI } = await import('../js/yume-api.js'))
+  ;({ PageAdmin } = await import('../js/pages/admin.js'))
+  assert.ok(App, 'app.js must export App')
 })
 
 /** Put the app in a given signed-in state and ask the gate. */
 function gate (route, { signedIn = true, perms = [], config = {}, sections = true } = {}) {
-  context.window.YumeAPI.user = () => signedIn ? { id: 'u1' } : null
-  context.window.PageAdmin = sections
-    ? { SECTIONS: [{ perm: 'admin.analytics.view' }, { perm: 'admin.users.manage' }, { perm: 'community.moderate' }, { perm: 'roles.manage' }] }
-    : undefined
+  mock.restoreAll()
+  mock.method(YumeAPI, 'user', () => (signedIn ? { id: 'u1' } : null))
+  // "the panel module has not loaded" used to be an absent global. An import
+  // is always there, so the same situation is a panel with no sections to
+  // offer — which is what the gate actually reads.
+  PageAdmin.SECTIONS = sections ? SECTIONS : undefined
   App.perms = perms
   App.config = config === null
     ? null

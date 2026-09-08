@@ -708,21 +708,21 @@ describe('adversarial', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
       await pool.query(
         `INSERT INTO user_roles (user_id, role_id)
          SELECT $1, r.id FROM roles r WHERE r.slug = 'admin' ON CONFLICT DO NOTHING`, [victim.id])
-      const authPlugin = await import('../src/plugins/auth.ts')
+      const authPlugin = await import('../src/middleware/auth.ts')
       authPlugin.invalidatePermissions()
       adminToken = victim.token
     })
 
     after(async () => {
       await pool.query('DELETE FROM user_roles WHERE user_id = $1', [victim.id])
-      const authPlugin = await import('../src/plugins/auth.ts')
+      const authPlugin = await import('../src/middleware/auth.ts')
       authPlugin.invalidatePermissions()
     })
 
     test('a group can be listed, opened and resolved', async () => {
       // All three functions existed and none had a caller, which left the
       // triage loop built at both ends and missing its middle.
-      const { recordError } = await import('../src/lib/errors.ts')
+      const { recordError } = await import('../src/errors/reporting.ts')
       const groupId = await recordError('api', new Error('triage probe ' + unique()), { route: '/probe' })
       assert.ok(groupId)
 
@@ -749,7 +749,7 @@ describe('adversarial', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
     test('a resolved group reopens when the bug comes back', async () => {
       // This branch was unreachable: recordError reopens a resolved group, and
       // nothing could set a status to resolved in the first place.
-      const { recordError } = await import('../src/lib/errors.ts')
+      const { recordError } = await import('../src/errors/reporting.ts')
       const error = new Error('reopen probe ' + unique())
       const groupId = await recordError('api', error, { route: '/probe' })
 
@@ -890,7 +890,7 @@ describe('adversarial', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
       await pool.query(
         `INSERT INTO user_roles (user_id, role_id)
          SELECT $1, r.id FROM roles r WHERE r.slug = 'admin' ON CONFLICT DO NOTHING`, [victim.id])
-      const authPlugin = await import('../src/plugins/auth.ts')
+      const authPlugin = await import('../src/middleware/auth.ts')
       authPlugin.invalidatePermissions()
 
       const { rows } = await pool.query(
@@ -905,7 +905,7 @@ describe('adversarial', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
     after(async () => {
       await pool.query('DELETE FROM anime WHERE id = $1', [animeId])
       await pool.query('DELETE FROM user_roles WHERE user_id = $1', [victim.id])
-      const authPlugin = await import('../src/plugins/auth.ts')
+      const authPlugin = await import('../src/middleware/auth.ts')
       authPlugin.invalidatePermissions()
     })
 
@@ -1170,7 +1170,7 @@ describe('adversarial', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
       await pool.query(
         `INSERT INTO user_roles (user_id, role_id)
          SELECT $1, r.id FROM roles r WHERE r.slug = 'admin' ON CONFLICT DO NOTHING`, [attacker.id])
-      const authPlugin = await import('../src/plugins/auth.ts')
+      const authPlugin = await import('../src/middleware/auth.ts')
       authPlugin.invalidatePermissions()
 
       for (const url of [

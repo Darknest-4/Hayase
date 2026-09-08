@@ -1,9 +1,14 @@
-/* global window, document, U, Store, T */
+/* global window, document */
 // "Who's watching" — Netflix-style profile picker + manager. Each profile
 // has its own library, history, favourites, continue-watching and settings
 // (namespaced in Store). Switching reloads the app for the new profile.
 
-const PageProfiles = {
+import { C } from '../components.js'
+import { T } from '../i18n.js'
+import { Store } from '../store.js'
+import { U } from '../util.js'
+
+export const PageProfiles = {
   AVATARS: ['🦊', '🐱', '🐼', '🐧', '🦉', '🐙', '🐢', '🦄', '🌸', '⭐', '🍜', '🎮'],
 
   render (root, params) {
@@ -103,7 +108,7 @@ const PageProfiles = {
       }, [document.createTextNode(T('Delete profile'))]))
     }
 
-    const modal = window.C.modalShell(isNew ? 'Add profile' : 'Edit profile', fields, () => {
+    const modal = C.modalShell(isNew ? 'Add profile' : 'Edit profile', fields, () => {
       const patch = { name: name.value.trim() || 'Profile', avatar: chosenAvatar, kids: kids.checked, nsfw: nsfw.checked }
       if (isNew) Store.createProfile(patch)
       else Store.updateProfile(profile.id, patch)
@@ -113,5 +118,3 @@ const PageProfiles = {
     })
   }
 }
-
-window.PageProfiles = PageProfiles

@@ -23,7 +23,7 @@
 import assert from 'node:assert/strict'
 import { after, describe, test } from 'node:test'
 
-import { buildSearchSql, searchAnime } from '../src/lib/search.ts'
+import { buildSearchSql, searchAnime } from '../src/modules/search/search.ts'
 
 const HAS_DB = Boolean(process.env.DATABASE_URL)
 

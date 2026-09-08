@@ -16,8 +16,8 @@
 // row, so only one pass can be in flight at a time and every pass is recorded.
 
 import { pool, queryOne } from '../src/infrastructure/database/index.ts'
-import { retryMappingConflicts } from '../src/workers/anilist.ts'
-import { handleMetadataJob, RunInProgress, startRun } from '../src/workers/metadata.ts'
+import { retryMappingConflicts } from '../src/integrations/anilist/sync.ts'
+import { handleMetadataJob, RunInProgress, startRun } from '../src/modules/metadata/worker.ts'
 
 const args = process.argv.slice(2)
 

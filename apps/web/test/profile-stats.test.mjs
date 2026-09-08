@@ -7,9 +7,11 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { before, beforeEach, describe, it } from 'node:test'
+import { before, beforeEach, describe, it, mock } from 'node:test'
+
+import { install, storage as fakeStorage } from './support/browser.mjs'
+import { reachableFromEntry } from './support/module-graph.mjs'
 import { fileURLToPath } from 'node:url'
-import { runInNewContext } from 'node:vm'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -49,34 +51,28 @@ function makeElement (tag) {
   return node
 }
 
-let context, ProfileStats, storage
+let ProfileStats, Store, LibrarySync, I18n, storage
 
-before(() => {
-  const window = {}
-  storage = new Map()
-  context = {
-    window,
-    document: { createElement: makeElement },
-    console,
-    localStorage: {
-      getItem: k => (storage.has(k) ? storage.get(k) : null),
-      setItem: (k, v) => storage.set(k, v),
-      removeItem: k => storage.delete(k)
-    },
-    Store: { activeProfileId: () => 'p1' },
-    setTimeout,
-    clearTimeout
-  }
-  context.globalThis = context
-  runInNewContext(readFileSync(join(here, '../js/profile-stats.js'), 'utf8'), context)
-  ProfileStats = window.ProfileStats
-  assert.ok(ProfileStats, 'profile-stats.js must expose ProfileStats')
+before(async () => {
+  const store = fakeStorage()
+  storage = store.map
+  install({ localStorage: store, document: { createElement: makeElement } })
+  ;({ ProfileStats } = await import('../js/profile-stats.js'))
+  ;({ Store } = await import('../js/store.js'))
+  ;({ LibrarySync } = await import('../js/library-sync.js'))
+  ;({ I18n } = await import('../js/i18n.js'))
+  assert.ok(ProfileStats, 'profile-stats.js must export ProfileStats')
 })
 
 beforeEach(() => {
   storage.clear()
-  context.window.LibrarySync = undefined
-  context.window.I18n = { locale: () => 'en-GB' }
+  mock.restoreAll()
+  mock.method(Store, 'activeProfileId', () => 'p1')
+  mock.method(I18n, 'locale', () => 'en-GB')
+  // "the sync module is not there" was expressed by leaving the global unset;
+  // an import is always there, so the same situation is a stats() that has
+  // nothing to give.
+  mock.method(LibrarySync, 'stats', async () => null)
 })
 
 const serverRow = (over = {}) => ({
@@ -92,7 +88,7 @@ const serverRow = (over = {}) => ({
 
 describe('reading the account\'s numbers', () => {
   it('normalises what the server sends', async () => {
-    context.window.LibrarySync = { stats: async () => serverRow() }
+    mock.method(LibrarySync, 'stats', async () => serverRow())
     const row = await ProfileStats.refresh()
     assert.equal(row.minutes, 1500)
     assert.equal(row.episodes, 62)
@@ -103,26 +99,26 @@ describe('reading the account\'s numbers', () => {
   })
 
   it('keeps the answer for the next visit', async () => {
-    context.window.LibrarySync = { stats: async () => serverRow() }
+    mock.method(LibrarySync, 'stats', async () => serverRow())
     await ProfileStats.refresh()
-    context.window.LibrarySync = { stats: async () => null }
+    mock.method(LibrarySync, 'stats', async () => null)
     assert.equal((await ProfileStats.refresh()).minutes, 1500)
     assert.equal(ProfileStats.cached().minutes, 1500)
   })
 
   it('caches per profile, so two people in one browser do not see each other', async () => {
-    context.window.LibrarySync = { stats: async () => serverRow() }
+    mock.method(LibrarySync, 'stats', async () => serverRow())
     await ProfileStats.refresh()
-    context.Store.activeProfileId = () => 'p2'
+    mock.method(Store, 'activeProfileId', () => 'p2')
     assert.equal(ProfileStats.cached(), null)
-    context.Store.activeProfileId = () => 'p1'
+    mock.method(Store, 'activeProfileId', () => 'p1')
     assert.equal(ProfileStats.cached().minutes, 1500)
   })
 
   it('returns null rather than throwing when signed out or offline', async () => {
-    context.window.LibrarySync = undefined
+    mock.method(LibrarySync, 'stats', async () => null)
     assert.equal(await ProfileStats.refresh(), null)
-    context.window.LibrarySync = { stats: async () => { throw new Error('offline') } }
+    mock.method(LibrarySync, 'stats', async () => { throw new Error('offline') })
     await assert.rejects(() => ProfileStats.refresh())
   })
 
@@ -130,12 +126,11 @@ describe('reading the account\'s numbers', () => {
     // A profile that has watched nothing *through this client* would otherwise
     // replace the browser's own count with zeroes — which looks like the
     // viewer's history was deleted.
-    context.window.LibrarySync = { stats: async () => serverRow() }
+    mock.method(LibrarySync, 'stats', async () => serverRow())
     await ProfileStats.refresh()
 
-    context.window.LibrarySync = {
-      stats: async () => serverRow({ minutes_watched: 0, episodes_watched: 0, anime_completed: 0 })
-    }
+    mock.method(LibrarySync, 'stats',
+      async () => serverRow({ minutes_watched: 0, episodes_watched: 0, anime_completed: 0 }))
     assert.equal((await ProfileStats.refresh()).minutes, 1500)
   })
 
@@ -171,7 +166,7 @@ describe('patching a rendered card row', () => {
   }
 
   it('replaces the local numbers with the account\'s', async () => {
-    context.window.LibrarySync = { stats: async () => serverRow() }
+    mock.method(LibrarySync, 'stats', async () => serverRow())
     const wrap = row()
     await ProfileStats.hydrate(wrap)
     // 1500 minutes is 25 hours, and past a day the screens say days.
@@ -182,7 +177,7 @@ describe('patching a rendered card row', () => {
   })
 
   it('leaves the local numbers alone when there is no server answer', async () => {
-    context.window.LibrarySync = { stats: async () => null }
+    mock.method(LibrarySync, 'stats', async () => null)
     const wrap = row()
     await ProfileStats.hydrate(wrap)
     assert.equal(wrap.querySelector('[data-stat="watchTime"] b').textContent, '0h')
@@ -191,7 +186,7 @@ describe('patching a rendered card row', () => {
   it('does not write into a screen the viewer has already navigated away from', async () => {
     // hydrate() resolves after a network round trip; by then the node may be
     // detached, and writing to it would be work nobody sees.
-    context.window.LibrarySync = { stats: async () => serverRow() }
+    mock.method(LibrarySync, 'stats', async () => serverRow())
     const wrap = row()
     wrap.isConnected = false
     await ProfileStats.hydrate(wrap)
@@ -203,7 +198,7 @@ describe('patching a rendered card row', () => {
   })
 
   it('leaves the mean score alone when the server has none', async () => {
-    context.window.LibrarySync = { stats: async () => serverRow({ mean_score: null }) }
+    mock.method(LibrarySync, 'stats', async () => serverRow({ mean_score: null }))
     const wrap = row()
     await ProfileStats.hydrate(wrap)
     assert.equal(wrap.querySelector('[data-stat="meanScore"] b').textContent, '—')
@@ -221,7 +216,11 @@ describe('the screens that use it', () => {
     })
   }
 
-  it('is loaded by the page', () => {
-    assert.match(readFileSync(join(here, '../index.html'), 'utf8'), /js\/profile-stats\.js/)
+  it('is reachable from the entry point', () => {
+    // Used to look for a <script> tag in index.html. There is one now — the
+    // module entry — so the question is asked of the import graph, which also
+    // answers it more honestly: a tag could exist for a file nothing imported.
+    assert.ok(reachableFromEntry().has('js/profile-stats.js'),
+      'nothing in the module graph imports profile-stats.js')
   })
 })

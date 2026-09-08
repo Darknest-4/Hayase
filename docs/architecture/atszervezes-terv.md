@@ -35,7 +35,7 @@ A brief több pontja már megvan, részben az elmúlt napok munkájából:
 
 | Brief pont | Állapot | Hol |
 |---|---|---|
-| 2. AniList ne kiegészítőként | **Kész.** Első osztályú szerver-worker, sosem volt kiegészítő | `apps/api/src/workers/anilist.ts` |
+| 2. AniList ne kiegészítőként | **Kész.** Első osztályú szerver-worker, sosem volt kiegészítő | `apps/api/src/integrations/anilist/sync.ts` |
 | 3. Batch sync, queue, retry, rate limit | **Nagyrészt kész.** Soronkénti savepoint, 429-kezelés, folytathatóság | `workers/anilist.ts`, `anilist-deep.ts` |
 | 4. Relations import | **Kész**, de nincs évad-/watch-order-nézet | `workers/anilist-deep.ts` |
 | 5. Karakterek, stáb, szinkronhangok | **Kész** (import + API + kliens) | `anilist-deep.ts`, `routes/anime.ts` |
@@ -78,7 +78,7 @@ meglétéből.
 
 ### 2.2 403 a 404 helyett
 
-`apps/api/src/plugins/auth.ts:217` — a `requirePermission` 403-at ad. A 9. pont
+`apps/api/src/middleware/auth.ts:217` — a `requirePermission` 403-at ad. A 9. pont
 404-et kér, hogy a panel létezése se derüljön ki.
 
 **Fontos részlet:** ezt nem szabad mindenhol 404-re cserélni. A 403 a helyes

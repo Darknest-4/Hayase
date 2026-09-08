@@ -11,7 +11,7 @@ import { describe, it } from 'node:test'
 import {
   PREFERENCES, UI_LANGUAGES, DEFAULT_LANGUAGE,
   coerce, defaults, isPreferenceKey, negotiate, requestLanguage, resolve, specFor
-} from '../src/lib/preferences.ts'
+} from '../src/modules/profiles/preferences.ts'
 
 describe('preference spec', () => {
   it('has no duplicate keys', () => {

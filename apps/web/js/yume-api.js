@@ -4,7 +4,7 @@
 // comments/community, themes and playback data.
 // Configure the endpoint in Settings; default assumes local development.
 
-const YumeAPI = {
+export const YumeAPI = {
   base () {
     const saved = localStorage.getItem('yume-api')
     if (saved) return saved
@@ -646,7 +646,7 @@ const YumeAPI = {
     setErrorStatus: (id, status) => YumeAPI._request(`/v1/admin/errors/${id}`, { method: 'PATCH', auth: true, body: { status } }),
 
     // Emergency controls. Each switch has an enforcement point in the server
-    // and the GET says which — see apps/api/src/routes/security.ts.
+    // and the GET says which — see apps/api/src/modules/security/routes.ts.
     security: () => YumeAPI._request('/v1/admin/security', { auth: true }),
     // The posture: every entry inspects something and says what it found.
     posture: () => YumeAPI._request('/v1/admin/security/posture', { auth: true }),
@@ -672,5 +672,3 @@ const YumeAPI = {
     }
   }
 }
-
-window.YumeAPI = YumeAPI

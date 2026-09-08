@@ -1,9 +1,20 @@
-/* global window, document, U, C, Store, T, Prefs */
+/* global window, document */
 // Settings — categorized into sections (Account, Appearance, Content,
 // Notifications, Data, About) with a left-hand tab rail, Netflix/Discord
 // style. Each section is a builder that returns its content node.
 
-const PageSettings = {
+import { App } from '../app.js'
+import { C } from '../components.js'
+import { T } from '../i18n.js'
+import { LibrarySync } from '../library-sync.js'
+import { Onboarding } from '../onboarding.js'
+import { Prefs } from '../prefs.js'
+import { Store } from '../store.js'
+import { U } from '../util.js'
+import { YumeAPI } from '../yume-api.js'
+import { PageThemes } from './themes.js'
+
+export const PageSettings = {
   SECTIONS: [
   // Labels are stored in English and translated where they are rendered, not
   // here: this literal is evaluated once when the script loads, so a T() call
@@ -67,16 +78,16 @@ const PageSettings = {
       })
     ))
     wrap.append(C.authCard())
-    if (window.YumeAPI.user()) {
+    if (YumeAPI.user()) {
       const LABEL = { off: T('Not syncing'), syncing: T('Syncing…'), synced: T('✓ Synced to your account'), error: T('⚠ Sync unavailable') }
-      const statusEl = U.el('span', { class: 'list-row-sub', style: 'align-self:center;', text: LABEL[window.LibrarySync?.status ?? 'off'] })
+      const statusEl = U.el('span', { class: 'list-row-sub', style: 'align-self:center;', text: LABEL[LibrarySync?.status ?? 'off'] })
       const syncBtn = U.el('button', {
         class: 'btn btn-secondary btn-sm',
         onclick: async () => {
           statusEl.textContent = LABEL.syncing
-          await window.LibrarySync?.init()
-          statusEl.textContent = LABEL[window.LibrarySync?.status ?? 'off']
-          U.toast(window.LibrarySync?.status === 'synced' ? 'Library synced' : 'Sync unavailable', window.LibrarySync?.status === 'error' ? 'error' : 'success')
+          await LibrarySync?.init()
+          statusEl.textContent = LABEL[LibrarySync?.status ?? 'off']
+          U.toast(LibrarySync?.status === 'synced' ? 'Library synced' : 'Sync unavailable', LibrarySync?.status === 'error' ? 'error' : 'success')
         }
       }, [document.createTextNode(T('Sync now'))])
       wrap.append(this._card('Library sync', 'Your library status and episode progress sync to your account and follow you across devices while signed in.',
@@ -87,8 +98,8 @@ const PageSettings = {
         class: 'input',
         type: 'url',
         style: 'min-width:20rem;',
-        value: window.YumeAPI.base(),
-        onchange: e => { window.YumeAPI.setBase(e.target.value); U.toast(T('Yume server updated')) }
+        value: YumeAPI.base(),
+        onchange: e => { YumeAPI.setBase(e.target.value); U.toast(T('Yume server updated')) }
       })
     ))
     wrap.append(this._card('Watch profiles', 'Manage the profiles on this account — each has its own library, history and settings.',
@@ -120,7 +131,7 @@ const PageSettings = {
     // The spec carries keys; these are the words for them. Enum labels come
     // from the onboarding wizard so the two screens never disagree about what
     // "sub" is called, and the rest are declared here.
-    const choices = window.Onboarding?.CHOICES ?? {}
+    const choices = Onboarding?.CHOICES ?? {}
     const EXTRA = {
       'language.content': [{ value: 'hu', label: 'Magyar' }, { value: 'en', label: 'English' }],
       'playback.subtitles': [{ value: 'hu', label: 'Magyar' }, { value: 'en', label: 'English' }, { value: 'off', label: 'Off' }],
@@ -167,7 +178,7 @@ const PageSettings = {
         onclick: () => {
           Prefs.reset()
           U.toast(T('Language settings restored'))
-          window.App?.navigate?.()
+          App?.navigate?.()
         }
       }, [document.createTextNode(T('Reset to default'))])
     ))
@@ -181,7 +192,7 @@ const PageSettings = {
 
     // full Theme Engine, embedded (base, accent presets, custom colour, preview)
     wrap.append(U.el('p', { class: 'list-row-sub', style: 'margin:0 0 1rem;', text: T('Personalise Yume — base, accent and surface tint apply instantly and are saved for this profile.') }))
-    window.PageThemes.body(wrap)
+    PageThemes.body(wrap)
 
     // title language
     const langSelect = U.el('select', {
@@ -253,7 +264,7 @@ const PageSettings = {
           onchange: e => {
             const next = { ...(Store.settings().notifPrefs ?? { airing: true, resume: true, achievement: true }), [key]: e.target.checked }
             Store.saveSettings({ notifPrefs: next })
-            window.App.refreshNotifBadge?.()
+            App.refreshNotifBadge?.()
           }
         }),
         U.el('span', { class: 'slider' })
@@ -320,5 +331,3 @@ const PageSettings = {
     return wrap
   }
 }
-
-window.PageSettings = PageSettings

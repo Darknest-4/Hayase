@@ -12,32 +12,48 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { describe, it, beforeEach } from 'node:test'
-import { createContext, runInNewContext } from 'node:vm'
 
-const I18N_JS = new URL('../js/i18n.js', import.meta.url)
+import { install } from './support/browser.mjs'
+
 const HU_JS = new URL('../i18n/hu.js', import.meta.url)
-const COPY_JS = new URL('../copy.js', import.meta.url)
 
+const documentElement = {
+  _attrs: {},
+  setAttribute (key, value) { this._attrs[key] = value },
+  getAttribute (key) { return this._attrs[key] }
+}
+install({ document: { documentElement } })
+
+const { I18n, T } = await import('../js/i18n.js')
+const { Copy } = await import('../copy.js')
+await import('../i18n/hu.js')
+
+// Every registered dictionary, kept so a case can take one away and put it
+// back. The client used to be classic scripts, so "without the Hungarian
+// dictionary" was expressed by not running hu.js in that realm; a module
+// registers itself on import and there is one instance per process, so the
+// same question is now asked by emptying the registry instead.
+// Copied per language, not by reference: a case that calls register() mutates
+// the dictionary object in place, and a shallow copy would hand the next one
+// the same polluted object back.
+const DICTS = Object.fromEntries(
+  Object.entries(I18n._dicts).map(([lang, entries]) => [lang, { ...entries }]))
+
+/**
+ * Put the translator into a known state.
+ *
+ * `withDictionary: false` — nothing registered for Hungarian, so T() must
+ * return the English source rather than a key or a blank.
+ * `withCopy: false` — no copy catalogue behind the dotted paths.
+ */
 function load ({ withDictionary = true, withCopy = true } = {}) {
-  const documentElement = {
-    _attrs: {},
-    setAttribute (key, value) { this._attrs[key] = value },
-    getAttribute (key) { return this._attrs[key] }
+  I18n._dicts = Object.create(null)
+  if (withDictionary) {
+    for (const [lang, entries] of Object.entries(DICTS)) I18n._dicts[lang] = { ...entries }
   }
-  const context = createContext({
-    window: {},
-    document: { documentElement },
-    console
-  })
-  runInNewContext(readFileSync(I18N_JS, 'utf8'), context)
-  if (withCopy) runInNewContext(readFileSync(COPY_JS, 'utf8'), context)
-  if (withDictionary) runInNewContext(readFileSync(HU_JS, 'utf8'), context)
-  return {
-    I18n: context.I18n ?? context.window.I18n,
-    T: context.T ?? context.window.T,
-    documentElement,
-    context
-  }
+  I18n.copy = withCopy ? Copy : undefined
+  I18n.setLanguage('hu')
+  return { I18n, T, documentElement }
 }
 
 describe('English-source lookup', () => {

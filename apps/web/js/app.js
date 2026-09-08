@@ -1,8 +1,33 @@
-/* global C, Catalogue, PageAdmin, PageAnime, PageCommunity, PageDashboard, PageHome, PageList, PageNotifications, PageProfile, PageProfiles, PageSchedule, PageSearch, PageSettings, PageW2G, PageWatch, Store, T, U, YumeAPI, I18n, document, requestAnimationFrame, window */
+/* global document, requestAnimationFrame, window */
 // App bootstrap: hash router (same #/route scheme as the original SvelteKit
 // build), sidebar active state and the quick-search modal (Ctrl+K / S).
 
-const App = {
+import { Copy } from '../copy.js'
+import { Catalogue } from './catalogue.js'
+import { C } from './components.js'
+import { I18n, T } from './i18n.js'
+import { LibrarySync } from './library-sync.js'
+import { Onboarding } from './onboarding.js'
+import { PageAdmin } from './pages/admin.js'
+import { PageAnime } from './pages/anime.js'
+import { PageCommunity } from './pages/community.js'
+import { PageDashboard } from './pages/dashboard.js'
+import { PageHome } from './pages/home.js'
+import { PageList } from './pages/list.js'
+import { PageNotifications } from './pages/notifications.js'
+import { PageProfile } from './pages/profile.js'
+import { PageProfiles } from './pages/profiles.js'
+import { PageSchedule } from './pages/schedule.js'
+import { PageSearch } from './pages/search.js'
+import { PageSettings } from './pages/settings.js'
+import { PageW2G } from './pages/w2g.js'
+import { PageWatch } from './pages/watch.js'
+import { Prefs } from './prefs.js'
+import { Store } from './store.js'
+import { U } from './util.js'
+import { YumeAPI } from './yume-api.js'
+
+export const App = {
   routes: {
     home: (root, params) => PageHome.render(root, params),
     search: (root, params) => PageSearch.render(root, params),
@@ -34,7 +59,7 @@ const App = {
     // the only spelling, no crawler, link preview or share sheet could ever be
     // told which anime a URL was about — every one of them saw index.html's
     // generic <head>. The server now also answers "/anime/123" with the app
-    // and a <head> about that anime (apps/api/src/routes/seo.ts), and the
+    // and a <head> about that anime (apps/api/src/modules/seo/routes.ts), and the
     // sitemap points at that form, so the router has to understand it too.
     //
     // Only a name that is actually a route counts. Anything else — a typo, a
@@ -55,7 +80,7 @@ const App = {
    * Set the browser tab's title.
    *
    * `null` restores the site's own. The server puts the anime's name in the
-   * served <title> for a crawler (apps/api/src/routes/seo.ts); this is the same
+   * served <title> for a crawler (apps/api/src/modules/seo/routes.ts); this is the same
    * courtesy for the person with fifteen tabs open, who otherwise sees the
    * same word on all of them.
    */
@@ -182,12 +207,12 @@ const App = {
    * did before any of this existed.
    */
   async applyDefaultTheme () {
-    if (window.Store?.hasChosenTheme?.()) return
+    if (Store?.hasChosenTheme?.()) return
     try {
-      const themes = await window.YumeAPI.themes()
+      const themes = await YumeAPI.themes()
       const fallback = (themes ?? []).find(t => t.is_default)
       if (!fallback) return
-      window.Store.setTheme({
+      Store.setTheme({
         base: fallback.base,
         accent: fallback.accent ?? '',
         tint: Boolean(fallback.tint),
@@ -236,7 +261,7 @@ const App = {
    * One rule, asked in one place, and both directions stop being wrong.
    */
   _adminSectionPermissions () {
-    const sections = window.PageAdmin?.SECTIONS
+    const sections = PageAdmin?.SECTIONS
     // Not loaded yet is not a reason to open the door.
     if (!Array.isArray(sections)) return null
     return [...new Set(sections.map(section => section.perm).filter(Boolean))]
@@ -244,7 +269,7 @@ const App = {
 
   _gateCheck (route) {
     const cfg = this.config
-    const signedIn = !!window.YumeAPI.user()
+    const signedIn = !!YumeAPI.user()
     const privileged = this.PRIVILEGED.includes(route)
 
     /*
@@ -297,7 +322,7 @@ const App = {
     if (!cfg) return true
     const flag = cfg.flags['feature.' + name]
     if (!flag || !flag.enabled) return !flag
-    const signedIn = !!window.YumeAPI.user()
+    const signedIn = !!YumeAPI.user()
     if (flag.access === 'auth' && !signedIn) return false
     if (flag.access === 'permission' && !this.perms.includes(flag.permission)) return false
     return true
@@ -362,24 +387,24 @@ const App = {
   async afterAuth () {
     await this.loadConfig()
     this._perms = null
-    this.perms = window.YumeAPI.user() ? await window.YumeAPI.myPermissions() : []
+    this.perms = YumeAPI.user() ? await YumeAPI.myPermissions() : []
     this.refreshAdminNav()
     this.applyNavVisibility()
     this.navigate()
 
-    if (window.YumeAPI.user()) window.LibrarySync?.init() // pull the account library + start mirroring
-    else window.LibrarySync?.reset() // signed out → stop mirroring
+    if (YumeAPI.user()) LibrarySync?.init() // pull the account library + start mirroring
+    else LibrarySync?.reset() // signed out → stop mirroring
   },
 
   async loadConfig () {
-    this.config = await window.YumeAPI.config()
+    this.config = await YumeAPI.config()
   },
 
   // hide nav entries that are disabled or permission-gated-and-unavailable
   applyNavVisibility () {
     const cfg = this.config
     if (!cfg) return
-    const signedIn = !!window.YumeAPI.user()
+    const signedIn = !!YumeAPI.user()
     document.querySelectorAll('.sidebar-btn[data-route]').forEach(btn => {
       const route = btn.dataset.route
       if (route === 'admin') return // handled by refreshAdminNav
@@ -493,7 +518,7 @@ const App = {
     const nav = document.getElementById('nav-admin')
     if (!nav) return
     // admin nav follows the same gate as the /admin route (page.admin flag)
-    const canAdmin = this._gateCheck('admin').ok && !!window.YumeAPI.user()
+    const canAdmin = this._gateCheck('admin').ok && !!YumeAPI.user()
     nav.classList.toggle('hidden', !canAdmin)
   },
 
@@ -522,7 +547,7 @@ const App = {
     try { local = Store.unreadCount() } catch (e) { /* no data */ }
     paint(local)
 
-    window.YumeAPI?.notifications?.({ unreadOnly: true, limit: 100 })
+    YumeAPI?.notifications?.({ unreadOnly: true, limit: 100 })
       .then(rows => paint(local + rows.length))
       .catch(() => {})
   },
@@ -564,18 +589,33 @@ const App = {
 
   // ---- mobile "More" bottom sheet ----
 
-  // every destination that isn't a primary bottom-bar tab. Icons are inline
-  // SVG paths (drawn via U.svg) so the sheet stays self-contained.
-  MORE_ITEMS: [
-    { route: 'dashboard', label: T('Dashboard'), icon: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>' },
-    { route: 'schedule', label: T('Schedule'), icon: '<rect width="18" height="18" x="3" y="4" rx="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>' },
-    { route: 'w2g', label: T('Together'), icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
-    { route: 'community', label: T('Community'), icon: '<path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4c0-1.1.9-2 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/>' },
-    { route: 'profile', label: T('Profile'), icon: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>' },
-    { route: 'profile', href: '#/profile?tab=analytics', label: T('Analytics'), icon: '<path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7"/><rect x="12" y="7" width="3" height="11"/><rect x="17" y="4" width="3" height="14"/>' },
-    { route: 'profile', href: '#/profile?tab=achievements', label: T('Awards'), icon: '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>' },
-    { route: 'settings', label: T('Settings'), icon: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>' }
-  ],
+  /**
+   * Every destination that isn't a primary bottom-bar tab. Icons are inline
+   * SVG paths (drawn via U.svg) so the sheet stays self-contained.
+   *
+   * A method rather than the array constant it used to be, and that is a fix
+   * rather than a style change. As a constant its labels were translated when
+   * app.js loaded — before I18n.init() had adopted the viewer's language — so
+   * the sheet was frozen in whatever language happened to be active at load,
+   * and switching language never updated it: applyNavLabels() re-translates
+   * the sidebar buttons only.
+   *
+   * Making the client ES modules is what surfaced it. A module-evaluation-time
+   * T() call reaches into i18n.js while it is still initialising, which is a
+   * ReferenceError rather than the wrong string — the same bug, finally loud.
+   */
+  moreItems () {
+    return [
+      { route: 'dashboard', label: T('Dashboard'), icon: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>' },
+      { route: 'schedule', label: T('Schedule'), icon: '<rect width="18" height="18" x="3" y="4" rx="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>' },
+      { route: 'w2g', label: T('Together'), icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
+      { route: 'community', label: T('Community'), icon: '<path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4c0-1.1.9-2 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/>' },
+      { route: 'profile', label: T('Profile'), icon: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>' },
+      { route: 'profile', href: '#/profile?tab=analytics', label: T('Analytics'), icon: '<path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7"/><rect x="12" y="7" width="3" height="11"/><rect x="17" y="4" width="3" height="14"/>' },
+      { route: 'profile', href: '#/profile?tab=achievements', label: T('Awards'), icon: '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>' },
+      { route: 'settings', label: T('Settings'), icon: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>' }
+    ]
+  },
 
   initMobileMore () {
     const btn = document.getElementById('nav-more')
@@ -604,7 +644,7 @@ const App = {
     ]))
 
     // build the destination grid, appending Admin only when it's available
-    const items = [...this.MORE_ITEMS]
+    const items = this.moreItems()
     const adminNav = document.getElementById('nav-admin')
     if (adminNav && !adminNav.classList.contains('hidden')) {
       items.splice(items.length - 1, 0, { route: 'admin', label: T('Admin'), icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>' })
@@ -647,7 +687,7 @@ const App = {
     document.querySelectorAll('.sidebar-btn').forEach(btn => {
       const span = btn.querySelector('span')
       const key = btn.id === 'nav-more' ? 'more' : btn.dataset.route
-      if (span && key && window.Copy?.nav?.[key]) span.textContent = T('nav.' + key)
+      if (span && key && Copy?.nav?.[key]) span.textContent = T('nav.' + key)
       const label = span?.textContent
       if (label) btn.title = label
     })
@@ -676,7 +716,7 @@ const App = {
 
     // load DB-driven site config + permissions, apply the site name, then route
     await this.loadConfig()
-    this.perms = window.YumeAPI.user() ? await window.YumeAPI.myPermissions() : []
+    this.perms = YumeAPI.user() ? await YumeAPI.myPermissions() : []
     if (this.config?.site?.name) {
       const logoText = document.querySelector('.sidebar-logo-text')
       if (logoText) logoText.textContent = this.config.site.name.toLowerCase()
@@ -688,22 +728,19 @@ const App = {
     this.navigate()
 
     // sign-in library sync (best-effort, off the critical path)
-    if (window.YumeAPI.user()) window.LibrarySync?.init()
+    if (YumeAPI.user()) LibrarySync?.init()
 
     // Preferences the viewer may have set on another device win over whatever
     // this browser happens to hold, then the wizard runs if this profile has
     // never answered. Both are off the critical path: the page is already
     // rendered by now, so neither can delay the first paint.
-    if (window.YumeAPI.user()) {
-      window.Prefs?.pull().then(() => window.Onboarding?.maybeOpen())
+    if (YumeAPI.user()) {
+      Prefs?.pull().then(() => Onboarding?.maybeOpen())
     } else {
-      window.Onboarding?.maybeOpen()
+      Onboarding?.maybeOpen()
     }
     window.addEventListener('library-synced', () => {
       if (['home', 'list', 'dashboard'].includes(this.parseHash().route)) this.navigate()
     })
   }
 }
-
-window.App = App
-App.init()

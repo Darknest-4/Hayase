@@ -1,11 +1,13 @@
-/* global window, localStorage, fetch, Store */
+/* global localStorage, fetch */
 // Data layer. Same sources as the original app, called directly from the browser:
 //  - AniList GraphQL  (metadata, search, schedule)   https://graphql.anilist.co
 //  - Jikan v4         (episode lists via MAL id)     https://api.jikan.moe
 //  - ani.zip          (episode images/titles + id mappings)
 //  - filler-scrape    (filler episode markers)
 
-const API = {
+import { Store } from './store.js'
+
+export const API = {
   AL_URL: 'https://graphql.anilist.co',
   JIKAN_URL: 'https://api.jikan.moe/v4',
   ANIZIP_URL: 'https://api.ani.zip',
@@ -295,5 +297,3 @@ API.SEARCH_QUERY = /* GraphQL */`
     }
   }
   ${API.MEDIA_FRAGMENT}`
-
-window.API = API

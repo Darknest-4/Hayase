@@ -9,7 +9,7 @@
 --
 -- It has all three now, so the catalogue moves here and the server decides
 -- what a profile has unlocked. The definitions are in
--- apps/api/src/lib/achievements.ts; this seeds the rows those grants point at,
+-- apps/api/src/modules/library/achievements.ts; this seeds the rows those grants point at,
 -- and `seedCatalogue()` keeps them in step on every boot.
 --
 -- Slugs match the ones the client has always used, so a profile that had
@@ -45,4 +45,4 @@ CREATE INDEX IF NOT EXISTS profile_achievements_profile_idx
   ON profile_achievements (profile_id, unlocked_at DESC);
 
 COMMENT ON TABLE achievements IS
-  'Catalogue rows for the definitions in apps/api/src/lib/achievements.ts; grants point at these.';
+  'Catalogue rows for the definitions in apps/api/src/modules/library/achievements.ts; grants point at these.';

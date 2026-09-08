@@ -14,7 +14,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-const { isPrivateAddress, checkOutboundUrl } = await import('../src/lib/ssrf.ts')
+const { isPrivateAddress, checkOutboundUrl } = await import('../src/infrastructure/http/ssrf.ts')
 
 describe('address classification', () => {
   // Everything here must be judged private. The ones with a comment are the

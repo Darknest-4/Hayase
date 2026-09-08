@@ -41,7 +41,7 @@ CREATE INDEX IF NOT EXISTS password_resets_expiry_idx
   ON password_resets (expires_at) WHERE used_at IS NULL;
 
 COMMENT ON TABLE password_resets IS
-  'Single-use password reset tokens, stored hashed. Delivery is the operator''s: the token is POSTed to PASSWORD_RESET_WEBHOOK_URL only, never through the admin-managed webhook fan-out. See apps/api/src/lib/reset-delivery.ts.';
+  'Single-use password reset tokens, stored hashed. Delivery is the operator''s: the token is POSTed to PASSWORD_RESET_WEBHOOK_URL only, never through the admin-managed webhook fan-out. See apps/api/src/modules/auth/reset-delivery.ts.';
 COMMENT ON COLUMN password_resets.token_hash IS
   'sha256 of the token. The plaintext exists only in the delivery request and the user''s inbox.';
 

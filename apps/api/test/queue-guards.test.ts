@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import { test, describe } from 'node:test'
 
-const q = await import('../src/lib/queue.ts')
+const q = await import('../src/infrastructure/queue/index.ts')
 
 describe('guard configuration', () => {
   test('a handler has a hard ceiling', () => {

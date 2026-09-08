@@ -17,7 +17,7 @@ import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 
-import { errorCode } from '../src/lib/error-codes.ts'
+import { errorCode } from '../src/errors/codes.ts'
 
 import type { FastifyInstance } from 'fastify'
 import type pg from 'pg'
@@ -89,7 +89,7 @@ describe('reporting a failure', { skip: HAS_DB ? false : 'no DATABASE_URL' }, ()
         `INSERT INTO user_roles (user_id, role_id)
          SELECT u.id, r.id FROM users u, roles r WHERE u.username = $1 AND r.slug = $2
          ON CONFLICT DO NOTHING`, [username, role])
-      const auth = await import('../src/plugins/auth.ts')
+      const auth = await import('../src/middleware/auth.ts')
       auth.invalidatePermissions()
     }
     return (res.json() as { accessToken: string }).accessToken
@@ -174,7 +174,7 @@ describe('reporting a failure', { skip: HAS_DB ? false : 'no DATABASE_URL' }, ()
     // A real fault rather than a simulated one: the recorded occurrence has to
     // come out of the same path a genuine failure takes, or this proves
     // nothing about genuine failures.
-    const { recordError } = await import('../src/lib/errors.ts')
+    const { recordError } = await import('../src/errors/reporting.ts')
     const requestId = 'req_' + randomBytes(8).toString('hex')
     const code = errorCode('/v1/anime/:id', 500)
 

@@ -24,7 +24,7 @@ process.env.AUTH_RATE_LIMIT_MAX ??= '200'
 describe('feature flags', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
   let app: FastifyInstance
   let pool: pg.Pool
-  let flags: typeof import('../src/lib/feature-flags.ts').flags
+  let flags: typeof import('../src/modules/settings/feature-flags.ts').flags
   const usernames: string[] = []
   let token = ''
 
@@ -52,7 +52,7 @@ describe('feature flags', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
     const [{ buildApp }, db, ff] = await Promise.all([
       import('../src/app.ts'),
       import('../src/infrastructure/database/index.ts'),
-      import('../src/lib/feature-flags.ts')
+      import('../src/modules/settings/feature-flags.ts')
     ])
     app = await buildApp()
     pool = db.pool

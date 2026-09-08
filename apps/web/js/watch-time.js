@@ -1,4 +1,4 @@
-/* global window, document, localStorage, Store */
+/* global document, localStorage */
 // Measured watch time.
 //
 // ---------------------------------------------------------------------------
@@ -30,7 +30,9 @@
 // timer did not run (throttled tab, sleeping machine), and only the interval
 // itself is credited.
 
-const WatchTime = {
+import { Store } from './store.js'
+
+export const WatchTime = {
   /** How often the meter ticks while playing. */
   TICK_MS: 1000,
 
@@ -250,6 +252,3 @@ const WatchTime = {
     }
   }
 }
-
-if (typeof window !== 'undefined') window.WatchTime = WatchTime
-if (typeof module !== 'undefined' && module.exports) module.exports = WatchTime

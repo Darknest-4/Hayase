@@ -1,9 +1,15 @@
-/* global C, Catalogue, Store, T, U, window */
 // Home page — hero banner + the same sections as the original app/home route:
 // Continue Watching, Your List, Popular This Season, Trending Now,
 // All Time Popular and genre rows.
 
-const PageHome = {
+import { App } from '../app.js'
+import { Catalogue } from '../catalogue.js'
+import { C } from '../components.js'
+import { T } from '../i18n.js'
+import { Store } from '../store.js'
+import { U } from '../util.js'
+
+export const PageHome = {
   async render (root) {
     const { season, year } = U.currentSeason()
 
@@ -15,7 +21,7 @@ const PageHome = {
     // instance, a failed fetch — and when there was, the h1 was the featured
     // title, which names an item rather than the page. Visually hidden because
     // the hero already says where you are to anybody who can see it.
-    root.append(U.el('h1', { class: 'sr-only', text: window.App?.config?.site?.name ?? 'Yume' }), hero, sections)
+    root.append(U.el('h1', { class: 'sr-only', text: App?.config?.site?.name ?? 'Yume' }), hero, sections)
 
     // sections, same order/variables as the original home page
     const defs = [
@@ -159,5 +165,3 @@ const PageHome = {
     )
   }
 }
-
-window.PageHome = PageHome

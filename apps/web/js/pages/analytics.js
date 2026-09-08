@@ -1,9 +1,16 @@
-/* global window, U, C, Store, Charts, T, I18n */
 // Analytics — a personal "year in review" style dashboard computed entirely
 // from the active profile's local library and watch history. Everything is
 // derived on the client from Store.list() + Store.history(); no network calls.
 
-const PageAnalytics = {
+import { Charts } from '../charts.js'
+import { C } from '../components.js'
+import { I18n, T } from '../i18n.js'
+import { ProfileStats } from '../profile-stats.js'
+import { Store } from '../store.js'
+import { U } from '../util.js'
+import { WatchTime } from '../watch-time.js'
+
+export const PageAnalytics = {
   // a fixed, theme-neutral palette reused across the donut charts
   PALETTE: ['#f43f6e', '#ff8fab', '#a78bfa', '#38bdf8', '#34d399', '#fbbf24', '#fb923c', '#f87171', '#818cf8', '#2dd4bf', '#e879f9', '#94a3b8'],
 
@@ -33,7 +40,7 @@ const PageAnalytics = {
     // so the number grew by watching nothing. WatchTime.minutesFor() uses
     // real playback seconds and only falls back to the old estimate for
     // episodes credited before the meter existed.
-    const watch = window.WatchTime.minutesFor(entries)
+    const watch = WatchTime.minutesFor(entries)
     const minutes = watch.totalMinutes
     const completed = entries.filter(e => e.status === 'COMPLETED').length
     const scored = entries.filter(e => e.score > 0)
@@ -54,7 +61,7 @@ const PageAnalytics = {
     ])))
     pad.append(cards)
     // Local numbers first, the account's own totals when they arrive.
-    window.ProfileStats?.hydrate(cards)
+    ProfileStats?.hydrate(cards)
 
     // ---- weekly activity (episodes watched per day, last 14 days) ----
     this._section(pad, 'Activity', 'Episodes watched per day over the last two weeks.')
@@ -170,5 +177,3 @@ const PageAnalytics = {
       .sort((a, b) => b.value - a.value)
   }
 }
-
-window.PageAnalytics = PageAnalytics

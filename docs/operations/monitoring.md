@@ -105,7 +105,7 @@ dashboard must never present them as healthy.
 
 ## 4. Thresholds
 
-Every threshold is documented in `apps/api/src/lib/thresholds.ts` with the
+Every threshold is documented in `apps/api/src/modules/system/thresholds.ts` with the
 reasoning behind it, and exposed through `/v1/admin/monitoring/thresholds`.
 
 | Metric | Warn | Critical | Why |

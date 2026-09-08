@@ -22,12 +22,12 @@ process.env.JWT_SECRET ??= 'components-secret-long-enough-0123456789'
 
 describe('component registry', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
   let pool: pg.Pool
-  let components: typeof import('../src/lib/components.ts').components
+  let components: typeof import('../src/modules/system/components.ts').components
 
   before(async () => {
     const [db, mod] = await Promise.all([
       import('../src/infrastructure/database/index.ts'),
-      import('../src/lib/components.ts')
+      import('../src/modules/system/components.ts')
     ])
     pool = db.pool
     components = mod.components
@@ -166,7 +166,7 @@ describe('component registry', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () 
   test('the error prefixes match codes the server actually emits', async () => {
     // A component whose error namespace does not exist in lib/error-codes.ts
     // sends an operator looking for codes that are never produced.
-    const { errorCode } = await import('../src/lib/error-codes.ts')
+    const { errorCode } = await import('../src/errors/codes.ts')
     const { components: list } = await components()
     const produced = new Set([
       '/v1/auth/x', '/v1/anime/x', '/v1/admin/catalogue/x', '/v1/admin/webhooks/x',
