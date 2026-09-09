@@ -10,7 +10,7 @@ are verified to apply cleanly on a fresh Postgres 16 (101 relations).
 
 | Migration | Domain | Core tables |
 |---|---|---|
-| `0001_users_auth` | identity & access | `users`, `oauth_identities`, `user_profiles`, `user_settings`, `sessions`, `devices`, `roles`/`permissions`/`role_permissions`/`user_roles`, `api_keys`, `notifications`, `security_logs` |
+| `0001_users_auth` | identity & access | `users`, `oauth_identities`, `user_profiles` (one per account since `0035`), `user_settings`, `sessions`, `devices`, `roles`/`permissions`/`role_permissions`/`user_roles`, `api_keys`, `notifications`, `security_logs` |
 | `0002_anime` | catalogue | `anime`, `anime_titles`/`anime_synonyms`, `anime_mappings`, `genres`/`tags`, `companies`, `people`/`characters` + credit tables, `episodes`, `anime_relations`, `anime_recommendations`, `anime_images`/`anime_videos` |
 | `0003_streaming` | playback | `video_sources`, `source_mirrors`, `subtitle_tracks`/`audio_tracks`, `skip_segments`, `watch_progress`, `watch_history` (partitioned), `bookmarks`, `watch_together_rooms` |
 | `0004_community` | social | `comments`(+likes), `forums`/`topics`/`posts`, `chats`/`chat_members`/`messages` (partitioned), `clubs`(+members), `follows`, `friendships`, `reports`, `moderation_actions` |
@@ -21,11 +21,12 @@ are verified to apply cleanly on a fresh Postgres 16 (101 relations).
 | `0029_video_source_providers` | operator-registered sources | columns on `video_sources`: `provider`, `enabled`, `priority`, `added_by`, `language`, `variant` |
 | `0030_themes` | site palettes | `themes` (seeded with the built-ins) |
 | `0031_remove_extension_platform` | the store, the portal and the sandbox | drops everything `0006` created |
+| `0035_single_profile` | one profile per account | merges the accounts that held two, archives what collided into `profile_merge_dropped`, and makes `user_profiles (user_id)` unique |
 
 ## Entity relationship overview
 
 ```
-users ─1:N─ user_profiles ─1:N─ library_entries ─N:1─ anime
+users ─1:1─ user_profiles ─1:N─ library_entries ─N:1─ anime
   │              │                                       │
   │              ├─ watch_progress ─N:1─ episodes ─N:1───┤
   │              ├─ watch_history  (partitioned)         ├─ anime_titles / synonyms

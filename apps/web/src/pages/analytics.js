@@ -16,7 +16,7 @@ export const PageAnalytics = {
 
   // standalone route (kept as a fallback / deep-link target)
   render (root) {
-    const profile = Store.activeProfile()
+    const profile = Store.profile()
     root.append(C.spotlight(T('Analytics'), { subtitle: profile ? `${profile.avatar ?? ''} ${profile.name} · your viewing at a glance` : 'Your viewing at a glance' }))
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)

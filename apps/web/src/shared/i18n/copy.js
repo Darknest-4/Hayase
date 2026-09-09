@@ -65,7 +65,7 @@ export const Copy = {
 
   // site footer
   footer: {
-    tagline: 'Track, discover and watch anime — your list, your profiles, your way.',
+    tagline: 'Track, discover and watch anime — your list, your way.',
     discover: 'Discover',
     library: 'Library',
     community: 'Community',

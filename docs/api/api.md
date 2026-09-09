@@ -48,9 +48,7 @@ One service, two protocols over the same service layer:
 ### Profiles & settings
 | Method | Path | Description |
 |---|---|---|
-| GET/POST | `/v1/profiles` | list/create watch profiles |
-| GET/PATCH/DELETE | `/v1/profiles/:id` | manage profile |
-| GET/PUT | `/v1/profiles/:id/settings` | bulk settings (key→jsonb) |
+| GET/PATCH | `/v1/profiles/me` | the account's one profile: display name, avatar, adult-content switch |
 
 ### Catalogue
 | Method | Path | Description |

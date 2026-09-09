@@ -65,7 +65,7 @@ export const WatchTime = {
   // ---------------------------------------------------------------- storage
 
   _key () {
-    return `${this.STORAGE_KEY}::${Store.activeProfileId()}`
+    return `${this.STORAGE_KEY}::${Store._viewerId()}`
   },
 
   /** { "animeId:episode": seconds } for the active profile. */

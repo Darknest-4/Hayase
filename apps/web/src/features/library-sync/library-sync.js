@@ -8,8 +8,9 @@
 // Two id worlds are bridged here:
 //   * anime: the client is AniList-id centric; the server keys on Yume UUIDs.
 //     YumeAPI.yumeAnimeId(media, {create}) resolves AniList → UUID (caching).
-//   * profile: local Store profiles vs the account's user_profiles. Sync uses
-//     the account's default server profile (created on first sign-in).
+//   * profile: the account's rows hang off a profile row, and GET
+//     /v1/profiles/me is what returns it — making it if the account somehow
+//     has none. There is exactly one, so there is nothing to choose.
 
 import { Store } from '../../shared/state/store.js'
 import { YumeAPI } from '../../shared/api/yume.js'
@@ -36,18 +37,12 @@ export const LibrarySync = {
 
   // ---- lifecycle ----
 
-  // resolve (or create) the account's sync profile, then pull the library
+  // resolve the account's profile, then pull the library
   async init () {
     if (!YumeAPI?.user()) { this._profileId = null; this.status = 'off'; return }
     this.status = 'syncing'
     try {
-      const { data } = await YumeAPI._request('/v1/profiles', { auth: true })
-      let profile = data.find(p => p.is_default) ?? data[0]
-      if (!profile) {
-        const local = Store.activeProfile()
-        const emoji = /\p{Emoji}/u.test(local?.avatar ?? '') ? local.avatar : undefined
-        profile = await YumeAPI._request('/v1/profiles', { method: 'POST', auth: true, body: { displayName: (local?.name || 'Me').slice(0, 50), avatarEmoji: emoji } })
-      }
+      const profile = await YumeAPI._request('/v1/profiles/me', { auth: true })
       this._profileId = profile.id
       localStorage.setItem('yume-db-profile', profile.id)
       await this.pull()

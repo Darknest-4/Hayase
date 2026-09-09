@@ -33,7 +33,7 @@ const { Store } = await import('../src/shared/state/store.js')
 function loadPrefs ({ languages = ['hu-HU'], storage = fakeStorage() } = {}) {
   install({ localStorage: storage, navigator: { language: languages[0], languages } })
   mock.restoreAll()
-  mock.method(Store, 'activeProfileId', () => 'profile-1')
+  mock.method(Store, '_viewerId', () => 'profile-1')
   PREFS._cache = null
   PREFS._listeners.clear()
   return { Prefs: PREFS, storage }

@@ -69,7 +69,7 @@ const WIDTHS = [1920, 1440, 1280, 1024, 768, 430, 390, 375, 360]
 const PHONE = 430
 
 const ROUTES = ['home', 'search', 'list', 'notifications', 'profile', 'settings',
-  'community', 'schedule', 'profiles', 'w2g', 'dashboard', 'admin',
+  'community', 'schedule', 'w2g', 'dashboard', 'admin',
   // An address with nothing behind it is a route too: it must render the
   // not-found state within the layout, not break out of it.
   'nonexistent-route']

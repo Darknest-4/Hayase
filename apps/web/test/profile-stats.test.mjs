@@ -67,7 +67,7 @@ before(async () => {
 beforeEach(() => {
   storage.clear()
   mock.restoreAll()
-  mock.method(Store, 'activeProfileId', () => 'p1')
+  mock.method(Store, '_viewerId', () => 'p1')
   mock.method(I18n, 'locale', () => 'en-GB')
   // "the sync module is not there" was expressed by leaving the global unset;
   // an import is always there, so the same situation is a stats() that has
@@ -109,9 +109,9 @@ describe('reading the account\'s numbers', () => {
   it('caches per profile, so two people in one browser do not see each other', async () => {
     mock.method(LibrarySync, 'stats', async () => serverRow())
     await ProfileStats.refresh()
-    mock.method(Store, 'activeProfileId', () => 'p2')
+    mock.method(Store, '_viewerId', () => 'p2')
     assert.equal(ProfileStats.cached(), null)
-    mock.method(Store, 'activeProfileId', () => 'p1')
+    mock.method(Store, '_viewerId', () => 'p1')
     assert.equal(ProfileStats.cached().minutes, 1500)
   })
 

@@ -17,7 +17,6 @@ import { PageHome } from '../pages/home.js'
 import { PageList } from '../pages/list.js'
 import { PageNotifications } from '../pages/notifications.js'
 import { PageProfile } from '../pages/profile.js'
-import { PageProfiles } from '../pages/profiles.js'
 import { PageSchedule } from '../pages/schedule.js'
 import { PageSearch } from '../pages/search.js'
 import { PageSettings } from '../pages/settings.js'
@@ -35,7 +34,6 @@ export const App = {
     schedule: (root, params) => PageSchedule.render(root, params),
     list: (root, params) => PageList.render(root, params),
     profile: (root, params) => PageProfile.render(root, params),
-    profiles: (root, params) => PageProfiles.render(root, params),
     notifications: (root, params) => PageNotifications.render(root, params),
     dashboard: (root, params) => PageDashboard.render(root, params),
     community: (root, params) => PageCommunity.render(root, params),
@@ -234,10 +232,10 @@ export const App = {
    * The immersive screens (the player, watch-together, the profile picker)
    * plus the admin panel, which brings its own frame entirely.
    */
-  CHROMELESS: ['watch', 'w2g', 'profiles', 'admin'],
+  CHROMELESS: ['watch', 'w2g', 'admin'],
 
   // routes always reachable so users can configure the server / sign in
-  _gateExempt: ['settings', 'profiles'],
+  _gateExempt: ['settings'],
 
   /**
    * Routes that must never be reachable by accident.
@@ -560,7 +558,7 @@ export const App = {
   },
 
   refreshProfileAvatar () {
-    const p = Store.activeProfile()
+    const p = Store.profile()
     const el = document.getElementById('sidebar-avatar')
     if (el && p) el.textContent = p.avatar ?? p.name.slice(0, 1).toUpperCase()
   },
@@ -589,31 +587,28 @@ export const App = {
       .catch(() => {})
   },
 
-  initProfileSwitcher () {
+  /**
+   * The menu behind the sidebar avatar.
+   *
+   * It used to open with a list of profiles to switch between, and a way to
+   * manage them. Both are gone with the profile picker; what is left is what
+   * the menu was actually used for — the three places a viewer goes to look at
+   * their own account.
+   */
+  initAccountMenu () {
     const btn = document.getElementById('profile-switcher')
     if (!btn) return
     btn.addEventListener('click', () => {
-      // close any existing menu
       document.getElementById('profile-menu')?.remove()
-      const active = Store.activeProfileId()
+      const item = (href, icon, label) =>
+        U.el('a', { class: 'profile-menu-item', href, onclick: () => menu.remove() },
+          [U.el('span', { class: 'profile-menu-avatar', text: icon }), document.createTextNode(label)])
       const menu = U.el('div', { class: 'profile-menu', id: 'profile-menu' }, [
-        ...Store.profiles().map(p => U.el('button', {
-          class: 'profile-menu-item' + (p.id === active ? ' active' : ''),
-          onclick: () => {
-            if (p.id !== active) { Store.setActiveProfile(p.id); window.location.reload() }
-            menu.remove()
-          }
-        }, [
-          U.el('span', { class: 'profile-menu-avatar', text: p.avatar ?? p.name.slice(0, 1).toUpperCase() }),
-          U.el('span', { text: p.name }),
-          p.id === active ? U.el('span', { style: 'margin-left:auto;color:var(--accent);', text: '✓' }) : null
-        ])),
+        item('#/profile', '📊', T('Profile & stats')),
+        item('#/profile?tab=analytics', '📈', T('Analytics')),
+        item('#/profile?tab=achievements', '🏆', T('Achievements')),
         U.el('div', { class: 'profile-menu-sep' }),
-        U.el('a', { class: 'profile-menu-item', href: '#/profile', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '📊' }), document.createTextNode(T('Profile & stats'))]),
-        U.el('a', { class: 'profile-menu-item', href: '#/profile?tab=analytics', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '📈' }), document.createTextNode(T('Analytics'))]),
-        U.el('a', { class: 'profile-menu-item', href: '#/profile?tab=achievements', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '🏆' }), document.createTextNode(T('Achievements'))]),
-        U.el('a', { class: 'profile-menu-item', href: '#/profiles?manage=1', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '⚙' }), document.createTextNode(T('Manage profiles'))]),
-        U.el('a', { class: 'profile-menu-item', href: '#/profiles', onclick: () => menu.remove() }, [U.el('span', { class: 'profile-menu-avatar', text: '🔄' }), document.createTextNode(T('Switch profile'))])
+        item('#/settings?tab=account', '⚙', T('Account settings'))
       ])
       document.body.append(menu)
       const rect = btn.getBoundingClientRect()
@@ -670,14 +665,16 @@ export const App = {
 
     sheet.append(U.el('div', { class: 'more-grabber' }))
 
-    const p = Store.activeProfile()
+    const p = Store.profile()
     sheet.append(U.el('div', { class: 'more-profile' }, [
       U.el('div', { class: 'more-profile-avatar', text: p?.avatar ?? (p?.name?.slice(0, 1).toUpperCase() ?? '🦊') }),
       U.el('div', { style: 'min-width:0;' }, [
-        U.el('div', { class: 'more-profile-name', text: p?.name ?? 'Profile' }),
-        U.el('div', { class: 'more-profile-sub', text: T('Watch profile') })
+        U.el('div', { class: 'more-profile-name', text: p?.name ?? 'Dreamer' }),
+        U.el('div', { class: 'more-profile-sub', text: T('Your account') })
       ]),
-      U.el('a', { class: 'btn btn-secondary btn-sm', href: '#/profiles', onclick: () => this.closeMoreSheet() }, [document.createTextNode(T('Switch'))])
+      // Where the "Switch" button used to sit. The row is the viewer's own
+      // account, so it goes to the account, not to a picker.
+      U.el('a', { class: 'btn btn-secondary btn-sm', href: '#/settings?tab=account', onclick: () => this.closeMoreSheet() }, [document.createTextNode(T('Account'))])
     ]))
 
     // build the destination grid, appending Admin only when it's available
@@ -744,7 +741,7 @@ export const App = {
     })
     this.refreshProfileAvatar()
     this.refreshNotifBadge()
-    this.initProfileSwitcher()
+    this.initAccountMenu()
     this.normalisePath()
     this.applyNavLabels()
     this.initSearchModal()

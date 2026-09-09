@@ -42,8 +42,10 @@ async function register (): Promise<Account> {
   const token = (res.json() as { accessToken: string }).accessToken
   const { rows } = await pool.query('SELECT id FROM users WHERE username = $1', [username])
   const id = String(rows[0]!.id)
-  const profile = await pool.query(
-    `INSERT INTO user_profiles (user_id, display_name) VALUES ($1, 'adv') RETURNING id`, [id])
+  // The one profile registration made. An account may not hold a second since
+  // the profile picker was removed, and a unique index says so.
+  const profile = await pool.query('SELECT id FROM user_profiles WHERE user_id = $1', [id])
+  assert.ok(profile.rows[0], 'registration must create the account a profile')
   return { username, token, id, profileId: String(profile.rows[0]!.id) }
 }
 

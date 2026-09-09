@@ -242,8 +242,6 @@ nem jelenik meg.
 ## 4. Mivel lehetne bővíteni? (priorizálva)
 
 ### Kész modulok (ebben az iterációban elkészültek)
-- ✅ **Több profil** (Netflix-stílusú váltó, profilonkénti könyvtár,
-  előzmény, kedvencek, beállítások).
 - ✅ **Értesítési központ + sidebar-harang** olvasatlan-számlálóval.
 - ✅ **Analytics** grafikonokkal (saját SVG chart-motor).
 - ✅ **Achievementek/jelvények** a profilra — az XP-rendszerrel.
@@ -278,8 +276,6 @@ nem jelenik meg.
 ### Platform-minőség
 15. **PWA + offline mód** — service worker, telepíthető app.
 16. **Többnyelvűség** (magyar felület!) — egyszerű i18n szótár.
-17. **Több profil** váltó (Netflix-módra — a `user_profiles` séma eleve
-    így épült).
 18. **Statisztika-grafikonok** (heti nézési heatmap, műfaj-torta).
 19. **MAL/AniList import** — XML/JSON lista-beolvasás a Settingsbe.
 20. **Library szinkron a Yume-fiókkal** — a lokális lista feltöltése a

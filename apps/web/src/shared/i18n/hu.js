@@ -203,15 +203,8 @@ I18n.register('hu', {
   // ---------------------------------------------------------------- profil
   'Profile name': 'Profil neve',
   'Profile & stats': 'Profil és statisztika',
-  'Watch profile': 'Nézési profil',
-  'Add profile': 'Új profil',
-  'Manage profiles': 'Profilok kezelése',
-  'Switch profile': 'Profilváltás',
-  Switch: 'Váltás',
-  'Delete profile': 'Profil törlése',
-  'Profile deleted': 'Profil törölve',
-  'Kids profile (hide mature content)': 'Gyerekprofil (felnőtt tartalom elrejtése)',
-  KIDS: 'GYEREK',
+  'Your account': 'A fiókod',
+  'Account settings': 'Fiókbeállítások',
   Avatar: 'Profilkép',
   Name: 'Név',
 
@@ -352,7 +345,7 @@ I18n.register('hu', {
   'Type to search…': 'Kezdj el gépelni…',
   catalogue: 'katalógus',
   matched: 'találat',
-  'Track, discover and watch anime — your list, your profiles, your way.':
+  'Track, discover and watch anime — your list, your way.':
     'Kövesd, fedezd fel és nézd az animéket — a te listád, a te profiljaid, a te módodon.',
   'built on the Yume design system': 'a Yume designrendszerére építve',
 
