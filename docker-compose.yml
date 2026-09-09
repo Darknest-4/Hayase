@@ -87,7 +87,7 @@ services:
         limits: { memory: 512M }
 
   # one-shot catalogue seed (25k anime + episodes) into the persistent volume.
-  # Run once: docker compose --profile seed run --rm seed
+  # Run once: docker compose --profile seed run --rm --build seed
   # Downloads the official dump by default; never runs on normal `up`.
   seed:
     build: { context: ., dockerfile: infrastructure/docker/Dockerfile }
@@ -107,10 +107,15 @@ services:
   # account already existed before the feature did, which is every instance
   # upgrading rather than installing.
   #
-  #   docker compose --profile founder run --rm founder -- --dry-run
-  #   docker compose --profile founder run --rm founder
-  #   docker compose --profile founder run --rm founder -- --username someone
-  #   docker compose --profile founder run --rm founder -- --only-public
+  #   docker compose --profile founder run --rm --build founder -- --dry-run
+  #   docker compose --profile founder run --rm --build founder
+  #   docker compose --profile founder run --rm --build founder -- --username someone
+  #   docker compose --profile founder run --rm --build founder -- --only-public
+  #
+  # --build, every time. A bare `docker compose build` builds the default
+  # profile only, so these one-shot services keep whatever image they were last
+  # run with — which is how a fixed bug came back on the next deploy, running
+  # from an image built before the fix.
   #
   # Idempotent: running it twice writes nothing the second time.
   founder:
@@ -129,7 +134,10 @@ services:
   # intended — to run after every deploy: it adds what is new and never touches
   # what people have written or what an editor has changed by hand.
   #
-  #   docker compose --profile community run --rm community
+  #   docker compose --profile community run --rm --build community
+  #
+  # --build for the same reason as the founder service above: a bare
+  # `docker compose build` does not reach a profile.
   community:
     build: { context: ., dockerfile: infrastructure/docker/Dockerfile }
     profiles: ['community']
@@ -142,7 +150,7 @@ services:
 
   # one-shot AniList enrichment: fills synopsis, cover/banner, score, genres,
   # tags, studios and trailer onto the seeded rows (matched by anilist_id).
-  # Run after seed: docker compose --profile enrich run --rm enrich
+  # Run after seed: docker compose --profile enrich run --rm --build enrich
   # Rate-limited by AniList — expect this to take a while for the full catalogue.
   enrich:
     build: { context: ., dockerfile: infrastructure/docker/Dockerfile }

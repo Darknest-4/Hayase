@@ -498,7 +498,7 @@ DB‑re csatlakozik.
 migrál (másodpercek). A 25k anime + epizód betöltése külön, **egyszeri**
 one‑shot a perzisztens `pgdata` volume‑ba — utána minden `up` azonnali:
 ```bash
-docker compose --profile seed run --rm seed   # letölti a hivatalos dumpot és betölt
+docker compose --profile seed run --rm --build seed   # letölti a hivatalos dumpot és betölt
 ```
 A `seed` script argumentum nélkül a hivatalos anime‑offline‑database dumpot
 tölti le (`SEED_URL`‑lel felülírható, vagy adj meg helyi fájl‑útvonalat).
@@ -509,7 +509,7 @@ egyszeri és a normál indulást sosem lassítja.
 `anilist_id` leképezést hozza létre; a **gazdag adat** (leírás, borító+banner,
 pontszám, műfajok, tag‑ek ranggal, stúdiók, trailer) az AniList‑ről jön:
 ```bash
-docker compose --profile enrich run --rm enrich   # seed UTÁN
+docker compose --profile enrich run --rm --build enrich   # seed UTÁN
 # lokálisan: npm run import:anilist [--all] [--limit N]
 ```
 Az importőr 50‑esével kéri le az AniList GraphQL‑t (`id_in`), rate‑limit‑tudatosan
@@ -555,10 +555,10 @@ Ez a szokásos eset: a fiók már megvolt, mielőtt ez a funkció létezett. Saj
 compose profil futtatja, az `app` konténer leállítása nélkül:
 
 ```bash
-docker compose --profile founder run --rm founder -- --dry-run
-docker compose --profile founder run --rm founder
-docker compose --profile founder run --rm founder -- --username valaki
-docker compose --profile founder run --rm founder -- --only-public
+docker compose --profile founder run --rm --build founder -- --dry-run
+docker compose --profile founder run --rm --build founder
+docker compose --profile founder run --rm --build founder -- --username valaki
+docker compose --profile founder run --rm --build founder -- --only-public
 ```
 
 Idempotens: kétszer lefuttatva semmi nem duplázódik, és egy félbeszakadt futást
@@ -571,8 +571,7 @@ bukott el, és az egész tranzakció visszagördült. Ha a VPS lassú lemezen ü
 köteg így is túl sokáig tart, kisebbre lehet venni:
 
 ```bash
-docker compose exec -e FOUNDER_BATCH_SIZE=1000 app \
-  node --experimental-strip-types scripts/seed-founder.ts
+docker compose --profile founder run --rm --build -e FOUNDER_BATCH_SIZE=1000 founder
 ```
 
 A 25 703 cím és 333 021 epizód így körülbelül 11 másodperc — 2 másodperces
@@ -637,7 +636,7 @@ mint a kiadott.
 ### Seed
 
 ```bash
-docker compose --profile community run --rm community
+docker compose --profile community run --rm --build community
 npm run seed:community --workspace @yume/api      # fejlesztői gépen
 ```
 
