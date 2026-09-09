@@ -549,6 +549,18 @@ npm run seed:founder --workspace @yume/api -- --username valaki
 npm run seed:founder --workspace @yume/api -- --only-public
 ```
 
+### Dockerrel, VPS-en
+
+Ez a szokásos eset: a fiók már megvolt, mielőtt ez a funkció létezett. Saját
+compose profil futtatja, az `app` konténer leállítása nélkül:
+
+```bash
+docker compose --profile founder run --rm founder -- --dry-run
+docker compose --profile founder run --rm founder
+docker compose --profile founder run --rm founder -- --username valaki
+docker compose --profile founder run --rm founder -- --only-public
+```
+
 Idempotens: kétszer lefuttatva semmi nem duplázódik. Halmaz-alapú SQL, így a
 25 703 cím és 333 021 epizód körülbelül 11 másodperc.
 
