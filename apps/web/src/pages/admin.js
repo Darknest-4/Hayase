@@ -1037,6 +1037,21 @@ export const PageAdmin = {
     const settings = data.settings ?? {}
     const applyLive = async () => { await refreshChrome() }
 
+    // If the panel itself has been switched off, say so here rather than
+    // letting it be a mystery. The reader is standing inside a room whose door
+    // is shut: they can still see it because they hold `settings.system`, and
+    // nobody else on the team can.
+    const adminFlag = (data.flags ?? []).find(f => f.key === 'page.admin')
+    if (adminFlag && !adminFlag.enabled) {
+      content.append(U.el('div', { class: 'callout callout-warn' }, [
+        U.el('strong', { text: 'The admin panel is switched off. ' }),
+        document.createTextNode(
+          'You can still open it because you hold the settings.system permission — you are the only ' +
+          'people who can. Everyone else, including moderators and editors, sees nothing at this address. ' +
+          'Turn "Admin" back on under Pages below to restore it.')
+      ]))
+    }
+
     // ---------- global settings ----------
     content.append(U.el('h2', { class: 'detail-section-title', text: 'Global' }))
 
@@ -1100,27 +1115,58 @@ export const PageAdmin = {
       value: state.permission ?? ''
     })
 
-    const save = async patch => {
-      try { await YumeAPI.admin.setFlag(f.key, patch); U.toast(`${f.label} updated`); await applyLive() } catch (e) { U.toast(e.message, 'error') }
+    /*
+     * Save, and on refusal put the control back where it was.
+     *
+     * Without the revert the panel showed a state the server never accepted:
+     * the switch sat in its new position, the toast scrolled away, and the
+     * next reload quietly undid it. In read-only mode — where every write
+     * outside this section answers 503 — that turned a whole screen of
+     * settings into theatre. `undo` restores exactly the control that was
+     * touched; the caller knows which one that is and the save does not.
+     */
+    const save = async (patch, undo) => {
+      try {
+        await YumeAPI.admin.setFlag(f.key, patch)
+        U.toast(`${f.label} updated`)
+        await applyLive()
+      } catch (e) {
+        U.toast(e.message, 'error')
+        undo?.()
+      }
     }
 
     const accessSel = U.el('select', {
       class: 'select flag-access',
       onchange: async e => {
+        const was = state.access
         state.access = e.target.value
         permInput.classList.toggle('hidden', state.access !== 'permission')
-        await save({ access: state.access, requiredPermission: state.access === 'permission' ? (permInput.value.trim() || 'analytics.view') : null })
+        await save(
+          { access: state.access, requiredPermission: state.access === 'permission' ? (permInput.value.trim() || 'analytics.view') : null },
+          () => {
+            state.access = was
+            e.target.value = was
+            permInput.classList.toggle('hidden', was !== 'permission')
+          }
+        )
         if (state.access === 'permission' && !permInput.value.trim()) permInput.value = 'analytics.view'
       }
     }, [['public', 'Public'], ['auth', 'Login required'], ['permission', 'Permission']].map(([v, l]) =>
       U.el('option', { value: v, text: l, ...(state.access === v ? { selected: '' } : {}) })))
 
-    permInput.addEventListener('change', () => save({ requiredPermission: permInput.value.trim() || null }))
+    permInput.addEventListener('change', () => {
+      const was = state.permission ?? ''
+      state.permission = permInput.value.trim() || null
+      save({ requiredPermission: state.permission }, () => { state.permission = was || null; permInput.value = was })
+    })
 
-    const toggle = U.el('label', { class: 'switch' }, [
-      U.el('input', { type: 'checkbox', ...(f.enabled ? { checked: '' } : {}), onchange: e => save({ enabled: e.target.checked }) }),
-      U.el('span', { class: 'slider' })
-    ])
+    const box = U.el('input', {
+      type: 'checkbox',
+      ...(f.enabled ? { checked: '' } : {}),
+      onchange: e => save({ enabled: e.target.checked }, () => { e.target.checked = !e.target.checked })
+    })
+    const toggle = U.el('label', { class: 'switch' }, [box, U.el('span', { class: 'slider' })])
 
     return U.el('div', { class: 'flag-row' }, [
       U.el('div', { class: 'flag-meta' }, [

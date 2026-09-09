@@ -82,6 +82,19 @@ describe('the admin gate', () => {
   it('keeps out a signed-out visitor', () => {
     assert.equal(gate('admin', { signedIn: false, perms: ['admin.users.manage'] }).ok, false)
   })
+
+  it('refuses a signed-out visitor the same way it refuses an unpermitted one', () => {
+    // It used to answer `auth`, which the renderer draws as a sign-in card
+    // headed with the flag's label — and a privileged refusal carries no flag,
+    // so `gate.flag.label` threw and the visitor got a blank page. Opening
+    // #/admin signed out, from a stale bookmark, painted nothing at all.
+    //
+    // Answering `permission` fixes both halves: nothing throws, and a visitor
+    // who is not signed in learns exactly as much about the panel as one who
+    // is signed in without the grant — which is nothing.
+    assert.deepEqual(gate('admin', { signedIn: false }), { ok: false, kind: 'permission' })
+    assert.deepEqual(gate('admin', { signedIn: false, perms: ['admin.users.manage'] }), { ok: false, kind: 'permission' })
+  })
 })
 
 describe('failing closed', () => {
@@ -106,9 +119,35 @@ describe('failing closed', () => {
     assert.equal(gate('admin', { perms: ['admin.users.manage'], config: { flags: {} } }).ok, true, 'permission holder still in')
   })
 
-  it('an administrator can still turn the panel off for everyone', () => {
+  it('an administrator can still turn the panel off for everyone else', () => {
     const off = { flags: { 'page.admin': { enabled: false, access: 'permission', permission: 'analytics.view', label: 'Admin' } } }
     assert.equal(gate('admin', { perms: ['admin.users.manage'], config: off }).ok, false)
+    assert.equal(gate('admin', { perms: ['community.moderate'], config: off }).ok, false)
+    assert.equal(gate('admin', { perms: ['roles.manage'], config: off }).ok, false)
+  })
+
+  it('but the switch cannot lock out the only people who can switch it back', () => {
+    // The panel is the only place page.admin can be turned back on. Before
+    // this, turning it off ended every administrator's access for good and
+    // left a database console as the way in. Whoever holds settings.system —
+    // the permission that edits the flags — keeps the door.
+    const off = { flags: { 'page.admin': { enabled: false, access: 'permission', permission: 'analytics.view', label: 'Admin' } } }
+    assert.equal(gate('admin', { perms: ['settings.system', 'admin.users.manage'], config: off }).ok, true)
+  })
+
+  it('the recovery path is not a way past the permission check', () => {
+    // settings.system is what lets you undo the flag, not a section grant. On
+    // its own it still has to satisfy the same section test as anybody else.
+    const off = { flags: { 'page.admin': { enabled: false, access: 'permission', permission: 'analytics.view', label: 'Admin' } } }
+    assert.equal(gate('admin', { perms: ['settings.system'], config: off }).ok, false)
+    assert.equal(gate('admin', { signedIn: false, perms: ['settings.system'], config: off }).ok, false)
+  })
+
+  it('the recovery path is only for the panel, not for ordinary pages', () => {
+    // A disabled page stays disabled for everyone, administrators included:
+    // it is reachable again from the panel, so nothing is lost by refusing it.
+    const off = { flags: { 'page.community': { enabled: false, access: 'public', label: 'Community' } } }
+    assert.equal(gate('community', { perms: ['settings.system'], config: off }).ok, false)
   })
 
   it('refuses the admin panel when the panel module has not loaded', () => {
