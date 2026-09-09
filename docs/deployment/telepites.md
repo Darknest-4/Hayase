@@ -141,15 +141,40 @@ docker compose exec postgres psql -U yume yume -c \
 ~25 000 anime a hivatalos dumpból, epizódokkal együtt. Idempotens, kb. 2 perc:
 
 ```sh
-docker compose --profile seed run --rm seed
+docker compose --profile seed run --rm --build seed
 ```
+
+> A `--build` nem elhagyható. Az argumentum nélküli `docker compose build` csak
+> az alapértelmezett profil szolgáltatásait építi, tehát az egyszeri, profilhoz
+> kötött konténerek azzal az image-dzsel futnának, amivel legutóbb — így egy
+> már kijavított hiba jön vissza a következő telepítéskor.
 
 Utána a borítók, leírások, pontszámok, stúdiók feltöltése AniListről. Ez
 **sokáig tart** (a rate limit miatt), és futtatható később is:
 
 ```sh
-docker compose --profile enrich run --rm enrich
+docker compose --profile enrich run --rm --build enrich
 ```
+
+## 6. Az alapító könyvtára és a közösség tartalma
+
+Az első fiók — amelyiket a regisztráció adminná tett — a teljes katalógussal
+indul: minden cím megnézve, minden achievement feloldva. Új telepítésen ez
+magától megtörténik (a regisztráció betesz egy `founder` jobot a sorba, a worker
+lefuttatja); egy már létező fiókhoz kézzel kell:
+
+```sh
+docker compose --profile founder run --rm --build founder -- --dry-run
+docker compose --profile founder run --rm --build founder
+```
+
+A fórum alapkategóriái, a chatszobák és a fejlesztési napló:
+
+```sh
+docker compose --profile community run --rm --build community
+```
+
+Mindkettő idempotens, minden telepítés után nyugodtan újrafuttatható.
 
 ---
 
