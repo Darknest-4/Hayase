@@ -35,7 +35,22 @@ function enforcedSlugs (dir = SRC, found = new Set<string>()): Set<string> {
     // The second argument is optional — admin routes pass `{ hide: true }` so
     // they answer 404 instead of 403 — so the slug is matched without
     // requiring the closing paren to follow it.
-    for (const match of readFileSync(path, 'utf8').matchAll(/requirePermission\('([a-z0-9._]+)'/g)) {
+    const source = readFileSync(path, 'utf8')
+    for (const match of source.matchAll(/requirePermission\('([a-z0-9._]+)'/g)) {
+      found.add(match[1]!)
+    }
+    /*
+     * The other spelling. A hook cannot express "these two fields need
+     * different grants", which is what PATCH /v1/forum/topics/:id is: a
+     * moderator may hold `topic.pin` without `topic.lock`, and a request
+     * asking for both must not get one through on the strength of the other.
+     * Those routes check per field with a `holds(request, 'slug')` helper.
+     *
+     * It is enforcement either way, so it counts either way — otherwise this
+     * file would push those permissions back to `planned` and the Roles screen
+     * would understate grants that really do bite.
+     */
+    for (const match of source.matchAll(/\bholds\(request, '([a-z0-9._]+)'/g)) {
       found.add(match[1]!)
     }
   }

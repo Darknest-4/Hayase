@@ -215,11 +215,43 @@ export const YumeAPI = {
     return ticket
   },
 
-  /** Open an authenticated socket. Resolves once the handshake succeeds. */
-  async openSocket () {
+  /**
+   * Open an authenticated socket, and wait until it is actually open.
+   *
+   * It used to hand back a socket in CONNECTING and claim in its own comment
+   * to have waited. Both callers then attached an `open` listener to the
+   * socket they were given — and on a fast connection, a local one especially,
+   * the socket can open in the gap between the constructor returning and the
+   * listener being attached. The event is gone by then, so the listener never
+   * runs and the `join` it was going to send is never sent: the chat room goes
+   * quiet, and watch-together waits for a `joined` that cannot arrive.
+   *
+   * Resolving on `open` makes the comment true and removes the race from both
+   * of them, because after this there is no gap left to lose an event in.
+   */
+  async openSocket ({ timeoutMs = 10_000 } = {}) {
     const ticket = await this.wsTicket()
     const url = this.base().replace(/^http/, 'ws') + '/ws?ticket=' + encodeURIComponent(ticket)
-    return new WebSocket(url)
+    const socket = new WebSocket(url)
+
+    if (socket.readyState === WebSocket.OPEN) return socket
+    await new Promise((resolve, reject) => {
+      const timer = window.setTimeout(() => { cleanup(); socket.close(); reject(new Error('The connection timed out')) }, timeoutMs)
+      const cleanup = () => {
+        window.clearTimeout(timer)
+        socket.removeEventListener('open', onOpen)
+        socket.removeEventListener('error', onFail)
+        socket.removeEventListener('close', onFail)
+      }
+      const onOpen = () => { cleanup(); resolve() }
+      // `close` as well as `error`: a socket refused before it opens fires
+      // close, and waiting on error alone would hang until the timeout.
+      const onFail = () => { cleanup(); reject(new Error('The connection failed')) }
+      socket.addEventListener('open', onOpen)
+      socket.addEventListener('error', onFail)
+      socket.addEventListener('close', onFail)
+    })
+    return socket
   },
 
   // ---- catalogue reads ----
@@ -425,6 +457,72 @@ export const YumeAPI = {
     } catch (e) {
       return null
     }
+  },
+
+  // ---- forum ----
+  //
+  // Namespaced rather than flat because there are a dozen of them and they all
+  // start with the same word; `YumeAPI.forum.topics(slug)` reads as what it is.
+
+  forum: {
+    _api: null, // set below, once YumeAPI exists to point at
+
+    list () { return this._api._request('/v1/forum') },
+    get (slug) { return this._api._request(`/v1/forum/${encodeURIComponent(slug)}`) },
+    create (name, description) {
+      return this._api._request('/v1/forum', { method: 'POST', auth: true, body: { name, description: description || undefined } })
+    },
+    update (id, patch) { return this._api._request(`/v1/forum/${id}`, { method: 'PATCH', auth: true, body: patch }) },
+    remove (id) { return this._api._request(`/v1/forum/${id}`, { method: 'DELETE', auth: true }) },
+
+    topics (slug, { limit = 30, offset = 0 } = {}) {
+      return this._api._request(`/v1/forum/${encodeURIComponent(slug)}/topics?limit=${limit}&offset=${offset}`)
+    },
+    createTopic (slug, title, body) {
+      return this._api._request(`/v1/forum/${encodeURIComponent(slug)}/topics`, { method: 'POST', auth: true, body: { title, body } })
+    },
+    topic (id) { return this._api._request(`/v1/forum/topics/${id}`) },
+    updateTopic (id, patch) { return this._api._request(`/v1/forum/topics/${id}`, { method: 'PATCH', auth: true, body: patch }) },
+    removeTopic (id) { return this._api._request(`/v1/forum/topics/${id}`, { method: 'DELETE', auth: true }) },
+
+    posts (topicId, { limit = 50, offset = 0 } = {}) {
+      return this._api._request(`/v1/forum/topics/${topicId}/posts?limit=${limit}&offset=${offset}`)
+    },
+    reply (topicId, body) {
+      return this._api._request(`/v1/forum/topics/${topicId}/posts`, { method: 'POST', auth: true, body: { body } })
+    },
+    editPost (id, body) { return this._api._request(`/v1/forum/posts/${id}`, { method: 'PATCH', auth: true, body: { body } }) },
+    removePost (id) { return this._api._request(`/v1/forum/posts/${id}`, { method: 'DELETE', auth: true }) }
+  },
+
+  // ---- live chat ----
+  //
+  // Only the parts a socket cannot do: what rooms exist, becoming a member of
+  // one, and what was said before you arrived. Sending goes over the socket.
+
+  chat: {
+    _api: null,
+
+    rooms () { return this._api._request('/v1/chat/rooms') },
+    join (slug) { return this._api._request(`/v1/chat/rooms/${encodeURIComponent(slug)}/join`, { method: 'POST', auth: true }) },
+    messages (slug, { limit = 50, before } = {}) {
+      const query = new URLSearchParams({ limit: String(limit) })
+      if (before) query.set('before', String(before))
+      return this._api._request(`/v1/chat/rooms/${encodeURIComponent(slug)}/messages?${query}`)
+    },
+    removeMessage (id) { return this._api._request(`/v1/chat/messages/${id}`, { method: 'DELETE', auth: true }) }
+  },
+
+  // ---- development log ----
+
+  changelog: {
+    _api: null,
+
+    list (status) { return this._api._request('/v1/changelog' + (status ? `?status=${status}` : '')) },
+    get (version) { return this._api._request(`/v1/changelog/${encodeURIComponent(version)}`) },
+    create (release) { return this._api._request('/v1/changelog', { method: 'POST', auth: true, body: release }) },
+    update (id, patch) { return this._api._request(`/v1/changelog/${id}`, { method: 'PATCH', auth: true, body: patch }) },
+    remove (id) { return this._api._request(`/v1/changelog/${id}`, { method: 'DELETE', auth: true }) }
   },
 
   // ---- comments ----
@@ -694,3 +792,9 @@ export const YumeAPI = {
     }
   }
 }
+
+// The namespaces above call back into the object that holds them. Assigning it
+// here rather than reaching for a bare `YumeAPI` inside each method keeps them
+// usable if one is ever pulled out on its own, and avoids every method
+// depending on the module's own binding still being in scope.
+for (const namespace of [YumeAPI.forum, YumeAPI.chat, YumeAPI.changelog]) namespace._api = YumeAPI

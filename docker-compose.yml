@@ -123,6 +123,23 @@ services:
       DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/yume
     entrypoint: ['node', '--experimental-strip-types', 'scripts/seed-founder.ts']
 
+  # one-shot: default forum boards, chat rooms and the development log.
+  #
+  # Idempotent and keyed on the slug or the version, so it is safe — and
+  # intended — to run after every deploy: it adds what is new and never touches
+  # what people have written or what an editor has changed by hand.
+  #
+  #   docker compose --profile community run --rm community
+  community:
+    build: { context: ., dockerfile: infrastructure/docker/Dockerfile }
+    profiles: ['community']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/yume
+    entrypoint: ['node', '--experimental-strip-types', 'scripts/seed-community.ts']
+
   # one-shot AniList enrichment: fills synopsis, cover/banner, score, genres,
   # tags, studios and trailer onto the seeded rows (matched by anilist_id).
   # Run after seed: docker compose --profile enrich run --rm enrich

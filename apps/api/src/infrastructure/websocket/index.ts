@@ -46,6 +46,10 @@ const MSG_RATE = Number(process.env.WS_MSG_PER_SEC ?? 10)
 const MSG_BURST = Number(process.env.WS_MSG_BURST ?? 25)
 /** Frames larger than this are dropped before JSON.parse ever sees them. */
 const MAX_FRAME_BYTES = Number(process.env.WS_MAX_FRAME_BYTES ?? 16_384)
+/** Frames held while a connection is still being authenticated. A legitimate
+ *  client sends one — its `join`. The cap is what stops an unauthenticated
+ *  peer making us buffer on its behalf. */
+const EARLY_FRAME_LIMIT = Number(process.env.WS_EARLY_FRAME_LIMIT ?? 8)
 /** One client cannot hold subscriptions open without limit. */
 const MAX_CHANNELS = Number(process.env.WS_MAX_CHANNELS ?? 20)
 /** Refusals tolerated before the connection is closed. */
@@ -264,6 +268,29 @@ export default fp(async (app: FastifyInstance) => {
   app.addHook('onClose', async () => clearInterval(sweep))
 
   app.get('/ws', { websocket: true }, (socket, req) => {
+    /*
+     * Hold whatever arrives before this connection is authenticated.
+     *
+     * Authentication is a database round trip, and until it finished there was
+     * no `message` listener on the socket at all — so a client that sent its
+     * first frame the instant the handshake completed had that frame silently
+     * dropped. That is exactly what a client does: the chat joins its channel
+     * as soon as the socket opens. The `join` vanished, the channel was never
+     * subscribed, and every message the client sent afterwards was refused by
+     * `client.channels.has(...)` without a word. The room looked connected and
+     * was deaf.
+     *
+     * The listener is attached synchronously now and parks frames in a queue;
+     * the authenticated handler drains it in order. Bounded, because an
+     * unauthenticated peer must not be able to make us buffer for it.
+     */
+    const early: Buffer[] = []
+    let ready: ((raw: Buffer) => void) | null = null
+    socket.on('message', (raw: Buffer) => {
+      if (ready) return ready(raw)
+      if (early.length < EARLY_FRAME_LIMIT) early.push(raw)
+    })
+
     // Auth by single-use ticket (?ticket=…), obtained from POST /v1/auth/ws-ticket.
     // The access token itself is deliberately NOT accepted here: a browser
     // cannot set headers on a WebSocket handshake, so anything in the URL ends
@@ -298,7 +325,7 @@ export default fp(async (app: FastifyInstance) => {
     subscribe(client, `user:${client.userId}`)
     socket.send(JSON.stringify({ type: 'hello', username: client.username }))
 
-    socket.on('message', (raw: Buffer) => {
+    const onFrame = (raw: Buffer): void => {
       // Size is checked on the buffer, before any parsing, so an oversized
       // frame costs nothing beyond the bytes already received.
       if (raw.length > MAX_FRAME_BYTES) {
@@ -315,7 +342,12 @@ export default fp(async (app: FastifyInstance) => {
       handleMessage(app, client, raw.toString()).catch(err => {
         app.log.error(err, 'ws message error')
       })
-    })
+    }
+
+    // Whatever arrived while we were still checking the ticket, in the order
+    // it arrived, before anything new is let through.
+    ready = onFrame
+    for (const raw of early.splice(0)) onFrame(raw)
 
       socket.on('close', () => {
         clients.delete(client)

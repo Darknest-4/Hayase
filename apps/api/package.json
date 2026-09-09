@@ -14,6 +14,7 @@
     "worker:once": "node --experimental-strip-types src/workers/index.ts --once",
     "seed": "node --experimental-strip-types scripts/seed.ts",
     "seed:founder": "node --experimental-strip-types scripts/seed-founder.ts",
+    "seed:community": "node --experimental-strip-types scripts/seed-community.ts",
     "import:anilist": "node --experimental-strip-types scripts/import-anilist.ts",
     "test": "node --experimental-strip-types --test test/*.test.ts",
     "test:integration": "node --experimental-strip-types --test test/integration.test.ts",

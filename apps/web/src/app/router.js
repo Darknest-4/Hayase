@@ -11,6 +11,7 @@ import { LibrarySync } from '../features/library-sync/library-sync.js'
 import { Onboarding } from '../features/onboarding/onboarding.js'
 import { PageAdmin } from '../pages/admin.js'
 import { PageAnime } from '../pages/anime.js'
+import { PageChangelog } from '../pages/changelog.js'
 import { PageCommunity } from '../pages/community.js'
 import { PageDashboard } from '../pages/dashboard.js'
 import { PageHome } from '../pages/home.js'
@@ -37,6 +38,7 @@ export const App = {
     notifications: (root, params) => PageNotifications.render(root, params),
     dashboard: (root, params) => PageDashboard.render(root, params),
     community: (root, params) => PageCommunity.render(root, params),
+    changelog: (root, params) => PageChangelog.render(root, params),
     w2g: (root, params, arg) => PageW2G.render(root, params, arg),
     watch: (root, params, arg) => PageWatch.render(root, params, arg),
     admin: (root, params) => PageAdmin.render(root, params),
@@ -642,6 +644,7 @@ export const App = {
       { route: 'schedule', label: T('Schedule'), icon: '<rect width="18" height="18" x="3" y="4" rx="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>' },
       { route: 'w2g', label: T('Together'), icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
       { route: 'community', label: T('Community'), icon: '<path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4c0-1.1.9-2 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/>' },
+      { route: 'changelog', label: T('Development log'), icon: '<path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/>' },
       { route: 'profile', label: T('Profile'), icon: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>' },
       { route: 'profile', href: '#/profile?tab=analytics', label: T('Analytics'), icon: '<path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7"/><rect x="12" y="7" width="3" height="11"/><rect x="17" y="4" width="3" height="14"/>' },
       { route: 'profile', href: '#/profile?tab=achievements', label: T('Awards'), icon: '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>' },
