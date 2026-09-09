@@ -531,3 +531,38 @@ A ~16k leképezett anime a rate‑limit miatt ~15–30 perc, egyszeri.
 - JSON‑Schema minden route‑on (validáció + gyors serializáció).
 - Hibaformátum: RFC‑7807‑szerű `{ type, title, status, detail }`.
 - Minden admin‑mutáció permission‑gate‑elt és (releváns esetben) webhook‑eseményt tüzel.
+
+## Az alapító könyvtára
+
+Az instancia első fiókja — az, amelyiket a regisztrációs bootstrap adminná tett
+— a teljes katalógussal indul: minden cím a könyvtárban befejezettként, minden
+epizód megnézve, minden achievement feloldva, a statisztika és az XP ehhez
+igazítva.
+
+Új instancián ez magától megtörténik: a bootstrap egy `founder` jobot tesz a
+sorba, a worker pedig lefuttatja. Már létező fiókhoz kézzel kell elindítani:
+
+```bash
+npm run seed:founder --workspace @yume/api -- --dry-run   # mit írna, mielőtt ír
+npm run seed:founder --workspace @yume/api                # az első admin fiókra
+npm run seed:founder --workspace @yume/api -- --username valaki
+npm run seed:founder --workspace @yume/api -- --only-public
+```
+
+Idempotens: kétszer lefuttatva semmi nem duplázódik. Halmaz-alapú SQL, így a
+25 703 cím és 333 021 epizód körülbelül 11 másodperc.
+
+Az `--only-public` a 3 118 publikált címre szűkít. Alapból minden bekerül, a
+rejtettek is — az instanciát a tulajdonosa nézi, és ő látja a rejtetteket is.
+
+### Amit ez maga után vont
+
+A könyvtár végpont eddig limit nélkül adta vissza az egészet: ezzel a
+könyvtárral egyetlen válasz 8,4 MB, 25 703 sor. Mostantól kulcs alapú lapozás
+(`limit`, `cursor`, és `next` a válaszban), a kliens pedig végigsétál a
+lapokon, egyetlen írással alkalmazza őket, és a könyvtár oldal képernyőnyinként
+rajzol.
+
+A böngésző tárhelye néhány megabájt, a teljes katalógus nem fér bele. Ilyenkor
+a kliens a legfrissebb bejegyzéseket tartja meg, és ezt naplózza is — a fiók
+mindent tárol, csak ez a böngésző nem.

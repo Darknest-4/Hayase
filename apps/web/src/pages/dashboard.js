@@ -30,7 +30,7 @@ export const PageDashboard = {
 
   render (root, params) {
     const editing = params.get('edit') === '1'
-    const profile = Store.activeProfile()
+    const profile = Store.profile()
     const layout = this._layout()
 
     root.append(C.spotlight(`${this._greeting()}, ${profile?.name ?? 'Dreamer'}`, {

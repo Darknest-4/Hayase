@@ -132,11 +132,12 @@ describe('API integration', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => 
     })
 
     test('a signed-in user reaches their own profile library', async () => {
-      // Deliberately not the default: a partial unique index allows only one
-      // default profile per account, and registration may already have made it.
+      // The account's profile, not a second one made here: an account may hold
+      // exactly one since the profile picker was removed, and a unique index
+      // enforces it. Registration creates it, so it is already there.
       const { rows } = await pool.query(
-        `INSERT INTO user_profiles (user_id, display_name)
-         SELECT id, 'itest' FROM users WHERE username = $1 RETURNING id`, [username])
+        `SELECT p.id FROM user_profiles p JOIN users u ON u.id = p.user_id WHERE u.username = $1`, [username])
+      assert.ok(rows[0], 'registration must create the account a profile')
       profileId = String(rows[0]!.id)
 
       const res = await app.inject({

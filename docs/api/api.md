@@ -48,9 +48,7 @@ One service, two protocols over the same service layer:
 ### Profiles & settings
 | Method | Path | Description |
 |---|---|---|
-| GET/POST | `/v1/profiles` | list/create watch profiles |
-| GET/PATCH/DELETE | `/v1/profiles/:id` | manage profile |
-| GET/PUT | `/v1/profiles/:id/settings` | bulk settings (key→jsonb) |
+| GET/PATCH | `/v1/profiles/me` | the account's one profile: display name, avatar, adult-content switch |
 
 ### Catalogue
 | Method | Path | Description |
@@ -75,7 +73,7 @@ One service, two protocols over the same service layer:
 | GET | `/v1/me/continue-watching` | in-progress rail, with the AniList id so a client can map it back |
 | ⏳ GET | `/v1/me/history` | watch history (cursor over partitions) |
 | GET/PUT/DELETE | `/v1/me/library/:animeId` | list entry (status/progress/score) |
-| GET | `/v1/me/library` | `?status=WATCHING…` |
+| GET | `/v1/me/library` | `?status=WATCHING…&limit=500&cursor=…` — keyset-paginated; a page that is not the last carries `next` |
 | GET/PUT/DELETE | `/v1/me/favorites` · `/favorites/:animeId` | hearts; anime only so far, the table is typed for more |
 | ⏳ GET/POST | `/v1/me/lists` + item/collection CRUD | custom lists & collections |
 | ⏳ GET/POST | `/v1/me/bookmarks` | in-episode bookmarks |

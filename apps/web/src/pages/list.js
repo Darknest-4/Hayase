@@ -4,9 +4,12 @@
 
 import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
-import { T } from '../shared/i18n/i18n.js'
+import { I18n, T } from '../shared/i18n/i18n.js'
 import { Store } from '../shared/state/store.js'
 import { U } from '../shared/lib/dom.js'
+
+/** How many rows a screenful is, and how many each "Show more" adds. */
+const PAGE = 60
 
 export const PageList = {
   render (root, params) {
@@ -16,7 +19,10 @@ export const PageList = {
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
 
-    const state = { tab: params.get('tab') ?? 'CURRENT' }
+    // `shown` is how many rows of the current tab are on screen. A library
+    // can hold the whole catalogue — 25,703 rows built at once is a locked tab
+    // and a page nobody can scroll — so it grows a screenful at a time.
+    const state = { tab: params.get('tab') ?? 'CURRENT', shown: PAGE }
 
     const tabsWrap = U.el('div', { class: 'tabs' })
     const content = U.el('div', { style: 'margin-top:1.25rem;' })
@@ -32,7 +38,7 @@ export const PageList = {
         const count = value === 'FAVOURITES' ? favs.length : list.filter(e => e.status === value).length
         const tab = U.el('button', {
           class: 'tab' + (state.tab === value ? ' active' : ''),
-          onclick: () => { state.tab = value; renderTabs(); renderContent() }
+          onclick: () => { state.shown = PAGE; state.tab = value; renderTabs(); renderContent() }
         }, [
           document.createTextNode(label),
           U.el('span', { class: 'count', text: String(count) })
@@ -69,7 +75,8 @@ export const PageList = {
         return
       }
 
-      for (const entry of entries) {
+      const visible = entries.slice(0, state.shown)
+      for (const entry of visible) {
         const media = entry.media
         const row = U.el('div', {
           class: 'list-row',
@@ -118,6 +125,16 @@ export const PageList = {
           controls
         )
         content.append(row)
+      }
+
+      if (entries.length > visible.length) {
+        const remaining = entries.length - visible.length
+        content.append(U.el('div', { class: 'list-more' }, [
+          U.el('button', {
+            class: 'btn btn-secondary',
+            onclick: () => { state.shown += PAGE; renderContent() }
+          }, [document.createTextNode(`${T('Show more')} (${remaining.toLocaleString(I18n.locale())})`)])
+        ]))
       }
     }
 

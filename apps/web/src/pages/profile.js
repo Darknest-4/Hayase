@@ -26,7 +26,7 @@ export const PageProfile = {
   ],
 
   render (root, params) {
-    const profile = Store.activeProfile()
+    const profile = Store.profile()
     const name = profile?.name ?? Store.settings().profileName ?? 'Dreamer'
 
     // level for the header subtitle

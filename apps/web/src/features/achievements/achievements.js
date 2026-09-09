@@ -41,7 +41,7 @@ export const PageAchievements = {
   ],
 
   render (root) {
-    const profile = Store.activeProfile()
+    const profile = Store.profile()
     root.append(C.spotlight(T('Achievements'), { subtitle: profile ? `${profile.avatar ?? ''} ${profile.name}` : null }))
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)

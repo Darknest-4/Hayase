@@ -108,13 +108,12 @@ describe('browser smoke', { skip: REASON }, () => {
     // reason CI goes red.
     await page.route('https://**', route => route.abort())
 
-    // Onboarding is keyed by profile id, and the id changes under the test:
-    // it is 'default' before sign-in and the server's uuid once the client has
-    // pulled the account's profiles. Writing the flag under the id that is
-    // current at setup time therefore misses whenever the pull wins the race,
-    // and the welcome modal then opens over whatever the test was about to
-    // click. None of these tests are about onboarding, so the gate is answered
-    // for every key instead of guessed at.
+    // Onboarding is keyed by the browser's viewer id, which is minted on first
+    // use — so writing the flag under whatever id is current at setup time
+    // misses whenever the client mints its own first, and the welcome modal
+    // then opens over whatever the test was about to click. None of these
+    // tests are about onboarding, so the gate is answered for every key
+    // instead of guessed at.
     await page.addInitScript(() => {
       const getItem = Storage.prototype.getItem
       Storage.prototype.getItem = function (key) {

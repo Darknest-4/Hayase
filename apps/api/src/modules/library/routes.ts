@@ -28,29 +28,86 @@ async function resolveProfile (request: FastifyRequest, reply: FastifyReply): Pr
 const routes: FastifyPluginAsync = async fastify => {
   fastify.addHook('preHandler', fastify.authenticate)
 
+  /**
+   * The profile's library, a page at a time.
+   *
+   * It used to return the lot with no limit, which was fine while a library
+   * was a few hundred titles and is not: the founder's account holds the whole
+   * catalogue, and one response measured 8.4 MB across 25,703 rows.
+   *
+   * Keyset pagination rather than OFFSET — (updated_at, anime_id) descending,
+   * which the `library_entries_status_idx` already orders by — so a page costs
+   * the same whether it is the first or the fiftieth, and an entry updated
+   * mid-walk cannot push a row across a page boundary and hide it.
+   *
+   * `limit` is capped rather than trusted, and the default is generous enough
+   * that an ordinary library still arrives in one request.
+   */
+  const LIBRARY_PAGE_MAX = 1000
+
   fastify.get('/library', {
-    schema: { querystring: { type: 'object', properties: { status: { enum: [...LIBRARY_STATUSES] } } } }
+    schema: {
+      querystring: {
+        type: 'object',
+        properties: {
+          status: { enum: [...LIBRARY_STATUSES] },
+          limit: { type: 'integer', minimum: 1, maximum: LIBRARY_PAGE_MAX, default: 500 },
+          // "<iso timestamp>,<uuid>" — the last row of the previous page.
+          cursor: { type: 'string', maxLength: 80 }
+        }
+      }
+    }
   }, async (request, reply) => {
     const profileId = await resolveProfile(request, reply)
     if (!profileId) return
 
-    const { status } = request.query as { status?: string }
-    const params: unknown[] = [profileId]
-    if (status) params.push(status)
+    const { status, limit = 500, cursor } = request.query as { status?: string, limit?: number, cursor?: string }
 
-    const data = await query(
+    const params: unknown[] = [profileId]
+    const where: string[] = ['le.profile_id = $1']
+    if (status) { params.push(status); where.push(`le.status = $${params.length}`) }
+
+    if (cursor) {
+      const comma = cursor.lastIndexOf(',')
+      const at = cursor.slice(0, comma)
+      const id = cursor.slice(comma + 1)
+      if (comma < 0 || Number.isNaN(Date.parse(at))) {
+        return reply.code(400).send({
+          type: 'about:blank', title: 'Bad Request', status: 400, detail: 'Malformed cursor'
+        })
+      }
+      params.push(at, id)
+      where.push(`(le.updated_at, le.anime_id) < ($${params.length - 1}::timestamptz, $${params.length}::uuid)`)
+    }
+
+    params.push(limit + 1) // one extra: its presence is what says there is more
+    const rows = await query<Record<string, unknown> & { anime_id: string, cursor_at: string }>(
       `SELECT le.anime_id, le.status, le.progress, le.score, le.rewatches, le.updated_at,
+              le.updated_at::text AS cursor_at,
               a.canonical_title, a.format, a.episode_count, a.next_airing_ep,
               m.anilist_id, img.object_key AS cover_key
        FROM library_entries le
        JOIN anime a ON a.id = le.anime_id
        LEFT JOIN anime_mappings m ON m.anime_id = a.id
        LEFT JOIN anime_images img ON img.anime_id = a.id AND img.kind = 'cover' AND img.is_primary
-       WHERE le.profile_id = $1 ${status ? 'AND le.status = $2' : ''}
-       ORDER BY le.updated_at DESC`,
+       WHERE ${where.join(' AND ')}
+       ORDER BY le.updated_at DESC, le.anime_id DESC
+       LIMIT $${params.length}`,
       params
     )
-    return { data }
+
+    const more = rows.length > limit
+    const page = more ? rows.slice(0, limit) : rows
+    const last = page[page.length - 1]
+    const next = more && last ? `${last.cursor_at},${last.anime_id}` : null
+    // cursor_at is scaffolding for the line above, not part of the contract.
+    const data = page.map(({ cursor_at: _cursorAt, ...row }) => row)
+    return {
+      data,
+      // Absent rather than null when the walk is over, so `while (cursor)`
+      // reads correctly on the other side.
+      ...(next ? { next } : {})
+    }
   })
 
   fastify.put('/library/:animeId', {

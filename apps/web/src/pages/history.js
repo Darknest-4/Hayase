@@ -10,7 +10,7 @@ import { U } from '../shared/lib/dom.js'
 
 export const PageHistory = {
   render (root) {
-    const profile = Store.activeProfile()
+    const profile = Store.profile()
     root.append(C.spotlight(T('Watch History'), { subtitle: profile ? `${profile.avatar ?? ''} ${profile.name}` : null }))
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)

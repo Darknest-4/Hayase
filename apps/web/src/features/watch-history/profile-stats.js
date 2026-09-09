@@ -31,7 +31,7 @@ export const ProfileStats = {
   // Kept per profile: two people sharing a browser must not see each other's
   // totals flash up before the fetch lands.
   _key () {
-    return `yume-stats::${Store.activeProfileId()}`
+    return `yume-stats::${Store._viewerId()}`
   },
 
   /** The last server answer, if one was ever received on this device. */

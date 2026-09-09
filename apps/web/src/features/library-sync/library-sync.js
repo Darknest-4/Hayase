@@ -8,8 +8,9 @@
 // Two id worlds are bridged here:
 //   * anime: the client is AniList-id centric; the server keys on Yume UUIDs.
 //     YumeAPI.yumeAnimeId(media, {create}) resolves AniList → UUID (caching).
-//   * profile: local Store profiles vs the account's user_profiles. Sync uses
-//     the account's default server profile (created on first sign-in).
+//   * profile: the account's rows hang off a profile row, and GET
+//     /v1/profiles/me is what returns it — making it if the account somehow
+//     has none. There is exactly one, so there is nothing to choose.
 
 import { Store } from '../../shared/state/store.js'
 import { YumeAPI } from '../../shared/api/yume.js'
@@ -17,6 +18,10 @@ import { YumeAPI } from '../../shared/api/yume.js'
 export const LibrarySync = {
   // AniList-style client statuses ↔ server library_status enum
   STATUS_TO_DB: { CURRENT: 'WATCHING', PLANNING: 'PLANNING', COMPLETED: 'COMPLETED', PAUSED: 'PAUSED', DROPPED: 'DROPPED', REPEATING: 'REWATCHING' },
+  /** Stop walking after this many pages: a cursor that never ends is a bug,
+   *  not a library. 1,000 rows a page, so this is a 60,000-title ceiling. */
+  MAX_PULL_PAGES: 60,
+
   STATUS_FROM_DB: { WATCHING: 'CURRENT', PLANNING: 'PLANNING', COMPLETED: 'COMPLETED', PAUSED: 'PAUSED', DROPPED: 'DROPPED', REWATCHING: 'REPEATING' },
 
   _profileId: null, // server user_profiles.id used for sync
@@ -36,18 +41,12 @@ export const LibrarySync = {
 
   // ---- lifecycle ----
 
-  // resolve (or create) the account's sync profile, then pull the library
+  // resolve the account's profile, then pull the library
   async init () {
     if (!YumeAPI?.user()) { this._profileId = null; this.status = 'off'; return }
     this.status = 'syncing'
     try {
-      const { data } = await YumeAPI._request('/v1/profiles', { auth: true })
-      let profile = data.find(p => p.is_default) ?? data[0]
-      if (!profile) {
-        const local = Store.activeProfile()
-        const emoji = /\p{Emoji}/u.test(local?.avatar ?? '') ? local.avatar : undefined
-        profile = await YumeAPI._request('/v1/profiles', { method: 'POST', auth: true, body: { displayName: (local?.name || 'Me').slice(0, 50), avatarEmoji: emoji } })
-      }
+      const profile = await YumeAPI._request('/v1/profiles/me', { auth: true })
       this._profileId = profile.id
       localStorage.setItem('yume-db-profile', profile.id)
       await this.pull()
@@ -69,15 +68,43 @@ export const LibrarySync = {
 
   async pull () {
     if (!this.enabled()) return
-    let rows
-    try { ({ data: rows } = await this._req('/v1/me/library')) } catch (e) { return }
+
+    // Walk the pages rather than asking for everything: the endpoint is
+    // keyset-paginated because one library here is the whole catalogue, and
+    // that response was 8.4 MB in one piece.
+    const rows = []
+    let cursor = null
+    for (let page = 0; page < this.MAX_PULL_PAGES; page++) {
+      let body
+      try {
+        body = await this._req('/v1/me/library?limit=1000' + (cursor ? '&cursor=' + encodeURIComponent(cursor) : ''))
+      } catch (e) {
+        if (!rows.length) return // nothing arrived at all; leave local alone
+        break // a later page failed: apply what did arrive rather than lose it
+      }
+      rows.push(...(body.data ?? []))
+      cursor = body.next
+      if (!cursor) break
+    }
+
+    // One read and one write, not one of each per row.
+    //
+    // Both directions were quadratic, and only one of them was obvious. Writing
+    // through `saveEntry` re-serialised the whole list per entry — 4,000 of
+    // them measured at 67 seconds. Reading through `Store.entry` re-parses it
+    // per entry, which costs nothing on a first sync against an empty list and
+    // 253 seconds on every sync after it, once 3.4 MB is sitting there. That is
+    // every page load, not an edge case. Measured both times; the second one
+    // would never have been found by reading the code, because the expensive
+    // call looks like a cheap one.
+    const existing = Store.list()
+    const pending = []
     this._muted = true
-    let changed = false
     try {
       for (const row of rows) {
         if (!row.anilist_id) continue // can't map back to an AniList id → skip
         const id = row.anilist_id
-        const local = Store.entry(id)
+        const local = existing[id]
         const dbAt = new Date(row.updated_at).getTime()
         if (local && (local.updatedAt ?? 0) >= dbAt) continue // local is newer → it wins (and will push)
         const media = local?.media ?? {
@@ -87,12 +114,35 @@ export const LibrarySync = {
           format: row.format,
           episodes: row.episode_count
         }
-        Store.saveEntry(media, { status: this.STATUS_FROM_DB[row.status] ?? 'PLANNING', progress: Number(row.progress) || 0 })
-        changed = true
+        pending.push({
+          media,
+          patch: {
+            status: this.STATUS_FROM_DB[row.status] ?? 'PLANNING',
+            progress: Number(row.progress) || 0,
+            // The server's timestamp, not now(): stamping these with the
+            // moment of the sync would make every pulled entry look newer than
+            // the account it came from, and the next pull would skip them all.
+            updatedAt: dbAt
+          }
+        })
       }
     } finally {
       this._muted = false
     }
+
+    const changed = pending.length > 0
+    if (changed) {
+      const result = Store.saveEntries(pending)
+      // Not silent: the browser's storage quota is a few megabytes and a full
+      // catalogue does not fit. The account keeps everything; this browser
+      // keeps the newest of it, and says so rather than looking complete.
+      this.trimmed = result.trimmed
+      if (result.trimmed > 0) {
+        this.status = 'partial'
+        console.warn(`library sync: ${result.stored} of ${result.stored + result.trimmed} entries kept locally (browser storage is full); the account holds them all`)
+      }
+    }
+
     await this.pullResume()
     await this.pullFavourites()
     if (changed) window.dispatchEvent(new CustomEvent('library-synced'))

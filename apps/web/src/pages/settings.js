@@ -102,12 +102,6 @@ export const PageSettings = {
         onchange: e => { YumeAPI.setBase(e.target.value); U.toast(T('Yume server updated')) }
       })
     ))
-    wrap.append(this._card('Watch profiles', 'Manage the profiles on this account — each has its own library, history and settings.',
-      U.el('div', { style: 'display:flex;gap:.6rem;flex-wrap:wrap;' }, [
-        U.el('a', { class: 'btn btn-secondary btn-sm', href: '#/profiles?manage=1' }, [document.createTextNode(T('Manage profiles'))]),
-        U.el('a', { class: 'btn btn-ghost btn-sm', href: '#/profiles' }, [document.createTextNode(T('Switch profile'))])
-      ])
-    ))
     return wrap
   },
 

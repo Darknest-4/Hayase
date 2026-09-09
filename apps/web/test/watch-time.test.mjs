@@ -60,7 +60,7 @@ function load () {
     document: { hidden: false, addEventListener () {}, removeEventListener () {} }
   })
   mock.restoreAll()
-  mock.method(Store, 'activeProfileId', () => 'p1')
+  mock.method(Store, '_viewerId', () => 'p1')
   mock.method(Date, 'now', () => now)
   mock.method(globalThis, 'setInterval', (fn, ms) => { const t = { fn, ms }; timers.add(t); return t })
   mock.method(globalThis, 'clearInterval', t => timers.delete(t))
@@ -130,7 +130,7 @@ describe('storage', () => {
       },
       document: { hidden: false, addEventListener () {}, removeEventListener () {} }
     })
-    mock.method(Store, 'activeProfileId', () => 'p1')
+    mock.method(Store, '_viewerId', () => 'p1')
     assert.doesNotThrow(() => WatchTime.add('a', 1, 10))
     assert.equal(WatchTime.totalSeconds(), 0)
   })

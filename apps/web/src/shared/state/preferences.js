@@ -71,7 +71,7 @@ export const Prefs = {
   // ---------------------------------------------------------------- storage
 
   _key () {
-    return `${this.STORAGE_KEY}::${Store.activeProfileId()}`
+    return `${this.STORAGE_KEY}::${Store._viewerId()}`
   },
 
   _read () {
@@ -133,7 +133,7 @@ export const Prefs = {
    */
   onboarded () {
     try {
-      return localStorage.getItem(`${this.STORAGE_KEY}-onboarded::${Store.activeProfileId()}`) === '1'
+      return localStorage.getItem(`${this.STORAGE_KEY}-onboarded::${Store._viewerId()}`) === '1'
     } catch (e) {
       return true // storage unavailable: never trap the viewer in a wizard
     }
@@ -141,7 +141,7 @@ export const Prefs = {
 
   markOnboarded () {
     try {
-      localStorage.setItem(`${this.STORAGE_KEY}-onboarded::${Store.activeProfileId()}`, '1')
+      localStorage.setItem(`${this.STORAGE_KEY}-onboarded::${Store._viewerId()}`, '1')
     } catch (e) { /* ignore */ }
   },
 
