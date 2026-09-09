@@ -284,7 +284,12 @@ export const App = {
      * let in someone who does not.
      */
     if (privileged) {
-      if (!signedIn) return { ok: false, kind: 'auth' }
+      // Not signed in reads the same as not permitted, on purpose. A sign-in
+      // card here would confirm to anyone who typed the address that the panel
+      // exists — the thing the refusal below is written to avoid — and the
+      // kind it used to return had no `flag` on it, so the renderer threw and
+      // painted a blank page instead of anything at all.
+      if (!signedIn) return { ok: false, kind: 'permission' }
       if (route === 'admin') {
         const needed = this._adminSectionPermissions()
         if (!needed) return { ok: false, kind: 'permission' }
@@ -306,8 +311,24 @@ export const App = {
     // already been authorised above, so a missing row cannot let anybody in
     // who was not already permitted — and must not lock out anybody who was.
     if (!flag) return { ok: true }
-    // The kill switch still applies to everything, privileged included.
-    if (!flag.enabled) return { ok: false, kind: 'disabled', flag }
+    /*
+     * The kill switch applies to everything — except to the people who can
+     * undo it.
+     *
+     * `page.admin` off used to be a door that locks from the inside. The panel
+     * is the only place the flag can be turned back on, so switching it off
+     * ended every administrator's access permanently and left a database
+     * console as the only way back in. Turning off a page should not be able
+     * to be the last thing an operator ever does here.
+     *
+     * So whoever holds the permission that edits the flags keeps the door:
+     * for everybody else — moderators, analysts, editors — the switch still
+     * does exactly what it says.
+     */
+    if (!flag.enabled) {
+      const canUndo = route === 'admin' && this.perms.includes('settings.system')
+      if (!canUndo) return { ok: false, kind: 'disabled', flag }
+    }
     if (privileged) return { ok: true }
     if (flag.access === 'auth' && !signedIn) return { ok: false, kind: 'auth', flag }
     if (flag.access === 'permission') {
@@ -353,7 +374,10 @@ export const App = {
     } else if (gate.kind === 'auth') {
       wrap.append(
         U.el('div', { class: 'gate-icon', text: '🔑' }),
-        U.el('h1', { class: 'gate-title', text: `Sign in for ${gate.flag.label}` }),
+        // `gate.flag?.label` rather than `gate.flag.label`: a kind that
+        // arrives without a flag must degrade to a plainer sentence, not throw
+        // inside the renderer and leave the viewer a blank page.
+        U.el('h1', { class: 'gate-title', text: gate.flag ? `Sign in for ${gate.flag.label}` : T('Sign in to continue') }),
         U.el('p', { class: 'gate-sub', text: T('This section needs a signed-in account.') }),
         C.authCard(() => { this.afterAuth() })
       )

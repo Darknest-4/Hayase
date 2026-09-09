@@ -4,6 +4,9 @@
 // comments/community, themes and playback data.
 // Configure the endpoint in Settings; default assumes local development.
 
+/** One of our own ids, as opposed to an AniList id. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export const YumeAPI = {
   base () {
     const saved = localStorage.getItem('yume-api')
@@ -152,7 +155,26 @@ export const YumeAPI = {
 
   _resolveCache: {},
 
+  /**
+   * Our own id for a title, whatever kind of id the caller is holding.
+   *
+   * A card built by the catalogue already carries it as `yumeId`, and for a
+   * title AniList has never heard of `media.id` *is* that uuid — `toCard`
+   * falls back to it when there is no AniList mapping. Both were being sent
+   * to the AniList-id route, which answers 400; `create` then posted the uuid
+   * as `anilistId` and 400'd too. Two failed requests, and on every
+   * catalogue-only title the comment section under the detail panel never
+   * loaded — the trailer button on the home page opened a panel whose
+   * discussion was permanently a spinner.
+   *
+   * So: answer from what the caller already has, and never ask the
+   * AniList-id route about something that is not an AniList id.
+   */
   async yumeAnimeId (media, { create = false } = {}) {
+    if (media?.yumeId) return media.yumeId
+    if (UUID.test(String(media?.id ?? ''))) return String(media.id)
+    if (!Number.isFinite(Number(media?.id))) return null
+
     const cached = this._resolveCache[media.id]
     if (cached) return cached
 
@@ -214,7 +236,7 @@ export const YumeAPI = {
    * rather than resolving the id and then fetching it.
    */
   async catalogueMedia (id) {
-    const path = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(id))
+    const path = UUID.test(String(id))
       ? '/v1/anime/' + id
       : '/v1/anime/by-anilist/' + Number(id) + '?full=true'
     try {
