@@ -644,3 +644,32 @@ Idempotens, slug és verziószám alapján: minden telepítés után nyugodtan
 lefuttatható. Amit hozzáad: hat alapértelmezett kategória, három chatszoba, és a
 projekt verziótörténete 0.1.0-tól 1.0.0-ig — a kiadott, a folyamatban lévő és a
 tervezett verziók egyaránt.
+
+## Profilkép és banner
+
+A profilkép és a profil banner a katalógusból választható: a felhasználó egy
+animét választ, és a szerver keresi ki hozzá a képet. A kliens soha nem küld
+képcímet — ha küldhetne, minden profilkép egy tetszőleges távoli kérés lenne,
+amit mindenki böngészője lefuttat, aki az illető nevét látja.
+
+- **Migráció:** `0037_profile_artwork.sql` — `user_profiles.avatar_anime_id`,
+  `banner_anime_id`, és egy index az `anime_images (anime_id, kind, is_primary)`
+  hármason, mert a kép feloldása ezen a három oszlopon megy.
+- **Végpontok:** `GET /v1/profiles/artwork` adja a választható címeket
+  (`?q`, `?kind=avatar|banner`, `?limit`), `PATCH /v1/profiles/me` az
+  `avatarAnimeId` / `bannerAnimeId` mezővel állítja be vagy `null`-lal törli.
+- **Választó:** Beállítások → Fiók. A rács alapból a saját könyvtárral nyílik —
+  amit valaki nézett, azt akarja a profiljára tenni —, gépelésre az egész
+  katalógusban keres.
+- **Hol látszik:** oldalsáv, mobil „Több" lap, profilfejléc (a banner a fejléc
+  háttere, a cím feltüntetve), közösségi hírfolyam, fórumtémák és
+  hozzászólások, és minden chatsor. Egy komponens rajzolja mindet
+  (`C.avatar`), mert nyolc helyen nyolcféleképp lehetne elrontani a
+  tartaléktáblát.
+- **Tartalék:** kép helyett a név kezdőbetűje. Ha a CDN elesik vagy a kép
+  eltűnik, a betű marad, nem egy üres négyzet. A régi emoji-avatar szöveg
+  marad, nem lesz belőle kép.
+
+Banner artwork csak azokhoz a címekhez van, ameddig az AniList-gazdagítás
+eljutott, ezért a banner a borítóra esik vissza. Széles helyen használt borító
+kompromisszum; az üres fejléc hiányzó funkció.

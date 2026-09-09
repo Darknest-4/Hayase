@@ -161,7 +161,10 @@ export const Forum = {
             document.createTextNode(topic.title),
             topic.locked ? U.el('span', { class: 'forum-badge', text: T('locked') }) : null
           ]),
-          U.el('div', { class: 'forum-topic-meta', text: `${topic.author} · ${when(topic.created_at)}` })
+          U.el('div', { class: 'forum-topic-meta' }, [
+            C.avatar(topic, { size: 'xs' }),
+            U.el('span', { text: `${topic.author} · ${when(topic.created_at)}` })
+          ])
         ]),
         U.el('div', { class: 'forum-board-stats' }, [
           U.el('span', { class: 'forum-count', text: String(topic.post_count) }),
@@ -228,7 +231,10 @@ export const Forum = {
           topic.pinned ? U.el('span', { class: 'forum-pin', text: '📌' }) : null,
           document.createTextNode(topic.title)
         ]),
-        U.el('p', { class: 'forum-sub', text: `${topic.author} · ${when(topic.created_at)}` })
+        U.el('p', { class: 'forum-sub forum-sub-author' }, [
+          C.avatar(topic, { size: 'xs' }),
+          U.el('span', { text: `${topic.author} · ${when(topic.created_at)}` })
+        ])
       ])
     ])
 
@@ -261,6 +267,7 @@ export const Forum = {
     for (const post of posts) {
       thread.append(U.el('article', { class: 'forum-post' }, [
         U.el('div', { class: 'forum-post-head' }, [
+          C.avatar(post),
           U.el('span', { class: 'forum-post-author', text: post.author }),
           U.el('span', { class: 'forum-post-when', text: when(post.created_at) }),
           post.edited_at ? U.el('span', { class: 'forum-post-when', text: T('(edited)') }) : null,

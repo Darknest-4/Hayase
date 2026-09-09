@@ -48,7 +48,23 @@ One service, two protocols over the same service layer:
 ### Profiles & settings
 | Method | Path | Description |
 |---|---|---|
-| GET/PATCH | `/v1/profiles/me` | the account's one profile: display name, avatar, adult-content switch |
+| GET/PATCH | `/v1/profiles/me` | the account's one profile: display name, artwork, adult-content switch |
+| GET | `/v1/profiles/artwork` | titles to pick a picture or banner from: `?q&kind=avatar\|banner&limit` |
+
+The profile picture and the profile banner are chosen from the catalogue. The
+`PATCH` body carries `avatarAnimeId` / `bannerAnimeId` — a title's uuid, or
+`null` to clear it — and the server resolves the image from `anime_images`,
+storing both the resolved URL (`avatar_key`, `banner_key`) and the title it came
+from (`avatar_anime_id`, and `avatar_from` on read). A client cannot post an
+image address: letting it do so would make every profile an arbitrary remote
+request performed by everyone who loads a page with that person's name on it.
+A title with no artwork answers 404 rather than storing an empty picture.
+
+`GET /v1/profiles/artwork` answers `{ data, source }`, where `source` is
+`library` (the caller's own shelf, the default when they have watched
+anything), `search` (a `q` was given) or `popular` (the fallback for an empty
+library). Every row has an image, so nothing in the grid can be picked and then
+fail to appear.
 
 ### Catalogue
 | Method | Path | Description |

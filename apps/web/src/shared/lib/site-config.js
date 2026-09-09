@@ -14,6 +14,8 @@
 
 let config = null
 let permissions = []
+/** The signed-in account's own profile row: display name, and its artwork. */
+let viewer = null
 let signedIn = () => false
 
 /** The site's own settings — name, tagline, whether it is private. */
@@ -30,6 +32,7 @@ export function preferences () {
 export function configure (options = {}) {
   if ('config' in options) config = options.config
   if ('permissions' in options) permissions = options.permissions ?? []
+  if ('viewer' in options) viewer = options.viewer ?? null
   if ('signedIn' in options) signedIn = options.signedIn ?? (() => false)
 }
 
@@ -53,6 +56,17 @@ export function configure (options = {}) {
  */
 export function permissionsHeld () {
   return [...permissions]
+}
+
+/**
+ * The account's profile as the server holds it — the picture included.
+ *
+ * Local settings still own the name a signed-out viewer chose; this is the
+ * account's own row, and it is what the sidebar, the comments and the profile
+ * header draw. Null when signed out, which every caller has to handle anyway.
+ */
+export function viewerProfile () {
+  return viewer
 }
 
 export function featureOn (name) {

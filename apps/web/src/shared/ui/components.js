@@ -88,7 +88,45 @@ export const C = {
     return this._spotlightPool.then(pool => pool.length ? pool[Math.floor(Math.random() * pool.length)] : null)
   },
 
-  spotlight (title, { subtitle = null, actions = null } = {}) {
+  /**
+   * Somebody's picture, or the first letter of their name.
+   *
+   * One component because the same face has to appear in eight places — the
+   * sidebar, the mobile sheet, the profile header, comments, forum topics and
+   * posts, and every line of chat — and eight copies of "an image if there is
+   * one, otherwise a letter" is eight places to get the fallback wrong.
+   *
+   * `person` is whatever the caller has: `{ author, author_avatar }` from an
+   * API row, or `{ name, avatar }` from the store. Both spellings are read
+   * rather than making every call site normalise first.
+   */
+  avatar (person, { size = 'sm' } = {}) {
+    const name = person?.name ?? person?.author ?? person?.display_name ?? person?.username ?? ''
+    // Four spellings because four sources: the profile row, an API row, the
+    // local store, and the socket — which is camelCase like the rest of its
+    // protocol. Reading all of them here is one place rather than four.
+    const image = person?.avatar_key ?? person?.author_avatar ?? person?.authorAvatar ?? person?.avatar ?? null
+    const letter = name.slice(0, 1).toUpperCase() || '·'
+
+    // An emoji avatar is a letter's worth of text, not an image.
+    if (image && !/^https?:/i.test(String(image))) {
+      return U.el('span', { class: `avatar avatar-${size}`, text: String(image) })
+    }
+    if (!image) return U.el('span', { class: `avatar avatar-${size}`, text: letter })
+
+    // The letter stays underneath: a CDN that fails, or a picture that has
+    // been taken down, leaves the initial rather than an empty square.
+    return U.el('span', { class: `avatar avatar-${size} avatar-image`, text: letter }, [
+      U.el('img', {
+        src: image,
+        alt: '',
+        loading: 'lazy',
+        onerror: event => { event.target.remove() }
+      })
+    ])
+  },
+
+  spotlight (title, { subtitle = null, actions = null, banner = null, bannerCredit = null } = {}) {
     const bg = U.el('div', { class: 'spotlight-bg' })
     const credit = U.el('a', { class: 'spotlight-credit hidden' })
     const inner = U.el('div', { class: 'spotlight-inner' }, [
@@ -97,6 +135,20 @@ export const C = {
       actions ?? null
     ])
     const header = U.el('div', { class: 'spotlight' }, [bg, U.el('div', { class: 'spotlight-scrim' }), inner, credit])
+
+    // A pinned banner — the profile's own — replaces the wandering one. The
+    // picker is only asked when nothing was chosen, so a profile with a banner
+    // never flashes somebody else's art first.
+    if (banner) {
+      bg.style.backgroundImage = `url("${banner}")`
+      requestAnimationFrame(() => bg.classList.add('loaded'))
+      if (bannerCredit) {
+        credit.href = bannerCredit.href ?? '#/profile'
+        credit.textContent = bannerCredit.text
+        credit.classList.remove('hidden')
+      }
+      return header
+    }
 
     this._spotlightPick().then(m => {
       if (!m) return
@@ -467,6 +519,7 @@ export const C = {
           const renderThread = (comment, depth) => {
             const node = U.el('div', { class: 'comment', style: depth ? `margin-left:${Math.min(depth, 4) * 1.5}rem;` : null }, [
               U.el('div', { class: 'comment-head' }, [
+                C.avatar(comment),
                 U.el('span', { class: 'comment-author', text: comment.author }),
                 U.el('span', { class: 'comment-time', text: U.relTime(new Date(comment.created_at)) })
               ]),

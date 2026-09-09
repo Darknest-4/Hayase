@@ -3,7 +3,8 @@
 // Notifications, Data, About) with a left-hand tab rail, Netflix/Discord
 // style. Each section is a builder that returns its content node.
 
-import { navigate, refreshNotifications } from '../shared/lib/shell.js'
+import { navigate, refreshChrome, refreshNotifications } from '../shared/lib/shell.js'
+import { configure } from '../shared/lib/site-config.js'
 import { C } from '../shared/ui/components.js'
 import { T } from '../shared/i18n/i18n.js'
 import { LibrarySync } from '../features/library-sync/library-sync.js'
@@ -12,6 +13,7 @@ import { Prefs } from '../shared/state/preferences.js'
 import { Store } from '../shared/state/store.js'
 import { U } from '../shared/lib/dom.js'
 import { YumeAPI } from '../shared/api/yume.js'
+import { ArtworkPicker } from '../features/profile-artwork/picker.js'
 import { PageThemes } from '../features/themes/themes.js'
 
 export const PageSettings = {
@@ -77,6 +79,22 @@ export const PageSettings = {
         onchange: e => Store.saveSettings({ profileName: e.target.value.trim() || undefined })
       })
     ))
+    // Artwork lives with the account rather than with Appearance: this is who
+    // you are on the site, not how the site looks to you. Only for a signed-in
+    // account, because it is stored on the account.
+    if (YumeAPI.user()) {
+      const cards = U.el('div')
+      wrap.append(cards)
+      YumeAPI.profile.get()
+        .then(profile => cards.replaceChildren(ArtworkPicker.cards(profile, updated => {
+          // The sidebar and the mobile sheet draw the same face, so they are
+          // told rather than left to refresh on the next navigation.
+          refreshChrome()
+          configure({ viewer: updated })
+        })))
+        .catch(() => { /* offline or signed out mid-render; the cards stay out */ })
+    }
+
     wrap.append(C.authCard())
     if (YumeAPI.user()) {
       const LABEL = { off: T('Not syncing'), syncing: T('Syncing…'), synced: T('✓ Synced to your account'), error: T('⚠ Sync unavailable') }

@@ -21,7 +21,26 @@ import { query, queryOne } from '../../infrastructure/database/index.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
 
-const COLUMNS = 'id, display_name, avatar_emoji, avatar_key, is_kids, nsfw_enabled, created_at'
+const COLUMNS = `id, display_name, avatar_emoji, avatar_key, banner_key,
+                 avatar_anime_id, banner_anime_id, is_kids, nsfw_enabled, created_at,
+                 (SELECT a.canonical_title FROM anime a WHERE a.id = user_profiles.avatar_anime_id) AS avatar_from,
+                 (SELECT a.canonical_title FROM anime a WHERE a.id = user_profiles.banner_anime_id) AS banner_from`
+
+/**
+ * The widest art a title has, for the kind asked for.
+ *
+ * Covers exist for every title; banners only appear as the AniList enrichment
+ * runs, so a banner request falls back to the cover rather than returning
+ * nothing. A cover used as a wide backdrop is a compromise; an empty header is
+ * a missing feature.
+ */
+const IMAGE_FOR = `
+  SELECT i.object_key FROM anime_images i
+   WHERE i.anime_id = $1 AND i.kind = ANY($2::text[])
+   ORDER BY array_position($2::text[], i.kind), i.is_primary DESC
+   LIMIT 1`
+
+const KINDS = { avatar: ['cover'], banner: ['banner', 'cover'] } as const
 
 const routes: FastifyPluginAsync = async fastify => {
   fastify.addHook('preHandler', fastify.authenticate)
@@ -48,6 +67,84 @@ const routes: FastifyPluginAsync = async fastify => {
 
   fastify.get('/me', async request => mine(request.user.sub, request.user.username ?? 'Me'))
 
+  /**
+   * Pictures to choose from.
+   *
+   * The viewer's own library first when they have not typed anything: the
+   * titles somebody watched are the ones they want on their profile, and a
+   * grid of the platform's most popular shows is a worse first screen than a
+   * grid of their own. A query searches the whole catalogue instead.
+   *
+   * Only titles that actually have the art are returned, so nothing in the
+   * grid can be picked and then not appear.
+   */
+  fastify.get('/artwork', {
+    schema: {
+      querystring: {
+        type: 'object',
+        properties: {
+          q: { type: 'string', maxLength: 100 },
+          kind: { enum: ['avatar', 'banner'], default: 'avatar' },
+          limit: { type: 'integer', minimum: 1, maximum: 60, default: 30 }
+        }
+      }
+    }
+  }, async request => {
+    const { q, kind = 'avatar', limit = 30 } = request.query as { q?: string, kind?: 'avatar' | 'banner', limit?: number }
+    const kinds = [...KINDS[kind]]
+    const search = q?.trim()
+
+    if (search) {
+      const data = await query(
+        `SELECT a.id, a.canonical_title AS title, i.object_key AS image
+           FROM anime a
+           JOIN LATERAL (
+             SELECT object_key FROM anime_images x
+              WHERE x.anime_id = a.id AND x.kind = ANY($2::text[])
+              ORDER BY array_position($2::text[], x.kind), x.is_primary DESC LIMIT 1
+           ) i ON true
+          WHERE a.search @@ plainto_tsquery('simple', $1)
+          ORDER BY a.popularity DESC
+          LIMIT $3`,
+        [search, kinds, limit]
+      )
+      return { data, source: 'search' }
+    }
+
+    // No query: the account's own library, newest first.
+    const mineFirst = await query(
+      `SELECT a.id, a.canonical_title AS title, i.object_key AS image
+         FROM library_entries le
+         JOIN anime a ON a.id = le.anime_id
+         JOIN user_profiles p ON p.id = le.profile_id AND p.user_id = $1
+         JOIN LATERAL (
+           SELECT object_key FROM anime_images x
+            WHERE x.anime_id = a.id AND x.kind = ANY($2::text[])
+            ORDER BY array_position($2::text[], x.kind), x.is_primary DESC LIMIT 1
+         ) i ON true
+        ORDER BY le.updated_at DESC
+        LIMIT $3`,
+      [request.user.sub, kinds, limit]
+    )
+    if (mineFirst.length) return { data: mineFirst, source: 'library' }
+
+    // An empty library still needs a grid to look at.
+    const popular = await query(
+      `SELECT a.id, a.canonical_title AS title, i.object_key AS image
+         FROM anime a
+         JOIN LATERAL (
+           SELECT object_key FROM anime_images x
+            WHERE x.anime_id = a.id AND x.kind = ANY($1::text[])
+            ORDER BY array_position($1::text[], x.kind), x.is_primary DESC LIMIT 1
+         ) i ON true
+        WHERE a.visibility = 'public'
+        ORDER BY a.popularity DESC
+        LIMIT $2`,
+      [kinds, limit]
+    )
+    return { data: popular, source: 'popular' }
+  })
+
   fastify.patch('/me', {
     schema: {
       body: {
@@ -56,8 +153,14 @@ const routes: FastifyPluginAsync = async fastify => {
           displayName: { type: 'string', minLength: 1, maxLength: 50 },
           avatarEmoji: { type: 'string', maxLength: 8 },
           isKids: { type: 'boolean' },
-          nsfwEnabled: { type: 'boolean' }
-        }
+          nsfwEnabled: { type: 'boolean' },
+          // A title, not a URL. The image is looked up here; letting a client
+          // post its own address would turn every profile into an arbitrary
+          // remote request made by everyone who loads the page.
+          avatarAnimeId: { type: ['string', 'null'], format: 'uuid' },
+          bannerAnimeId: { type: ['string', 'null'], format: 'uuid' }
+        },
+        additionalProperties: false
       }
     }
   }, async (request, reply) => {
@@ -76,6 +179,32 @@ const routes: FastifyPluginAsync = async fastify => {
     for (const [key, column] of Object.entries(map)) {
       if (body[key] !== undefined) { params.push(body[key]); sets.push(`${column} = $${params.length}`) }
     }
+
+    // Artwork: resolve the picture now and store both halves — the title it
+    // came from, and the URL every read wants without a join.
+    for (const [key, kind] of [['avatarAnimeId', 'avatar'], ['bannerAnimeId', 'banner']] as const) {
+      if (body[key] === undefined) continue
+      const animeId = body[key]
+      const column = kind === 'avatar' ? 'avatar' : 'banner'
+
+      if (animeId === null) {
+        sets.push(`${column}_key = NULL`, `${column}_anime_id = NULL`)
+        continue
+      }
+
+      const image = await queryOne<{ object_key: string }>(IMAGE_FOR, [animeId, [...KINDS[kind]]])
+      if (!image) {
+        return reply.code(404).send({
+          type: 'about:blank',
+          title: 'Not Found',
+          status: 404,
+          detail: `That title has no ${kind === 'avatar' ? 'cover' : 'artwork'} to use`
+        })
+      }
+      params.push(image.object_key, animeId)
+      sets.push(`${column}_key = $${params.length - 1}`, `${column}_anime_id = $${params.length}`)
+    }
+
     if (!sets.length) return profile
 
     return queryOne(
@@ -83,6 +212,7 @@ const routes: FastifyPluginAsync = async fastify => {
       params
     )
   })
+
 }
 
 export default routes

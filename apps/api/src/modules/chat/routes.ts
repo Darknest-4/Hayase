@@ -87,9 +87,11 @@ const routes: FastifyPluginAsync = async fastify => {
     params.push(limit)
 
     const data = await query(
-      `SELECT m.id, m.body, m.created_at, m.reply_to, u.username AS author
+      `SELECT m.id, m.body, m.created_at, m.reply_to, u.username AS author,
+              ap.avatar_key AS author_avatar
          FROM messages m
          JOIN users u ON u.id = m.author_id
+         LEFT JOIN user_profiles ap ON ap.user_id = u.id
         WHERE m.chat_id = $1 AND m.deleted_at IS NULL ${cursor}
         ORDER BY m.id DESC
         LIMIT $${params.length}`,

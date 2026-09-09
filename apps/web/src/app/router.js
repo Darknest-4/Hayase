@@ -227,6 +227,7 @@ export const App = {
 
   config: null, // effective site config from /v1/config
   perms: [], // the signed-in user's permission slugs
+  viewer: null, // the account's own profile row: display name and artwork
 
   /**
    * Routes that carry no site footer.
@@ -356,6 +357,7 @@ export const App = {
     configureFeatures({
       config: this.config,
       permissions: this.perms ?? [],
+      viewer: this.viewer ?? null,
       signedIn: () => !!YumeAPI.user()
     })
   },
@@ -434,6 +436,10 @@ export const App = {
 
   async loadConfig () {
     this.config = await YumeAPI.config()
+    // The account's own profile row, which is where the picture lives. Best
+    // effort: a viewer who is signed out, or an instance that cannot answer,
+    // gets the initial-letter avatar rather than an error.
+    this.viewer = YumeAPI.user() ? await YumeAPI.profile.get().catch(() => null) : null
     this._publishFeatureState()
   },
 
@@ -559,10 +565,22 @@ export const App = {
     nav.classList.toggle('hidden', !canAdmin)
   },
 
+  /**
+   * The face in the sidebar.
+   *
+   * The account's chosen picture when there is one, and the initial otherwise.
+   * `replaceChildren` rather than `textContent`, because the picture is an
+   * <img> with the letter behind it — see C.avatar.
+   */
   refreshProfileAvatar () {
-    const p = Store.profile()
     const el = document.getElementById('sidebar-avatar')
-    if (el && p) el.textContent = p.avatar ?? p.name.slice(0, 1).toUpperCase()
+    if (!el) return
+    const local = Store.profile()
+    const account = this.viewer
+    el.replaceChildren(C.avatar({
+      name: account?.display_name ?? local?.name,
+      avatar_key: account?.avatar_key ?? local?.avatar
+    }, { size: 'sm' }))
   },
 
   /**
@@ -669,10 +687,13 @@ export const App = {
     sheet.append(U.el('div', { class: 'more-grabber' }))
 
     const p = Store.profile()
+    const account = this.viewer
     sheet.append(U.el('div', { class: 'more-profile' }, [
-      U.el('div', { class: 'more-profile-avatar', text: p?.avatar ?? (p?.name?.slice(0, 1).toUpperCase() ?? '🦊') }),
+      U.el('div', { class: 'more-profile-avatar' }, [
+        C.avatar({ name: account?.display_name ?? p?.name, avatar_key: account?.avatar_key ?? p?.avatar }, { size: 'md' })
+      ]),
       U.el('div', { style: 'min-width:0;' }, [
-        U.el('div', { class: 'more-profile-name', text: p?.name ?? 'Dreamer' }),
+        U.el('div', { class: 'more-profile-name', text: account?.display_name ?? p?.name ?? 'Dreamer' }),
         U.el('div', { class: 'more-profile-sub', text: T('Your account') })
       ]),
       // Where the "Switch" button used to sit. The row is the viewer's own
