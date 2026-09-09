@@ -62,3 +62,49 @@ describe('paths resolved from a source file', () => {
     assert.match(dockerfile, /WORKDIR \/app\/apps\/api/)
   })
 })
+
+describe('every script a container is told to run exists', () => {
+  // The second one of these, so it gets a check rather than another fix.
+  //
+  // The restructure moved the migration runner and left two callers behind
+  // pointing at where it used to be. One was the worker's healthcheck, which
+  // showed up as a permanently unhealthy worker. The other was the `seed`
+  // service, whose command still read `src/lib/migrate.ts` — so
+  // `docker compose --profile seed run --rm seed` failed on its first word,
+  // and nothing in the repository noticed, because a compose file is a string
+  // to every tool here.
+  const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
+  const compose = readFileSync(join(ROOT, 'docker-compose.yml'), 'utf8')
+
+  /**
+   * Paths a compose command names, as the container would resolve them.
+   *
+   * Every service built from our Dockerfile has WORKDIR /app/apps/api, and the
+   * image mirrors the repository — so a relative path in a command is a path
+   * under apps/api here. Only `.ts` and `.js` are considered: an npm script
+   * name or a shell builtin is not this test's business.
+   */
+  const referenced = [...compose.matchAll(/(?:^|[\s'"])((?:src|scripts)\/[\w./-]+\.(?:ts|js))/g)]
+    .map(match => match[1] as string)
+
+  test('the compose file names some scripts at all', () => {
+    // Without this the loop below would pass by finding nothing, which is the
+    // failure mode a check like this actually has.
+    assert.ok(referenced.length >= 3, `only ${referenced.length} script paths found in docker-compose.yml`)
+  })
+
+  for (const path of [...new Set(referenced)]) {
+    test(`docker-compose.yml → apps/api/${path}`, () => {
+      assert.ok(existsSync(join(ROOT, 'apps/api', path)),
+        `docker-compose.yml runs ${path}, which does not exist under apps/api`)
+    })
+  }
+
+  test('the npm scripts it calls exist too', () => {
+    const manifest = JSON.parse(readFileSync(join(ROOT, 'apps/api/package.json'), 'utf8')) as { scripts: Record<string, string> }
+    for (const match of compose.matchAll(/'npm', 'run', '([\w:-]+)'/g)) {
+      const name = match[1] as string
+      assert.ok(name in manifest.scripts, `docker-compose.yml runs \`npm run ${name}\`, which apps/api does not define`)
+    }
+  })
+})

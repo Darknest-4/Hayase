@@ -5,18 +5,38 @@
 // finished, unlocks every achievement, and recomputes the stats and XP that
 // follow from all of that.
 //
-// Written as set-based SQL rather than a loop over rows, and that is not a
-// micro-optimisation: it is 25,703 library entries and 333,021 episodes on the
-// instance this was written against. A row at a time would take hours and hold
-// a connection the whole while; `INSERT ... SELECT` takes seconds.
+// Set-based SQL rather than a loop over rows, in batches rather than one
+// statement. Both halves were learned the hard way.
 //
-// Every statement is an upsert, so running it twice changes nothing the second
-// time. That matters more than it sounds: it runs from a queue with retries,
-// and a job that half-applied and then failed must be safe to run again.
+// A row at a time would take hours: it is 32,390 library entries and 364,064
+// episodes on the instance this runs on. `INSERT ... SELECT` does the same work
+// in seconds.
+//
+// But one `INSERT ... SELECT` over 364,064 episodes is a single statement, and
+// the pool sets statement_timeout to 15 seconds — right for a web request, and
+// what this hit on the real VPS: `canceling statement due to statement timeout`,
+// the whole transaction rolled back, nothing written. Raising the timeout for
+// this one caller would have hidden the shape of the problem rather than fixed
+// it; a maintenance job that writes a third of a million rows should not be one
+// statement holding one transaction and its locks.
+//
+// So the work is paged by primary key, each page its own statement and its own
+// transaction. Every statement is an upsert, so a run that stops halfway — a
+// timeout, a restart, a lost connection — is resumed by running it again. That
+// is also what makes it safe on the retrying queue it runs from.
 
 import { query, queryOne, transaction } from '../../infrastructure/database/index.ts'
 
 import type pg from 'pg'
+
+export interface FounderSeedOptions {
+  /** Skip titles nobody can open: 3,118 published of 32,390 imported. */
+  onlyPublic?: boolean
+  /** Rows per statement. Smaller on a slow disk, never large enough to time out. */
+  batchSize?: number
+  /** Called after each page, so a job writing 364,064 rows does not look hung. */
+  onProgress?: (what: string, done: number) => void
+}
 
 export interface FounderSeedResult {
   profileId: string
@@ -63,59 +83,110 @@ export async function founderProfile (): Promise<{ userId: string, profileId: st
  */
 export async function seedFounderLibrary (
   profileId: string,
-  { onlyPublic = false }: { onlyPublic?: boolean } = {}
+  {
+    onlyPublic = false,
+    batchSize = Number(process.env.FOUNDER_BATCH_SIZE ?? 5_000),
+    onProgress
+  }: FounderSeedOptions = {}
 ): Promise<FounderSeedResult> {
-  const visibility = onlyPublic ? "WHERE a.visibility = 'public'" : ''
+  const visibility = onlyPublic ? "AND a.visibility = 'public'" : ''
 
+  /**
+   * Run one statement per page of primary keys until the table is exhausted.
+   *
+   * The page is a CTE the insert selects from, and the same CTE reports where
+   * it got to. A data-modifying CTE always executes, so the insert runs even
+   * though the outer SELECT does not reference it.
+   *
+   * Ordering by id — a uuid — is arbitrary but total and stable, which is all a
+   * resumable walk needs. It is not a user-facing order, so nothing is gained
+   * by making it a meaningful one and a lot of index would be needed to.
+   */
+  async function pageThrough (label: string, sql: string, params: unknown[]): Promise<number> {
+    let after = '00000000-0000-0000-0000-000000000000'
+    let written = 0
+    for (;;) {
+      const row = await queryOne<{ last: string | null, n: string }>(sql, [...params, after, batchSize])
+      const n = Number(row?.n ?? 0)
+      if (!n || !row?.last) break
+      written += n
+      after = row.last
+      onProgress?.(label, written)
+      if (n < batchSize) break
+    }
+    return written
+  }
+
+  // ---- every title, finished ----
+  //
+  // `progress` is the episode count we hold, not what the catalogue claims in
+  // `episode_count`: the two disagree for a lot of imported titles, and the
+  // library page draws "12 / 24" from them. Taking the real count keeps the
+  // bar full instead of stuck at half.
+  const library = await pageThrough('titles', `
+    WITH page AS (
+      SELECT a.id, a.episode_count, a.start_date
+        FROM anime a
+       WHERE a.id > $2::uuid ${visibility}
+       ORDER BY a.id
+       LIMIT $3
+    ), written AS (
+      INSERT INTO library_entries (profile_id, anime_id, status, progress, started_at, finished_at)
+      SELECT $1, p.id, 'COMPLETED',
+             LEAST(
+               COALESCE(p.episode_count, 0),
+               COALESCE((SELECT count(*) FROM episodes e WHERE e.anime_id = p.id), 0)
+             )::smallint,
+             COALESCE(p.start_date, CURRENT_DATE),
+             CURRENT_DATE
+        FROM page p
+      ON CONFLICT (profile_id, anime_id) DO UPDATE
+         SET status = 'COMPLETED',
+             progress = GREATEST(library_entries.progress, EXCLUDED.progress),
+             finished_at = COALESCE(library_entries.finished_at, EXCLUDED.finished_at),
+             updated_at = now()
+    )
+    -- Postgres has no max(uuid), so the page's last key comes from the page
+    -- itself, which is already ordered and already materialised.
+    SELECT (SELECT p.id::text FROM page p ORDER BY p.id DESC LIMIT 1) AS last,
+           (SELECT count(*)::text FROM page)                          AS n`, [profileId])
+
+  // ---- every episode, watched to the end ----
+  //
+  // position_sec is set to the duration rather than left at 0 so "continue
+  // watching" does not offer all 364,064 of them back: that list is built from
+  // the rows where `completed` is false, and a finished episode has to look
+  // finished from both directions.
+  const episodes = await pageThrough('episodes', `
+    WITH page AS (
+      SELECT e.id, e.anime_id, e.duration
+        FROM episodes e
+        JOIN anime a ON a.id = e.anime_id
+       WHERE e.id > $3::uuid ${visibility}
+       ORDER BY e.id
+       LIMIT $4
+    ), written AS (
+      INSERT INTO watch_progress (profile_id, episode_id, anime_id, position_sec, duration_sec, completed)
+      SELECT $1, p.id, p.anime_id,
+             COALESCE(p.duration, $2)::numeric * 60,
+             COALESCE(p.duration, $2)::numeric * 60,
+             true
+        FROM page p
+      ON CONFLICT (profile_id, episode_id) DO UPDATE
+         SET completed = true,
+             position_sec = EXCLUDED.duration_sec,
+             duration_sec = COALESCE(watch_progress.duration_sec, EXCLUDED.duration_sec),
+             updated_at = now()
+    )
+    -- Postgres has no max(uuid), so the page's last key comes from the page
+    -- itself, which is already ordered and already materialised.
+    SELECT (SELECT p.id::text FROM page p ORDER BY p.id DESC LIMIT 1) AS last,
+           (SELECT count(*)::text FROM page)                          AS n`, [profileId, DEFAULT_EPISODE_MINUTES])
+
+  // Everything below is bounded by the achievement table — sixteen rows — so
+  // it stays in one transaction, which is what makes the stats consistent with
+  // the XP they are computed from.
   return transaction(async (client: pg.PoolClient) => {
-    // ---- every title, finished ----
-    //
-    // `progress` is the episode count we hold, not what the catalogue claims
-    // in `episode_count`: the two disagree for a lot of imported titles, and
-    // the library page draws "12 / 24" from them. Taking the real count keeps
-    // the bar full instead of stuck at half.
-    const library = await client.query(
-      `INSERT INTO library_entries (profile_id, anime_id, status, progress, started_at, finished_at)
-       SELECT $1, a.id, 'COMPLETED',
-              LEAST(
-                COALESCE(a.episode_count, 0),
-                COALESCE((SELECT count(*) FROM episodes e WHERE e.anime_id = a.id), 0)
-              )::smallint,
-              COALESCE(a.start_date, CURRENT_DATE),
-              CURRENT_DATE
-         FROM anime a
-         ${visibility}
-       ON CONFLICT (profile_id, anime_id) DO UPDATE
-          SET status = 'COMPLETED',
-              progress = GREATEST(library_entries.progress, EXCLUDED.progress),
-              finished_at = COALESCE(library_entries.finished_at, EXCLUDED.finished_at),
-              updated_at = now()`,
-      [profileId]
-    )
-
-    // ---- every episode, watched to the end ----
-    //
-    // position_sec is set to the duration rather than left at 0 so "continue
-    // watching" does not offer all 333,021 of them back: that list is built
-    // from the rows where `completed` is false, and a finished episode has to
-    // look finished from both directions.
-    const episodes = await client.query(
-      `INSERT INTO watch_progress (profile_id, episode_id, anime_id, position_sec, duration_sec, completed)
-       SELECT $1, e.id, e.anime_id,
-              COALESCE(e.duration, $2)::numeric * 60,
-              COALESCE(e.duration, $2)::numeric * 60,
-              true
-         FROM episodes e
-         JOIN anime a ON a.id = e.anime_id
-         ${visibility}
-       ON CONFLICT (profile_id, episode_id) DO UPDATE
-          SET completed = true,
-              position_sec = EXCLUDED.duration_sec,
-              duration_sec = COALESCE(watch_progress.duration_sec, EXCLUDED.duration_sec),
-              updated_at = now()`,
-      [profileId, DEFAULT_EPISODE_MINUTES]
-    )
-
     // ---- every achievement ----
     const achievements = await client.query(
       `INSERT INTO profile_achievements (profile_id, achievement_id)
@@ -182,8 +253,8 @@ export async function seedFounderLibrary (
 
     return {
       profileId,
-      library: library.rowCount ?? 0,
-      episodes: episodes.rowCount ?? 0,
+      library,
+      episodes,
       achievements: achievements.rowCount ?? 0,
       minutesWatched: minutes,
       xp

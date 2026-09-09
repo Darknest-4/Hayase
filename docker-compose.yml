@@ -94,7 +94,30 @@ services:
     environment:
       DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/yume
       # SEED_URL: <override the dump source, or mount a file and pass its path>
-    command: ['sh', '-c', 'node --experimental-strip-types src/lib/migrate.ts && node --experimental-strip-types scripts/seed.ts']
+    command: ['sh', '-c', 'node --experimental-strip-types src/infrastructure/migrations/migrate.ts && node --experimental-strip-types scripts/seed.ts']
+
+  # one-shot: give the founder's account the whole catalogue, already watched.
+  #
+  # The first account on an instance gets this automatically — registration
+  # enqueues the job and the worker runs it. This is for an instance whose
+  # account already existed before the feature did, which is every instance
+  # upgrading rather than installing.
+  #
+  #   docker compose --profile founder run --rm founder -- --dry-run
+  #   docker compose --profile founder run --rm founder
+  #   docker compose --profile founder run --rm founder -- --username someone
+  #   docker compose --profile founder run --rm founder -- --only-public
+  #
+  # Idempotent: running it twice writes nothing the second time.
+  founder:
+    build: { context: ., dockerfile: infrastructure/docker/Dockerfile }
+    profiles: ['founder']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/yume
+    entrypoint: ['node', '--experimental-strip-types', 'scripts/seed-founder.ts']
 
   # one-shot AniList enrichment: fills synopsis, cover/banner, score, genres,
   # tags, studios and trailer onto the seeded rows (matched by anilist_id).

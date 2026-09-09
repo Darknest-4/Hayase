@@ -57,7 +57,18 @@ try {
       console.log('\n--dry-run: nothing written')
     } else {
       const started = Date.now()
-      const result = await seedFounderLibrary(target.profileId, { onlyPublic })
+      // A third of a million rows takes long enough that silence looks like a
+      // hang. One line, rewritten in place, so a log file does not fill up.
+      const tty = process.stdout.isTTY
+      const result = await seedFounderLibrary(target.profileId, {
+        onlyPublic,
+        onProgress: (what, done) => {
+          const line = `  ${what}: ${done.toLocaleString('en-GB')}`
+          if (tty) process.stdout.write('\r' + line.padEnd(40))
+          else if (done % 50_000 === 0) console.log(line)
+        }
+      })
+      if (tty) process.stdout.write('\r'.padEnd(42) + '\r')
       console.log(`\nwritten in ${((Date.now() - started) / 1000).toFixed(1)}s`)
       console.log(`  library entries touched: ${result.library.toLocaleString('en-GB')}`)
       console.log(`  episodes marked watched: ${result.episodes.toLocaleString('en-GB')}`)

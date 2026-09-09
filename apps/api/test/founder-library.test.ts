@@ -166,6 +166,75 @@ describe('the founder library', { skip: HAS_DB ? false : 'no DATABASE_URL' }, ()
     assert.deepEqual(after.rows[0], before.rows[0], 'a second run must not double anything')
   })
 
+  test('pages through the catalogue rather than writing it in one statement', async () => {
+    // The reason this is paged at all: one INSERT ... SELECT over 364,064
+    // episodes is a single statement, and the pool sets statement_timeout to
+    // 15 seconds. On the real VPS it hit exactly that — `canceling statement
+    // due to statement timeout`, the transaction rolled back, nothing written.
+    //
+    // A small batch against the published subset is enough to prove the loop
+    // pages, terminates and covers: the number of pages is what the timeout
+    // cared about, not their size.
+    const seenPages: Array<[string, number]> = []
+    const result = await seedFounderLibrary(profileId, {
+      onlyPublic: true,
+      batchSize: 250,
+      onProgress: (what, done) => seenPages.push([what, done])
+    })
+
+    const titlePages = seenPages.filter(([what]) => what === 'titles')
+    const episodePages = seenPages.filter(([what]) => what === 'episodes')
+    assert.ok(titlePages.length > 1, `titles were written in ${titlePages.length} page(s), so nothing was paged`)
+    assert.ok(episodePages.length > 1, `episodes were written in ${episodePages.length} page(s)`)
+
+    // The progress a page reports only ever grows, and ends at the total.
+    for (const pages of [titlePages, episodePages]) {
+      for (let i = 1; i < pages.length; i++) {
+        assert.ok(pages[i]![1] > pages[i - 1]![1], 'progress went backwards')
+      }
+    }
+    assert.equal(titlePages[titlePages.length - 1]![1], result.library)
+    assert.equal(episodePages[episodePages.length - 1]![1], result.episodes)
+
+    const { rows } = await pool.query(
+      `SELECT count(*)::int AS n FROM anime a
+        WHERE a.visibility = 'public'
+          AND NOT EXISTS (SELECT 1 FROM library_entries le
+                           WHERE le.profile_id = $1 AND le.anime_id = a.id)`,
+      [profileId]
+    )
+    assert.equal(rows[0]!.n, 0, 'paging left published titles out of the library')
+  })
+
+  test('a run that stopped halfway is finished by running it again', async () => {
+    // What resumability actually has to mean here. The previous test seeded
+    // only the published subset — a partial run, of the shape a timeout or a
+    // restart would leave behind. A full run must complete it rather than
+    // trip over what is already there.
+    const before = await pool.query(
+      'SELECT count(*)::int AS n FROM library_entries WHERE profile_id = $1', [profileId]
+    )
+    const result = await seed()
+    const after = await pool.query(
+      `SELECT (SELECT count(*)::int FROM library_entries WHERE profile_id = $1) AS lib,
+              (SELECT count(*)::int FROM library_entries
+                WHERE profile_id = $1 AND status <> 'COMPLETED')                AS unfinished`,
+      [profileId]
+    )
+    assert.ok(Number(after.rows[0]!.lib) >= Number(before.rows[0]!.n))
+    assert.equal(after.rows[0]!.unfinished, 0)
+    assert.equal(result.library, Number(after.rows[0]!.lib))
+  })
+
+  test('the batch size changes how it runs, not what it writes', async () => {
+    const big = await seedFounderLibrary(profileId, { batchSize: 20_000 })
+    const small = await seedFounderLibrary(profileId, { batchSize: 500 })
+    assert.equal(small.library, big.library)
+    assert.equal(small.episodes, big.episodes)
+    assert.equal(small.xp, big.xp)
+    assert.equal(small.minutesWatched, big.minutesWatched)
+  })
+
   // ---- reading it back ----
 
   test('one request no longer returns the whole library', async () => {

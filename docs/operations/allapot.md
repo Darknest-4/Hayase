@@ -549,8 +549,34 @@ npm run seed:founder --workspace @yume/api -- --username valaki
 npm run seed:founder --workspace @yume/api -- --only-public
 ```
 
-Idempotens: kétszer lefuttatva semmi nem duplázódik. Halmaz-alapú SQL, így a
-25 703 cím és 333 021 epizód körülbelül 11 másodperc.
+### Dockerrel, VPS-en
+
+Ez a szokásos eset: a fiók már megvolt, mielőtt ez a funkció létezett. Saját
+compose profil futtatja, az `app` konténer leállítása nélkül:
+
+```bash
+docker compose --profile founder run --rm founder -- --dry-run
+docker compose --profile founder run --rm founder
+docker compose --profile founder run --rm founder -- --username valaki
+docker compose --profile founder run --rm founder -- --only-public
+```
+
+Idempotens: kétszer lefuttatva semmi nem duplázódik, és egy félbeszakadt futást
+egyszerűen újraindítva be lehet fejezni.
+
+A munka elsődleges kulcs szerint lapozva megy, alapból 5 000 soronként. Ez nem
+esztétika: egyetlen `INSERT ... SELECT` 364 064 epizódra egy darab utasítás, a
+pool `statement_timeout`-ja pedig 15 másodperc — az első éles futás pontosan ezen
+bukott el, és az egész tranzakció visszagördült. Ha a VPS lassú lemezen ül és egy
+köteg így is túl sokáig tart, kisebbre lehet venni:
+
+```bash
+docker compose exec -e FOUNDER_BATCH_SIZE=1000 app \
+  node --experimental-strip-types scripts/seed-founder.ts
+```
+
+A 25 703 cím és 333 021 epizód így körülbelül 11 másodperc — 2 másodperces
+statement timeout mellett is, ami jóval szigorúbb az alapértelmezettnél.
 
 Az `--only-public` a 3 118 publikált címre szűkít. Alapból minden bekerül, a
 rejtettek is — az instanciát a tulajdonosa nézi, és ő látja a rejtetteket is.
