@@ -1,24 +1,41 @@
 /* global window */
-// Community page — platform-wide recent discussion feed (Yume API),
-// with account sign-in when the user isn't authenticated yet.
+// Community — three ways of talking, on one page.
+//
+//   Feed   what people are saying under the anime themselves
+//   Forum  boards anyone can start, with topics and posts
+//   Chat   public rooms, live
+//
+// Which tab is open is in the URL, not in a variable: `#/community?tab=forum`.
+// That is what makes a link to a thread a link to a thread, and what makes the
+// back button walk out of one.
 
 import { navigate } from '../shared/lib/shell.js'
 import { C } from '../shared/ui/components.js'
+import { featureOn, permissionsHeld } from '../shared/lib/site-config.js'
+import { Chat } from '../features/chat/chat.js'
+import { Forum } from '../features/forum/forum.js'
 import { T } from '../shared/i18n/i18n.js'
 import { U } from '../shared/lib/dom.js'
 import { YumeAPI } from '../shared/api/yume.js'
 
+const TABS = [
+  { key: 'feed', label: 'Feed', flag: null },
+  { key: 'forum', label: 'Forum', flag: 'forum' },
+  { key: 'chat', label: 'Live chat', flag: 'chat' }
+]
+
 export const PageCommunity = {
-  async render (root) {
-    root.append(C.spotlight(T('Community'), { subtitle: T('Live discussion across the whole platform') }))
-    const pad = U.el('div', { class: 'page-pad', style: 'max-width:56rem;' })
+  async render (root, params) {
+    // Whatever the last tab left open, close. A socket outliving its tab is
+    // how a page ends up with four of them.
+    Chat.close()
+
+    root.append(C.spotlight(T('Community'), { subtitle: T('Boards, rooms and everything people are saying') }))
+    const pad = U.el('div', { class: 'page-pad', style: 'max-width:60rem;' })
     root.append(pad)
 
-    const content = U.el('div', {}, [U.el('div', { class: 'spinner' })])
-    pad.append(content)
-
     if (!await YumeAPI.available()) {
-      content.replaceChildren(U.el('div', {
+      pad.append(U.el('div', {
         class: 'callout',
         html: `
         <b>Community is a platform feature.</b><br>
@@ -28,14 +45,37 @@ export const PageCommunity = {
       return
     }
 
-    content.replaceChildren()
+    // A tab whose feature is switched off is not drawn at all, rather than
+    // drawn and then answering 404 when opened.
+    const available = TABS.filter(tab => !tab.flag || featureOn(tab.flag))
+    const asked = params.get('tab') ?? 'feed'
+    const active = available.some(tab => tab.key === asked) ? asked : 'feed'
 
-    if (!YumeAPI.user()) {
-      content.append(C.authCard(() => { navigate() }))
+    const rail = U.el('div', { class: 'tabs' })
+    for (const tab of available) {
+      rail.append(U.el('a', {
+        class: 'tab' + (tab.key === active ? ' active' : ''),
+        href: `#/community?tab=${tab.key}`
+      }, [U.el('span', { text: T(tab.label) })]))
+    }
+    pad.append(rail)
+
+    const panel = U.el('div', { class: 'community-panel' })
+    pad.append(panel)
+
+    if (!YumeAPI.user() && active !== 'feed') {
+      panel.append(C.authCard(() => { navigate() }))
     }
 
+    const perms = permissionsHeld()
+    if (active === 'forum') return await Forum.render(panel, params, perms)
+    if (active === 'chat') return await Chat.render(panel, params, perms)
+    return await this._feed(panel)
+  },
+
+  async _feed (panel) {
     const feed = U.el('div', {}, [U.el('div', { class: 'spinner' })])
-    content.append(U.el('h2', { class: 'detail-section-title', text: T('Recent discussion') }), feed)
+    panel.append(U.el('h2', { class: 'detail-section-title', text: T('Recent discussion') }), feed)
 
     try {
       const { data } = await YumeAPI.recentComments()
@@ -59,7 +99,7 @@ export const PageCommunity = {
         ]))
       }
     } catch (e) {
-      feed.replaceChildren(U.el('div', { class: 'error-state', text: T('Failed to load the feed: ') + e.message }))
+      feed.replaceChildren(C.errorState(e, () => { navigate() }))
     }
   }
 }

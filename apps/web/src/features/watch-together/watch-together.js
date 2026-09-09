@@ -31,11 +31,12 @@ export const PageW2G = {
 
     // A single-use ticket, not the access token: a WebSocket URL ends up in
     // proxy logs and browser history, which is no place for a live credential.
+    // Open, not merely constructed — openSocket waits for the handshake, so
+    // the join can go out immediately. Sending it from an `onopen` assigned
+    // here used to lose the event whenever the socket opened first.
     const ws = await YumeAPI.openSocket()
     await new Promise((resolve, reject) => {
-      ws.onopen = () => {
-        ws.send(JSON.stringify({ type: 'join', channel: `w2g:${code}` }))
-      }
+      ws.send(JSON.stringify({ type: 'join', channel: `w2g:${code}` }))
       ws.onmessage = e => {
         const msg = JSON.parse(e.data)
         if (msg.type === 'joined') { this.socket = ws; this.room = code; resolve() }

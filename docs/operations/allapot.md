@@ -592,3 +592,56 @@ rajzol.
 A böngésző tárhelye néhány megabájt, a teljes katalógus nem fér bele. Ilyenkor
 a kliens a legfrissebb bejegyzéseket tartja meg, és ezt naplózza is — a fiók
 mindent tárol, csak ez a böngésző nem.
+
+## Közösség: fórum, élő chat, fejlesztési napló
+
+A `forums`, `topics` és `posts` táblák a 0004 óta a sémában voltak, kód nélkül,
+minden telepítésen nulla sorral. A 0036 migráció tette őket használhatóvá, és
+állította a hozzájuk katalogizált jogosultságokat `planned`-ről `active`-ra —
+ezt olvassa az admin Szerepkörök képernyő, amikor azt írja, hogy egy jogosultság
+LIVE vagy csak tervezett.
+
+### Ki mit tehet
+
+| | felhasználó | moderátor | szerkesztő |
+|---|---|---|---|
+| kategóriát indítani | ✓ | ✓ | ✓ |
+| témát nyitni, hozzászólni | ✓ | ✓ | ✓ |
+| saját hozzászólást szerkeszteni | ✓ | ✓ | ✓ |
+| kitűzni, lezárni, törölni | | ✓ | |
+| chatüzenetet levenni | | ✓ | |
+| fejlesztési naplót írni | | | ✓ |
+
+**Bárki indíthat kategóriát** — ez szándékos, és ez az oka annak, hogy a
+moderátori jogosultságok léteznek. Ha csak a csapat indíthatna, a funkció olyan
+lenne, amit kérni kell, nem olyan, amit használnak.
+
+### Élő chat
+
+A WebSocket réteg eddig is perzisztált és szórt, csak nem volt előtte semmi. A
+`/v1/chat` a szobalistát, a csatlakozást és az előzményt adja; küldeni a
+socketen lehet, mert két útvonalnak egyet kellene értenie a sorrendről és arról,
+ki tagja a szobának.
+
+Amit írsz, azonnal megjelenik — nem várja meg a szerver visszhangját —, és a
+visszhang lecseréli, nem megduplázza. Ha nyolc másodpercig nem érkezik meg,
+áthúzva marad, nem tesz úgy, mintha elment volna.
+
+### Fejlesztési napló
+
+Külön útvonal (`#/changelog`), nem a közösséghez tartozik: a projekt beszél
+magáról. Adatbázisból jön (`releases`, `release_entries`), tehát új verziót
+telepítés nélkül is fel lehet venni, és a „tervezett" rész ugyanolyan valódi,
+mint a kiadott.
+
+### Seed
+
+```bash
+docker compose --profile community run --rm community
+npm run seed:community --workspace @yume/api      # fejlesztői gépen
+```
+
+Idempotens, slug és verziószám alapján: minden telepítés után nyugodtan
+lefuttatható. Amit hozzáad: hat alapértelmezett kategória, három chatszoba, és a
+projekt verziótörténete 0.1.0-tól 1.0.0-ig — a kiadott, a folyamatban lévő és a
+tervezett verziók egyaránt.

@@ -41,6 +41,20 @@ export function configure (options = {}) {
  * anything the flag would have hidden regardless — a flag is presentation,
  * never the enforcement point.
  */
+/**
+ * The grants this viewer holds.
+ *
+ * Returned as a copy: a page that wanted to know what to draw once managed to
+ * push onto the array it was handed, and every later question answered yes.
+ *
+ * This is for deciding what to *offer* — a moderator's pin button, the "new
+ * board" form. It is not authorisation: every one of those actions is checked
+ * again on the server, which is the only check that counts.
+ */
+export function permissionsHeld () {
+  return [...permissions]
+}
+
 export function featureOn (name) {
   if (!config) return true
   const flag = config.flags?.['feature.' + name]
