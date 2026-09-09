@@ -33,9 +33,11 @@ const routes: FastifyPluginAsync = async fastify => {
     const { subjectType, subjectId, limit } = request.query as { subjectType: string, subjectId: string, limit?: number }
     const data = await query(
       `SELECT c.id, c.parent_id, c.body, c.spoiler, c.like_count, c.reply_count,
-              c.created_at, c.edited_at, u.username AS author
+              c.created_at, c.edited_at, u.username AS author,
+              ap.avatar_key AS author_avatar
        FROM comments c
        JOIN users u ON u.id = c.author_id
+       LEFT JOIN user_profiles ap ON ap.user_id = u.id
        WHERE c.subject_type = $1 AND c.subject_id = $2 AND c.hidden_at IS NULL
        ORDER BY c.path, c.created_at
        LIMIT $3`,
@@ -56,10 +58,11 @@ const routes: FastifyPluginAsync = async fastify => {
     const { limit } = request.query as { limit?: number }
     const data = await query(
       `SELECT c.id, c.subject_type, c.subject_id, c.body, c.spoiler, c.like_count,
-              c.created_at, u.username AS author,
+              c.created_at, u.username AS author, ap.avatar_key AS author_avatar,
               a.canonical_title AS anime_title, m.anilist_id
        FROM comments c
        JOIN users u ON u.id = c.author_id
+       LEFT JOIN user_profiles ap ON ap.user_id = u.id
        LEFT JOIN anime a ON c.subject_type = 'anime' AND a.id = c.subject_id
        LEFT JOIN anime_mappings m ON m.anime_id = a.id
        WHERE c.hidden_at IS NULL AND c.parent_id IS NULL

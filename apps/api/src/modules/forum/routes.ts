@@ -182,9 +182,10 @@ const routes: FastifyPluginAsync = async fastify => {
 
     const data = await query(
       `SELECT t.id, t.title, t.pinned, t.locked, t.post_count, t.last_post_at, t.created_at,
-              u.username AS author
+              u.username AS author, ap.avatar_key AS author_avatar
          FROM topics t
          JOIN users u ON u.id = t.author_id
+         LEFT JOIN user_profiles ap ON ap.user_id = u.id
         WHERE t.forum_id = $1
         ORDER BY t.pinned DESC, t.last_post_at DESC NULLS LAST, t.created_at DESC
         LIMIT $2 OFFSET $3`,
@@ -239,9 +240,11 @@ const routes: FastifyPluginAsync = async fastify => {
     const { id } = request.params as { id: string }
     const topic = await queryOne(
       `SELECT t.id, t.title, t.pinned, t.locked, t.post_count, t.created_at,
-              u.username AS author, f.slug AS forum_slug, f.name AS forum_name, f.locked_at AS forum_locked
+              u.username AS author, ap.avatar_key AS author_avatar,
+              f.slug AS forum_slug, f.name AS forum_name, f.locked_at AS forum_locked
          FROM topics t
          JOIN users u ON u.id = t.author_id
+         LEFT JOIN user_profiles ap ON ap.user_id = u.id
          JOIN forums f ON f.id = t.forum_id
         WHERE t.id = $1`,
       [id]
@@ -311,9 +314,11 @@ const routes: FastifyPluginAsync = async fastify => {
     const { id } = request.params as { id: string }
     const { limit = 50, offset = 0 } = request.query as { limit?: number, offset?: number }
     const data = await query(
-      `SELECT p.id, p.body, p.created_at, p.edited_at, u.username AS author, p.author_id
+      `SELECT p.id, p.body, p.created_at, p.edited_at, u.username AS author, p.author_id,
+              ap.avatar_key AS author_avatar
          FROM posts p
          JOIN users u ON u.id = p.author_id
+         LEFT JOIN user_profiles ap ON ap.user_id = u.id
         WHERE p.topic_id = $1 AND p.hidden_at IS NULL
         ORDER BY p.created_at
         LIMIT $2 OFFSET $3`,

@@ -487,6 +487,20 @@ export const YumeAPI = {
     }
   },
 
+  // ---- the account's own profile ----
+
+  profile: {
+    _api: null,
+
+    get () { return this._api._request('/v1/profiles/me', { auth: true }) },
+    update (patch) { return this._api._request('/v1/profiles/me', { method: 'PATCH', auth: true, body: patch }) },
+    artwork ({ kind = 'avatar', q, limit = 30 } = {}) {
+      const query = new URLSearchParams({ kind, limit: String(limit) })
+      if (q) query.set('q', q)
+      return this._api._request(`/v1/profiles/artwork?${query}`, { auth: true })
+    }
+  },
+
   // ---- forum ----
   //
   // Namespaced rather than flat because there are a dozen of them and they all
@@ -825,4 +839,4 @@ export const YumeAPI = {
 // here rather than reaching for a bare `YumeAPI` inside each method keeps them
 // usable if one is ever pulled out on its own, and avoids every method
 // depending on the module's own binding still being in scope.
-for (const namespace of [YumeAPI.forum, YumeAPI.chat, YumeAPI.changelog]) namespace._api = YumeAPI
+for (const namespace of [YumeAPI.profile, YumeAPI.forum, YumeAPI.chat, YumeAPI.changelog]) namespace._api = YumeAPI

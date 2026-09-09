@@ -4,6 +4,7 @@
 // tabs embed those modules' bodies so they don't need their own routes.
 
 import { C } from '../shared/ui/components.js'
+import { viewerProfile } from '../shared/lib/site-config.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
 import { ProfileStats } from '../features/watch-history/profile-stats.js'
 import { Store } from '../shared/state/store.js'
@@ -35,13 +36,22 @@ export const PageProfile = {
     const xp = episodesWatched * 10 + entries.filter(e => e.status === 'COMPLETED').length * 100
     const level = Math.floor(Math.sqrt(xp / 100)) + 1
 
-    root.append(C.spotlight(name, {
+    // The account's own artwork when it has any: a profile wearing somebody
+    // else's randomly chosen banner is the one page where the wandering
+    // header is wrong.
+    const account = viewerProfile()
+    root.append(C.spotlight(account?.display_name ?? name, {
       // f(), not a template literal: Hungarian puts these in a different
       // order, and a positional format string would force it to keep the
       // English one.
       subtitle: I18n.f('Level {level} · {xp} XP · {count} in library', {
         level, xp: I18n.number(xp), count: entries.length
-      })
+      }),
+      banner: account?.banner_key ?? null,
+      bannerCredit: account?.banner_from ? { text: account.banner_from, href: '#/settings?tab=account' } : null,
+      actions: U.el('div', { class: 'profile-identity' }, [
+        C.avatar({ name: account?.display_name ?? name, avatar_key: account?.avatar_key }, { size: 'xl' })
+      ])
     }))
 
     const pad = U.el('div', { class: 'page-pad' })

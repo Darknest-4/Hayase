@@ -91,6 +91,7 @@ export const PageCommunity = {
           onclick: target ? () => { window.location.hash = target } : null
         }, [
           U.el('div', { class: 'comment-head' }, [
+            C.avatar(comment),
             U.el('span', { class: 'comment-author', text: comment.author }),
             comment.anime_title ? U.el('span', { class: 'comment-context', text: T('on ') + comment.anime_title }) : null,
             U.el('span', { class: 'comment-time', text: U.relTime(new Date(comment.created_at)) })

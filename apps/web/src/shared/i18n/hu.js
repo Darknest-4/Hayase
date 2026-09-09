@@ -264,6 +264,33 @@ I18n.register('hu', {
   'Your account': 'A fiókod',
   'Account settings': 'Fiókbeállítások',
   Avatar: 'Profilkép',
+
+  // ----------------------------------------------- profilkep es banner
+  'Profile picture': 'Profilkép',
+  'Profile banner': 'Profil banner',
+  'Pick any title from the catalogue. Its cover becomes your picture.':
+    'Válassz bármelyik címet a katalógusból — a borítója lesz a képed.',
+  'The widest artwork we hold for a title, across the top of your profile.':
+    'A legszélesebb kép, amink egy címhez van, a profilod tetején.',
+  'Choose a profile picture': 'Profilkép választása',
+  'Choose a banner': 'Banner választása',
+  'Search the catalogue…': 'Keresés a katalógusban…',
+  'From your library. Type to search everything.':
+    'A könyvtáradból. Írj be valamit a teljes kereséshez.',
+  'Popular right now. Type to search everything.':
+    'Most népszerű. Írj be valamit a teljes kereséshez.',
+  'Search results': 'Találatok',
+  'Nothing matched.': 'Nincs találat.',
+  'No banner yet': 'Még nincs banner',
+  'From: ': 'Innen: ',
+  Choose: 'Választás',
+  Change: 'Csere',
+  'Remove picture': 'Kép eltávolítása',
+  'Remove banner': 'Banner eltávolítása',
+  'Profile picture updated': 'Profilkép frissítve',
+  'Banner updated': 'Banner frissítve',
+  'Profile picture removed': 'Profilkép eltávolítva',
+  'Banner removed': 'Banner eltávolítva',
   Name: 'Név',
 
   // ---------------------------------------------------------------- fiók

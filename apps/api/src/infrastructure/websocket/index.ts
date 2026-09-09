@@ -21,6 +21,8 @@ interface Client {
   socket: WebSocket
   userId: string
   username: string
+  /** The picture beside this person's messages, read once at connect. */
+  avatar: string | null
   channels: Set<string>
   /** Token expiry (epoch seconds) — the socket is closed once it passes. */
   expiresAt: number
@@ -199,7 +201,17 @@ async function handleMessage (app: FastifyInstance, client: Client, raw: string)
       )
       publish(
         channel,
-        { type: 'chat', id: rows[0]!.id, body, author: client.username, createdAt: rows[0]!.created_at },
+        {
+          type: 'chat',
+          id: rows[0]!.id,
+          body,
+          author: client.username,
+          // Carried on the connection rather than looked up per message: the
+          // history endpoint returns it too, and a live line that arrived
+          // without one would be the only line in the room with no picture.
+          authorAvatar: client.avatar,
+          createdAt: rows[0]!.created_at
+        },
         undefined,
         { table: 'messages', id: rows[0]!.id }
       )
@@ -300,12 +312,13 @@ export default fp(async (app: FastifyInstance) => {
       const ticket = (req.query as { ticket?: string }).ticket ?? ''
       if (!ticket) { socket.close(4401, 'unauthorized'); return }
 
-      const row = await queryOne<{ user_id: string, username: string, token_version: number }>(
+      const row = await queryOne<{ user_id: string, username: string, token_version: number, avatar_key: string | null }>(
         `UPDATE ws_tickets t SET used_at = now()
            FROM users u
+           LEFT JOIN user_profiles p ON p.user_id = u.id
           WHERE t.ticket = $1 AND t.used_at IS NULL AND t.expires_at > now()
             AND u.id = t.user_id AND u.status = 'active' AND u.deleted_at IS NULL
-        RETURNING t.user_id, u.username, u.token_version`,
+        RETURNING t.user_id, u.username, u.token_version, p.avatar_key`,
         [sha256(ticket)]
       )
       if (!row) { socket.close(4401, 'unauthorized'); return }
@@ -315,6 +328,7 @@ export default fp(async (app: FastifyInstance) => {
       socket,
       userId: payload.sub,
       username: payload.username,
+      avatar: row.avatar_key,
       channels: new Set(),
       expiresAt: Number((payload as { exp?: number }).exp ?? 0),
       tokens: MSG_BURST,

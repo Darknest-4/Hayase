@@ -13,6 +13,7 @@
 
 import { C } from '../../shared/ui/components.js'
 import { T } from '../../shared/i18n/i18n.js'
+import { viewerProfile } from '../../shared/lib/site-config.js'
 import { U } from '../../shared/lib/dom.js'
 import { YumeAPI } from '../../shared/api/yume.js'
 
@@ -174,7 +175,18 @@ export const Chat = {
 
     // Drawn now, keyed by a local id, and reconciled when the echo arrives.
     const key = 'local-' + Date.now() + Math.random().toString(36).slice(2)
-    const line = this._line({ id: key, body, author: me.username, created_at: new Date().toISOString() }, perms)
+    // The face is taken from the viewer's own profile rather than left for the
+    // echo to supply. The echo does not supply it: it adopts this very node,
+    // so a line drawn without a picture would keep the letter until the next
+    // reload — the one line on the screen whose author is definitely known
+    // would be the only one without a face.
+    const line = this._line({
+      id: key,
+      body,
+      author: me.username,
+      author_avatar: viewerProfile()?.avatar_key ?? null,
+      created_at: new Date().toISOString()
+    }, perms)
     line.classList.add('chat-line-pending')
     log.append(line)
     this._toBottom(log)
@@ -207,6 +219,10 @@ export const Chat = {
       this._pending.delete(payload.body)
       pending.line.classList.remove('chat-line-pending')
       pending.line.dataset.id = payload.id
+      // The server's copy of the face wins over the one drawn from local
+      // state — a picture changed in another tab is right here and stale
+      // there.
+      pending.line.firstChild?.replaceWith(C.avatar(payload, { size: 'xs' }))
       return
     }
     log.append(this._line(payload, perms))
@@ -216,6 +232,7 @@ export const Chat = {
   _line (message, perms) {
     const created = message.created_at ? new Date(message.created_at) : new Date()
     return U.el('div', { class: 'chat-line', dataset: { id: String(message.id) } }, [
+      C.avatar(message, { size: 'xs' }),
       U.el('span', { class: 'chat-line-author', text: message.author }),
       U.el('span', { class: 'chat-line-body', text: message.body }),
       U.el('time', { class: 'chat-line-when', text: created.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }),
