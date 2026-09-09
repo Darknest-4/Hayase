@@ -167,8 +167,13 @@ jobs:
       # --ignore: standard has no support for a negated glob argument, and
       # passing one made ESLint fail with "No files matching" — so this step
       # was erroring out rather than linting anything.
+      #
+      # Through the npm script, not a second copy of the command: the two had
+      # already drifted once. The restructure moved the vendored player bundle
+      # and only this file's copy was updated, so `npm run lint` locally was
+      # linting a minified third-party file and failing while CI passed.
       - name: Lint the client
-        run: npx --yes standard --ignore "apps/web/src/features/player/vendor/**" "apps/web/**/*.js" "apps/web/test/**/*.mjs" "tests/e2e/*.mjs"
+        run: npm run lint
 
       # The engine is the one piece of client code with real logic in it —
       # everything else is rendering. It loads against a small DOM stub, so it

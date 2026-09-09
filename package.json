@@ -16,7 +16,7 @@
     "check": "npm run check --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "npm run test:e2e --workspace @yume/api",
-    "lint": "standard --ignore \"apps/web/js/vendor/**\" \"apps/web/**/*.js\" \"apps/web/test/*.mjs\" \"tests/e2e/*.mjs\"",
+    "lint": "standard --ignore \"apps/web/src/**/vendor/**\" \"apps/web/**/*.js\" \"apps/web/test/*.mjs\" \"tests/e2e/*.mjs\"",
     "migrate": "npm run migrate --workspace @yume/api",
     "worker": "npm run worker --workspace @yume/api",
     "seed": "npm run seed --workspace @yume/api"

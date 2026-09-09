@@ -2604,6 +2604,11 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
   }
   .nav-collapsed .admin-nav-head { padding: 0 .55rem var(--space-4); justify-content: flex-start; }
   .nav-collapsed .admin-nav-item { justify-content: flex-start; padding: .42rem .55rem; }
+  /* A finger is not a mouse pointer. On the desktop rail these rows are 30px
+     tall and that is fine; in the phone drawer fifteen of them stack at 30px
+     with 2px between, and the wrong section opens. 44px is the smallest target
+     Apple's and Google's guidance both accept. */
+  .admin-nav-item { min-height: 44px; padding: .5rem .55rem; }
   .admin-nav-collapse { display: none; }
 
   .admin-backdrop {
