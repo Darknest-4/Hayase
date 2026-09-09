@@ -57,7 +57,11 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/yume
-      # the worker loads the same config module, which validates this at import
+      # The worker reports the instance's security posture, which includes
+      # whether this secret is a real one — so it needs the value, not just the
+      # variable. The one-shot services below deliberately have no JWT_SECRET:
+      # they never sign a token, and config only asks for one when something
+      # reads it.
       JWT_SECRET: '${JWT_SECRET:?set JWT_SECRET in .env — generate one with `openssl rand -base64 48`}'
       # where the worker reaches the API to measure its response time
       SELF_URL: http://app:4000
