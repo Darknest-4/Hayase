@@ -201,6 +201,7 @@ I18n.register('hu', {
   ' watching now': ' néz most',
 
   // ---------------------------------------------------------------- profil
+  'Show more': 'Több megjelenítése',
   'Profile name': 'Profil neve',
   'Profile & stats': 'Profil és statisztika',
   'Your account': 'A fiókod',

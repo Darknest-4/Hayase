@@ -152,6 +152,24 @@ export class AuthRepository extends Repository {
       )
 
       if (promoted.length) {
+        /*
+         * The first account owns the instance, so it starts with the
+         * catalogue already in its library — every title finished, every
+         * episode watched, every achievement unlocked.
+         *
+         * Enqueued rather than done here, and on this client rather than the
+         * pool: it is 25,703 library rows and 333,021 episodes on the instance
+         * this was written for, which is seconds of set-based SQL but not
+         * seconds a registration request should spend. Writing it inside the
+         * transaction means a registration that rolls back does not leave a
+         * job pointing at an account that was never created.
+         */
+        await client.query(
+          `INSERT INTO jobs (queue, payload, run_at)
+           VALUES ('founder', $1::jsonb, now()) ON CONFLICT DO NOTHING`,
+          [JSON.stringify({ dedupe: 'founder:' + userId })]
+        )
+
         // Becoming an administrator is the single most consequential thing
         // that can happen to an account, and it happens here without anyone
         // approving it. It is recorded in both places somebody would look.

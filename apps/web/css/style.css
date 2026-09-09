@@ -3427,6 +3427,10 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
 }
 .comment-action:hover { color: var(--accent); }
 .comment-form { margin-top: var(--space-3); max-width: 52rem; }
+
+/* The library grows a screenful at a time — a full catalogue is 25,703 rows
+   and building them all at once locks the tab. */
+.list-more { display: flex; justify-content: center; padding: var(--space-5) 0 var(--space-2); }
 .comment-input { width: 100%; resize: vertical; font-family: inherit; }
 
 /* ===== the account button in the sidebar ===== */

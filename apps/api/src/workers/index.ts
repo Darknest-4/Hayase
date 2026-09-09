@@ -7,6 +7,7 @@ import { recordError } from '../errors/reporting.ts'
 import { drain, enqueue, runWorker } from '../infrastructure/queue/index.ts'
 import { handleWebhookJob } from '../modules/webhooks/delivery.ts'
 import { announceDeadJobs } from '../modules/webhooks/subscriptions.ts'
+import { handleFounderJob } from '../modules/library/founder.ts'
 import { handleImportJob } from '../integrations/anilist/importer.ts'
 import { handleMaintenanceJob } from '../infrastructure/maintenance.ts'
 import { handleMetadataJob } from '../modules/metadata/worker.ts'
@@ -25,7 +26,10 @@ const handlers = {
   metadata: handleMetadataJob,
   monitor: handleMonitorJob,
   import: handleImportJob,
-  webhook: handleWebhookJob
+  webhook: handleWebhookJob,
+  // Fills the first account's library with the whole catalogue. Enqueued once,
+  // when the bootstrap promotes that account; see modules/library/founder.ts.
+  founder: handleFounderJob
 } as const
 
 async function scheduleRecurring (): Promise<void> {
