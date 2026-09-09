@@ -130,8 +130,23 @@ export const config = {
   requestTimeoutMs: Number(process.env.REQUEST_TIMEOUT_MS ?? 30_000),
   connectionTimeoutMs: Number(process.env.CONNECTION_TIMEOUT_MS ?? 60_000),
 
-  // JWT secrets MUST be provided in production (validated above)
-  jwtSecret: jwtSecret(),
+  /*
+   * JWT secrets MUST be provided in production — see jwtSecret() above.
+   *
+   * A getter, not a value, and that is the difference between a maintenance
+   * script running and not running. Evaluating it here meant importing this
+   * module *for any reason at all* demanded a token-signing secret: the
+   * migration runner, the catalogue seeder and the founder seeder all import
+   * the database module, which imports this one to read a pool timeout, and
+   * every one of them died on `Missing required env var: JWT_SECRET` before
+   * touching the database. None of them ever signs a token.
+   *
+   * The fail-fast guarantee is unchanged. It exists so the API refuses to
+   * *start* with a missing or placeholder secret rather than failing at the
+   * first sign-in, and middleware/auth.ts reads this while buildApp() is
+   * registering — which is still boot, still before the first request.
+   */
+  get jwtSecret (): string { return jwtSecret() },
   accessTokenTtl: '15m',
   refreshTokenTtlDays: 30,
 

@@ -8,6 +8,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { after, describe, it } from 'node:test'
+import { fileURLToPath } from 'node:url'
 
 process.env.JWT_SECRET ??= 'test-secret-for-unit-tests-only'
 
@@ -122,39 +123,87 @@ describe('monitoring authorisation', () => {
 })
 
 describe('production secret validation', () => {
-  // config.ts validates at import, so each case runs in its own process
-  const loadConfig = (env: Record<string, string>): { ok: boolean, message: string } => {
+  /*
+   * Build the application, do not merely import the configuration.
+   *
+   * These used to import config.ts and assert that the import threw, because
+   * the secret was validated while that module was being evaluated. It is read
+   * lazily now — importing config for a database timeout must not demand a
+   * token-signing secret, or no maintenance script can run — so an import that
+   * succeeds no longer says anything either way.
+   *
+   * What the check is actually for is unchanged and is what is asserted here:
+   * the API refuses to *start* with a missing or placeholder secret, rather
+   * than starting and discovering it at somebody's first sign-in.
+   *
+   * `cwd` is set explicitly. Without it the child resolved its import against
+   * whatever directory the suite happened to be run from, so these passed
+   * under `npm run test --workspace` and failed from the repository root —
+   * which is how a real failure here would have been read as a path problem.
+   */
+  const API = fileURLToPath(new URL('../', import.meta.url))
+
+  const boot = (env: Record<string, string>): { ok: boolean, message: string } => {
     try {
       const out = execFileSync(process.execPath,
-        ['--experimental-strip-types', '-e', 'import("./src/config.ts").then(() => console.log("OK"))'],
-        { env: { ...process.env, DATABASE_URL: 'postgres://x@localhost/x', ...env }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+        ['--experimental-strip-types', '-e',
+          'import("./src/app.ts").then(m => m.buildApp()).then(app => app.close()).then(() => console.log("OK"))'],
+        {
+          cwd: API,
+          env: { ...process.env, DATABASE_URL: 'postgres://x@localhost/x', ...env },
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe']
+        })
       return { ok: out.includes('OK'), message: out }
     } catch (error) {
-      return { ok: false, message: String((error as { stderr?: string }).stderr ?? error) }
+      const e = error as { stdout?: string, stderr?: string }
+      return { ok: false, message: String(e.stderr ?? '') + String(e.stdout ?? '') }
     }
   }
 
   it('refuses to boot in production with the development placeholder', () => {
-    const result = loadConfig({ NODE_ENV: 'production', JWT_SECRET: 'dev-only-jwt-secret' })
+    const result = boot({ NODE_ENV: 'production', JWT_SECRET: 'dev-only-jwt-secret' })
     assert.equal(result.ok, false)
     assert.match(result.message, /placeholder/i)
   })
 
-  it('refuses a secret that is too short to be safe', () => {
-    const result = loadConfig({ NODE_ENV: 'production', JWT_SECRET: 'short-secret' })
+  it('refuses to boot in production with a secret that is too short to be safe', () => {
+    const result = boot({ NODE_ENV: 'production', JWT_SECRET: 'short-secret' })
     assert.equal(result.ok, false)
     assert.match(result.message, /too short/i)
   })
 
-  it('accepts a properly generated secret', () => {
-    const result = loadConfig({ NODE_ENV: 'production', JWT_SECRET: 'B'.repeat(64) })
-    assert.equal(result.ok, true)
+  it('refuses to boot in production with no secret at all', () => {
+    const env = { ...process.env, NODE_ENV: 'production', DATABASE_URL: 'postgres://x@localhost/x' }
+    delete env.JWT_SECRET
+    let message = ''
+    try {
+      execFileSync(process.execPath,
+        ['--experimental-strip-types', '-e',
+          'import("./src/app.ts").then(m => m.buildApp()).then(app => app.close()).then(() => console.log("OK"))'],
+        { cwd: API, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+      assert.fail('the API started in production with no JWT_SECRET')
+    } catch (error) {
+      message = String((error as { stderr?: string }).stderr ?? error)
+    }
+    assert.match(message, /JWT_SECRET/)
+  })
+
+  it('boots with a properly generated secret', () => {
+    // The other direction: the refusals above must be about the secret and not
+    // about the API being unable to start at all.
+    const result = boot({ NODE_ENV: 'production', JWT_SECRET: 'B'.repeat(64) })
+    assert.equal(result.ok, true, result.message)
   })
 
   it('never allows wildcard CORS in production', () => {
     const out = execFileSync(process.execPath,
       ['--experimental-strip-types', '-e', 'import("./src/config.ts").then(m => console.log(JSON.stringify(m.config.corsOrigins)))'],
-      { env: { ...process.env, NODE_ENV: 'production', JWT_SECRET: 'C'.repeat(64), CORS_ORIGINS: '*', DATABASE_URL: 'postgres://x@localhost/x' }, encoding: 'utf8' })
+      {
+        cwd: API,
+        env: { ...process.env, NODE_ENV: 'production', JWT_SECRET: 'C'.repeat(64), CORS_ORIGINS: '*', DATABASE_URL: 'postgres://x@localhost/x' },
+        encoding: 'utf8'
+      })
     assert.match(out, /false/, 'wildcard must collapse to same-origin in production')
   })
 })
