@@ -71,9 +71,9 @@ describe('the Authorization header', () => {
     // would turn a public read into a 401 nothing tried to recover from.
     signedIn()
     const calls = stubFetch([
-      { status: 401, body: {} },                                              // the read
+      { status: 401, body: {} }, // the read
       { status: 200, body: { accessToken: 'access-2', refreshToken: 'r2' } }, // the refresh
-      { status: 200, body: { data: [1] } }                                    // the retry
+      { status: 200, body: { data: [1] } } // the retry
     ])
     const out = await YumeAPI._request('/v1/forum')
     assert.deepEqual(out, { data: [1] })
@@ -87,9 +87,9 @@ describe('the Authorization header', () => {
     // session must not turn browsing into an error page.
     signedIn()
     const calls = stubFetch([
-      { status: 401, body: {} },              // the read
-      { status: 401, body: {} },              // the refresh, rejected
-      { status: 200, body: { data: [2] } }    // the retry, now anonymous
+      { status: 401, body: {} }, // the read
+      { status: 401, body: {} }, // the refresh, rejected
+      { status: 200, body: { data: [2] } } // the retry, now anonymous
     ])
     const out = await YumeAPI._request('/v1/forum')
     assert.deepEqual(out, { data: [2] })
