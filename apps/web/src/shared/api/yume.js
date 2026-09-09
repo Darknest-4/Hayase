@@ -52,15 +52,34 @@ export const YumeAPI = {
 
   // ---- request helpers ----
 
-  async _request (path, { method = 'GET', body, auth = false, retry = true, headers: extra } = {}) {
+  /**
+   * `auth: true` means "this call is useless without a token", not "this is
+   * the only kind of call that sends one".
+   *
+   * The token used to be attached only when a call asked for it, so every read
+   * — the catalogue, the community feed, the forum, the chat rooms, the
+   * development log — went out anonymously. That is fine on a public instance
+   * and wrong on a private one, where the server refuses everything under /v1
+   * without a live token: signed in, holding a perfectly good token, the
+   * client asked anonymously and was told to sign in. Reported from a phone
+   * with the account's own name at the top of the screen.
+   *
+   * So the header goes on whenever there is one to send. `auth` keeps its
+   * other job: failing early, with a sentence a person can act on, rather than
+   * sending a request that cannot succeed.
+   */
+  async _request (path, { method = 'GET', body, auth = false, retry = true, anonymous = false, headers: extra } = {}) {
     const headers = { Accept: 'application/json', ...extra }
     if (body !== undefined) headers['Content-Type'] = 'application/json'
 
-    if (auth) {
-      const tokens = this._tokens()
-      if (!tokens) throw new Error('Sign in to your Yume account first')
-      headers.Authorization = 'Bearer ' + tokens.accessToken
-    }
+    // `anonymous` is for the one call that must not carry a token: the refresh
+    // itself authenticates with the refresh token in its body, and attaching
+    // the expired access token to it would put the refresh inside the
+    // refresh-and-retry path below — a request that answers 401 by refreshing,
+    // which is the request that just failed.
+    const tokens = anonymous ? null : this._tokens()
+    if (auth && !tokens) throw new Error('Sign in to your Yume account first')
+    if (tokens?.accessToken) headers.Authorization = 'Bearer ' + tokens.accessToken
 
     const res = await fetch(this.base() + path, {
       method,
@@ -68,10 +87,14 @@ export const YumeAPI = {
       body: body !== undefined ? JSON.stringify(body) : undefined
     })
 
-    // expired access token → refresh once and retry
-    if (res.status === 401 && auth && retry && this._tokens()?.refreshToken) {
-      await this._refresh()
-      return this._request(path, { method, body, auth, retry: false, headers: extra })
+    // Expired access token → refresh once and retry. Keyed on having sent a
+    // token rather than on `auth`, or a stale token would turn a public read
+    // into a 401 the client never tried to recover from. A refresh that fails
+    // clears the tokens, so the retry goes out anonymously and a public
+    // instance still answers it.
+    if (res.status === 401 && retry && tokens?.refreshToken) {
+      await this._refresh().catch(() => {})
+      return this._request(path, { method, body, auth: auth && !!this._tokens(), retry: false, headers: extra })
     }
 
     if (res.status === 204) return null
@@ -106,7 +129,12 @@ export const YumeAPI = {
     const tokens = this._tokens()
     if (!tokens?.refreshToken) throw new Error('Not signed in')
     try {
-      const fresh = await this._request('/v1/auth/refresh', { method: 'POST', body: { refreshToken: tokens.refreshToken } })
+      const fresh = await this._request('/v1/auth/refresh', {
+        method: 'POST',
+        body: { refreshToken: tokens.refreshToken },
+        anonymous: true,
+        retry: false
+      })
       this._saveTokens(fresh)
     } catch (e) {
       this._saveTokens(null) // refresh token rejected → signed out
