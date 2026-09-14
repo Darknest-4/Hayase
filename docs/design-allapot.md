@@ -67,6 +67,30 @@ Kiegészítő ellenőrzések ugyanitt:
 teszt-fiók szerepkör-adását a rendszer megtagadta (DB-írás), így az admin
 szekciót statikusan mértem. Ez a felmérés egyetlen lyuka.
 
+> **Pótolva, és az eredmény megfordítja az ítéletet.** A szerepkör utóbb
+> megkapva, mind a 15 admin szekció megnézve valódi böngészőben, 375 és
+> 1440px-en:
+>
+> - 15/15 betölt, 0 fehér oldal, 0 JS-hiba;
+> - **0 oldal-túlcsordulás** mindkét szélességen;
+> - 0 befelé görgő elem (a korábbi „11 görgő elem" mérésem 1400 ms-nál
+>   készült, amikor a tartalom még töltött — 1800 ms-nál egy sincs);
+> - **0 `<table>` elem az egész panelen** — div-ekből épül, tehát a
+>   „táblázat essen kártyákra mobilon" munka itt tárgytalan;
+> - a gombok **már a közös `.btn`-t használják**; egyetlen saját gombosztály
+>   van (`.admin-menu-btn`).
+>
+> A „legrosszabb oldal" verdikt tehát kódmennyiségen alapult — 4211 sor, 492
+> osztály, 915 `U.el` —, és ez **nem fordult át látható hibába**. A panel
+> vizuálisan konzisztens és responsive szempontból tiszta.
+>
+> Ez a különbség számít: a 492 osztály belső karbantartási teher, nem a
+> néző problémája. Átírni 4211 sort látható haszon nélkül, regressziós
+> kockázattal, pont az lenne, amit a feladat tilt („ne cserélj le működő
+> funkciót dizájn ürügyén"). Ezért az admin átdolgozása **nem történt meg, és
+> a mérés szerint nem is indokolt** — a konszolidáció akkor éri meg, ha
+> úgyis hozzá kell nyúlni.
+
 ---
 
 ## 2. Border-radius
@@ -301,7 +325,7 @@ Kódoldalon ugyanez a kép, élesebben:
 
 | Oldal | Sor | `C.*` | `U.el` | Saját osztály |
 |---|---|---|---|---|
-| **admin** | **4211** | **8** | **915** | **492** |
+| **admin** | **4211** | **8** | **915** | **492** |*
 | watch | 1136 | 5 | 155 | 102 |
 | anime | 686 | 8 | 133 | 85 |
 | settings | 345 | 1 | 55 | 17 |
@@ -318,8 +342,17 @@ Kódoldalon ugyanez a kép, élesebben:
 | schedule | 80 | 2 | 11 | 9 |
 
 `admin.js` egymaga az oldalkód **52%-a**. 915 kézi DOM-hívás, 492 saját
-osztálynév, 52 saját gombosztály — és 8 közös komponens-hívás. Gyakorlatilag
-külön alkalmazás, amely csak a tokeneket osztja meg a többivel.
+osztálynév — és 8 közös komponens-hívás.
+
+> \* **Pontosítás.** Itt eredetileg „52 saját gombosztály" is szerepelt. Az
+> 52 *előfordulást* számolt olyan osztálysztringekből, amik tartalmazzák a
+> „btn"-t — a valóságban ezek 13 különböző sztringet adnak ki, és tizenkettő
+> a **közös** `.btn` + variáns kombinációja. Egyetlen saját gombosztály van,
+> az `.admin-menu-btn`, egy helyen. A gombok terén tehát az admin nem vétkes.
+>
+> A maradék egyenetlenség valódi, de kozmetikai: `btn btn-ghost btn-sm` 18-szor
+> és `btn btn-sm btn-ghost` 6-szor ugyanaz, két sorrendben — pontosan az, amit
+> egy `P.button()` konstruktor megszüntet, ha az admin egyszer sorra kerül.
 
 A `home` a másik véglet: 167 sor, 7 közös komponens-hívás, 14 saját osztály.
 Ez a helyes arány, és bizonyítja, hogy a közös réteg működik — csak kevesen
