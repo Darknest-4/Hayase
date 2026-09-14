@@ -6,6 +6,7 @@ import { randomBytes } from 'node:crypto'
 import { query, queryOne } from '../../infrastructure/database/index.ts'
 import { presence } from '../../infrastructure/websocket/index.ts'
 import { emitEvent } from '../webhooks/delivery.ts'
+import { WRITE_LIMIT } from '../../middleware/security.ts'
 
 import { retryOnCollision } from '@yume/database'
 
@@ -18,6 +19,7 @@ const routes: FastifyPluginAsync = async fastify => {
   fastify.addHook('onRequest', fastify.requireFeature('feature.watch_together'))
 
   fastify.post('/', {
+    config: WRITE_LIMIT,
     preHandler: fastify.authenticate,
     schema: {
       body: {
@@ -85,7 +87,7 @@ const routes: FastifyPluginAsync = async fastify => {
     return { ...room, viewers: presence(`w2g:${code}`) }
   })
 
-  fastify.delete('/:code', { preHandler: fastify.authenticate }, async (request, reply) => {
+  fastify.delete('/:code', { preHandler: fastify.authenticate, config: WRITE_LIMIT }, async (request, reply) => {
     const { code } = request.params as { code: string }
     // Scoped to the host, so a stranger's request changes nothing — but it
     // used to return 204 regardless, telling them it had worked. Report what

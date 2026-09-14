@@ -3196,6 +3196,19 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
 
 /* ===== admin: metadata synchronisation ===== */
 
+/* What the coverage gap is made of. Counts rather than bars: these are not
+   shares of the catalogue and a title can be in more than one of them, so
+   drawing them as proportions would invite adding them up. */
+.meta-gaps { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: var(--space-3); margin-bottom: var(--space-5); }
+.meta-gap {
+  display: flex; flex-direction: column; gap: .1rem;
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--bg-raised); padding: .7rem .8rem; min-width: 0;
+}
+.meta-gap-value { font-size: var(--text-xl); font-weight: var(--weight-black); font-variant-numeric: tabular-nums; }
+.meta-gap-label { font-size: var(--text-xs); font-weight: var(--weight-bold); text-transform: uppercase; letter-spacing: .05em; color: var(--fg-muted); }
+.meta-gap-hint { font-size: var(--text-xs); color: var(--fg-faint); line-height: 1.45; margin-top: .2rem; }
+
 .meta-bars { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: var(--space-3); margin-bottom: var(--space-5); }
 .meta-bar {
   border: 1px solid var(--border); border-radius: var(--radius-lg);
@@ -5026,4 +5039,35 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
 
   .aud-row-body { margin: 0 .7rem; padding: .7rem 0 .7rem; }
   .admin-toolbar .select, .admin-toolbar .input { flex: 1 1 8rem; max-width: none !important; }
+}
+
+/* Touch targets on a phone (YUME-AUDIT-0018).
+   Measured at 375x812: the library tabs came out 30 px tall, the admin range
+   buttons 24 px and the footer links 16–21 px. Only the footer links were
+   under WCAG 2.5.8's 24 px minimum, but none of them were near the ~44 px a
+   thumb actually wants, and these are controls people press repeatedly.
+   Padding rather than font-size, so nothing about the type scale moves. */
+@media (max-width: 820px) {
+  .tab { padding: .62rem 1rem; min-height: 44px; display: inline-flex; align-items: center; }
+  .dash-range { padding: .6rem .8rem; min-height: 44px; display: inline-flex; align-items: center; }
+  .dash-link, .section-more { min-height: 44px; display: inline-flex; align-items: center; }
+  /* A link in a paragraph cannot be given a height without breaking the line
+     box around it, so the row gets the room instead: the links inside stay
+     inline and the whole line becomes comfortably pressable. */
+  /* The footer's navigation columns are the densest stack of links in the app
+     — twelve of them, 21 px apart, which on a thumb is one target. */
+  .footer-col a { min-height: 44px; display: flex; align-items: center; }
+  .footer-credits { line-height: 2.4; }
+  .footer-credits a { padding: .35rem 0; }
+  /* The small button variant. It is small on purpose on a desktop toolbar and
+     still has to be pressable with a thumb. */
+  .btn-sm { min-height: 40px; }
+  .dash-widget-link { min-height: 40px; display: inline-flex; align-items: center; }
+  /* Genre chips under the hero, and the "from <title>" credit under a
+     spotlight: both are links people do press, and both were under 32 px.
+     The three attribution links in .footer-credits are deliberately left at
+     27 px: they sit inside a running sentence, where a 44 px box would break
+     the line rather than enlarge the target. They clear WCAG 2.5.8's 24 px. */
+  .badge { min-height: 32px; display: inline-flex; align-items: center; }
+  a.spotlight-credit { min-height: 32px; display: inline-flex; align-items: center; }
 }

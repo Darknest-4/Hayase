@@ -69,7 +69,7 @@ describe('paths resolved from a source file', () => {
       `docs/ is excluded from the build context and ${report} is not re-included, so the image ships without it`)
 
     const dockerfile = readFileSync(
-      fileURLToPath(new URL('../../../infrastructure/docker/Dockerfile', import.meta.url)), 'utf8')
+      fileURLToPath(new URL('../../../Dockerfile', import.meta.url)), 'utf8')
     assert.ok(dockerfile.includes(`COPY ${report} docs/`),
       `the image does not copy ${report}`)
   })
@@ -79,7 +79,7 @@ describe('paths resolved from a source file', () => {
     // the image has the same shape. A COPY that flattened apps/ would leave
     // the container starting and then failing to find its own migrations.
     const dockerfile = readFileSync(
-      fileURLToPath(new URL('../../../infrastructure/docker/Dockerfile', import.meta.url)), 'utf8')
+      fileURLToPath(new URL('../../../Dockerfile', import.meta.url)), 'utf8')
     for (const line of ['COPY apps/api/ apps/api/', 'COPY apps/web/ apps/web/', 'COPY database/ database/']) {
       assert.ok(dockerfile.includes(line), `the image no longer does: ${line}`)
     }

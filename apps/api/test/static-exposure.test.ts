@@ -88,9 +88,50 @@ describe('what the web root serves', () => {
   })
 
   test('does not list directories', async () => {
-    for (const url of ['/src/', '/css/', '/test/', '/assets/']) {
+    // Never a listing. What comes back instead now depends on whether the path
+    // is inside the client's own asset tree:
+    //
+    //   /src/ /css/ /assets/   a file request for something that is not there,
+    //                          so 404 — see the SPA fallback in app.ts and
+    //                          YUME-AUDIT-0003. Answering the page with a 200
+    //                          is what let a missing module look healthy while
+    //                          the browser refused to execute it.
+    //   /test/                 not part of the client at all; it falls through
+    //                          to the fallback like any other unknown path and
+    //                          gets the application.
+    for (const url of ['/src/', '/css/', '/assets/']) {
       const res = await app.inject({ url })
-      assert.equal(res.body, spa, `${url} returned something other than the page`)
+      assert.equal(res.statusCode, 404, `${url} should be a miss, not the page`)
+      assert.ok(!res.body.includes('<!doctype html'), `${url} returned the page`)
+      assert.ok(!/index\.html|\.js<|<a href/i.test(res.body), `${url} looks like a listing`)
+    }
+    const outside = await app.inject({ url: '/test/' })
+    assert.equal(outside.body, spa, '/test/ should fall through to the application')
+  })
+
+  test('a missing client module is a 404, not the page with a 200', async () => {
+    // The check that was missing when the site went blank. A module that stops
+    // resolving was served as index.html with a 200; the browser refuses to
+    // run HTML as a module, so the page died while every check an operator
+    // makes said the site was healthy. YUME-AUDIT-0003.
+    for (const url of ['/src/app/does-not-exist.js', '/css/gone.css', '/assets/missing.svg']) {
+      const res = await app.inject({ url })
+      assert.equal(res.statusCode, 404, `${url} should not be served as the page`)
+      assert.ok(!String(res.headers['content-type'] ?? '').includes('text/html'),
+        `${url} came back as HTML, which is what the browser cannot execute`)
+    }
+  })
+
+  test('a route the client owns still gets the application', async () => {
+    // The other half: the fallback exists so deep links work, and narrowing it
+    // must not take that away.
+    // Not /anime/:id — that one has its own route, answers 404 with the page
+    // on a miss by design (see seo/routes.ts), and reads the database, which
+    // this suite does not have.
+    for (const url of ['/admin/audit', '/whatever/somebody/typed', '/list']) {
+      const res = await app.inject({ url })
+      assert.equal(res.statusCode, 200, `${url} should still open the application`)
+      assert.ok(res.body.includes('<!doctype html'), `${url} did not return the page`)
     }
   })
 

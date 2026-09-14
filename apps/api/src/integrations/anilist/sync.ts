@@ -101,6 +101,20 @@ export async function fetchMediaBatch (ids: number[]): Promise<AniListMedia[]> {
   return data?.Page?.media ?? []
 }
 
+/**
+ * The AniList ids for up to 50 MAL ids.
+ *
+ * Two fields only. This is the lookup that makes a row reachable, not the
+ * enrichment itself — the ordinary pass runs afterwards and fetches everything
+ * else, so asking for it here would be a second copy of the same download.
+ */
+export async function fetchAniListIdsByMal (malIds: number[]): Promise<Array<{ id: number, idMal: number }>> {
+  const query = `query ($ids: [Int]) { Page(perPage: 50) { media(idMal_in: $ids, type: ANIME) { id idMal } } }`
+  const data = await anilistRequest<{ Page?: { media?: Array<{ id: number, idMal: number | null }> } }>(query, { ids: malIds })
+  return (data?.Page?.media ?? [])
+    .filter((m): m is { id: number, idMal: number } => typeof m.id === 'number' && typeof m.idMal === 'number')
+}
+
 // ---- mapping helpers ----
 
 const stripHtml = (s?: string | null): string | null =>
@@ -179,6 +193,79 @@ export async function writeMalId (client: pg.PoolClient, animeId: string, malId:
   return 'conflict'
 }
 
+/**
+ * Attach an AniList id to an anime, or record why it could not be.
+ *
+ * The mirror image of `writeMalId`, and it exists for the same reason: the
+ * column is UNIQUE, so another anime may already hold the id and a blind write
+ * would raise inside a batch transaction. Same resolution too — the existing
+ * mapping wins, the disagreement is written down, and nothing is moved.
+ *
+ * The direction is what differs. Here the id being written is the one the
+ * enricher works *from*: attaching it is what makes a title reachable at all,
+ * so a collision means two of our rows claim one AniList entry, which is a
+ * duplicate in our own catalogue rather than an upstream split. That is worth
+ * looking at, which is exactly what mapping_conflicts is for.
+ *
+ * Never throws.
+ */
+export async function writeAniListId (
+  client: pg.PoolClient, animeId: string, anilistId: number
+): Promise<'written' | 'unchanged' | 'conflict'> {
+  const written = await client.query(
+    `UPDATE anime_mappings SET anilist_id = $2, updated_at = now()
+      WHERE anime_id = $1
+        AND anilist_id IS NULL
+        AND NOT EXISTS (SELECT 1 FROM anime_mappings WHERE anilist_id = $2)`,
+    [animeId, anilistId]
+  )
+  if (written.rowCount) return 'written'
+
+  const holder = await client.query<{ anime_id: string }>(
+    'SELECT anime_id FROM anime_mappings WHERE anilist_id = $1', [anilistId]
+  )
+  const heldBy = holder.rows[0]?.anime_id
+  if (!heldBy || heldBy === animeId) return 'unchanged'
+
+  await client.query(
+    `INSERT INTO mapping_conflicts (anime_id, provider, external_id, held_by, source)
+     VALUES ($1, 'anilist', $2, $3, 'anilist-link')
+     ON CONFLICT (anime_id, provider, external_id) DO UPDATE
+        SET last_seen = now(), seen_count = mapping_conflicts.seen_count + 1, held_by = excluded.held_by`,
+    [animeId, String(anilistId), heldBy]
+  )
+  return 'conflict'
+}
+
+/**
+ * What the last attempt did to one title.
+ *
+ * Best effort and never throws: this is a note about the work, and a note that
+ * cannot be written must not undo the work it describes. It is also why this
+ * takes the pool rather than the caller's client — a failed INSERT inside the
+ * batch transaction would poison it, and there is a savepoint discipline in
+ * the run loop that this must not have to know about.
+ */
+export type AttemptOutcome = 'updated' | 'unchanged' | 'no_synopsis' | 'not_found' | 'locked' | 'failed'
+
+export async function recordAttempt (
+  animeId: string, source: 'anilist-basic' | 'anilist-deep' | 'anilist-link',
+  outcome: AttemptOutcome, detail?: string | null
+): Promise<void> {
+  try {
+    await pool.query(
+      `INSERT INTO metadata_attempts (anime_id, source, outcome, detail)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (anime_id, source) DO UPDATE
+          SET outcome = excluded.outcome,
+              detail = excluded.detail,
+              attempts = metadata_attempts.attempts + 1,
+              last_at = now()`,
+      [animeId, source, outcome, detail?.slice(0, 500) ?? null]
+    )
+  } catch { /* a note about the work must not fail the work */ }
+}
+
 /** Write one AniList media onto its existing anime row (matched by anilist_id). */
 export async function upsertMedia (client: pg.PoolClient, media: AniListMedia, caches: EnrichCaches): Promise<boolean> {
   const found = await client.query<{ anime_id: string }>(
@@ -212,6 +299,32 @@ export async function upsertMedia (client: pg.PoolClient, media: AniListMedia, c
     source_material: media.source ?? null
   }, 'anilist')
   await applyResolution(client, animeId, resolution)
+
+  /*
+   * Why this title still has no description, written down while we know.
+   *
+   * `resolveFields` already decided, per field, whether the incoming value was
+   * applied, refused because somebody locked it, or absent upstream — and that
+   * decision was thrown away the moment it was made. It is the whole answer to
+   * the question the metadata screen could not answer: an empty synopsis after
+   * a successful run means AniList has none, and chasing it is wasted effort,
+   * which is a different thing from a row the run never reached.
+   *
+   * Through the pool rather than `client`: the run loop wraps each row in a
+   * savepoint, and a note about the work must not be able to abort the work.
+   * Fifty small inserts a batch, against a batch that is already one network
+   * round trip and a paced sleep.
+   */
+  const synopsisOutcome: AttemptOutcome =
+    Object.prototype.hasOwnProperty.call(resolution.apply, 'synopsis')
+      ? 'updated'
+      : resolution.skipped.synopsis === 'locked'
+        ? 'locked'
+        : resolution.skipped.synopsis === 'empty'
+          ? 'no_synopsis'
+          : Object.keys(resolution.apply).length > 0 ? 'updated' : 'unchanged'
+  await recordAttempt(animeId, 'anilist-basic', synopsisOutcome,
+    synopsisOutcome === 'no_synopsis' ? 'AniList returned no description for this entry' : null)
 
   if (media.idMal) await writeMalId(client, animeId, media.idMal)
 
@@ -332,6 +445,100 @@ export async function retryMappingConflicts (): Promise<{ retried: number, attac
   return { retried: rows.length, attached }
 }
 
+/**
+ * Give an AniList id to the rows that only have a MAL one.
+ *
+ * The enricher below finds its work with `WHERE m.anilist_id IS NOT NULL`,
+ * because `upsertMedia` matches on that column. Which meant the pass was
+ * structurally blind to 11 703 of 32 390 titles — 36% of the catalogue — that
+ * came in from a MAL-keyed dump holding `mal_id` and nothing else. They were
+ * not failing; they were never selected. No number of runs would ever have
+ * filled them in, and they accounted for 90% of the missing descriptions.
+ *
+ * AniList will answer `media(idMal_in: [...])`, so the id we lack can be
+ * looked up with the id we have, 50 at a time, on the same paced connection as
+ * everything else. Once it is stored the ordinary pass picks the row up like
+ * any other — which is why this is a separate, cheap, two-field pass rather
+ * than a second enrichment path to keep in step with the first.
+ *
+ * Ids AniList does not know are recorded as `not_found` rather than retried
+ * forever: a MAL entry with no AniList counterpart is a fact about the world,
+ * and `metadata_attempts` is where this run says so.
+ */
+export async function linkAniListIdsFromMal (
+  opts: {
+    limit?: number
+    onProgress?: (done: number, total: number, linked: number) => void | Promise<void>
+    shouldStop?: () => boolean | Promise<boolean>
+  } = {}
+): Promise<{ examined: number, linked: number, conflicts: number, notFound: number, failed: number }> {
+  const { rows } = await pool.query<{ anime_id: string, mal_id: number }>(
+    `SELECT m.anime_id, m.mal_id
+       FROM anime_mappings m
+       JOIN anime a ON a.id = m.anime_id
+      WHERE m.anilist_id IS NULL AND m.mal_id IS NOT NULL
+      ORDER BY a.popularity DESC NULLS LAST
+      ${opts.limit ? `LIMIT ${Number(opts.limit)}` : ''}`
+  )
+  const byMal = new Map(rows.map(r => [r.mal_id, r.anime_id]))
+  const malIds = [...byMal.keys()]
+
+  let examined = 0
+  let linked = 0
+  let conflicts = 0
+  let notFound = 0
+  let failed = 0
+
+  for (let i = 0; i < malIds.length; i += 50) {
+    const batch = malIds.slice(i, i + 50)
+    try {
+      const found = await fetchAniListIdsByMal(batch)
+      const answered = new Set(found.map(m => m.idMal))
+
+      await transaction(async client => {
+        for (const media of found) {
+          const animeId = byMal.get(media.idMal)
+          if (!animeId) continue
+          // A savepoint per row, for the same reason the enricher has one: a
+          // collision must cost one row, not the batch it arrived in.
+          await client.query('SAVEPOINT link')
+          try {
+            const outcome = await writeAniListId(client, animeId, media.id)
+            await client.query('RELEASE SAVEPOINT link')
+            if (outcome === 'conflict') conflicts++
+            else linked++
+          } catch (err) {
+            await client.query('ROLLBACK TO SAVEPOINT link')
+            failed++
+            console.error(`  mal_id ${media.idMal}: ${(err as Error).message}`)
+          }
+        }
+      })
+
+      // Asked for and not answered. Worth writing down: it is the difference
+      // between a mapping nobody has tried and one that points at nothing.
+      for (const malId of batch) {
+        if (answered.has(malId)) continue
+        notFound++
+        const animeId = byMal.get(malId)
+        if (animeId) {
+          await recordAttempt(animeId, 'anilist-link', 'not_found',
+            `AniList has no entry for MAL id ${malId}`)
+        }
+      }
+    } catch (err) {
+      failed += batch.length
+      console.error(`link batch ${i / 50 + 1} failed:`, (err as Error).message)
+    }
+    examined += batch.length
+    await opts.onProgress?.(examined, malIds.length, linked)
+    if (await opts.shouldStop?.()) break
+    if (i + 50 < malIds.length) await sleep(DELAY_MS)
+  }
+
+  return { examined, linked, conflicts, notFound, failed }
+}
+
 /** Drive the enrichment across every anime that has an anilist_id. */
 export async function enrichFromAniList (
   opts: {
@@ -344,10 +551,32 @@ export async function enrichFromAniList (
      * batch boundary, so a stop never leaves a half-written transaction.
      */
     shouldStop?: () => boolean | Promise<boolean>
+    /**
+     * Give the unreachable rows an AniList id before selecting the work.
+     *
+     * On by default, because a pass whose whole job is "fill in the missing
+     * descriptions" that cannot see a third of the catalogue is not doing that
+     * job. Off for a caller that wants only the enrichment — the importer,
+     * which has just written the mappings itself.
+     */
+    linkByMal?: boolean
   } = {}
-): Promise<{ processed: number, updated: number, failed: number, rowFailures: number, conflicts: number }> {
+): Promise<{ processed: number, updated: number, failed: number, rowFailures: number, conflicts: number, linked: number }> {
   const onlyMissing = opts.onlyMissing ?? true
   const startedAt = new Date()
+
+  // First, make the unreachable rows reachable. Before the ordinary selection
+  // below, so anything this attaches is picked up by the same run rather than
+  // waiting for the next one.
+  let linked = 0
+  if (opts.linkByMal ?? true) {
+    const link = await linkAniListIdsFromMal({
+      ...(opts.limit ? { limit: opts.limit } : {}),
+      ...(opts.shouldStop ? { shouldStop: opts.shouldStop } : {})
+    })
+    linked = link.linked
+  }
+
   const rows = await pool.query<{ anilist_id: number }>(
     `SELECT m.anilist_id FROM anime_mappings m JOIN anime a ON a.id = m.anime_id
      WHERE m.anilist_id IS NOT NULL ${onlyMissing ? 'AND a.synopsis IS NULL' : ''}
@@ -408,5 +637,5 @@ export async function enrichFromAniList (
     `SELECT count(*) AS n FROM mapping_conflicts
       WHERE source = 'anilist-enrich' AND resolved_at IS NULL AND last_seen >= $1`, [startedAt]
   )
-  return { processed, updated, failed, rowFailures, conflicts: Number(conflicts[0]?.n ?? 0) }
+  return { processed, updated, failed, rowFailures, conflicts: Number(conflicts[0]?.n ?? 0), linked }
 }

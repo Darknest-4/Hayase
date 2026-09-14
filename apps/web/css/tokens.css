@@ -25,6 +25,7 @@
   --blue-500: hsl(215 90% 60%);
   --violet-500: hsl(260 80% 65%);
   --amber-500: hsl(40 90% 55%);
+  --yellow-500: hsl(52 92% 58%);
 
   /* Lighter steps of the semantic hues. These exist because badge text needs
      more lift than a fill does: on a near-black surface the 500 step reads as
@@ -33,6 +34,7 @@
      could not follow a theme. */
   --green-400: hsl(142 68% 58%);
   --amber-400: hsl(40 92% 66%);
+  --yellow-400: hsl(52 95% 70%);
   --red-400: hsl(0 78% 66%);
   --blue-400: hsl(215 92% 70%);
 
@@ -58,14 +60,18 @@
   --live: var(--violet-500);
 
   /* ---- severity (audit findings) ----
-     Aliases, not new colours: the palette has red, amber and grey and nothing
-     between amber and green, so high and medium are two steps of one hue
-     rather than orange and yellow. Severity is never carried by colour alone —
-     the badge always spells the word — but the separation is weaker than the
-     design intends. See YUME-AUDIT-0014. */
-  --severity-critical: var(--red-500);
-  --severity-high: var(--amber-500);
-  --severity-medium: var(--amber-400);
+     Four levels, four hues. --yellow-* was added for this: high and medium
+     were two lightness steps of amber, which reads as "orange" and "paler
+     orange" at badge size, and severity is the one scale on which the
+     difference between two neighbouring levels has to be obvious. The word is
+     still in every badge, so nothing is carried by colour alone.
+
+     The 400 steps rather than the 500s, for the reason those steps exist: this
+     is small text on a surface, and the light theme redefines the 400s darker.
+     A severity that reads on black and vanishes on white is half a scale. */
+  --severity-critical: var(--red-400);
+  --severity-high: var(--amber-400);
+  --severity-medium: var(--yellow-400);
   --severity-low: var(--fg-faint);
 
   /* ---- status colors (library states) ---- */
@@ -158,6 +164,7 @@
      (readable status text), opposite direction. */
   --green-400: hsl(142 72% 30%);
   --amber-400: hsl(40 95% 33%);
+  --yellow-400: hsl(52 95% 28%);
   --red-400: hsl(0 74% 43%);
   --blue-400: hsl(215 88% 44%);
   --shadow-1: 0 1px 3px hsl(0 0% 0% / .12);

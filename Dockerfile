@@ -1,9 +1,16 @@
 # Yume — plain single-stage image. One container serves BOTH the API and the
 # static web client on one port, so the whole app runs through Docker.
+#
+# At the repository root, where `docker build .` looks for it. It spent a while
+# in infrastructure/docker/ after the restructure, which meant the command
+# everyone types — and the one in the runbook — failed with "open Dockerfile:
+# no such file or directory". CI passed throughout, because the workflow named
+# the file explicitly, so nothing could warn anybody (YUME-AUDIT-0005). The
+# build context has to be the repository root either way, so the file may as
+# well live where the context is.
 # Node 22 runs the TypeScript sources directly (--experimental-strip-types),
-# so there is no build step. Build from the repo root (the context is the root,
-# not this directory):
-#   docker build -f infrastructure/docker/Dockerfile -t yume .
+# so there is no build step:
+#   docker build -t yume .
 #   docker run --rm -p 4000:4000 -e DATABASE_URL=… -e JWT_SECRET=… yume
 FROM node:22-alpine
 

@@ -210,7 +210,11 @@ export async function handleMetadataJob (job: Job): Promise<void> {
         updated: result.updated,
         failed: result.failed,
         rowFailures: result.rowFailures,
-        conflicts: result.conflicts
+        conflicts: result.conflicts,
+        // Rows that had no AniList id until this run gave them one. Reported
+        // separately from `updated` because it is the count that says how much
+        // of the catalogue stopped being invisible to the enricher.
+        linked: result.linked
       }, result.processed)
     }
   } catch (err) {
@@ -290,6 +294,34 @@ export async function coverage (): Promise<Record<string, number>> {
   const conflicts = await queryOne<{ n: string }>(
     'SELECT count(*) AS n FROM mapping_conflicts WHERE resolved_at IS NULL'
   )
+
+  /*
+   * The three figures that turn "13 038 titles have no description" from a
+   * number into something an operator can act on.
+   *
+   * `mapped` above says how many rows the enricher can see. What it never said
+   * is what is wrong with the rest, and those have completely different
+   * answers: a row with no AniList id was never reachable at all (that was
+   * 11 703 of them, and no number of runs would have changed it), a row AniList
+   * itself has no description for is finished — there is nothing to fetch —
+   * and a row nobody has attempted is simply work not yet done.
+   *
+   * Without the split they all look like the same failure, and the two that
+   * are not failures at all are the majority.
+   */
+  const gaps = await queryOne<Record<string, string>>(
+    `SELECT count(*) FILTER (WHERE m.anilist_id IS NULL AND m.mal_id IS NOT NULL)      AS unreachable,
+            count(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM episodes e WHERE e.anime_id = a.id)) AS without_episodes,
+            count(*) FILTER (WHERE (a.synopsis IS NULL OR a.synopsis = '')
+                                AND EXISTS (SELECT 1 FROM metadata_attempts t
+                                             WHERE t.anime_id = a.id AND t.outcome = 'no_synopsis')) AS no_synopsis_upstream,
+            count(*) FILTER (WHERE (a.synopsis IS NULL OR a.synopsis = '')
+                                AND m.anilist_id IS NOT NULL
+                                AND NOT EXISTS (SELECT 1 FROM metadata_attempts t WHERE t.anime_id = a.id)) AS never_attempted
+       FROM anime a
+       LEFT JOIN anime_mappings m ON m.anime_id = a.id`
+  )
+
   return {
     total: Number(row?.total ?? 0),
     mapped: Number(row?.mapped ?? 0),
@@ -297,6 +329,10 @@ export async function coverage (): Promise<Record<string, number>> {
     withCover: Number(row?.with_cover ?? 0),
     withCast: Number(row?.with_cast ?? 0),
     withRelations: Number(row?.with_relations ?? 0),
-    openConflicts: Number(conflicts?.n ?? 0)
+    openConflicts: Number(conflicts?.n ?? 0),
+    unreachable: Number(gaps?.unreachable ?? 0),
+    withoutEpisodes: Number(gaps?.without_episodes ?? 0),
+    noSynopsisUpstream: Number(gaps?.no_synopsis_upstream ?? 0),
+    neverAttempted: Number(gaps?.never_attempted ?? 0)
   }
 }

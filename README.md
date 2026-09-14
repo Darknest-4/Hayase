@@ -49,7 +49,7 @@ backend with a scalable database. Two ideas are inherited and kept sacred:
 Two paths are resolved relative to their own source file at runtime — the
 migration directory and the web root — so the container image mirrors this
 layout under `/app` rather than flattening it. See the comment in
-`infrastructure/docker/Dockerfile`.
+`Dockerfile` at the repository root.
 
 
 **Infrastructure is deliberately small.** Four times over, the obvious

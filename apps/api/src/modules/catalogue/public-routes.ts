@@ -10,6 +10,8 @@ import { episodeRepository as episodeRepo } from './episode-repository.ts'
 import { SEARCH_SORTS, recordSearch, searchAnime, suggest } from '../search/search.ts'
 import { localiseAnime, localiseEpisode } from './localise.ts'
 import { requestLanguage, coerce } from '../profiles/preferences.ts'
+import { audit } from '../audit/audit.ts'
+import { WRITE_LIMIT } from '../../middleware/security.ts'
 
 import type { SearchFilters } from '../search/search.ts'
 
@@ -344,12 +346,31 @@ const routes: FastifyPluginAsync = async fastify => {
     return anime
   })
 
+  /**
+   * How many catalogue rows one account may bring into existence in a day.
+   *
+   * This route writes to `anime`, which is the table this instance has most to
+   * lose. It is reached with an ordinary account and used to carry nothing but
+   * the global 300-a-minute limit, so one signed-in caller could insert
+   * hundreds of thousands of rows a day, each of them appearing in search and
+   * in the sitemap. WRITE_LIMIT narrows the rate; this bounds the total,
+   * because a rate limit alone still allows 8 640 rows a day per account.
+   *
+   * Two hundred is far above what adding shows to a library does — a viewer
+   * importing a large AniList list resolves titles the catalogue mostly
+   * already has, and an existing mapping returns early without counting — and
+   * far below a number that matters.
+   */
+  const STUB_DAILY_MAX = Number(process.env.ANIME_STUB_DAILY_MAX ?? 200)
+
   fastify.post('/resolve', {
     preHandler: fastify.authenticate,
+    config: WRITE_LIMIT,
     schema: {
       body: {
         type: 'object',
         required: ['anilistId', 'title'],
+        additionalProperties: false,
         properties: {
           anilistId: { type: 'integer', minimum: 1 },
           title: { type: 'string', minLength: 1, maxLength: 500 },
@@ -360,14 +381,28 @@ const routes: FastifyPluginAsync = async fastify => {
         }
       }
     }
-  }, async request => {
+  }, async (request, reply) => {
     const body = request.body as { anilistId: number, title: string, format?: string, status?: string, episodes?: number, isAdult?: boolean }
 
     const existing = await animeRepo.mappedIdFor(body.anilistId)
     if (existing) return existing
 
+    // Only creations are counted, and only this account's. Read from
+    // audit_logs, which `audit()` writes below and which is already indexed on
+    // (actor_id, created_at DESC) — so the cap costs one indexed lookup and
+    // needs no second ledger to keep in step with the first.
+    const made = await animeRepo.recentCreationsBy(request.user.sub)
+    if (made >= STUB_DAILY_MAX) {
+      return await reply.code(429).type('application/problem+json').send({
+        type: 'about:blank',
+        title: 'Too Many Requests',
+        status: 429,
+        detail: `This account has added ${made} new titles to the catalogue in the last 24 hours, which is the limit. Existing titles are unaffected.`
+      })
+    }
+
     // minimal stub row; the metadata importer enriches it later
-    return animeRepo.createStub({
+    const created = await animeRepo.createStub({
       title: body.title,
       format: body.format ?? null,
       status: body.status ?? null,
@@ -375,6 +410,15 @@ const routes: FastifyPluginAsync = async fastify => {
       isAdult: body.isAdult ?? null,
       anilistId: body.anilistId
     })
+
+    // Who put this in the catalogue. Best effort like every audit write, but
+    // the cap above reads these rows, so a failure here is also a failure to
+    // count — which is why it loosens the limit rather than tightening it.
+    if (created) {
+      await audit(request.user.sub, 'anime.create', 'anime', created.id, null,
+        { canonical_title: body.title, anilist_id: body.anilistId, via: 'resolve' })
+    }
+    return created
   })
 
   fastify.get('/:id', {

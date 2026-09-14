@@ -111,6 +111,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.put('/library/:animeId', {
+    config: WRITE_LIMIT,
     schema: {
       params: { type: 'object', properties: { animeId: { type: 'string', format: 'uuid' } } },
       body: {
@@ -154,7 +155,7 @@ const routes: FastifyPluginAsync = async fastify => {
     return entry
   })
 
-  fastify.delete('/library/:animeId', async (request, reply) => {
+  fastify.delete('/library/:animeId', { config: WRITE_LIMIT }, async (request, reply) => {
     const profileId = await resolveProfile(request, reply)
     if (!profileId) return
     const { animeId } = request.params as { animeId: string }
@@ -241,6 +242,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.delete('/favorites/:animeId', {
+    config: WRITE_LIMIT,
     schema: { params: { type: 'object', properties: { animeId: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
     const profileId = await resolveProfile(request, reply)
@@ -408,6 +410,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.patch('/progress/:episodeId', {
+    config: WRITE_LIMIT,
     schema: {
       params: { type: 'object', properties: { episodeId: { type: 'string', format: 'uuid' } } },
       body: {

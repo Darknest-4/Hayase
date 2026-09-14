@@ -1600,12 +1600,38 @@ export const PageAdmin = {
 
   // Duplicate scan. Read-only by design: it proposes pairs and a human with
   // anime.merge confirms each one, because a merge cannot be undone.
-  async renderCatDuplicates (host, can, reload) {
+  //
+  // Two scans, and which one runs is the operator's choice. Identical titles
+  // are the default: five times as many pairs and it returns immediately. The
+  // similar-title scan compares every title against every other in its year
+  // and format, which is a minute of database time on this catalogue — a
+  // reasonable thing to ask for and an unreasonable thing to be given for
+  // opening a tab.
+  async renderCatDuplicates (host, can, reload, mode = 'exact') {
     host.replaceChildren(U.el('div', { class: 'spinner' }))
     try {
-      const { data } = await YumeAPI.admin.catalogue.duplicates()
+      const { data } = await YumeAPI.admin.catalogue.duplicates({ mode })
       host.replaceChildren()
-      host.append(U.el('p', { class: 'cat-vis-hint', text: 'Entries with near-identical titles in the same year and format. Merging moves titles, synonyms, genres, tags, external ids and library entries onto the entry you keep, then deletes the other one. This cannot be undone.' }))
+      const consequence = 'Merging moves titles, synonyms, genres, tags, external ids and library entries onto the entry you keep, then deletes the other one. This cannot be undone.'
+      host.append(U.el('p', {
+        class: 'cat-vis-hint',
+        text: (mode === 'exact'
+          ? 'Entries whose titles are identical, whatever year or format each one claims. '
+          : 'Entries with near-identical titles in the same year and format. ') + consequence
+      }))
+      host.append(U.el('div', { class: 'admin-toolbar' }, [
+        U.el('button', {
+          class: 'btn btn-sm' + (mode === 'exact' ? ' btn-primary' : ''),
+          type: 'button',
+          onclick: () => this.renderCatDuplicates(host, can, reload, 'exact')
+        }, [document.createTextNode('Identical titles')]),
+        U.el('button', {
+          class: 'btn btn-sm' + (mode === 'similar' ? ' btn-primary' : ''),
+          type: 'button',
+          title: 'Compares every title against every other in its year and format — expect this to take about a minute',
+          onclick: () => this.renderCatDuplicates(host, can, reload, 'similar')
+        }, [document.createTextNode('Similar titles (slow)')])
+      ]))
       if (!data.length) { host.append(U.el('div', { class: 'empty-state', style: 'padding:1rem;', text: 'No likely duplicates found.' })); return }
       for (const d of data) {
         const keep = (winner, loser, title) => can('anime.merge')
@@ -2215,6 +2241,27 @@ export const PageAdmin = {
     ['withRelations', 'Has relations', 'Sequels, prequels, side stories.']
   ],
 
+  /**
+   * What is behind the gap, rather than how big it is.
+   *
+   * The bars above say how many titles have a description. They never said
+   * anything about the ones that do not, and those are three different
+   * situations with three different answers — one of which is "nothing, this
+   * is finished". Reported as counts rather than as bars because they are not
+   * shares of the catalogue and drawing them as one would invite adding them
+   * up, which is wrong: a title can be in more than one.
+   */
+  METADATA_GAPS: [
+    ['unreachable', 'Not reachable yet',
+      'Only a MAL id, so the enricher could never match them. A basic run now looks the AniList id up first.'],
+    ['neverAttempted', 'Never attempted',
+      'Mapped, still empty, and no run has reached them. This is work outstanding.'],
+    ['noSynopsisUpstream', 'Nothing upstream',
+      'Attempted, and AniList has no description either. Not a gap in this pipeline — nothing to fetch.'],
+    ['withoutEpisodes', 'No episodes at all',
+      'No episode rows, so the detail page has no list and Watch has nothing to open. Some are unreleased.']
+  ],
+
   async renderMetadata (content) {
     const state = { timer: null }
 
@@ -2260,6 +2307,21 @@ export const PageAdmin = {
       ]))
     }
     content.append(U.el('h3', { class: 'detail-section-title', text: 'Coverage' }), bars)
+
+    // ---- what the gap is made of ----
+    const gaps = U.el('div', { class: 'meta-gaps' })
+    for (const [key, label, hint] of this.METADATA_GAPS) {
+      const n = cov[key]
+      if (n === undefined) continue // an older server that does not report it
+      gaps.append(U.el('div', { class: 'meta-gap' }, [
+        U.el('b', { class: 'meta-gap-value', text: Number(n).toLocaleString() }),
+        U.el('span', { class: 'meta-gap-label', text: label }),
+        U.el('span', { class: 'meta-gap-hint', text: hint })
+      ]))
+    }
+    if (gaps.children.length) {
+      content.append(U.el('h3', { class: 'detail-section-title', text: 'What is missing, and why' }), gaps)
+    }
 
     // ---- start a run ----
     const active = data.active

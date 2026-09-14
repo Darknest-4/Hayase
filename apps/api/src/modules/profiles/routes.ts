@@ -18,6 +18,7 @@
 // in Settings.
 
 import { query, queryOne } from '../../infrastructure/database/index.ts'
+import { WRITE_LIMIT } from '../../middleware/security.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
 
@@ -146,6 +147,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.patch('/me', {
+    config: WRITE_LIMIT,
     schema: {
       body: {
         type: 'object',
