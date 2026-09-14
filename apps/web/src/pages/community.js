@@ -75,7 +75,7 @@ export const PageCommunity = {
   },
 
   async _feed (panel) {
-    const feed = U.el('div', {}, [P.spinner()])
+    const feed = U.el('div', {}, Array.from({ length: 5 }, () => P.skeletonRow()))
     panel.append(U.el('h2', { class: 'detail-section-title', text: T('Recent discussion') }), feed)
 
     try {

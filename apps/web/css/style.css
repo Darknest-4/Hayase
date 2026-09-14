@@ -3416,7 +3416,9 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
 .mon-trend .chart { width: 100%; height: auto; }
 .mon-trend-empty { font-size: var(--text-xs); color: var(--fg-faint); padding: var(--space-3) 0; }
 
-@media (max-width: 700px) {
+/* 720, not 700: the sheet had both, twenty pixels apart, and no layout
+   changes in the gap between them. */
+@media (max-width: 720px) {
   .mon-grid { grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); }
   .mon-card-value { font-size: var(--text-lg); }
 }

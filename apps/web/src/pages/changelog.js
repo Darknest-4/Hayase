@@ -45,7 +45,7 @@ export const PageChangelog = {
     }
     pad.append(rail)
 
-    const list = U.el('div', { class: 'changelog' }, [P.spinner()])
+    const list = U.el('div', { class: 'changelog' }, Array.from({ length: 4 }, () => P.skeletonRow()))
     pad.append(list)
 
     let data

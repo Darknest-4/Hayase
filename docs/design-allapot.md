@@ -206,14 +206,20 @@ Amit a feladat kifejezetten nem akar, és ami ma ténylegesen jelen van:
 
 | Jelenség | Előfordulás | Ítélet |
 |---|---|---|
-| `backdrop-filter` (glassmorphism) | **23** | sok; ez a legnagyobb tétel |
+| `backdrop-filter` (glassmorphism) | **12 szelektor** | sok; ez a legnagyobb tétel |
 | `linear-gradient` | 18 | határeset |
 | `radial-gradient` | 2 | rendben |
 | `text-shadow` (glow) | 3 | rendben |
 | `filter: blur/drop-shadow` | 33 | ellenőrzendő, mennyi ebből a hover-preview |
 | neon / telített kiemelés | — | nincs; a paletta visszafogott |
 
-A „neon, gamer-hatás" tehát nem probléma. A **glassmorphism igen**: 23 hely.
+A „neon, gamer-hatás" tehát nem probléma. A **glassmorphism igen**.
+
+> **Pontosítás.** A 23-as szám deklarációkat számolt, nem helyeket: minden
+> használat egyszer `-webkit-backdrop-filter`, egyszer `backdrop-filter`
+> néven szerepel. A valódi szám **12 szelektor**. (A 3. lépésben ebből nyolcat
+> először ki is hagytam, mert a szűrésem eldobta azokat a sorokat, ahol a két
+> írásmód egy sorba van írva — lásd a `97dc7397` commitot.)
 
 ---
 
@@ -342,12 +348,16 @@ Ez nem véletlen: a `tests/e2e/responsive.test.mjs` már ma is őrzi, ugyanezen
 kilenc szélességen, és a kilógás mellett a 22px-es minimális
 érintőfelületet is méri.
 
-**Fontos fenntartás:** a mérés egy **üres könyvtárú** fiókkal futott
-(0 elem). A sok adattal járó esetek — több száz elemes könyvtár-rács, 1168
-epizódos lista (a ONE PIECE ennyi a katalógusban), hosszú admin-táblák — így
-**nem lettek lefedve**. A legutóbbi fehér-oldal hiba pontosan ilyen volt:
-adatmennyiségtől függött. A fiók feltöltése rate limitbe futott, ezt a
-következő lépésben pótolni kell.
+**Fenntartás, és ami azóta pótolva lett:** a mérés üres könyvtárú fiókkal
+futott. A legnagyobb adathalmazt azóta lemértem: a ONE PIECE watch oldala
+(1168 epizód) **nem csordul ki** 375px-en sem, és nem dob hibát — viszont
+5879 DOM-node-ot épített, mert az epizód-rail feltétel nélkül kirajzolta
+mind az 1168 sort. Ez a 4. lépésben javítva (tartomány-bontás 100 felett:
+5879 → 552 node).
+
+Ami **még mindig nincs lemérve**: a több száz elemes könyvtár-rács. A fiók
+feltöltése a napi 200-as `WRITE_LIMIT`-be futott (ez a `docs/audit-2026-09`
+0004-es javítása).
 
 ### A szerkezeti gond: a karantén
 
@@ -408,7 +418,22 @@ Az egyetlen hely, ahol a skeleton a tartalom alakját követi, az audit-nézet
 (`.aud-skel-row`, `.aud-skel-fact`, `.aud-skel-count`).
 
 **Error: négy oldalon nulla** — dashboard, profile, analytics, history.
-Ezek mind hálózatról töltenek. Ha a kérés elhasal, a nézet néma marad.
+
+> **Javítás (a 3–6. lépés közben derült ki).** Ez a bekezdés eredetileg azt
+> állította, hogy „ezek mind hálózatról töltenek, és ha a kérés elhasal, a
+> nézet néma marad". Mindkét fele téves volt, és a táblázat nullái félrevezetők.
+>
+> Egyik sem tölt hálózatról: mind a négy szinkron módon renderel a `Store`-ból
+> (localStorage), tehát nincs kérés, ami elhasalhatna — a hiányzó `catch` nem
+> hiány, hanem a helyes állapot.
+>
+> És nem is maradnának némák: az `app/router.js` **minden** oldalrenderelést
+> `try/catch`-be zár, és `C.errorState(e, retry)`-t rajzol a hibakóddal és a
+> kérésazonosítóval. A határ tehát megvan, egy helyen, minden route-ra.
+>
+> A szám úgy jött ki, hogy a `catch|error|hiba` mintát oldalfájlonként
+> számoltam, és nem néztem meg, hogy az adott oldal csinál-e egyáltalán
+> aszinkron műveletet. Egy grep-szám nem állapítás.
 
 ---
 

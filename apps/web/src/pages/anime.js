@@ -406,7 +406,10 @@ export const PageAnime = {
   },
 
   renderTabEpisodes (wrap, media) {
-    const list = U.el('div', { class: 'episodes' }, [P.spinner()])
+    // Episode rows, not a spinner: the list that is coming is a thumbnail, a
+    // title and a line of metadata, and a skeleton that says so tells the
+    // viewer what is loading and stops the page jumping when it arrives.
+    const list = U.el('div', { class: 'episodes' }, Array.from({ length: 6 }, () => P.skeletonRow()))
     wrap.append(list)
     this.renderEpisodes(list, media).catch(() => {
       list.replaceChildren(P.emptyState(T('No episode data available.')))
