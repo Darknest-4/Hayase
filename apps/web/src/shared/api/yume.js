@@ -831,7 +831,22 @@ export const YumeAPI = {
       if (action) params.set('action', action)
       if (since) params.set('since', since)
       return YumeAPI._request('/v1/admin/audit?' + params.toString(), { auth: true })
-    }
+    },
+
+    /**
+     * The code audit — findings, severities, and where each one lives.
+     *
+     * A different thing from `audit` above, which is the trail of what people
+     * did. The route is /audit/report rather than /audit because that name was
+     * already this one's; see YUME-AUDIT-0013.
+     *
+     * Deliberately not caught here. The page has to be able to tell "no report
+     * has been generated" (503) from "the report is not readable" (500) from
+     * "you may not see this" (404), and it renders a different thing for each,
+     * so swallowing the failure into an empty result would be the one outcome
+     * a page like this must never produce.
+     */
+    auditReport: () => YumeAPI._request('/v1/admin/audit/report', { auth: true })
   }
 }
 

@@ -57,6 +57,17 @@
   --info: var(--blue-500);
   --live: var(--violet-500);
 
+  /* ---- severity (audit findings) ----
+     Aliases, not new colours: the palette has red, amber and grey and nothing
+     between amber and green, so high and medium are two steps of one hue
+     rather than orange and yellow. Severity is never carried by colour alone —
+     the badge always spells the word — but the separation is weaker than the
+     design intends. See YUME-AUDIT-0014. */
+  --severity-critical: var(--red-500);
+  --severity-high: var(--amber-500);
+  --severity-medium: var(--amber-400);
+  --severity-low: var(--fg-faint);
+
   /* ---- status colors (library states) ---- */
   --status-watching: var(--green-500);
   --status-planning: var(--blue-500);

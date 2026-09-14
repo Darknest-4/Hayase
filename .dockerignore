@@ -26,3 +26,7 @@ tests
 *.md
 !README.md
 docs
+# …except the audit report, which the admin panel's Audit status page reads at
+# runtime. It is the page's only data source, so an image built without it can
+# serve the section and have nothing to put in it.
+!docs/audit-2026-09.json

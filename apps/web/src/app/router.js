@@ -41,7 +41,11 @@ export const App = {
     changelog: (root, params) => PageChangelog.render(root, params),
     w2g: (root, params, arg) => PageW2G.render(root, params, arg),
     watch: (root, params, arg) => PageWatch.render(root, params, arg),
-    admin: (root, params) => PageAdmin.render(root, params),
+    // The section can arrive either way: `#/admin/audit` names it in the path,
+    // which is the address form the panel's own sections are documented at,
+    // and `?s=` is what the rail writes as you click through. The page takes
+    // the path form first and falls back to the query.
+    admin: (root, params, arg) => PageAdmin.render(root, params, arg),
     settings: (root, params) => PageSettings.render(root, params),
     anime: (root, params, arg) => PageAnime.render(root, params, arg)
   },

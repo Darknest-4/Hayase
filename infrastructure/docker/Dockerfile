@@ -43,11 +43,25 @@ COPY apps/web/ apps/web/
 COPY packages/ packages/
 COPY database/ database/
 
+# The code audit, which the admin panel's Audit status page reads at runtime
+# and is that page's only data source. One file, not the directory: docs/ is
+# 15 MB of prose the image has no use for, so .dockerignore excludes it and
+# re-includes this one path. Override the location with AUDIT_REPORT_PATH.
+COPY docs/audit-2026-09.json docs/
+
 WORKDIR /app/apps/api
 ENV NODE_ENV=production \
     PORT=4000 \
     HOST=0.0.0.0 \
     WEB_ROOT=/app/apps/web
+
+# Which commit this image was built from, for the Audit status page's "the code
+# has changed since the audit ran" warning. Nothing sets it by default — .git
+# is not in the build context — and the page says it cannot tell rather than
+# implying the audit is current. Stamp it to get the warning:
+#   docker build --build-arg GIT_COMMIT=$(git rev-parse HEAD) …
+ARG GIT_COMMIT=""
+ENV SOURCE_COMMIT=$GIT_COMMIT
 
 EXPOSE 4000
 

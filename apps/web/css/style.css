@@ -3932,6 +3932,149 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
   .onboard-actions { flex: 1; justify-content: flex-end; }
 }
 
+/* ---------------------------------------------------------------------------
+   Audit status — the admin panel's view of docs/audit-2026-09.json
+   ---------------------------------------------------------------------------
+   Built from what is already here: .vis-badge for the chips, .empty-state and
+   .error-state for the two failure shapes, .admin-toolbar for the filter row,
+   .skeleton for the loading pass. The only new colours are the four
+   --severity-* aliases in tokens.css, and those point at existing primitives.
+
+   The list is not a table at any width. A table of eight columns on a phone is
+   a horizontal scrollbar with the interesting half off the edge; this is a
+   grid that drops to one column and reads as a card instead.
+--------------------------------------------------------------------------- */
+
+.aud-head {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.aud-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: var(--space-4); }
+.aud-fact { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.aud-fact-label {
+  font-size: var(--text-xs); color: var(--fg-faint); font-weight: var(--weight-bold);
+  text-transform: uppercase; letter-spacing: .05em;
+}
+.aud-fact-value { font-weight: var(--weight-bold); overflow-wrap: anywhere; }
+.aud-fact-note { font-size: var(--text-xs); color: var(--fg-faint); overflow-wrap: anywhere; }
+.aud-sha { font-family: var(--font-mono); }
+
+.aud-warn {
+  display: flex; align-items: flex-start; gap: .5rem;
+  margin-top: var(--space-4);
+  padding: .6rem .75rem;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+.aud-warn svg { flex-shrink: 0; margin-top: .15rem; }
+.aud-warn-stale {
+  color: var(--amber-400);
+  background: color-mix(in oklab, var(--amber-500) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--amber-500) 38%, transparent);
+}
+.aud-warn-unknown {
+  color: var(--fg-muted);
+  background: color-mix(in oklab, var(--fg-faint) 10%, transparent);
+  border: 1px solid var(--border-strong);
+}
+
+.aud-summary { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: var(--space-4); margin-bottom: var(--space-4); }
+.aud-counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; }
+.aud-count {
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--sev, var(--border-strong));
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  padding: .7rem .5rem;
+  text-align: center;
+  min-width: 0;
+}
+.aud-count b { display: block; font-size: var(--text-xl); font-weight: var(--weight-black); color: var(--sev, var(--fg)); font-variant-numeric: tabular-nums; }
+.aud-count span {
+  font-size: .62rem; color: var(--fg-faint); font-weight: var(--weight-bold);
+  text-transform: uppercase; letter-spacing: .05em;
+}
+
+.aud-ratio {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  padding: .7rem .8rem;
+  display: flex; flex-direction: column; gap: .4rem;
+  min-width: 0;
+}
+.aud-ratio-line { font-size: var(--text-sm); }
+.aud-ratio-line b { font-weight: var(--weight-black); font-variant-numeric: tabular-nums; }
+.aud-ratio-line span { color: var(--fg-muted); }
+.aud-ratio-track { height: .4rem; border-radius: var(--radius-full); background: var(--bg-sunken); border: 1px solid var(--border); overflow: hidden; }
+.aud-ratio-fill { height: 100%; background: var(--ok); }
+.aud-ratio-caption { margin: 0; font-size: var(--text-xs); color: var(--fg-faint); line-height: 1.45; }
+.aud-ratio-split { display: flex; flex-wrap: wrap; gap: .75rem; font-size: var(--text-xs); color: var(--fg-muted); font-weight: var(--weight-bold); }
+
+.sev-critical { --sev: var(--severity-critical); }
+.sev-high { --sev: var(--severity-high); }
+.sev-medium { --sev: var(--severity-medium); }
+.sev-low { --sev: var(--severity-low); }
+
+/* The word is always in the chip, so colour is a second signal and never the
+   only one — which is also what keeps the two amber steps usable. */
+.sev-badge { color: var(--sev); background: color-mix(in oklab, var(--sev) 16%, transparent); }
+.aud-status { color: var(--fg-muted); background: color-mix(in oklab, var(--fg-faint) 14%, transparent); }
+.aud-status-fixed { color: var(--green-400); background: color-mix(in oklab, var(--green-500) 15%, transparent); }
+.aud-status-open { color: var(--fg-muted); }
+
+.aud-showing { margin: 0 0 .5rem; font-size: var(--text-xs); color: var(--fg-faint); font-weight: var(--weight-bold); }
+
+.aud-list { display: flex; flex-direction: column; gap: .3rem; }
+.aud-row {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--sev, var(--border-strong));
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+}
+.aud-row[open] { border-color: var(--border-strong); border-left-color: var(--sev, var(--border-strong)); }
+.aud-row-head {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: .6rem;
+  padding: .6rem .75rem;
+  cursor: pointer;
+  list-style: none;
+  min-height: 2.75rem;
+}
+.aud-row-head::-webkit-details-marker { display: none; }
+.aud-row-head:hover { background: color-mix(in oklab, var(--fg) 4%, transparent); border-radius: var(--radius-md); }
+.aud-row-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--radius-md); }
+.aud-id { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-faint); white-space: nowrap; }
+.aud-row-title { font-weight: var(--weight-semibold); font-size: var(--text-sm); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aud-file { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 20rem; }
+.aud-category {
+  font-size: .62rem; color: var(--fg-faint); font-weight: var(--weight-bold);
+  text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
+}
+
+.aud-row-body { padding: 0 .75rem .75rem; display: flex; flex-direction: column; gap: .6rem; border-top: 1px solid var(--border); padding-top: .7rem; margin: 0 .75rem; }
+.aud-field { display: flex; flex-direction: column; gap: .15rem; }
+.aud-field-label {
+  font-size: var(--text-xs); color: var(--fg-faint); font-weight: var(--weight-bold);
+  text-transform: uppercase; letter-spacing: .05em;
+}
+.aud-field-value { margin: 0; font-size: var(--text-sm); color: var(--fg-muted); line-height: 1.5; overflow-wrap: anywhere; }
+
+.aud-empty-sub { margin-top: .35rem; font-size: var(--text-xs); font-weight: var(--weight-normal); color: var(--fg-faint); }
+.aud-fail-note { margin: 0 var(--space-6) 0; font-size: var(--text-sm); color: var(--fg-muted); text-align: center; }
+
+.aud-loading { pointer-events: none; }
+.aud-skel { border-radius: var(--radius-md); }
+.aud-skel-fact { height: 2.6rem; }
+.aud-skel-count { height: 4.2rem; }
+.aud-skel-row { height: 2.75rem; margin-bottom: .3rem; }
+
 /* ===========================================================================
    Responsive overrides — LAST ON PURPOSE.
 
@@ -4846,4 +4989,41 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
   .avatar-xl { width: 4.5rem; height: 4.5rem; font-size: 1.7rem; }
   .artwork-grid { grid-template-columns: repeat(auto-fill, minmax(5rem, 1fr)); max-height: 60vh; }
   .artwork-modal { width: 96vw; }
+}
+
+/* Audit status on a phone.
+   The finding row stops being a row of columns and becomes a card: identifier
+   and badges on one line, the title on its own, the path under it wrapping
+   rather than truncating — because on a narrow screen the file is the part
+   somebody is squinting at, and an ellipsis in the middle of a path is worse
+   than two lines of it. Nothing scrolls sideways at any width. */
+@media (max-width: 820px) {
+  .aud-summary { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+  .aud-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .aud-head { padding: var(--space-3); }
+  .aud-facts { gap: var(--space-3); }
+
+  .aud-row-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'id     severity'
+      'title  title'
+      'file   file'
+      'cat    status';
+    align-items: center;
+    gap: .3rem .5rem;
+    padding: .7rem;
+  }
+  .aud-id { grid-area: id; }
+  .aud-row-head .sev-badge { grid-area: severity; justify-self: end; }
+  .aud-row-title { grid-area: title; white-space: normal; overflow: visible; line-height: 1.35; }
+  .aud-file { grid-area: file; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+  .aud-category { grid-area: cat; }
+  .aud-row-head .aud-status { grid-area: status; justify-self: end; }
+
+  .aud-row-body { margin: 0 .7rem; padding: .7rem 0 .7rem; }
+  .admin-toolbar .select, .admin-toolbar .input { flex: 1 1 8rem; max-width: none !important; }
 }

@@ -50,6 +50,30 @@ describe('paths resolved from a source file', () => {
       `the web root resolves to ${resolved}, which has no index.html`)
   })
 
+  test('the audit report reader finds the report', () => {
+    // The third relative path, and the one with an extra way to break: docs/
+    // is in .dockerignore, so the file has to be re-included there and copied
+    // by name as well as resolving correctly from the source.
+    const source = readFileSync(join(SRC, 'modules/audit/report-routes.ts'), 'utf8')
+    const spec = /const REPO_ROOT = join\(dirname\(fileURLToPath\(import\.meta\.url\)\), '([^']+)'\)/.exec(source)?.[1]
+    assert.ok(spec, 'report-routes.ts no longer resolves the repository root this way — update this test')
+
+    const root = resolveFrom('modules/audit/report-routes.ts', spec)
+    const report = /const DEFAULT_REPORT = join\(REPO_ROOT, '([^']+)'\)/.exec(source)?.[1]
+    assert.ok(report, 'report-routes.ts no longer names the report this way — update this test')
+    assert.ok(existsSync(join(root, report)),
+      `the audit report resolves to ${join(root, report)}, which does not exist`)
+
+    const ignore = readFileSync(fileURLToPath(new URL('../../../.dockerignore', import.meta.url)), 'utf8')
+    assert.ok(ignore.includes(`!${report}`),
+      `docs/ is excluded from the build context and ${report} is not re-included, so the image ships without it`)
+
+    const dockerfile = readFileSync(
+      fileURLToPath(new URL('../../../infrastructure/docker/Dockerfile', import.meta.url)), 'utf8')
+    assert.ok(dockerfile.includes(`COPY ${report} docs/`),
+      `the image does not copy ${report}`)
+  })
+
   test('the container mirrors the layout these paths assume', () => {
     // The paths above are relative, so they are only correct in the image if
     // the image has the same shape. A COPY that flattened apps/ would leave
