@@ -7,6 +7,7 @@ import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
 import { configure as configureFeatures, featureOn } from '../shared/lib/site-config.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
+import { Announcements } from '../features/announcements/announcements.js'
 import { Landing } from '../features/landing/landing.js'
 import { LibrarySync } from '../features/library-sync/library-sync.js'
 import { Onboarding } from '../features/onboarding/onboarding.js'
@@ -200,6 +201,12 @@ export const App = {
     // site footer on standard content pages (not on immersive / picker
     // screens, and not under the admin panel — see CHROMELESS)
     if (!this.CHROMELESS.includes(route)) page.append(C.footer())
+
+    // News last, and deliberately not awaited. A message about the site is
+    // never more urgent than the site, and a modal that beats the first paint
+    // makes the app look like it is asking permission to start. It answers at
+    // most once per page load and never twice for the same message.
+    if (YumeAPI.user()) Announcements.check().catch(() => {})
   },
 
   /**

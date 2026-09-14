@@ -33,6 +33,7 @@ import adminRoutes from './modules/admin/routes.ts'
 import changelogRoutes from './modules/changelog/routes.ts'
 import chatRoutes from './modules/chat/routes.ts'
 import forumRoutes from './modules/forum/routes.ts'
+import announcementRoutes from './modules/announcements/routes.ts'
 import profileRoutes from './modules/profiles/routes.ts'
 import webhookRoutes from './modules/webhooks/routes.ts'
 import { publicConfig, adminConfig } from './modules/settings/config-routes.ts'
@@ -358,6 +359,7 @@ export async function buildApp (): Promise<FastifyInstance> {
   await app.register(libraryRoutes, { prefix: '/v1/me' })
   await app.register(settingsRoutes, { prefix: '/v1/me' })
   await app.register(profileRoutes, { prefix: '/v1/profiles' })
+  await app.register(announcementRoutes, { prefix: '/v1/announcements' })
   await app.register(commentRoutes, { prefix: '/v1/comments' })
   await app.register(forumRoutes, { prefix: '/v1/forum' })
   await app.register(chatRoutes, { prefix: '/v1/chat' })

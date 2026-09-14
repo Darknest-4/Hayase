@@ -708,3 +708,18 @@ a.badge:hover { color: var(--accent); border-color: var(--accent); }
 @media (prefers-reduced-motion: no-preference) {
   .landing { scroll-behavior: smooth; }
 }
+
+
+/* ---------------------------------------------------------------------------
+   Announcement modal
+
+   The dialog primitive with one change: it is centred rather than dropped from
+   the top, because this is the only modal a viewer did not ask for and landing
+   it in the middle of the screen is what says "read me" without shouting.
+   --------------------------------------------------------------------------- */
+
+.ann-modal { align-items: center; padding-top: 0; }
+.ann-modal .dialog { width: min(30rem, calc(100vw - 2rem)); }
+.ann-body { display: flex; flex-direction: column; gap: var(--space-3); }
+.ann-body p { margin: 0; font: var(--type-body); color: var(--fg-muted); }
+.ann-body p:first-child { color: var(--fg); }
