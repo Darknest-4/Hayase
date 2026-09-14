@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import cookie from '@fastify/cookie'
 import cors from '@fastify/cors'
 import fastifyStatic from '@fastify/static'
 import mercurius from 'mercurius'
@@ -87,7 +88,21 @@ export async function buildApp (): Promise<FastifyInstance> {
   })
 
   await app.register(securityPlugin)
-  await app.register(cors, { origin: config.corsOrigins })
+  // Reads and writes exactly one cookie: the HttpOnly refresh token. No
+  // secret, because nothing here is signed — the token is a random 32 bytes
+  // whose hash is a row in `sessions`, so the database is what validates it.
+  await app.register(cookie)
+  // `credentials` so the refresh cookie survives a cross-origin deployment —
+  // a separately hosted web client, which is what CORS_ORIGINS is for. It is
+  // only ever paired with an explicit origin list: `corsOrigins()` turns a
+  // wildcard into `false` in production, and allowing credentials from `*` is
+  // the combination that makes a cookie readable by any site that asks.
+  //
+  // Note for that deployment: the cookie is SameSite=Strict, which is right
+  // for the single-origin container this normally runs as and will stop a
+  // genuinely cross-site client from sending it. Such a deployment needs
+  // SameSite=None, which needs Secure, which needs TLS on both ends.
+  await app.register(cors, { origin: config.corsOrigins, credentials: config.corsOrigins !== false })
   await app.register(authPlugin)
   await app.register(wsPlugin)
 
@@ -418,9 +433,32 @@ export async function buildApp (): Promise<FastifyInstance> {
      */
     await app.register(seoRoutes, { webRoot })
 
-    // SPA fallback: any non-API GET that isn't a real file returns index.html
+    /**
+     * SPA fallback: any non-API GET that isn't a real file returns index.html.
+     *
+     * Except a file the client asked for by name. `/#/anything` is a route and
+     * gets the page; `/src/pages/gone.js` is a missing asset and gets a 404.
+     *
+     * The difference used to be invisible, and it cost a day. A module that
+     * stops resolving — moved by a restructure, mistyped in a path — was
+     * answered with index.html and a 200. The browser refuses to execute HTML
+     * as a module, so the page went blank, while every check an operator makes
+     * reported health: the JS URL returned 200 and the server logged nothing,
+     * because as far as it knew nothing had gone wrong.
+     *
+     * Anything under the client's own directories is a file request, whatever
+     * it ends in, and so are the handful of files served from the root.
+     */
+    const isClientAsset = (url: string): boolean => {
+      const pathName = url.split('?')[0] ?? ''
+      const clean = pathName.replace(/^\/+/, '')
+      if (CLIENT_FILES.includes(clean)) return true
+      const top = clean.split('/')[0]
+      return top !== undefined && CLIENT_DIRS.includes(top)
+    }
+
     app.setNotFoundHandler((request, reply) => {
-      if (request.method === 'GET' && !/^\/(v1|graphql|graphiql|ws)\b/.test(request.url)) {
+      if (request.method === 'GET' && !/^\/(v1|graphql|graphiql|ws)\b/.test(request.url) && !isClientAsset(request.url)) {
         return reply.sendFile('index.html')
       }
       return reply.code(404).type('application/problem+json').send({ type: 'about:blank', title: 'Not Found', status: 404 })

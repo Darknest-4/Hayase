@@ -250,10 +250,29 @@ async function serviceConnectivity (): Promise<TestResult[]> {
 
 /** Queue and worker health, from data the monitor worker already maintains. */
 async function workerHealth (): Promise<TestResult> {
+  /**
+   * How far back to look for the newest sample.
+   *
+   * Bare `max(created_at)` read every partition in full — a parallel
+   * sequential scan over a quarter of a million rows on every diagnostics run,
+   * growing with the retention window, and 34 198 of them on record. Two
+   * things fix it: `system_metrics_created_idx` (0039) gives the planner a
+   * backward index scan per partition, and this bound lets it prune the
+   * partitions that cannot hold the answer.
+   *
+   * Seven days is far outside the 180-second staleness threshold below, so
+   * narrowing the window changes no verdict: anything older than this is
+   * "stale" by any reading, and the only difference is that it is now reported
+   * as nothing recent rather than as nothing ever.
+   */
+  const METRIC_LOOKBACK = '7 days'
+
   const rows = await query<{ pending: string, dead: string, age_s: string | null }>(
     `SELECT (SELECT count(*) FROM jobs WHERE done_at IS NULL AND attempts < max_attempts) AS pending,
             (SELECT count(*) FROM jobs WHERE done_at IS NULL AND attempts >= max_attempts) AS dead,
-            (SELECT EXTRACT(EPOCH FROM (now() - max(created_at))) FROM system_metrics) AS age_s`
+            (SELECT EXTRACT(EPOCH FROM (now() - max(created_at))) FROM system_metrics
+              WHERE created_at > now() - $1::interval) AS age_s`,
+    [METRIC_LOOKBACK]
   )
   const { pending = '0', dead = '0', age_s: age } = rows[0] ?? {}
   const ageSec = age === null || age === undefined ? null : Number(age)
@@ -262,7 +281,9 @@ async function workerHealth (): Promise<TestResult> {
     name: 'Worker & queues', group: 'Platform',
     status: stale ? 'fail' : Number(dead) > 0 ? 'warn' : 'pass',
     value: stale ? 'no recent collection' : `${pending} pending · ${dead} dead`,
-    detail: ageSec === null ? 'the monitor worker has never run' : `last sample ${Math.round(ageSec)}s ago`
+    detail: ageSec === null
+      ? `no sample in the last ${METRIC_LOOKBACK} — the monitor worker is not running`
+      : `last sample ${Math.round(ageSec)}s ago`
   }
 }
 

@@ -25,6 +25,7 @@ import { PageW2G } from '../features/watch-together/watch-together.js'
 import { PageWatch } from '../pages/watch.js'
 import { Prefs } from '../shared/state/preferences.js'
 import { Store } from '../shared/state/store.js'
+import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 import { YumeAPI } from '../shared/api/yume.js'
 
@@ -41,7 +42,11 @@ export const App = {
     changelog: (root, params) => PageChangelog.render(root, params),
     w2g: (root, params, arg) => PageW2G.render(root, params, arg),
     watch: (root, params, arg) => PageWatch.render(root, params, arg),
-    admin: (root, params) => PageAdmin.render(root, params),
+    // The section can arrive either way: `#/admin/audit` names it in the path,
+    // which is the address form the panel's own sections are documented at,
+    // and `?s=` is what the rail writes as you click through. The page takes
+    // the path form first and falls back to the query.
+    admin: (root, params, arg) => PageAdmin.render(root, params, arg),
     settings: (root, params) => PageSettings.render(root, params),
     anime: (root, params, arg) => PageAnime.render(root, params, arg)
   },
@@ -493,7 +498,7 @@ export const App = {
         results.replaceChildren(U.el('div', { class: 'search-modal-empty', text: T('search.prompt') }))
         return
       }
-      results.replaceChildren(U.el('div', { class: 'spinner' }))
+      results.replaceChildren(P.spinner())
       try {
         // The Yume catalogue answers from Postgres with tiered ranking, which
         // matches romaji/english/native titles and synonyms. When no backend

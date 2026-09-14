@@ -33,9 +33,26 @@ export const YumeAPI = {
     }
   },
 
+  /**
+   * Keep the access token. Never keep the refresh token.
+   *
+   * The refresh token is a thirty-day credential and it used to sit in
+   * localStorage, where any script on the origin could read it and keep the
+   * account long after leaving the page. It now arrives as an HttpOnly cookie
+   * the browser stores and this code cannot see, so the field is dropped on
+   * the way in — a server that still sends it (a rolling deploy, an older
+   * build) simply has its copy ignored.
+   *
+   * The access token stays here. It is fifteen minutes long and the client
+   * needs it synchronously — `user()` decides what to draw before anything is
+   * fetched — so putting it out of reach would mean a signed-out flash on
+   * every reload while a refresh is in flight. Fifteen minutes readable is a
+   * very different exposure from thirty days.
+   */
   _saveTokens (tokens) {
-    if (tokens) localStorage.setItem('yume-auth', JSON.stringify(tokens))
-    else localStorage.removeItem('yume-auth')
+    if (!tokens) { localStorage.removeItem('yume-auth'); return }
+    const { refreshToken, ...keep } = tokens
+    localStorage.setItem('yume-auth', JSON.stringify(keep))
   },
 
   user () {
@@ -68,7 +85,7 @@ export const YumeAPI = {
    * other job: failing early, with a sentence a person can act on, rather than
    * sending a request that cannot succeed.
    */
-  async _request (path, { method = 'GET', body, auth = false, retry = true, anonymous = false, headers: extra } = {}) {
+  async _request (path, { method = 'GET', body, auth = false, retry = true, anonymous = false, credentials, headers: extra } = {}) {
     const headers = { Accept: 'application/json', ...extra }
     if (body !== undefined) headers['Content-Type'] = 'application/json'
 
@@ -84,6 +101,10 @@ export const YumeAPI = {
     const res = await fetch(this.base() + path, {
       method,
       headers,
+      // Only the auth calls ask for this. Sending cookies on every request
+      // would attach the refresh cookie to catalogue reads, and it is scoped
+      // to /v1/auth on the server precisely so that cannot happen.
+      ...(credentials ? { credentials } : {}),
       body: body !== undefined ? JSON.stringify(body) : undefined
     })
 
@@ -92,7 +113,7 @@ export const YumeAPI = {
     // into a 401 the client never tried to recover from. A refresh that fails
     // clears the tokens, so the retry goes out anonymously and a public
     // instance still answers it.
-    if (res.status === 401 && retry && tokens?.refreshToken) {
+    if (res.status === 401 && retry && tokens?.accessToken) {
       await this._refresh().catch(() => {})
       return this._request(path, { method, body, auth: auth && !!this._tokens(), retry: false, headers: extra })
     }
@@ -125,19 +146,26 @@ export const YumeAPI = {
     return error
   },
 
+  /**
+   * Trade the refresh cookie for a new access token.
+   *
+   * No body: the credential is the cookie, which the browser attaches and this
+   * code cannot read. `credentials: 'include'` is what makes it do so on a
+   * cross-origin deployment — same-origin, which is what the container serves,
+   * would send it anyway.
+   */
   async _refresh () {
-    const tokens = this._tokens()
-    if (!tokens?.refreshToken) throw new Error('Not signed in')
     try {
       const fresh = await this._request('/v1/auth/refresh', {
         method: 'POST',
-        body: { refreshToken: tokens.refreshToken },
+        body: {},
         anonymous: true,
+        credentials: 'include',
         retry: false
       })
       this._saveTokens(fresh)
     } catch (e) {
-      this._saveTokens(null) // refresh token rejected → signed out
+      this._saveTokens(null) // refresh refused → signed out
       throw e
     }
   },
@@ -157,14 +185,14 @@ export const YumeAPI = {
   // ---- auth ----
 
   async register (email, username, password) {
-    const tokens = await this._request('/v1/auth/register', { method: 'POST', body: { email, username, password } })
+    const tokens = await this._request('/v1/auth/register', { method: 'POST', body: { email, username, password }, credentials: 'include' })
     this._saveTokens(tokens)
     this._perms = null
     return this.user()
   },
 
   async login (identifier, password) {
-    const tokens = await this._request('/v1/auth/login', { method: 'POST', body: { identifier, password } })
+    const tokens = await this._request('/v1/auth/login', { method: 'POST', body: { identifier, password }, credentials: 'include' })
     this._saveTokens(tokens)
     this._perms = null
     return this.user()
@@ -174,7 +202,10 @@ export const YumeAPI = {
     this._perms = null
     const tokens = this._tokens()
     if (tokens) {
-      await this._request('/v1/auth/logout', { method: 'POST', body: { refreshToken: tokens.refreshToken }, auth: true }).catch(() => {})
+      // No body: the server revokes the session the access token names, and
+      // the cookie it was given. Sending a refresh token is no longer possible
+      // from here, which is the point.
+      await this._request('/v1/auth/logout', { method: 'POST', body: {}, auth: true, credentials: 'include' }).catch(() => {})
     }
     this._saveTokens(null)
   },
@@ -467,12 +498,20 @@ export const YumeAPI = {
   // native titles and synonyms). The client stays usable without a backend —
   // callers fall back to AniList when these return null.
 
+  /**
+   * Returns `{ data, hasMore }`, not a bare array.
+   *
+   * It used to return just `data`, which threw away the only signal about
+   * whether another page existed — so every catalogue-backed search stopped at
+   * its first page. `null` still means the backend could not answer and the
+   * caller should use AniList.
+   */
   async searchCatalogue (query, filters = {}) {
     const params = new URLSearchParams({ q: query })
     for (const [k, v] of Object.entries(filters)) if (v !== undefined && v !== '' && v !== false) params.set(k, v)
     try {
-      const { data } = await this._request('/v1/anime/search?' + params.toString())
-      return data
+      const { data, hasMore } = await this._request('/v1/anime/search?' + params.toString())
+      return { data, hasMore: hasMore ?? false }
     } catch (e) {
       return null // backend unreachable — the caller uses AniList instead
     }
@@ -759,8 +798,12 @@ export const YumeAPI = {
       episodeVisibility: (id, body) => YumeAPI._request(`/v1/admin/catalogue/${id}/episodes/visibility`, { method: 'POST', auth: true, body }),
       // metadata provenance & duplicate handling
       unlock: (id, fields) => YumeAPI._request(`/v1/admin/catalogue/${id}/unlock`, { method: 'POST', auth: true, body: { fields } }),
-      duplicates: (threshold = 0.86, limit = 50) =>
-        YumeAPI._request(`/v1/admin/catalogue/duplicates?threshold=${threshold}&limit=${limit}`, { auth: true }),
+      // `exact` by default, matching the server. The `similar` pass compares
+      // every title against every other in its year and format, which takes a
+      // minute on a catalogue this size — so it is a button somebody presses,
+      // not what happens when the tab opens.
+      duplicates: ({ mode = 'exact', threshold = 0.86, limit = 50 } = {}) =>
+        YumeAPI._request(`/v1/admin/catalogue/duplicates?mode=${mode}&threshold=${threshold}&limit=${limit}`, { auth: true }),
       merge: (id, sourceId) => YumeAPI._request(`/v1/admin/catalogue/${id}/merge`, { method: 'POST', auth: true, body: { sourceId } }),
 
       // where an episode plays from — registered by an operator, any provider
@@ -831,7 +874,22 @@ export const YumeAPI = {
       if (action) params.set('action', action)
       if (since) params.set('since', since)
       return YumeAPI._request('/v1/admin/audit?' + params.toString(), { auth: true })
-    }
+    },
+
+    /**
+     * The code audit — findings, severities, and where each one lives.
+     *
+     * A different thing from `audit` above, which is the trail of what people
+     * did. The route is /audit/report rather than /audit because that name was
+     * already this one's; see YUME-AUDIT-0013.
+     *
+     * Deliberately not caught here. The page has to be able to tell "no report
+     * has been generated" (503) from "the report is not readable" (500) from
+     * "you may not see this" (404), and it renders a different thing for each,
+     * so swallowing the failure into an empty result would be the one outcome
+     * a page like this must never produce.
+     */
+    auditReport: () => YumeAPI._request('/v1/admin/audit/report', { auth: true })
   }
 }
 

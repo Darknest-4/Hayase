@@ -13,11 +13,12 @@ import { C } from '../shared/ui/components.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
 import { Prefs } from '../shared/state/preferences.js'
 import { Store } from '../shared/state/store.js'
+import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 
 export const PageAnime = {
   async render (root, params, id) {
-    root.append(U.el('div', { class: 'spinner' }))
+    root.append(P.spinner())
 
     // Catalogue first, AniList as the fallback — see js/catalogue.js. `id` is
     // an AniList id or a Yume uuid; the resolver accepts either, which is what
@@ -26,11 +27,11 @@ export const PageAnime = {
     try {
       media = await Catalogue.media(id)
     } catch (e) {
-      root.replaceChildren(U.el('div', { class: 'error-state', text: T('Failed to load anime: ') + e.message }))
+      root.replaceChildren(P.errorState(T('Failed to load anime: ') + e.message))
       return
     }
     if (!media) {
-      root.replaceChildren(U.el('div', { class: 'empty-state', text: T('Anime not found.') }))
+      root.replaceChildren(P.emptyState(T('Anime not found.')))
       return
     }
 
@@ -117,7 +118,7 @@ export const PageAnime = {
       U.el('div', { class: 'detail-cover' }, [U.el('img', { src: U.cover(media), alt: mainTitle })]),
       U.el('div', { class: 'detail-headings' }, [
         titleEl,
-        secondary ? U.el('h2', { class: 'detail-secondary', style: 'margin-top:.1rem;', text: secondary }) : null,
+        secondary ? U.el('h2', { class: 'detail-secondary', style: 'margin-top:var(--space-1);', text: secondary }) : null,
         starRow,
         chips,
         descNote,
@@ -292,12 +293,14 @@ export const PageAnime = {
       ? [media.startDate.year, media.startDate.month, media.startDate.day].filter(Boolean).join('.')
       : null
 
+    // Format, Episodes, Status and Season are deliberately absent: the chip row
+    // under the title already carries all four, about two hundred pixels above
+    // this panel, and each chip is a link into search while a row here is not.
+    // Showing "TV" twice on one screen is not thoroughness, it is noise — so
+    // the chips keep the facts you navigate by and this panel keeps the ones
+    // they do not mention.
     const rows = [
-      ['Format', U.format(media)],
-      ['Episodes', media.episodes ? String(media.episodes) : null],
       ['Duration', media.duration ? `${media.duration} min` : null],
-      ['Status', U.statusMap[media.status]],
-      ['Season', U.seasonYear(media) || null],
       ['Start date', start],
       ['Studio', media.studios?.nodes?.[0]?.name],
       ['Source', prettify(media.source)],
@@ -403,10 +406,13 @@ export const PageAnime = {
   },
 
   renderTabEpisodes (wrap, media) {
-    const list = U.el('div', { class: 'episodes' }, [U.el('div', { class: 'spinner' })])
+    // Episode rows, not a spinner: the list that is coming is a thumbnail, a
+    // title and a line of metadata, and a skeleton that says so tells the
+    // viewer what is loading and stops the page jumping when it arrives.
+    const list = U.el('div', { class: 'episodes' }, Array.from({ length: 6 }, () => P.skeletonRow()))
     wrap.append(list)
     this.renderEpisodes(list, media).catch(() => {
-      list.replaceChildren(U.el('div', { class: 'empty-state', text: T('No episode data available.') }))
+      list.replaceChildren(P.emptyState(T('No episode data available.')))
     })
   },
 
@@ -426,7 +432,7 @@ export const PageAnime = {
     const relations = (media.relations?.edges ?? [])
       .filter(e => e.node?.type !== 'MANGA' && e.relationType !== 'CHARACTER' && e.node?.coverImage)
     if (!relations.length) {
-      if (!wrap.childElementCount) wrap.append(U.el('div', { class: 'empty-state', text: T('No known relations.') }))
+      if (!wrap.childElementCount) wrap.append(P.emptyState(T('No known relations.')))
       return
     }
     wrap.append(U.el('h3', { class: 'detail-section-title', text: T('Related') }))
@@ -534,7 +540,7 @@ export const PageAnime = {
     // Nothing: either the title is not in our catalogue, or the AniList deep
     // pass has not reached it yet. Admin → Metadata is where that is fixed,
     // and saying "no data" is honest about which of the two it is not.
-    wrap.append(U.el('div', { class: 'empty-state', text: T('No character data.') }))
+    wrap.append(P.emptyState(T('No character data.')))
   },
 
   renderTabComments (wrap, media) {
@@ -552,14 +558,14 @@ export const PageAnime = {
       return
     }
 
-    wrap.append(U.el('div', { class: 'empty-state', text: T('No recommendations yet.') }))
+    wrap.append(P.emptyState(T('No recommendations yet.')))
   },
 
   async renderEpisodes (wrap, media) {
     const episodes = await Catalogue.episodes(media)
 
     if (!episodes.length) {
-      wrap.replaceChildren(U.el('div', { class: 'empty-state', text: media.status === 'NOT_YET_RELEASED' ? 'Not yet aired.' : 'No episode data available.' }))
+      wrap.replaceChildren(P.emptyState(media.status === 'NOT_YET_RELEASED' ? 'Not yet aired.' : 'No episode data available.'))
       return
     }
 
@@ -634,7 +640,7 @@ export const PageAnime = {
         }, [
           thumb,
           U.el('div', { class: 'episode-body' }, [
-            U.el('div', { style: 'display:flex;align-items:center;gap:.5rem;' }, [
+            U.el('div', { style: 'display:flex;align-items:center;gap:var(--space-2);' }, [
               U.el('div', { class: 'episode-title', style: 'flex-grow:1;', text: ep.title ?? `Episode ${ep.episode}` }),
               canPlay ? null : U.el('span', { class: 'episode-nosource', text: T('No source') }),
               U.el('button', {

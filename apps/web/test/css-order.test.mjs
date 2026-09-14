@@ -28,6 +28,13 @@ import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const CSS = readFileSync(join(here, '../css/style.css'), 'utf8')
+const COMPONENTS = readFileSync(join(here, '../css/components.css'), 'utf8')
+
+// The two sheets the browser loads after tokens.css, in load order. The
+// undefined-token check below has to cover both: components.css is where the
+// primitives live now, and a token that resolves to nothing there drops a
+// declaration on every screen at once rather than on one.
+const SHEETS = [['style.css', CSS], ['components.css', COMPONENTS]]
 
 /**
  * Every rule in the sheet, tagged with whether it sits inside a media query.
@@ -117,7 +124,7 @@ describe('design tokens the stylesheet asks for', () => {
     .map(name => readFileSync(join(here, '../src', String(name)), 'utf8'))
 
   const defined = new Set(
-    [TOKENS, CSS, ...inlineSources]
+    [TOKENS, CSS, COMPONENTS, ...inlineSources]
       .flatMap(source => [...source.matchAll(/(--[a-z0-9-]+)\s*:/gi)])
       .map(m => m[1])
   )
@@ -132,14 +139,16 @@ describe('design tokens the stylesheet asks for', () => {
     // `var(--x, fallback)` is deliberate and fine — the fallback is the
     // author saying what to do when it is absent. Only a bare reference is a
     // claim that the token exists.
-    for (const match of CSS.matchAll(/var\(\s*(--[a-z0-9-]+)\s*\)/gi)) {
-      const name = match[1]
-      if (defined.has(name)) continue
-      const line = CSS.slice(0, match.index).split('\n').length
-      if (!missing.has(name)) missing.set(name, line)
+    for (const [file, source] of SHEETS) {
+      for (const match of source.matchAll(/var\(\s*(--[a-z0-9-]+)\s*\)/gi)) {
+        const name = match[1]
+        if (defined.has(name)) continue
+        const line = source.slice(0, match.index).split('\n').length
+        if (!missing.has(name)) missing.set(name, `${file}:${line}`)
+      }
     }
     assert.deepEqual(
-      [...missing].map(([name, line]) => `${name} (style.css:${line})`),
+      [...missing].map(([name, where]) => `${name} (${where})`),
       [],
       'these resolve to nothing and silently drop the declaration'
     )

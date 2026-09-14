@@ -15,6 +15,7 @@ import { featureOn, permissionsHeld } from '../shared/lib/site-config.js'
 import { Chat } from '../features/chat/chat.js'
 import { Forum } from '../features/forum/forum.js'
 import { T } from '../shared/i18n/i18n.js'
+import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 import { YumeAPI } from '../shared/api/yume.js'
 
@@ -74,14 +75,14 @@ export const PageCommunity = {
   },
 
   async _feed (panel) {
-    const feed = U.el('div', {}, [U.el('div', { class: 'spinner' })])
+    const feed = U.el('div', {}, Array.from({ length: 5 }, () => P.skeletonRow()))
     panel.append(U.el('h2', { class: 'detail-section-title', text: T('Recent discussion') }), feed)
 
     try {
       const { data } = await YumeAPI.recentComments()
       feed.replaceChildren()
       if (!data.length) {
-        feed.append(U.el('div', { class: 'empty-state', text: T('No discussion yet — be the first: open any anime and leave a comment.') }))
+        feed.append(P.emptyState(T('No discussion yet — be the first: open any anime and leave a comment.')))
         return
       }
       for (const comment of data) {

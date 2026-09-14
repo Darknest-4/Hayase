@@ -18,6 +18,9 @@ function svgDocument () {
     children: [],
     textContent: '',
     className: '',
+    // Real elements have one, and the donut legend writes its swatch colour
+    // through it rather than into an HTML string — see the escaping test below.
+    style: {},
     setAttribute (k, v) { this.attrs[k] = String(v) },
     getAttribute (k) { return this.attrs[k] },
     append (...kids) { this.children.push(...kids) }
@@ -108,5 +111,24 @@ describe('donut', () => {
     // anything laid out around a smaller ring.
     assert.equal(Charts.donut([{ label: 'a', value: 1, color: 'red' }], { legend: false }).tag, 'svg')
     assert.equal(Charts.donut([{ label: 'a', value: 1, color: 'red' }]).tag, 'div')
+  })
+
+  it('puts the label in the legend as text, never as markup', () => {
+    // The legend row used to be an HTML string with `${d.label}` in it. The
+    // labels are catalogue names, so reaching it needed a permission — but it
+    // was an unescaped sink on a page an administrator opens, and nothing
+    // stopped the next caller passing a username. YUME-AUDIT-0007.
+    const hostile = '<img src=x onerror=alert(1)>'
+    const wrap = Charts.donut([{ label: hostile, value: 1, color: 'red' }])
+
+    const texts = []
+    const walk = node => {
+      if (!node || typeof node !== 'object') return
+      if (node.textContent) texts.push(node.textContent)
+      assert.equal(node.innerHTML, undefined, 'the legend must not be built from an HTML string')
+      for (const kid of node.children ?? []) walk(kid)
+    }
+    walk(wrap)
+    assert.ok(texts.includes(hostile), 'the label should still be shown, as text')
   })
 })

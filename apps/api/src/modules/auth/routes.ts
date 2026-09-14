@@ -21,7 +21,7 @@ import { deliverReset } from './reset-delivery.ts'
 import { settings as siteSettings } from '../settings/site-settings.ts'
 import { emitEvent } from '../webhooks/delivery.ts'
 
-import type { FastifyPluginAsync } from 'fastify'
+import type { FastifyPluginAsync, FastifyReply } from 'fastify'
 
 const sha256 = (value: string): string => createHash('sha256').update(value).digest('hex')
 
@@ -77,7 +77,37 @@ const routes: FastifyPluginAsync = async fastify => {
    * already reads the users row to compare `tv`, and the session join rides
    * along on the same query.
    */
-  async function issueTokens (user: { id: string, username: string, token_version?: number }, ip?: string, userAgent?: string) {
+  /**
+   * Where the refresh token lives now.
+   *
+   * It used to be handed to the client in the response body and kept in
+   * localStorage, which meant a credential good for thirty days was readable
+   * by any script running on the origin. `HttpOnly` takes that away: an
+   * injected script can still *use* the session while the page is open —
+   * the browser attaches the cookie to its own fetches — but it can no longer
+   * copy the token out and keep the account for a month from somewhere else.
+   * Losing persistence is most of the damage.
+   *
+   * `Path` scopes it to the two routes that read it, so it is not sent with
+   * every catalogue image request. `SameSite=Strict` because nothing
+   * cross-site ever needs to refresh a session, and `Secure` outside
+   * development because a cookie without it is sent in clear over http.
+   */
+  const REFRESH_COOKIE = 'yume_refresh'
+  const refreshCookieOptions = {
+    httpOnly: true,
+    secure: config.isProd,
+    sameSite: 'strict' as const,
+    path: '/v1/auth',
+    maxAge: config.refreshTokenTtlDays * 86_400
+  }
+
+  async function issueTokens (
+    user: { id: string, username: string, token_version?: number },
+    reply: FastifyReply,
+    ip?: string,
+    userAgent?: string
+  ) {
     const refreshToken = randomBytes(32).toString('base64url')
     const expiresAt = new Date(Date.now() + config.refreshTokenTtlDays * 86_400_000)
 
@@ -95,6 +125,22 @@ const routes: FastifyPluginAsync = async fastify => {
 
     const version = user.token_version ?? await accounts.tokenVersion(user.id)
     const accessToken = fastify.jwt.sign({ sub: user.id, username: user.username, tv: version, sid: session.id })
+
+    reply.setCookie(REFRESH_COOKIE, refreshToken, refreshCookieOptions)
+
+    /*
+     * The token is still in the body, and that is deliberate for now.
+     *
+     * A deploy must not sign everybody out. A client loaded before this change
+     * has the old code, stores what it is given and sends it back in the body;
+     * one loaded after ignores the field and relies on the cookie. Both work
+     * against this server, which is what makes the change rollable rather than
+     * a flag day.
+     *
+     * It costs nothing today — the current client no longer writes it down, so
+     * the value is transient — and the field comes out once no client that
+     * reads it can still be running. See docs/security/refresh-cookie.md.
+     */
     return { accessToken, refreshToken, expiresAt: expiresAt.toISOString() }
   }
 
@@ -170,7 +216,7 @@ const routes: FastifyPluginAsync = async fastify => {
       promotedToAdmin: user.promoted,
       registeredAt: new Date().toISOString()
     })
-    const tokens = await issueTokens(user, request.ip, request.headers['user-agent'])
+    const tokens = await issueTokens(user, reply, request.ip, request.headers['user-agent'])
     return reply.code(201).send(tokens)
   })
 
@@ -201,23 +247,47 @@ const routes: FastifyPluginAsync = async fastify => {
     await accounts.markLoggedIn(user.id)
     await accounts.log(user.id, 'login', request.ip, request.headers['user-agent'] ?? null)
 
-    return issueTokens(user, request.ip, request.headers['user-agent'])
+    return issueTokens(user, reply, request.ip, request.headers['user-agent'])
   })
 
+  /**
+   * Cookie first, body second.
+   *
+   * The cookie is where the token lives now and the body is the compatibility
+   * path — a client loaded before the change still sends it there, and one
+   * loaded after sends nothing at all. Which is also why `refreshToken` is no
+   * longer required by the schema: a request carrying only the cookie has an
+   * empty body, and rejecting it at validation would refuse exactly the
+   * clients this is for.
+   */
   fastify.post('/refresh', {
     config: REFRESH_LIMIT,
-    schema: { body: { type: 'object', required: ['refreshToken'], properties: { refreshToken: { type: 'string' } } } }
+    schema: {
+      body: {
+        type: ['object', 'null'],
+        additionalProperties: false,
+        properties: { refreshToken: { type: 'string', minLength: 1, maxLength: 512 } }
+      }
+    }
   }, async (request, reply) => {
-    const { refreshToken } = request.body as { refreshToken: string }
+    const fromBody = (request.body as { refreshToken?: string } | null)?.refreshToken
+    const refreshToken = request.cookies[REFRESH_COOKIE] ?? fromBody
+    if (!refreshToken) {
+      return reply.code(401).send({ type: 'about:blank', title: 'Unauthorized', status: 401, detail: 'No refresh token' })
+    }
 
     const session = await accounts.sessionByRefreshHash(sha256(refreshToken))
     if (!session) {
+      // The cookie names a session that no longer exists — revoked, expired,
+      // or from a database this browser has outlived. Clearing it stops the
+      // client retrying with it on every load for the next thirty days.
+      reply.clearCookie(REFRESH_COOKIE, { path: refreshCookieOptions.path })
       return reply.code(401).send({ type: 'about:blank', title: 'Unauthorized', status: 401, detail: 'Invalid refresh token' })
     }
 
     // rotation: revoke the used session, issue a fresh one
     await accounts.revokeSession(session.id)
-    return issueTokens({ id: session.user_id, username: session.username }, request.ip, request.headers['user-agent'])
+    return issueTokens({ id: session.user_id, username: session.username }, reply, request.ip, request.headers['user-agent'])
   })
 
   // the client uses this to decide whether to show moderation/admin UI
@@ -233,7 +303,20 @@ const routes: FastifyPluginAsync = async fastify => {
    * holding right now. Revoking only the refresh token — which is all this
    * used to do — left the access token working for the rest of its 15 minutes.
    */
-  fastify.post('/logout', { preHandler: fastify.authenticate }, async (request, reply) => {
+  /**
+   * The body is optional and always has been — a client may hand back a
+   * refresh token from another session, or none at all — but "optional" and
+   * "unvalidated" are different things, and these were the only two write
+   * routes in the API reading `request.body` without a schema. Declaring it
+   * costs nothing and closes the one gap in otherwise complete coverage.
+   */
+  const logoutBody = {
+    type: 'object',
+    additionalProperties: false,
+    properties: { refreshToken: { type: 'string', minLength: 1, maxLength: 512 } }
+  }
+
+  fastify.post('/logout', { preHandler: fastify.authenticate, schema: { body: logoutBody } }, async (request, reply) => {
     const { refreshToken } = (request.body ?? {}) as { refreshToken?: string }
     const sid = request.user.sid
 
@@ -242,10 +325,16 @@ const routes: FastifyPluginAsync = async fastify => {
       invalidateSession(request.user.sub, sid)
     }
     // A client may also hand back a refresh token from a different session —
-    // and a token minted before session binding existed has no sid at all.
-    if (refreshToken) {
-      await accounts.revokeSessionByRefreshHash(sha256(refreshToken), request.user.sub)
+    // and a token minted before session binding existed has no sid at all. The
+    // cookie is checked for the same reason, and is the usual case now.
+    const alsoRevoke = request.cookies[REFRESH_COOKIE] ?? refreshToken
+    if (alsoRevoke) {
+      await accounts.revokeSessionByRefreshHash(sha256(alsoRevoke), request.user.sub)
     }
+    // Signing out has to take the credential away, not only the row it points
+    // at: a cookie left behind is a thirty-day token in the browser of
+    // somebody who just asked to be signed out.
+    reply.clearCookie(REFRESH_COOKIE, { path: refreshCookieOptions.path })
     return reply.code(204).send()
   })
 
@@ -257,10 +346,11 @@ const routes: FastifyPluginAsync = async fastify => {
    * device. Somebody who thinks their account is compromised wants this;
    * somebody closing a laptop does not.
    */
-  fastify.post('/logout-all', { preHandler: fastify.authenticate }, async (request, reply) => {
+  fastify.post('/logout-all', { preHandler: fastify.authenticate, schema: { body: logoutBody } }, async (request, reply) => {
     await accounts.revokeAllSessions(request.user.sub)
     await revokeTokens(request.user.sub)
     await accounts.log(request.user.sub, 'logout_all', request.ip, request.headers['user-agent'] ?? null)
+    reply.clearCookie(REFRESH_COOKIE, { path: refreshCookieOptions.path })
     return reply.code(204).send()
   })
 
@@ -373,7 +463,7 @@ const routes: FastifyPluginAsync = async fastify => {
     // signing them out of the device they are typing on is hostile.
     const tokens = await issueTokens(
       { id: request.user.sub, username: request.user.username },
-      request.ip, request.headers['user-agent']
+      reply, request.ip, request.headers['user-agent']
     )
     return reply.send(tokens)
   })

@@ -93,36 +93,76 @@ export interface DuplicateCandidate {
 }
 
 /**
- * Find likely duplicate catalogue entries: rows sharing a year and format
- * whose titles are near-identical. Restricted to the same (year, format)
- * bucket so the trigram comparison stays bounded — a full cross join over
- * 25k rows would not be.
+ * Find likely duplicate catalogue entries. Two passes, asked for separately.
+ *
+ * **exact** — identical titles, whatever their year and format. The default,
+ * and the one that was missing. An exact string match is its own bucket, so
+ * nothing has to be restricted to make it affordable, and the old query threw
+ * that away by demanding the year and the format agree as well: measured on
+ * the live catalogue, 246 pairs share a canonical title exactly and it could
+ * see 48 of them. The other 198 were invisible, most because the two rows
+ * disagreed about the year — which is one of the things a duplicate pair
+ * disagrees about. 73 ms.
+ *
+ * **similar** — near-identical titles inside one (year, format) bucket. This
+ * is the original scan, unchanged, and it is slow: `similarity()` is a
+ * function call, so the trigram index cannot serve it and every pair in every
+ * bucket is compared. 68 seconds on the live catalogue, which is why it is now
+ * asked for rather than run by default — an operator opening the duplicates
+ * list should not be made to wait a minute for the pass that finds least.
+ * (A LATERAL rewrite against the GIN index was tried and did not help; it is
+ * recorded as YUME-AUDIT-0023 rather than guessed at further here.)
+ *
+ * Proposals either way. An identical title two decades apart is usually a
+ * remake, not a duplicate, so nothing here merges anything: the route is
+ * read-only and an operator with `anime.merge` confirms each one.
  */
+export type DuplicateMode = 'exact' | 'similar'
+
 export async function findDuplicates (
   db: { query: pg.Pool['query'] },
-  opts: { threshold?: number | undefined, limit?: number | undefined } = {}
+  opts: { threshold?: number | undefined, limit?: number | undefined, mode?: DuplicateMode | undefined } = {}
 ): Promise<DuplicateCandidate[]> {
   const threshold = Math.min(0.99, Math.max(0.5, opts.threshold ?? 0.86))
   const limit = Math.min(500, Math.max(1, opts.limit ?? 100))
-  const { rows } = await db.query(
-    `SELECT a.id AS a_id, b.id AS b_id,
-            a.canonical_title AS a_title, b.canonical_title AS b_title,
-            similarity(a.canonical_title, b.canonical_title) AS similarity,
-            a.season_year, a.format::text AS format
-       FROM anime a
-       JOIN anime b
-         ON b.id > a.id
-        AND b.season_year IS NOT DISTINCT FROM a.season_year
-        AND b.format IS NOT DISTINCT FROM a.format
-        AND similarity(a.canonical_title, b.canonical_title) >= $1
-      WHERE a.season_year IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM anime_relations r
-                         WHERE (r.anime_id = a.id AND r.related_id = b.id)
-                            OR (r.anime_id = b.id AND r.related_id = a.id))
-      ORDER BY similarity DESC
-      LIMIT $2`,
-    [threshold, limit]
-  )
+  const mode = opts.mode ?? 'exact'
+
+  const unrelated = `NOT EXISTS (SELECT 1 FROM anime_relations r
+                                  WHERE (r.anime_id = p.a_id AND r.related_id = p.b_id)
+                                     OR (r.anime_id = p.b_id AND r.related_id = p.a_id))`
+
+  // The exact pass has no threshold to apply, so it takes only the limit.
+  // Passing the unused one anyway is what Postgres rejects with
+  // "could not determine data type of parameter $1" — a placeholder that
+  // appears nowhere in the statement has no type to infer.
+  const exact = `WITH p AS (
+         SELECT a.id AS a_id, b.id AS b_id,
+                a.canonical_title AS a_title, b.canonical_title AS b_title,
+                1.0::real AS similarity, a.season_year, a.format::text AS format
+           FROM anime a
+           JOIN anime b ON b.id > a.id AND lower(b.canonical_title) = lower(a.canonical_title)
+       )
+       SELECT * FROM p WHERE ${unrelated} ORDER BY a_title LIMIT $1`
+
+  const similar = `WITH p AS (
+         SELECT a.id AS a_id, b.id AS b_id,
+                a.canonical_title AS a_title, b.canonical_title AS b_title,
+                similarity(a.canonical_title, b.canonical_title) AS similarity,
+                a.season_year, a.format::text AS format
+           FROM anime a
+           JOIN anime b
+             ON b.id > a.id
+            AND b.season_year IS NOT DISTINCT FROM a.season_year
+            AND b.format IS NOT DISTINCT FROM a.format
+            AND lower(b.canonical_title) <> lower(a.canonical_title)
+            AND similarity(a.canonical_title, b.canonical_title) >= $1
+          WHERE a.season_year IS NOT NULL
+       )
+       SELECT * FROM p WHERE ${unrelated} ORDER BY similarity DESC, a_title LIMIT $2`
+
+  const { rows } = mode === 'exact'
+    ? await db.query(exact, [limit])
+    : await db.query(similar, [threshold, limit])
   return rows as DuplicateCandidate[]
 }
 

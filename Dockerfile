@@ -1,9 +1,16 @@
 # Yume — plain single-stage image. One container serves BOTH the API and the
 # static web client on one port, so the whole app runs through Docker.
+#
+# At the repository root, where `docker build .` looks for it. It spent a while
+# in infrastructure/docker/ after the restructure, which meant the command
+# everyone types — and the one in the runbook — failed with "open Dockerfile:
+# no such file or directory". CI passed throughout, because the workflow named
+# the file explicitly, so nothing could warn anybody (YUME-AUDIT-0005). The
+# build context has to be the repository root either way, so the file may as
+# well live where the context is.
 # Node 22 runs the TypeScript sources directly (--experimental-strip-types),
-# so there is no build step. Build from the repo root (the context is the root,
-# not this directory):
-#   docker build -f infrastructure/docker/Dockerfile -t yume .
+# so there is no build step:
+#   docker build -t yume .
 #   docker run --rm -p 4000:4000 -e DATABASE_URL=… -e JWT_SECRET=… yume
 FROM node:22-alpine
 
@@ -43,11 +50,25 @@ COPY apps/web/ apps/web/
 COPY packages/ packages/
 COPY database/ database/
 
+# The code audit, which the admin panel's Audit status page reads at runtime
+# and is that page's only data source. One file, not the directory: docs/ is
+# 15 MB of prose the image has no use for, so .dockerignore excludes it and
+# re-includes this one path. Override the location with AUDIT_REPORT_PATH.
+COPY docs/audit-2026-09.json docs/
+
 WORKDIR /app/apps/api
 ENV NODE_ENV=production \
     PORT=4000 \
     HOST=0.0.0.0 \
     WEB_ROOT=/app/apps/web
+
+# Which commit this image was built from, for the Audit status page's "the code
+# has changed since the audit ran" warning. Nothing sets it by default — .git
+# is not in the build context — and the page says it cannot tell rather than
+# implying the audit is current. Stamp it to get the warning:
+#   docker build --build-arg GIT_COMMIT=$(git rev-parse HEAD) …
+ARG GIT_COMMIT=""
+ENV SOURCE_COMMIT=$GIT_COMMIT
 
 EXPOSE 4000
 

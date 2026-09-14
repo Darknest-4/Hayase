@@ -15,6 +15,7 @@
 
 import { query, queryOne } from '../../infrastructure/database/index.ts'
 import { PREFERENCES, coerce, isPreferenceKey, resolve } from '../profiles/preferences.ts'
+import { WRITE_LIMIT } from '../../middleware/security.ts'
 
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 
@@ -74,6 +75,7 @@ const routes: FastifyPluginAsync = async fastify => {
   // A partial patch, not a replace: the wizard writes four keys and the
   // settings screen writes one, and neither should have to send the rest.
   fastify.patch('/settings', {
+    config: WRITE_LIMIT,
     schema: {
       body: {
         type: 'object',
@@ -143,7 +145,7 @@ const routes: FastifyPluginAsync = async fastify => {
   //
   // Deletes rather than writing defaults, so a later change to a default
   // reaches viewers who never expressed an opinion.
-  fastify.delete('/settings', async (request, reply) => {
+  fastify.delete('/settings', { config: WRITE_LIMIT }, async (request, reply) => {
     const profileId = await resolveProfile(request, reply)
     if (!profileId) return
     await query('DELETE FROM user_settings WHERE profile_id = $1 AND key <> $2', [profileId, ONBOARDING_KEY])

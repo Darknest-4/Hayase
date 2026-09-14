@@ -21,65 +21,15 @@
 
 import { query, queryOne } from '../../infrastructure/database/index.ts'
 
-export type Tier = 'bronze' | 'silver' | 'gold'
+import { CATALOGUE, EMPTY } from './achievement-catalogue.ts'
 
-export interface Achievement {
-  slug: string
-  name: string
-  description: string
-  icon: string
-  tier: Tier
-  target: number
-  /** Which measurement in the context this one counts. */
-  metric: keyof AchievementContext
-  xp: number
-}
+import type { AchievementContext } from './achievement-catalogue.ts'
 
-/** Everything the conditions need, measured once per evaluation. */
-export interface AchievementContext {
-  episodes: number
-  minutes: number
-  completed: number
-  library: number
-  planning: number
-  favourites: number
-  scored: number
-  bestDay: number
-  activeDays: number
-  genreCount: number
-  formatCount: number
-}
-
-/**
- * The catalogue.
- *
- * Each entry is a metric and a target rather than a predicate, so the same
- * definition can be evaluated here, rendered by the client, and compared
- * between the two by a test. A predicate would be none of those things.
- */
-export const CATALOGUE: Achievement[] = [
-  { slug: 'first-episode', name: 'First Steps', description: 'Watch your first episode.', icon: '▶️', tier: 'bronze', target: 1, metric: 'episodes', xp: 10 },
-  { slug: 'getting-into-it', name: 'Getting Into It', description: 'Watch 50 episodes.', icon: '📺', tier: 'bronze', target: 50, metric: 'episodes', xp: 50 },
-  { slug: 'binge-watcher', name: 'Binge Watcher', description: 'Watch 500 episodes.', icon: '🍿', tier: 'silver', target: 500, metric: 'episodes', xp: 200 },
-  { slug: 'no-life', name: 'No Life', description: 'Watch 2,000 episodes.', icon: '🌀', tier: 'gold', target: 2000, metric: 'episodes', xp: 500 },
-  { slug: 'first-finish', name: 'The End', description: 'Complete your first anime.', icon: '🎬', tier: 'bronze', target: 1, metric: 'completed', xp: 20 },
-  { slug: 'collector', name: 'Collector', description: 'Complete 25 anime.', icon: '🏆', tier: 'silver', target: 25, metric: 'completed', xp: 150 },
-  { slug: 'century-club', name: 'Century Club', description: 'Complete 100 anime.', icon: '💯', tier: 'gold', target: 100, metric: 'completed', xp: 400 },
-  { slug: 'librarian', name: 'Librarian', description: 'Have 50 titles in your library.', icon: '📚', tier: 'silver', target: 50, metric: 'library', xp: 100 },
-  { slug: 'planner', name: 'Planner', description: 'Plan to watch 20 titles.', icon: '🗓️', tier: 'bronze', target: 20, metric: 'planning', xp: 40 },
-  { slug: 'curator', name: 'Curator', description: 'Favourite 10 titles.', icon: '❤️', tier: 'bronze', target: 10, metric: 'favourites', xp: 40 },
-  { slug: 'critic', name: 'Critic', description: 'Rate 25 titles.', icon: '⭐', tier: 'silver', target: 25, metric: 'scored', xp: 100 },
-  { slug: 'day-one', name: 'Day One', description: 'Watch a full day (24h) of anime.', icon: '⏳', tier: 'gold', target: 1440, metric: 'minutes', xp: 300 },
-  { slug: 'marathon', name: 'Marathon', description: 'Watch 10 episodes in a single day.', icon: '🏃', tier: 'silver', target: 10, metric: 'bestDay', xp: 120 },
-  { slug: 'consistent', name: 'Consistent', description: 'Be active on 7 different days.', icon: '📆', tier: 'silver', target: 7, metric: 'activeDays', xp: 120 },
-  { slug: 'explorer', name: 'Explorer', description: 'Watch across 10 different genres.', icon: '🧭', tier: 'silver', target: 10, metric: 'genreCount', xp: 150 },
-  { slug: 'omnivore', name: 'Omnivore', description: 'Watch every format (TV, Movie, OVA, ONA, Special).', icon: '🍱', tier: 'gold', target: 5, metric: 'formatCount', xp: 250 }
-]
-
-const EMPTY: AchievementContext = {
-  episodes: 0, minutes: 0, completed: 0, library: 0, planning: 0,
-  favourites: 0, scored: 0, bestDay: 0, activeDays: 0, genreCount: 0, formatCount: 0
-}
+// Re-exported so every existing importer keeps working: the split is about
+// what can be loaded without a database, not about where anything is called
+// from. See achievement-catalogue.ts.
+export { CATALOGUE, evaluate } from './achievement-catalogue.ts'
+export type { Achievement, AchievementContext, Progress, Tier } from './achievement-catalogue.ts'
 
 /**
  * Measure a profile.
@@ -127,28 +77,6 @@ export async function measure (profileId: string): Promise<AchievementContext> {
   return out
 }
 
-export interface Progress extends Achievement {
-  current: number
-  unlocked: boolean
-  unlockedAt: string | null
-}
-
-/** The catalogue with this profile's progress against it. */
-export function evaluate (context: AchievementContext, unlockedAt: Map<string, string>): Progress[] {
-  return CATALOGUE.map(a => {
-    const value = Math.max(0, Math.floor(context[a.metric] ?? 0))
-    const already = unlockedAt.get(a.slug) ?? null
-    return {
-      ...a,
-      current: Math.min(value, a.target),
-      // Once unlocked, always unlocked. Removing a title from a library
-      // should not take an achievement away — it was earned when it fired.
-      unlocked: already !== null || value >= a.target,
-      unlockedAt: already
-    }
-  })
-}
-
 /**
  * Evaluate and record anything newly earned.
  *
@@ -174,29 +102,38 @@ export async function grantNew (profileId: string): Promise<string[]> {
   )
   if (!earned.length) return []
 
-  const granted: string[] = []
-  for (const achievement of earned) {
-    const inserted = await queryOne<{ id: string }>(
-      `INSERT INTO profile_achievements (profile_id, achievement_id)
-       SELECT $1, id FROM achievements WHERE slug = $2
-       ON CONFLICT DO NOTHING
-       RETURNING achievement_id AS id`,
-      [profileId, achievement.slug]
-    )
-    // No row means either a concurrent grant won the race or the catalogue
-    // row is missing; either way this is not the call that earned it, and it
-    // must not award the XP a second time.
-    if (!inserted) continue
+  // Two statements for the whole set rather than two per achievement.
+  //
+  // Normally this is one or two iterations and the difference is nothing. The
+  // case it is written for is the founder import, which crosses every
+  // threshold at once: that turned the catalogue into two round trips each,
+  // inside one request.
+  //
+  // RETURNING is what keeps the race handled. A row that ON CONFLICT skipped
+  // was granted by a concurrent call, comes back in neither list, and so earns
+  // no XP here — which is the same rule as before, decided by the database
+  // rather than by reading back.
+  const inserted = await query<{ id: string, slug: string }>(
+    `INSERT INTO profile_achievements (profile_id, achievement_id)
+     SELECT $1, a.id FROM achievements a WHERE a.slug = ANY($2::text[])
+     ON CONFLICT DO NOTHING
+     RETURNING achievement_id AS id,
+               (SELECT slug FROM achievements WHERE id = achievement_id) AS slug`,
+    [profileId, earned.map(a => a.slug)]
+  )
+  if (!inserted.length) return []
 
-    if (achievement.xp > 0) {
-      await query(
-        `INSERT INTO xp_events (profile_id, amount, reason, ref_id) VALUES ($1, $2, 'achievement', $3)`,
-        [profileId, achievement.xp, inserted.id]
-      )
-    }
-    granted.push(achievement.slug)
+  const xpFor = new Map(earned.map(a => [a.slug, a.xp]))
+  const withXp = inserted.filter(row => (xpFor.get(row.slug) ?? 0) > 0)
+  if (withXp.length) {
+    await query(
+      `INSERT INTO xp_events (profile_id, amount, reason, ref_id)
+       SELECT $1, event.amount, 'achievement', event.ref_id
+         FROM unnest($2::int[], $3::uuid[]) AS event(amount, ref_id)`,
+      [profileId, withXp.map(row => xpFor.get(row.slug) ?? 0), withXp.map(row => row.id)]
+    )
   }
-  return granted
+  return inserted.map(row => row.slug)
 }
 
 /** Make sure the catalogue rows exist, so the grant above has ids to point at. */

@@ -201,12 +201,18 @@ async function writeEntries (
   releaseId: string,
   entries: Array<{ kind: string, body: string }>
 ): Promise<void> {
-  for (const [index, entry] of entries.entries()) {
-    await client.query(
-      'INSERT INTO release_entries (release_id, kind, body, position) VALUES ($1, $2, $3, $4)',
-      [releaseId, entry.kind, entry.body, index]
-    )
-  }
+  if (!entries.length) return
+  // One statement rather than one per line. A release has a handful of lines
+  // so the saving is small, but the shape scales with whatever somebody
+  // pastes in, and a round trip per row on a request path is the wrong shape
+  // to leave lying around. `ordinality` is what keeps the order they arrived
+  // in without a second array to pass.
+  await client.query(
+    `INSERT INTO release_entries (release_id, kind, body, position)
+     SELECT $1, entry.kind, entry.body, entry.position - 1
+       FROM unnest($2::text[], $3::text[]) WITH ORDINALITY AS entry(kind, body, position)`,
+    [releaseId, entries.map(e => e.kind), entries.map(e => e.body)]
+  )
 }
 
 export default routes

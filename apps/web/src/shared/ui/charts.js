@@ -235,11 +235,31 @@ export const Charts = {
     wrap.append(svg)
     const legend = document.createElement('div')
     legend.className = 'donut-legend'
+    // Elements and textContent, not an HTML string.
+    //
+    // This was a template literal with `d.label` and `d.color` interpolated
+    // into it and nothing escaped. Today the labels are genre and format names
+    // from the catalogue, so reaching it needed the anime.edit permission —
+    // but it is an HTML sink on a page an administrator opens, which makes it
+    // a step up rather than a dead end, and nothing stopped the next caller
+    // passing a username. The colour goes through the style property for the
+    // same reason: a value ending in `;` could otherwise add declarations.
     for (const d of data) {
       if (!d.value) continue
       const row = document.createElement('div')
       row.className = 'donut-legend-row'
-      row.innerHTML = `<span class="donut-swatch" style="background:${d.color}"></span><span>${d.label}</span><b>${Math.round(d.value / total * 100)}%</b>`
+
+      const swatch = document.createElement('span')
+      swatch.className = 'donut-swatch'
+      swatch.style.background = d.color
+
+      const label = document.createElement('span')
+      label.textContent = String(d.label ?? '')
+
+      const share = document.createElement('b')
+      share.textContent = `${Math.round(d.value / total * 100)}%`
+
+      row.append(swatch, label, share)
       legend.append(row)
     }
     wrap.append(legend)

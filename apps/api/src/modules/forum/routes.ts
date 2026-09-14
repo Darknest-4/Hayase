@@ -254,6 +254,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.patch('/topics/:id', {
+    config: WRITE_LIMIT,
     // No requirePermission here because the two fields need different grants —
     // see below — but the caller still has to be identified before either can
     // be checked.

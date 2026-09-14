@@ -16,7 +16,11 @@ import { install } from './support/browser.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
-const { CATALOGUE, evaluate } = await import('../../api/src/modules/library/achievements.ts')
+// The catalogue module, not the achievements module. Both export the same two
+// names — achievements.ts re-exports them — but that one also opens a database
+// connection on load, which this comparison of two arrays has no use for and
+// which made it the only test here that needed the workspace installed.
+const { CATALOGUE, evaluate } = await import('../../api/src/modules/library/achievement-catalogue.ts')
 
 let clientCatalogue
 

@@ -14,6 +14,7 @@
 import userRoutes from '../users/routes.ts'
 import moderationQueue from '../moderation/admin-routes.ts'
 import analyticsRoutes from '../analytics/routes.ts'
+import auditReportRoutes from '../audit/report-routes.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
 
@@ -23,6 +24,10 @@ const routes: FastifyPluginAsync = async fastify => {
   await fastify.register(userRoutes)
   await fastify.register(moderationQueue)
   await fastify.register(analyticsRoutes)
+  // /audit/report — the code audit, which is a different thing from
+  // /audit, the audit trail analyticsRoutes owns. The two names are close
+  // enough that they were nearly the same route; see YUME-AUDIT-0013.
+  await fastify.register(auditReportRoutes)
 }
 
 export default routes

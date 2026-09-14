@@ -15,6 +15,7 @@ import { LibrarySync } from '../features/library-sync/library-sync.js'
 import { Prefs } from '../shared/state/preferences.js'
 import { Store } from '../shared/state/store.js'
 import { StreamEngine } from '../features/player/stream-engine.js'
+import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 import { WatchTime } from '../features/watch-history/watch-time.js'
 import { YumeAPI } from '../shared/api/yume.js'
@@ -33,16 +34,16 @@ export const PageWatch = {
     const w2gCode = params.get('w2g') ?? window.sessionStorage.getItem('w2g-pending')
 
     if (!animeId) {
-      root.append(U.el('div', { class: 'error-state', text: T('Invalid watch link.') }))
+      root.append(P.errorState(T('Invalid watch link.')))
       return
     }
 
-    root.append(U.el('div', { class: 'spinner' }))
+    root.append(P.spinner())
     let media
     try {
       media = await Catalogue.media(animeId)
     } catch (e) {
-      root.replaceChildren(U.el('div', { class: 'error-state', text: T('Failed to load anime: ') + e.message }))
+      root.replaceChildren(P.errorState(T('Failed to load anime: ') + e.message))
       return
     }
     root.replaceChildren()
@@ -201,16 +202,51 @@ export const PageWatch = {
         U.el('span', { class: 'wep-count', text: `${total}` })
       ])
     ])
+    // Long series are paged, the way the detail page's episode list already
+    // is. This rail drew every episode unconditionally: ONE PIECE is 1168 in
+    // this catalogue, so opening it built 1168 rows — twice, once before the
+    // episode metadata arrives and once after — and left a rail nobody can
+    // navigate by scrolling.
+    //
+    // Only above the threshold. A 26-episode series is better as one list
+    // than as one list plus a control that offers a single range, so shows
+    // shorter than this behave exactly as they did.
+    const RANGE = 100
+    const paged = total > RANGE
+    const progress = Store.entry(media.id)?.progress ?? 0
+    // Open on the block holding the episode being watched, not on the first.
+    let rangeStart = paged ? Math.floor((episode - 1) / RANGE) * RANGE + 1 : 1
+
+    const ranges = paged ? U.el('div', { class: 'eplist-ranges wep-ranges' }) : null
+    if (ranges) panel.append(ranges)
+
     const list = U.el('div', { class: 'wep-list' })
     panel.append(list)
     side.append(panel)
 
-    const progress = Store.entry(media.id)?.progress ?? 0
+    let lastMeta = null
+
+    const renderRanges = () => {
+      if (!ranges) return
+      ranges.replaceChildren()
+      for (let s = 1; s <= total; s += RANGE) {
+        const e = Math.min(s + RANGE - 1, total)
+        ranges.append(U.el('button', {
+          class: 'eplist-range' + (s === rangeStart ? ' active' : ''),
+          type: 'button',
+          text: `${s}–${e}`,
+          onclick: () => { rangeStart = s; renderRanges(); renderRows(lastMeta) }
+        }))
+      }
+    }
 
     const renderRows = meta => {
+      lastMeta = meta
       const byNum = meta ? new Map(meta.map(e => [e.episode, e])) : null
       list.replaceChildren()
-      for (let n = 1; n <= total; n++) {
+      const from = paged ? rangeStart : 1
+      const to = paged ? Math.min(rangeStart + RANGE - 1, total) : total
+      for (let n = from; n <= to; n++) {
         const ep = byNum?.get(n)
         const active = n === episode
         list.append(U.el('a', {
@@ -234,6 +270,7 @@ export const PageWatch = {
       list.querySelector('.wep.active')?.scrollIntoView({ block: 'center' })
     }
 
+    renderRanges()
     renderRows(null)
     Catalogue.episodes(media).then(meta => { if (meta?.length) renderRows(meta) }).catch(() => {})
   },
@@ -548,12 +585,12 @@ export const PageWatch = {
 
     box.append(U.el('div', { class: 'player-pick' }, [
       U.el('div', { class: 'player-pick-inner' }, [
-        U.el('h3', { style: 'margin:0 0 .35rem;font-weight:800;', text: T('Pick a source') }),
-        U.el('p', { style: 'margin:0 0 .9rem;color:var(--fg-faint);font-size:.85rem;', text: T('Paste a direct stream URL. Add more on separate lines and the player falls back automatically if one fails.') }),
-        U.el('div', { style: 'display:flex;gap:.6rem;' }, [input, U.el('button', { class: 'btn btn-primary', onclick: play }, [document.createTextNode(T('Play'))])]),
+        U.el('h3', { style: 'margin:0 0 var(--space-1);font-weight:800;', text: T('Pick a source') }),
+        U.el('p', { style: 'margin:0 0 var(--space-4);color:var(--fg-faint);font-size:var(--text-sm);', text: T('Paste a direct stream URL. Add more on separate lines and the player falls back automatically if one fails.') }),
+        U.el('div', { style: 'display:flex;gap:var(--space-2);' }, [input, U.el('button', { class: 'btn btn-primary', onclick: play }, [document.createTextNode(T('Play'))])]),
         streams.length
-          ? U.el('div', { style: 'margin-top:1rem;' }, [
-            U.el('div', { style: 'font-size:.75rem;font-weight:800;color:var(--fg-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.4rem;', text: T('Official streams') }),
+          ? U.el('div', { style: 'margin-top:var(--space-4);' }, [
+            U.el('div', { style: 'font-size:var(--text-xs);font-weight:800;color:var(--fg-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:var(--space-2);', text: T('Official streams') }),
             U.el('div', { class: 'badges' }, streams.map(link =>
               U.el('a', { class: 'badge badge-theme', href: link.url, target: '_blank', rel: 'noopener', text: link.site })))
           ])
@@ -669,7 +706,7 @@ export const PageWatch = {
       shell.replaceChildren(U.el('div', { class: 'player-pick' }, [
         U.el('div', { class: 'player-pick-inner', style: 'text-align:center;' }, [
           U.el('p', { style: 'color:var(--danger);font-weight:700;', text: T('Could not play this episode from any available source.') }),
-          detail ? U.el('p', { style: 'color:var(--fg-faint);font-size:.85rem;margin:.3rem 0 .9rem;', text: detail }) : null,
+          detail ? U.el('p', { style: 'color:var(--fg-faint);font-size:var(--text-sm);margin:var(--space-1) 0 var(--space-4);', text: detail }) : null,
           U.el('a', { class: 'btn btn-secondary btn-sm', href: `#/watch/${media.id}:${episode}` }, [document.createTextNode(T('Pick another source'))])
         ])
       ]))
@@ -856,7 +893,7 @@ export const PageWatch = {
       U.el('div', { class: 'player-upnext-inner' }, [
         U.el('div', { class: 'player-upnext-label', text: T('Up next') }),
         U.el('div', { class: 'player-upnext-title', text: `Episode ${episode + 1}` }),
-        U.el('div', { style: 'display:flex;gap:.6rem;justify-content:center;margin-top:1rem;flex-wrap:wrap;' }, [
+        U.el('div', { style: 'display:flex;gap:var(--space-2);justify-content:center;margin-top:var(--space-4);flex-wrap:wrap;' }, [
           U.el('button', { class: 'btn btn-primary', onclick: go }, [U.svg(C.PLAY, 14), document.createTextNode(T(' Play next'))]),
           U.el('button', { class: 'btn btn-ghost', onclick: () => card.remove() }, [document.createTextNode(T('Dismiss'))])
         ]),
@@ -970,10 +1007,10 @@ export const PageWatch = {
     codeInput.addEventListener('keydown', e => { if (e.key === 'Enter') joinBtn.click() })
 
     bodyEl.append(
-      U.el('p', { class: 'list-row-sub', style: 'margin:0 0 1rem;', text: T('Watch this episode in sync with friends — play, pause and seeks stay together.') }),
+      U.el('p', { class: 'list-row-sub', style: 'margin:0 0 var(--space-4);', text: T('Watch this episode in sync with friends — play, pause and seeks stay together.') }),
       createBtn,
       U.el('div', { class: 'w2g-or', text: T('or') }),
-      U.el('div', { style: 'display:flex;gap:.5rem;' }, [codeInput, joinBtn])
+      U.el('div', { style: 'display:flex;gap:var(--space-2);' }, [codeInput, joinBtn])
     )
   },
 
@@ -989,13 +1026,13 @@ export const PageWatch = {
         U.el('span', { class: 'list-row-sub', text: T('Room code') }),
         U.el('code', { text: code })
       ]),
-      U.el('p', { class: 'list-row-sub', style: 'margin:.4rem 0;' }, [viewers, document.createTextNode(T(' watching now'))]),
-      U.el('div', { style: 'display:flex;gap:.5rem;flex-wrap:wrap;margin:.6rem 0;' }, [
+      U.el('p', { class: 'list-row-sub', style: 'margin:var(--space-2) 0;' }, [viewers, document.createTextNode(T(' watching now'))]),
+      U.el('div', { style: 'display:flex;gap:var(--space-2);flex-wrap:wrap;margin:var(--space-2) 0;' }, [
         U.el('button', { class: 'btn btn-secondary btn-sm', onclick: () => navigator.clipboard?.writeText(code).then(() => U.toast(T('Code copied'))) }, [document.createTextNode(T('Copy code'))]),
         U.el('button', { class: 'btn btn-secondary btn-sm', onclick: () => navigator.clipboard?.writeText(shareUrl).then(() => U.toast(T('Invite link copied'))) }, [document.createTextNode(T('Copy invite link'))]),
         U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => { PageW2G.disconnect(); this._wiredRoom = null; this.refreshRoomBadge(); this._lobbyView(bodyEl, close) } }, [document.createTextNode(T('Leave'))])
       ]),
-      U.el('div', { class: 'detail-section-title', style: 'margin:.6rem 0 .3rem;font-size:.8rem;', text: T('Activity') }),
+      U.el('div', { class: 'detail-section-title', style: 'margin:var(--space-2) 0 var(--space-1);font-size:var(--text-xs);', text: T('Activity') }),
       feed
     )
 

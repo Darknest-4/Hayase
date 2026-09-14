@@ -28,6 +28,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/tokens.css">
+  <!-- Order is the contract: tokens hold the values, components.css holds the
+       primitives, style.css holds layout and the screens. A page rule and a
+       primitive rule of equal specificity are settled by file order, so a
+       screen can override a primitive without !important. -->
+  <link rel="stylesheet" href="/css/components.css">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 

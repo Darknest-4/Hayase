@@ -9,6 +9,7 @@ import { C } from '../shared/ui/components.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
 import { ProfileStats } from '../features/watch-history/profile-stats.js'
 import { Store } from '../shared/state/store.js'
+import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 import { WatchTime } from '../features/watch-history/watch-time.js'
 import { PageAchievements } from '../features/achievements/achievements.js'
@@ -37,7 +38,7 @@ export const PageDashboard = {
       subtitle: T('Your dashboard'),
       actions: U.el('a', {
         class: 'btn btn-secondary btn-sm',
-        style: 'margin-top:.8rem;',
+        style: 'margin-top:var(--space-3);',
         href: editing ? '#/dashboard' : '#/dashboard?edit=1'
       }, [document.createTextNode(editing ? '✓ Done' : '⚙ Edit layout')])
     }))
@@ -52,7 +53,7 @@ export const PageDashboard = {
 
     const enabled = layout.filter(w => w.enabled)
     if (!enabled.length) {
-      pad.append(U.el('div', { class: 'empty-state', text: T('No widgets enabled. Use “Edit layout” to add some.') }))
+      pad.append(P.emptyState(T('No widgets enabled. Use “Edit layout” to add some.')))
       return
     }
 
@@ -62,7 +63,7 @@ export const PageDashboard = {
       if (node) { pad.append(node); rendered++ }
     }
     if (!rendered) {
-      pad.append(U.el('div', { class: 'empty-state', text: T('Nothing to show yet — add anime to your library and your dashboard fills in automatically.') }))
+      pad.append(P.emptyState(T('Nothing to show yet — add anime to your library and your dashboard fills in automatically.')))
     }
   },
 
@@ -179,10 +180,10 @@ export const PageDashboard = {
     const list = U.el('div', { class: 'dash-ach-list' })
     for (const a of near) {
       list.append(U.el('div', { class: 'dash-ach-row' }, [
-        U.el('span', { class: 'ach-icon', style: 'width:2.2rem;height:2.2rem;font-size:1.2rem;', text: a.icon }),
+        U.el('span', { class: 'ach-icon', style: 'width:2.2rem;height:2.2rem;font-size:var(--text-lg);', text: a.icon }),
         U.el('div', { style: 'flex-grow:1;min-width:0;' }, [
           U.el('div', { class: 'notif-title', text: a.name }),
-          U.el('div', { class: 'ach-progress-track', style: 'margin-top:.35rem;' }, [U.el('div', { class: 'ach-progress-fill', style: `width:${a.pct}%;` })])
+          U.el('div', { class: 'ach-progress-track', style: 'margin-top:var(--space-1);' }, [U.el('div', { class: 'ach-progress-fill', style: `width:${a.pct}%;` })])
         ]),
         U.el('span', { class: 'ach-progress-text', text: `${a.current}/${a.target}` })
       ]))

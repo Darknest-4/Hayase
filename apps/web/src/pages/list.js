@@ -6,6 +6,7 @@ import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
 import { Store } from '../shared/state/store.js'
+import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 
 /** How many rows a screenful is, and how many each "Show more" adds. */
@@ -25,7 +26,7 @@ export const PageList = {
     const state = { tab: params.get('tab') ?? 'CURRENT', shown: PAGE }
 
     const tabsWrap = U.el('div', { class: 'tabs' })
-    const content = U.el('div', { style: 'margin-top:1.25rem;' })
+    const content = U.el('div', { style: 'margin-top:var(--space-4);' })
     pad.append(tabsWrap, content)
 
     const TABS = [...Object.entries(U.listStatusMap), ['FAVOURITES', 'Favourites']]
@@ -53,15 +54,15 @@ export const PageList = {
       if (state.tab === 'FAVOURITES') {
         const favs = Store.favourites()
         if (!favs.length) {
-          content.append(U.el('div', { class: 'empty-state', text: T('No favourites yet.') }))
+          content.append(P.emptyState(T('No favourites yet.')))
           return
         }
-        content.append(U.el('div', { class: 'spinner' }))
+        content.append(P.spinner())
         try {
           const page = await Catalogue.searchOrAniList({ ids: favs.slice(0, 50), perPage: 50 })
           content.replaceChildren(C.grid(page.media ?? []))
         } catch (e) {
-          content.replaceChildren(U.el('div', { class: 'error-state', text: T('Failed to load favourites.') }))
+          content.replaceChildren(P.errorState(T('Failed to load favourites.')))
         }
         return
       }
@@ -71,7 +72,7 @@ export const PageList = {
         .sort((a, b) => b.updatedAt - a.updatedAt)
 
       if (!entries.length) {
-        content.append(U.el('div', { class: 'empty-state', text: T('Nothing here yet. Add anime from their detail page.') }))
+        content.append(P.emptyState(T('Nothing here yet. Add anime from their detail page.')))
         return
       }
 
@@ -97,7 +98,7 @@ export const PageList = {
               title: T('-1 episode'),
               onclick: () => { Store.setProgress(media, (Store.entry(media.id)?.progress ?? 0) - 1); renderTabs(); renderContent() }
             }, [U.svg(C.MINUS, 13)]),
-            U.el('span', { style: 'font-weight:800;font-size:.85rem;min-width:4.5rem;text-align:center;', text: `${entry.progress ?? 0}${total} ep` }),
+            U.el('span', { style: 'font-weight:800;font-size:var(--text-sm);min-width:4.5rem;text-align:center;', text: `${entry.progress ?? 0}${total} ep` }),
             U.el('button', {
               class: 'icon-btn',
               title: T('+1 episode'),

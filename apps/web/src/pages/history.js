@@ -6,6 +6,7 @@ import { navigate } from '../shared/lib/shell.js'
 import { C } from '../shared/ui/components.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
 import { Store } from '../shared/state/store.js'
+import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 
 export const PageHistory = {
@@ -18,7 +19,7 @@ export const PageHistory = {
   },
 
   body (pad) {
-    pad.append(U.el('div', { style: 'display:flex;justify-content:flex-end;margin-bottom:.5rem;' }, [
+    pad.append(U.el('div', { style: 'display:flex;justify-content:flex-end;margin-bottom:var(--space-2);' }, [
       U.el('button', {
         class: 'btn btn-ghost btn-sm',
         onclick: () => {
@@ -32,7 +33,7 @@ export const PageHistory = {
 
     const history = Store.history()
     if (!history.length) {
-      pad.append(U.el('div', { class: 'empty-state', text: T('Nothing watched yet on this profile. Play an episode and it shows up here.') }))
+      pad.append(P.emptyState(T('Nothing watched yet on this profile. Play an episode and it shows up here.')))
       return
     }
 
@@ -52,7 +53,7 @@ export const PageHistory = {
       if (key === today) label = 'Today'
       else if (key === yesterday) label = 'Yesterday'
 
-      pad.append(U.el('h2', { class: 'detail-section-title', style: 'margin-bottom:.5rem;', text: label }))
+      pad.append(U.el('h2', { class: 'detail-section-title', style: 'margin-bottom:var(--space-2);', text: label }))
 
       for (const item of items) {
         const media = item.media

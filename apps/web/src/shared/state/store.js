@@ -102,6 +102,36 @@ export const Store = {
   },
 
   /**
+   * Move one key to its namespaced name, without ever holding both copies.
+   *
+   * The obvious spelling — write the new key, then delete the old one — needs
+   * room for the value twice, and this store already knows that a library the
+   * size of the catalogue does not fit in the quota once (see `saveEntries`).
+   * A browser carrying one threw QuotaExceededError here instead, out of the
+   * first statement of `App.init()`, so nothing rendered at all: a blank page,
+   * every asset a 200, and not a word in the server log. Freeing first means
+   * the rename needs no more room than the value already occupies.
+   *
+   * Nothing is lost if it still fails: the value goes back where it was and
+   * the next load tries again. A rename that does not happen costs the viewer
+   * nothing today, and the application starting matters more than the key it
+   * starts under.
+   */
+  _renameKey (from, to) {
+    const value = localStorage.getItem(from)
+    if (value == null) return
+    // Never overwrite data that is already namespaced: the bare key can only
+    // be older than the namespaced one.
+    if (localStorage.getItem(to) != null) { localStorage.removeItem(from); return }
+    localStorage.removeItem(from)
+    try {
+      localStorage.setItem(to, value)
+    } catch (e) {
+      try { localStorage.setItem(from, value) } catch (e2) { /* nothing left to try */ }
+    }
+  },
+
+  /**
    * Move data written before this browser had a viewer id.
    *
    * Two shapes of history to carry across: the original single-profile keys
@@ -111,20 +141,11 @@ export const Store = {
   ensureProfiles () {
     const id = this._viewerId()
     for (const legacyKey of ['animelist', 'favourites', 'settings']) {
-      const raw = localStorage.getItem(legacyKey)
-      if (raw == null) continue
-      // Never overwrite data that is already namespaced: the bare key can only
-      // be older than the namespaced one.
-      if (localStorage.getItem(`${legacyKey}::${id}`) == null) {
-        localStorage.setItem(`${legacyKey}::${id}`, raw)
-      }
-      localStorage.removeItem(legacyKey)
+      this._renameKey(legacyKey, `${legacyKey}::${id}`)
     }
     for (const key of Object.keys(localStorage)) {
       if (key.startsWith('watchpos:') && !key.includes('::')) {
-        const value = localStorage.getItem(key)
-        if (localStorage.getItem(`${key}::${id}`) == null) localStorage.setItem(`${key}::${id}`, value)
-        localStorage.removeItem(key)
+        this._renameKey(key, `${key}::${id}`)
       }
     }
   },
@@ -500,7 +521,7 @@ export const Store = {
     const rules = []
     if (s.themeAccent) {
       rules.push(`--accent:${s.themeAccent}`)
-      rules.push(`--accent-hover:color-mix(in srgb, ${s.themeAccent} 82%, #000)`)
+      rules.push(`--accent-hover:color-mix(in srgb, ${s.themeAccent} 82%, var(--scrim))`)
       rules.push(`--accent-soft:color-mix(in srgb, ${s.themeAccent} 14%, transparent)`)
     }
     if (s.themeTint) {

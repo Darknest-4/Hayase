@@ -5,6 +5,7 @@ import { Copy } from '../i18n/copy.js'
 import { featureOn, site } from '../lib/site-config.js'
 import { T } from '../i18n/i18n.js'
 import { Store } from '../state/store.js'
+import { P } from '../ui/primitives.js'
 import { U } from '../lib/dom.js'
 import { YumeAPI } from '../api/yume.js'
 
@@ -320,7 +321,7 @@ export const C = {
   skeletonCard () {
     return U.el('div', { class: 'card' }, [
       U.el('div', { class: 'card-cover skeleton' }),
-      U.el('div', { class: 'card-title skeleton', style: 'height:1em;border-radius:4px;' })
+      U.el('div', { class: 'card-title skeleton', style: 'height:1em;border-radius:var(--radius-sm);' })
     ])
   },
 
@@ -342,7 +343,7 @@ export const C = {
       }
       for (const media of mediaList) row.append(this.card(media, cardOptions(media)))
     }).catch(() => {
-      row.replaceChildren(U.el('div', { class: 'empty-state', text: T('Failed to load.') }))
+      row.replaceChildren(P.emptyState(T('Failed to load.')))
     })
 
     return section
@@ -388,7 +389,7 @@ export const C = {
             title: T('Decrease progress'),
             onclick: () => { Store.setProgress(media, (Store.entry(media.id)?.progress ?? 0) - 1); render(); onChange() }
           }, [U.svg(this.MINUS, 14)]),
-          U.el('span', { style: 'font-weight:800;font-size:.9rem;', text: `${entry.progress ?? 0}${total} ep` }),
+          U.el('span', { style: 'font-weight:800;font-size:var(--text-sm);', text: `${entry.progress ?? 0}${total} ep` }),
           U.el('button', {
             class: 'icon-btn',
             title: T('Increase progress'),
@@ -437,7 +438,7 @@ export const C = {
       const identifier = U.el('input', { class: 'input', type: 'text', placeholder: T('Email or username'), autocomplete: 'username' })
       const username = U.el('input', { class: 'input', type: 'text', placeholder: T('Username'), autocomplete: 'username' })
       const password = U.el('input', { class: 'input', type: 'password', placeholder: T('Password (min 8 chars)'), autocomplete: 'current-password' })
-      const fields = U.el('div', { style: 'display:flex;flex-direction:column;gap:.6rem;max-width:22rem;' })
+      const fields = U.el('div', { style: 'display:flex;flex-direction:column;gap:var(--space-2);max-width:22rem;' })
       const switchBtn = U.el('button', { class: 'btn btn-ghost btn-sm' })
       const submitBtn = U.el('button', { class: 'btn btn-primary btn-sm' })
 
@@ -469,7 +470,7 @@ export const C = {
         U.el('h3', { text: T('Yume account') }),
         U.el('p', { text: T('Sign in to join the discussion and sync with the platform.') }),
         fields,
-        U.el('div', { style: 'display:flex;gap:.6rem;margin-top:.75rem;' }, [submitBtn, switchBtn])
+        U.el('div', { style: 'display:flex;gap:var(--space-2);margin-top:var(--space-3);' }, [submitBtn, switchBtn])
       )
     }
 
@@ -498,7 +499,7 @@ export const C = {
     if (!featureOn('comments')) {
       return U.el('div', { class: 'empty-state', style: 'max-width:none;', text: T('Comments are turned off.') })
     }
-    const list = U.el('div', {}, [U.el('div', { class: 'spinner' })])
+    const list = U.el('div', {}, [P.spinner()])
 
     const load = async () => {
       const yumeId = await YumeAPI.yumeAnimeId(media)
@@ -508,7 +509,7 @@ export const C = {
         try {
           const { data } = await YumeAPI.comments('anime', yumeId)
           if (!data.length) {
-            list.append(U.el('div', { class: 'empty-state', style: 'padding:1.5rem;', text: T('No comments yet.') }))
+            list.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-5);', text: T('No comments yet.') }))
           }
           const byParent = new Map()
           for (const c of data) {
@@ -563,10 +564,10 @@ export const C = {
           }
           for (const comment of byParent.get('root') ?? []) renderThread(comment, 0)
         } catch (e) {
-          list.append(U.el('div', { class: 'error-state', text: T('Failed to load comments: ') + e.message }))
+          list.append(P.errorState(T('Failed to load comments: ') + e.message))
         }
       } else {
-        list.append(U.el('div', { class: 'empty-state', style: 'padding:1.5rem;', text: T('No comments yet.') }))
+        list.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-5);', text: T('No comments yet.') }))
       }
 
       // composer / auth prompt
@@ -598,9 +599,9 @@ export const C = {
       })
       return U.el('div', { class: 'comment-form' + (root ? ' comment-form-root' : '') }, [
         textarea,
-        U.el('div', { style: 'display:flex;gap:.75rem;align-items:center;margin-top:.5rem;' }, [
+        U.el('div', { style: 'display:flex;gap:var(--space-3);align-items:center;margin-top:var(--space-2);' }, [
           submit,
-          U.el('label', { style: 'display:flex;gap:.4rem;align-items:center;font-size:.78rem;color:var(--fg-faint);cursor:pointer;' }, [spoiler, document.createTextNode(T('Spoiler'))])
+          U.el('label', { style: 'display:flex;gap:var(--space-2);align-items:center;font-size:var(--text-xs);color:var(--fg-faint);cursor:pointer;' }, [spoiler, document.createTextNode(T('Spoiler'))])
         ])
       ])
     }
@@ -709,7 +710,7 @@ export const C = {
     if (onRetry) {
       box.append(U.el('button', {
         class: 'btn btn-secondary btn-sm',
-        style: 'margin-top:.6rem;',
+        style: 'margin-top:var(--space-2);',
         onclick: onRetry
       }, [document.createTextNode(T('Try again'))]))
     }
@@ -734,9 +735,9 @@ export const C = {
       'aria-label': title,
       onclick: e => { if (e.target === backdrop) backdrop.close() }
     }, [
-      U.el('div', { class: 'search-modal', style: 'padding:1.25rem;max-width:52rem;width:min(52rem,calc(100vw - 2rem));' }, [
-        U.el('div', { style: 'display:flex;align-items:center;gap:.75rem;margin:0 0 1rem;' }, [
-          U.el('h3', { style: 'margin:0;font-size:1.1rem;font-weight:800;flex-grow:1;', text: title }),
+      U.el('div', { class: 'search-modal', style: 'padding:var(--space-4);max-width:52rem;width:min(52rem,calc(100vw - 2rem));' }, [
+        U.el('div', { style: 'display:flex;align-items:center;gap:var(--space-3);margin:0 0 var(--space-4);' }, [
+          U.el('h3', { style: 'margin:0;font-size:var(--text-lg);font-weight:800;flex-grow:1;', text: title }),
           U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => backdrop.close() }, [document.createTextNode(T('Close'))])
         ]),
         U.el('div', { class: 'modal-panel-body', style: 'max-height:72vh;overflow-y:auto;' }, nodes)
@@ -757,10 +758,10 @@ export const C = {
       'aria-label': title,
       onclick: e => { if (e.target === backdrop) backdrop.close() }
     }, [
-      U.el('div', { class: 'search-modal', style: 'padding:1.25rem;max-width:40rem;width:min(40rem,calc(100vw - 2rem));' }, [
-        U.el('h3', { style: 'margin:0 0 1rem;font-size:1.1rem;font-weight:800;', text: title }),
-        U.el('div', { style: 'display:flex;flex-direction:column;gap:.85rem;max-height:65vh;overflow-y:auto;' }, fields),
-        U.el('div', { style: 'display:flex;gap:.6rem;margin-top:1.25rem;' }, [
+      U.el('div', { class: 'search-modal', style: 'padding:var(--space-4);max-width:40rem;width:min(40rem,calc(100vw - 2rem));' }, [
+        U.el('h3', { style: 'margin:0 0 var(--space-4);font-size:var(--text-lg);font-weight:800;', text: title }),
+        U.el('div', { style: 'display:flex;flex-direction:column;gap:var(--space-3);max-height:65vh;overflow-y:auto;' }, fields),
+        U.el('div', { style: 'display:flex;gap:var(--space-2);margin-top:var(--space-4);' }, [
           submit,
           U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => backdrop.close() }, [document.createTextNode(T('Cancel'))])
         ])

@@ -6,6 +6,7 @@ import { featureOn } from '../shared/lib/site-config.js'
 import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
 import { T } from '../shared/i18n/i18n.js'
+import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 
 export const PageSearch = {
@@ -29,7 +30,9 @@ export const PageSearch = {
       format: params.get('format') ?? '',
       status: params.get('status') ?? '',
       sort: params.get('sort') ?? 'TRENDING_DESC',
-      page: 1
+      page: 1,
+      // Set from each browse answer; null means "start at the beginning".
+      cursor: null
     }
 
     const pad = U.el('div', { class: 'page-pad' })
@@ -72,7 +75,7 @@ export const PageSearch = {
 
     // image search (trace.moe): button, paste or drop a frame anywhere
     const imageSearch = async blob => {
-      results.replaceChildren(U.el('div', { class: 'spinner' }))
+      results.replaceChildren(P.spinner())
       loadMoreWrap.replaceChildren()
       try {
         const res = await fetch('https://api.trace.moe/search?anilistInfo&cutBorders', { method: 'POST', body: blob })
@@ -81,14 +84,14 @@ export const PageSearch = {
         const hits = (json.result ?? []).filter(r => r.similarity >= 0.8 && r.anilist?.id)
         const ids = [...new Set(hits.map(r => r.anilist.id))].slice(0, 10)
         if (!ids.length) {
-          results.replaceChildren(U.el('div', { class: 'empty-state', text: T('No confident match for that frame.') }))
+          results.replaceChildren(P.emptyState(T('No confident match for that frame.')))
           return
         }
         const page = await Catalogue.searchOrAniList({ ids, perPage: 20 })
         results.replaceChildren(C.grid(page.media ?? []))
         U.toast(`Best match: ${Math.round(hits[0].similarity * 100)}% • episode ${hits[0].episode ?? '?'}`)
       } catch (e) {
-        results.replaceChildren(U.el('div', { class: 'error-state', text: T('Image search failed: ') + e.message }))
+        results.replaceChildren(P.errorState(T('Image search failed: ') + e.message))
       }
     }
 
@@ -138,7 +141,7 @@ export const PageSearch = {
     ])
     pad.append(filterBox)
     filterBox.append(U.el('div', { class: 'filters' }, [
-      U.el('div', { class: 'filter-group', style: 'flex-grow:1;' }, [U.el('label', { text: T('Search') }), searchInput]),
+      U.el('div', { class: 'filter-group' }, [U.el('label', { text: T('Search') }), searchInput]),
       // A blank label put this control under the neighbouring field's heading,
       // so on a phone the image-search button read as part of GENRE. It says
       // what it is now.
@@ -167,6 +170,11 @@ export const PageSearch = {
       status: state.status ? [state.status] : null,
       sort: [state.search && state.sort === 'TRENDING_DESC' ? 'SEARCH_MATCH' : state.sort],
       page: state.page,
+      // AniList pages by page number; the catalogue pages by offset for a text
+      // search and by cursor for a browse. All three travel together because
+      // which one answers is decided inside Catalogue.search, not here.
+      offset: (state.page - 1) * 30,
+      cursor: state.cursor,
       perPage: 30
     })
 
@@ -176,7 +184,7 @@ export const PageSearch = {
         results.replaceChildren(U.el('div', { class: 'grid' }, Array.from({ length: 12 }, () => C.skeletonCard())))
         loadMoreWrap.replaceChildren()
       } else {
-        loadMoreWrap.replaceChildren(U.el('div', { class: 'spinner' }))
+        loadMoreWrap.replaceChildren(P.spinner())
       }
 
       try {
@@ -188,13 +196,17 @@ export const PageSearch = {
 
         if (!append) {
           if (!media.length) {
-            results.replaceChildren(U.el('div', { class: 'empty-state', text: T('No results found.') }))
+            results.replaceChildren(P.emptyState(T('No results found.')))
           } else {
             results.replaceChildren(C.grid(media))
           }
         } else if (grid) {
           for (const m of media) grid.append(C.card(m))
         }
+
+        // Carry the cursor the catalogue browse answered with, so the next
+        // page starts where this one stopped.
+        state.cursor = page.cursor ?? null
 
         loadMoreWrap.replaceChildren()
         if (page.pageInfo?.hasNextPage) {
@@ -205,12 +217,12 @@ export const PageSearch = {
         }
       } catch (e) {
         if (current !== token) return
-        results.replaceChildren(U.el('div', { class: 'error-state', text: T('Failed to load results: ') + e.message }))
+        results.replaceChildren(P.errorState(T('Failed to load results: ') + e.message))
         loadMoreWrap.replaceChildren()
       }
     }
 
-    const reset = () => { state.page = 1; load(false) }
+    const reset = () => { state.page = 1; state.cursor = null; load(false) }
 
     load(false)
   }

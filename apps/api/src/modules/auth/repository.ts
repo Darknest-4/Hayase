@@ -212,7 +212,17 @@ export class AuthRepository extends Repository {
       await client.query('UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [userId])
       // Everything that is only ever about this person, and useful to nobody
       // else, goes with the account.
-      await client.query('DELETE FROM user_settings WHERE user_id = $1', [userId])
+      //
+      // user_settings hangs off the profile, not the user: an account can hold
+      // several profiles and the settings are per profile. This asked for a
+      // user_id column that has never existed on that table, so the statement
+      // raised 42703, the transaction rolled back, and self-service deletion
+      // answered 500 for everybody — nothing was erased and no session was
+      // ended. It failed closed, which is the one mercy in it.
+      await client.query(
+        'DELETE FROM user_settings WHERE profile_id IN (SELECT id FROM user_profiles WHERE user_id = $1)',
+        [userId]
+      )
       await client.query('DELETE FROM password_resets WHERE user_id = $1', [userId])
       await client.query('DELETE FROM ws_tickets WHERE user_id = $1', [userId])
       await client.query(

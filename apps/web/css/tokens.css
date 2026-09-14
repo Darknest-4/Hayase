@@ -25,6 +25,7 @@
   --blue-500: hsl(215 90% 60%);
   --violet-500: hsl(260 80% 65%);
   --amber-500: hsl(40 90% 55%);
+  --yellow-500: hsl(52 92% 58%);
 
   /* Lighter steps of the semantic hues. These exist because badge text needs
      more lift than a fill does: on a near-black surface the 500 step reads as
@@ -33,8 +34,11 @@
      could not follow a theme. */
   --green-400: hsl(142 68% 58%);
   --amber-400: hsl(40 92% 66%);
+  --yellow-400: hsl(52 95% 70%);
   --red-400: hsl(0 78% 66%);
   --blue-400: hsl(215 92% 70%);
+  --violet-400: hsl(255 92% 76%);
+  --teal-400: hsl(172 66% 56%);
 
   /* ---- semantic: dark (default) ---- */
   --bg: var(--ink-black);
@@ -57,12 +61,72 @@
   --info: var(--blue-500);
   --live: var(--violet-500);
 
+  /* ---- severity (audit findings) ----
+     Four levels, four hues. --yellow-* was added for this: high and medium
+     were two lightness steps of amber, which reads as "orange" and "paler
+     orange" at badge size, and severity is the one scale on which the
+     difference between two neighbouring levels has to be obvious. The word is
+     still in every badge, so nothing is carried by colour alone.
+
+     The 400 steps rather than the 500s, for the reason those steps exist: this
+     is small text on a surface, and the light theme redefines the 400s darker.
+     A severity that reads on black and vanishes on white is half a scale. */
+  --severity-critical: var(--red-400);
+  --severity-high: var(--amber-400);
+  --severity-medium: var(--yellow-400);
+  --severity-low: var(--fg-faint);
+
+  /* ---- categorical chart series ----
+     The twelve colours the analytics donuts already used, named rather than
+     invented: they lived as a hex array in pages/analytics.js, which put the
+     one part of the interface that is nothing but colour outside the token
+     system and made it unable to follow a theme.
+
+     A categorical scale is chosen for distinctness, not harmony, so these do
+     not collapse into the semantic hues above even where they sit near one:
+     two adjacent slices of a donut have to be told apart at a glance. Whether
+     twelve is the right number, and whether they stay distinct for the most
+     common kinds of colour blindness, is a separate question from tokenising
+     them and is not answered here. */
+  --chart-1: hsl(346 89% 60%);
+  --chart-2: hsl(345 100% 78%);
+  --chart-3: hsl(255 92% 76%);
+  --chart-4: hsl(199 93% 60%);
+  --chart-5: hsl(160 64% 51%);
+  --chart-6: hsl(43 96% 56%);
+  --chart-7: hsl(27 96% 61%);
+  --chart-8: hsl(0 91% 71%);
+  --chart-9: hsl(234 89% 74%);
+  --chart-10: hsl(172 66% 50%);
+  --chart-11: hsl(291 91% 73%);
+  --chart-12: hsl(215 20% 65%);
+
   /* ---- status colors (library states) ---- */
   --status-watching: var(--green-500);
   --status-planning: var(--blue-500);
   --status-completed: var(--violet-500);
   --status-paused: var(--amber-500);
   --status-dropped: var(--red-500);
+
+  /* ---- over media ----
+     White on a video frame or a cover is not --fg: it does not follow the
+     theme, because the surface underneath is a picture and stays dark in both.
+     style.css spelled it #fff twenty-nine times and rgb(0 0 0 / x) for the
+     scrims that make it readable. Named here so the player and the artwork
+     overlays stop being the one part of the interface outside the system. */
+  --on-media: hsl(0 0% 100%);
+  --scrim: hsl(0 0% 0%);
+
+  /* ---- achievement tiers ----
+     Real metal colours, not palette steps: bronze, silver and gold are what
+     the medal is, and they do not change with the theme. The -fg step is the
+     lifted version for the label, for the same reason the 400s exist. */
+  --tier-bronze: hsl(29 61% 50%);
+  --tier-bronze-fg: hsl(29 68% 66%);
+  --tier-silver: hsl(0 0% 75%);
+  --tier-silver-fg: hsl(0 0% 85%);
+  --tier-gold: hsl(51 100% 50%);
+  --tier-gold-fg: hsl(51 100% 65%);
 
   /* ---- typography ---- */
   --font-sans: 'Nunito', 'Segoe UI', system-ui, -apple-system, sans-serif;
@@ -87,6 +151,27 @@
   --leading-tight: 1.15;
   --leading-normal: 1.5;
 
+  /* ---- typographic roles ----
+     The scale above is raw material: a size, a weight and a line-height are
+     three separate tokens, and every call site reassembled them by hand. That
+     is where 43 distinct font sizes came from — not disagreement about the
+     scale, but 43 chances to pick one value and forget the other two.
+
+     A role is the three of them decided together, once, and spent with the
+     `font` shorthand:
+
+         font: var(--type-title);
+
+     Six roles, because that is how many distinct jobs the interface has.
+     Nothing here is a new size: every one resolves to a step of the scale
+     above. */
+  --type-heading:  var(--weight-extrabold) var(--text-3xl)/var(--leading-tight) var(--font-sans);
+  --type-title:    var(--weight-bold) var(--text-2xl)/var(--leading-tight) var(--font-sans);
+  --type-subtitle: var(--weight-semibold) var(--text-lg)/var(--leading-normal) var(--font-sans);
+  --type-body:     var(--weight-normal) var(--text-base)/var(--leading-normal) var(--font-sans);
+  --type-caption:  var(--weight-normal) var(--text-sm)/var(--leading-normal) var(--font-sans);
+  --type-metadata: var(--weight-medium) var(--text-xs)/var(--leading-normal) var(--font-sans);
+
   /* ---- spacing (4px base) ---- */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -97,24 +182,39 @@
   --space-7: 3rem;
   --space-8: 4rem;
 
-  /* ---- radii (Hayase-scale: subtle) ---- */
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 10px;
-  --radius-xl: 14px;                    /* large empty states and placeholders */
-  --radius-full: 999px;
+  /* ---- radii (Hayase-scale: subtle) ----
+     Three sizes and a pill. It was five, and two of them — 8px and 10px —
+     differed by an amount nobody can see but everybody had to choose between.
+     The 10px step is gone and its 53 uses are md; the old 14px xl is lg.
+
+     --radius-full is not a fourth size. It is a shape: the value is large
+     enough that the corner is always a semicircle whatever the box measures,
+     which is what a pill and a round avatar need. */
+  --radius-sm: 4px;                     /* chips, inputs, small controls */
+  --radius-md: 8px;                     /* cards, panels, buttons */
+  --radius-lg: 14px;                    /* large surfaces, empty states */
+  --radius-full: 999px;                 /* pills and circles */
 
   /* ---- elevation ---- */
   --shadow-1: 0 1px 3px hsl(0 0% 0% / .6);
   --shadow-2: 0 6px 20px hsl(0 0% 0% / .55);
   --shadow-3: 0 16px 48px hsl(0 0% 0% / .7);
 
-  /* ---- motion ---- */
-  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
-  --dur-fast: 120ms;
-  --dur-base: 200ms;
-  --dur-slow: 350ms;
+  /* ---- motion ----
+     One duration and one curve for every interface transition. There were
+     three durations and two curves, and the second curve was the problem:
+     --ease-spring overshot (cubic-bezier(.34,1.4,.64,1)), so seventeen
+     elements bounced past their resting position on hover. That reads as
+     playful, and this interface is meant to read as cinematic.
+
+     --dur-reveal is the one documented exception, and it is not an
+     interaction: it is content arriving. A cover image, a trailer, a loading
+     indicator and a progress bar fade or advance rather than respond, and at
+     150ms an image fading in looks like a flicker instead of a fade. Four
+     uses, all of them opacity or width. */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur: 150ms;
+  --dur-reveal: 350ms;
 
   /* ---- layout ---- */
   --sidebar-w: 3.5rem;
@@ -147,8 +247,11 @@
      (readable status text), opposite direction. */
   --green-400: hsl(142 72% 30%);
   --amber-400: hsl(40 95% 33%);
+  --yellow-400: hsl(52 95% 28%);
   --red-400: hsl(0 74% 43%);
   --blue-400: hsl(215 88% 44%);
+  --violet-400: hsl(255 60% 50%);
+  --teal-400: hsl(172 80% 28%);
   --shadow-1: 0 1px 3px hsl(0 0% 0% / .12);
   --shadow-2: 0 6px 20px hsl(0 0% 0% / .14);
   --shadow-3: 0 16px 48px hsl(0 0% 0% / .2);
@@ -158,8 +261,7 @@
 /* ---- reduced motion ---- */
 @media (prefers-reduced-motion: reduce) {
   :root {
-    --dur-fast: 0ms;
-    --dur-base: 0ms;
-    --dur-slow: 0ms;
+    --dur: 0ms;
+    --dur-reveal: 0ms;
   }
 }

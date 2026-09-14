@@ -5,6 +5,7 @@
 
 import { C } from '../../shared/ui/components.js'
 import { T } from '../../shared/i18n/i18n.js'
+import { P } from '../../shared/ui/primitives.js'
 import { U } from '../../shared/lib/dom.js'
 import { YumeAPI } from '../../shared/api/yume.js'
 
@@ -86,7 +87,7 @@ export const PageW2G = {
       U.el('div', { class: 'setting-card' }, [
         U.el('h3', { text: T('Join a room') }),
         U.el('p', { text: T('Got a code from a friend? Jump in and watch in sync.') }),
-        U.el('div', { style: 'display:flex;gap:.6rem;' }, [codeInput, joinBtn])
+        U.el('div', { style: 'display:flex;gap:var(--space-2);' }, [codeInput, joinBtn])
       ]),
       U.el('div', { class: 'setting-card' }, [
         U.el('h3', { text: T('Create a room') }),
@@ -113,8 +114,8 @@ export const PageW2G = {
     try {
       room = await YumeAPI._request('/v1/w2g/' + encodeURIComponent(code))
     } catch (e) {
-      pad.append(U.el('div', { class: 'error-state', text: T('Room not found — it may have been closed.') }),
-        U.el('div', { style: 'text-align:center;margin-top:1rem;' }, [
+      pad.append(P.errorState(T('Room not found — it may have been closed.')),
+        U.el('div', { style: 'text-align:center;margin-top:var(--space-4);' }, [
           U.el('a', { class: 'btn btn-secondary btn-sm', href: '#/w2g' }, [document.createTextNode(T('Back'))])
         ]))
       return
@@ -130,7 +131,7 @@ export const PageW2G = {
         viewers,
         document.createTextNode(T(' watching now'))
       ]),
-      U.el('div', { style: 'display:flex;gap:.6rem;flex-wrap:wrap;' }, [
+      U.el('div', { style: 'display:flex;gap:var(--space-2);flex-wrap:wrap;' }, [
         U.el('button', {
           class: 'btn btn-secondary btn-sm',
           onclick: () => { navigator.clipboard?.writeText(room.code).then(() => U.toast(T('Code copied'))) }
@@ -163,7 +164,7 @@ export const PageW2G = {
       })
       log('Connected to the room')
     } catch (e) {
-      pad.append(U.el('div', { class: 'error-state', text: e.message }))
+      pad.append(P.errorState(e.message))
     }
   }
 }

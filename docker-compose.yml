@@ -5,7 +5,7 @@
 services:
   # the whole app (API + static web client) in one container
   app:
-    build: { context: ., dockerfile: infrastructure/docker/Dockerfile }
+    build: .
     restart: unless-stopped
     depends_on:
       postgres:
@@ -50,7 +50,7 @@ services:
   # time-partitioned tables start failing once existing partitions run out),
   # delivers webhooks, computes stats rollups and collects VPS metrics.
   worker:
-    build: { context: ., dockerfile: infrastructure/docker/Dockerfile }
+    build: .
     restart: unless-stopped
     depends_on:
       postgres:
@@ -90,7 +90,7 @@ services:
   # Run once: docker compose --profile seed run --rm --build seed
   # Downloads the official dump by default; never runs on normal `up`.
   seed:
-    build: { context: ., dockerfile: infrastructure/docker/Dockerfile }
+    build: .
     profiles: ['seed']
     depends_on:
       postgres:
@@ -119,7 +119,7 @@ services:
   #
   # Idempotent: running it twice writes nothing the second time.
   founder:
-    build: { context: ., dockerfile: infrastructure/docker/Dockerfile }
+    build: .
     profiles: ['founder']
     depends_on:
       postgres:
@@ -139,7 +139,7 @@ services:
   # --build for the same reason as the founder service above: a bare
   # `docker compose build` does not reach a profile.
   community:
-    build: { context: ., dockerfile: infrastructure/docker/Dockerfile }
+    build: .
     profiles: ['community']
     depends_on:
       postgres:
@@ -153,7 +153,7 @@ services:
   # Run after seed: docker compose --profile enrich run --rm --build enrich
   # Rate-limited by AniList — expect this to take a while for the full catalogue.
   enrich:
-    build: { context: ., dockerfile: infrastructure/docker/Dockerfile }
+    build: .
     profiles: ['enrich']
     depends_on:
       postgres:

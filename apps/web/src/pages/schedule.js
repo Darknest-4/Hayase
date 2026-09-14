@@ -4,6 +4,7 @@
 import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
+import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 
 export const PageSchedule = {
@@ -12,7 +13,7 @@ export const PageSchedule = {
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
 
-    const container = U.el('div', {}, [U.el('div', { class: 'spinner' })])
+    const container = U.el('div', {}, [P.spinner()])
     pad.append(container)
 
     const start = new Date()
@@ -23,14 +24,14 @@ export const PageSchedule = {
     try {
       schedules = await Catalogue.scheduleOrAniList(start, end)
     } catch (e) {
-      container.replaceChildren(U.el('div', { class: 'error-state', text: T('schedule.loadError') + e.message }))
+      container.replaceChildren(P.errorState(T('schedule.loadError') + e.message))
       return
     }
 
     container.replaceChildren()
 
     if (!schedules.length) {
-      container.append(U.el('div', { class: 'empty-state', text: T('schedule.empty') }))
+      container.append(P.emptyState(T('schedule.empty')))
       return
     }
 

@@ -9,6 +9,7 @@
 
 import { C } from '../../shared/ui/components.js'
 import { I18n, T } from '../../shared/i18n/i18n.js'
+import { P } from '../../shared/ui/primitives.js'
 import { U } from '../../shared/lib/dom.js'
 import { YumeAPI } from '../../shared/api/yume.js'
 
@@ -51,7 +52,7 @@ export const Forum = {
     }
     wrap.append(head)
 
-    const list = U.el('div', { class: 'forum-boards' }, [U.el('div', { class: 'spinner' })])
+    const list = U.el('div', { class: 'forum-boards' }, [P.spinner()])
     wrap.append(list)
 
     let data
@@ -62,7 +63,7 @@ export const Forum = {
 
     list.replaceChildren()
     if (!data.length) {
-      list.append(U.el('div', { class: 'empty-state', text: T('No boards yet. Start the first one.') }))
+      list.append(P.emptyState(T('No boards yet. Start the first one.')))
       return
     }
 
@@ -149,7 +150,7 @@ export const Forum = {
     wrap.append(list)
 
     if (!topics.length) {
-      list.append(U.el('div', { class: 'empty-state', text: T('Nothing here yet. Write the first topic.') }))
+      list.append(P.emptyState(T('Nothing here yet. Write the first topic.')))
       return
     }
 

@@ -9,6 +9,7 @@ import { Charts } from '../shared/ui/charts.js'
 import { C } from '../shared/ui/components.js'
 import { I18n } from '../shared/i18n/i18n.js'
 import { Store } from '../shared/state/store.js'
+import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 import { YumeAPI } from '../shared/api/yume.js'
 
@@ -31,7 +32,7 @@ export const PageAdmin = {
   SECTIONS: [
     { key: 'overview', group: 'insight', label: 'Overview', sub: 'Platform health & analytics', perm: 'admin.analytics.view', render: 'renderOverview', icon: '<path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>' },
     { key: 'errors', group: 'insight', label: 'Errors', sub: 'Grouped faults & stack traces', perm: 'admin.analytics.view', render: 'renderErrors', icon: '<path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0"/>' },
-    { key: 'audit', group: 'insight', label: 'Audit log', sub: 'Who changed what, and when', perm: 'admin.users.manage', render: 'renderAudit', icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6"/><path d="M9 11h2"/>' },
+    { key: 'audit-log', group: 'insight', label: 'Audit log', sub: 'Who changed what, and when', perm: 'admin.users.manage', render: 'renderAudit', icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6"/><path d="M9 11h2"/>' },
 
     { key: 'users', group: 'people', label: 'Users', sub: 'Accounts, suspensions & bans', perm: 'admin.users.manage', render: 'renderUsers', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
     { key: 'roles', group: 'people', label: 'Roles', sub: 'Permissions & RBAC', perm: 'roles.manage', render: 'renderRoles', icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>' },
@@ -45,6 +46,11 @@ export const PageAdmin = {
     { key: 'webhooks', group: 'system', label: 'Webhooks', sub: 'Outbound integrations', perm: 'admin.webhooks.manage', render: 'renderWebhooks', icon: '<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>' },
     { key: 'themes', group: 'system', label: 'Themes', sub: 'Colours viewers can choose', perm: 'theme.publish', render: 'renderThemes', icon: '<circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2a10 10 0 0 0 0 20 2 2 0 0 0 2-2v-1a2 2 0 0 1 2-2h2a4 4 0 0 0 4-4 10 10 0 0 0-10-11"/>' },
     { key: 'security', group: 'system', label: 'Security', sub: 'Posture & emergency controls', perm: 'security.manage', render: 'renderSecurity', icon: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>' },
+    // The code audit, which is not the audit *log* in Insight above — that one
+    // is what people did, this one is what is wrong with the software. It took
+    // the shorter key because /admin/audit is the address it was specified at;
+    // the log moved to audit-log. See YUME-AUDIT-0013.
+    { key: 'audit', group: 'system', label: 'Audit status', sub: 'Findings from the last code audit', perm: 'audit.read', render: 'renderAuditStatus', icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 11 2 2 4-4"/>' },
     { key: 'config', group: 'system', label: 'Site config', sub: 'Feature flags & settings', perm: 'settings.system', render: 'renderConfig', icon: '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>' }
   ],
 
@@ -183,7 +189,7 @@ export const PageAdmin = {
     return value
   },
 
-  async render (root, params) {
+  async render (root, params, arg) {
     const perms = await YumeAPI.myPermissions()
     const available = this.SECTIONS.filter(s => perms.includes(s.perm))
 
@@ -195,7 +201,14 @@ export const PageAdmin = {
       return
     }
 
-    const start = available.find(s => s.key === params?.get?.('s')) ?? available[0]
+    // `#/admin/audit` first, then `#/admin?s=audit`, then whatever this
+    // account can actually open. A section named in the address that this
+    // account may not see falls through to the first one it may, rather than
+    // reporting that the section exists — which is the same reason the routes
+    // behind it answer 404 instead of 403.
+    const start = available.find(s => s.key === arg) ??
+      available.find(s => s.key === params?.get?.('s')) ??
+      available[0]
     const state = { section: start }
 
     // ---- shell: admin nav rail + content ----
@@ -371,7 +384,7 @@ export const PageAdmin = {
           this._headActions
         ])
       )
-      body.replaceChildren(U.el('div', { class: 'spinner' }))
+      body.replaceChildren(P.spinner())
       this[s.render](body)
     }
     select(state.section)
@@ -409,7 +422,7 @@ export const PageAdmin = {
         if (e.key !== 'Enter') return
         const id = e.target.value.trim()
         if (!id) return
-        detail.replaceChildren(U.el('div', { class: 'spinner' }))
+        detail.replaceChildren(P.spinner())
         try {
           const { occurrence, group } = await YumeAPI.admin.errorByRequest(id)
           if (group) { await showDetail(group) } else { detail.replaceChildren() }
@@ -436,7 +449,7 @@ export const PageAdmin = {
 
     const showDetail = async group => {
       state.open = group.id
-      detail.replaceChildren(U.el('div', { class: 'spinner' }))
+      detail.replaceChildren(P.spinner())
       try {
         const { group: g, occurrences } = await YumeAPI.admin.error(group.id)
         detail.replaceChildren()
@@ -453,7 +466,7 @@ export const PageAdmin = {
             }, [document.createTextNode(v === 'open' ? 'Reopen' : 'Mark ' + v)])))
         ]))
         if (!occurrences.length) {
-          detail.append(U.el('div', { class: 'empty-state', text: 'No occurrences recorded.' }))
+          detail.append(P.emptyState('No occurrences recorded.'))
           return
         }
         const occList = U.el('div', { class: 'err-occurrences' })
@@ -464,16 +477,16 @@ export const PageAdmin = {
             U.el('pre', { class: 'err-stack', text: occ.stack || occ.message })
           ]))
         }
-      } catch (e) { detail.replaceChildren(U.el('div', { class: 'error-state', text: e.message })) }
+      } catch (e) { detail.replaceChildren(P.errorState(e.message)) }
     }
 
     const load = async () => {
-      list.replaceChildren(U.el('div', { class: 'spinner' }))
+      list.replaceChildren(P.spinner())
       try {
         const { data } = await YumeAPI.admin.errors(state.status)
         list.replaceChildren()
         if (!data.length) {
-          list.append(U.el('div', { class: 'empty-state', text: state.status === 'open' ? 'No open errors. ' : 'Nothing here.' }))
+          list.append(P.emptyState(state.status === 'open' ? 'No open errors. ' : 'Nothing here.'))
           detail.replaceChildren(U.el('div', { class: 'cat-placeholder', text: 'Nothing to inspect.' }))
           return
         }
@@ -492,7 +505,7 @@ export const PageAdmin = {
           ]))
         }
         if (!state.open) detail.replaceChildren(U.el('div', { class: 'cat-placeholder', text: 'Select an error to see its stack.' }))
-      } catch (e) { list.replaceChildren(U.el('div', { class: 'error-state', text: e.message })) }
+      } catch (e) { list.replaceChildren(P.errorState(e.message)) }
     }
 
     content.replaceChildren(bar, wrap)
@@ -551,7 +564,7 @@ export const PageAdmin = {
     )
 
     const load = async () => {
-      rows.replaceChildren(U.el('div', { class: 'spinner' }))
+      rows.replaceChildren(P.spinner())
       pager.replaceChildren()
       try {
         const since = state.days
@@ -573,7 +586,7 @@ export const PageAdmin = {
 
         rows.replaceChildren()
         if (!data.length) {
-          rows.append(U.el('div', { class: 'empty-state', text: 'Nothing recorded for that.' }))
+          rows.append(P.emptyState('Nothing recorded for that.'))
           return
         }
         for (const r of data) rows.append(this.auditRow(r))
@@ -594,7 +607,7 @@ export const PageAdmin = {
             }, [document.createTextNode('Older →')])
           )
         }
-      } catch (e) { rows.replaceChildren(U.el('div', { class: 'error-state', text: e.message })) }
+      } catch (e) { rows.replaceChildren(P.errorState(e.message)) }
     }
 
     paintBar()
@@ -677,7 +690,7 @@ export const PageAdmin = {
     try {
       [rolesRes, catRes] = await Promise.all([YumeAPI.admin.roles(), YumeAPI.admin.permissionCatalog()])
     } catch (e) {
-      content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load roles: ' + e.message }))
+      content.replaceChildren(P.errorState('Failed to load roles: ' + e.message))
       return
     }
     content.replaceChildren()
@@ -738,7 +751,7 @@ export const PageAdmin = {
       const head = U.el('div', { class: 'roles-panel-head' }, [
         U.el('div', {}, [
           U.el('h3', { style: 'margin:0;', text: state.role.name }),
-          U.el('p', { class: 'list-row-sub', style: 'margin:.15rem 0 0;', text: isAdmin ? 'The admin role always holds every permission.' : `${state.granted.size} of ${total} permissions granted` })
+          U.el('p', { class: 'list-row-sub', style: 'margin:var(--space-1) 0 0;', text: isAdmin ? 'The admin role always holds every permission.' : `${state.granted.size} of ${total} permissions granted` })
         ]),
         U.el('input', { class: 'input', placeholder: 'Filter permissions…', value: state.filter, oninput: e => { state.filter = e.target.value.toLowerCase(); renderList() } })
       ])
@@ -838,7 +851,7 @@ export const PageAdmin = {
    */
   async renderSecurity (content) {
     const load = async () => {
-      content.replaceChildren(U.el('div', { class: 'spinner' }))
+      content.replaceChildren(P.spinner())
       try {
         // The posture is a separate request and must not be able to take the
         // controls down with it: an operator reaching this page mid-incident
@@ -875,7 +888,7 @@ export const PageAdmin = {
 
         content.append(this.revokeAllCard(load))
       } catch (e) {
-        content.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+        content.replaceChildren(P.errorState(e.message))
       }
     }
     await load()
@@ -1029,7 +1042,7 @@ export const PageAdmin = {
     try {
       data = await YumeAPI.admin.config()
     } catch (e) {
-      content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load config: ' + e.message }))
+      content.replaceChildren(P.errorState('Failed to load config: ' + e.message))
       return
     }
     content.replaceChildren()
@@ -1057,8 +1070,8 @@ export const PageAdmin = {
 
     const boolSetting = (key, title, desc) => {
       const on = settings[key] === true
-      return U.el('div', { class: 'setting-card', style: 'display:flex;align-items:center;gap:1rem;' }, [
-        U.el('div', { style: 'flex-grow:1;' }, [U.el('h3', { style: 'margin:0;', text: title }), U.el('p', { style: 'margin:.2rem 0 0;', text: desc })]),
+      return U.el('div', { class: 'setting-card', style: 'display:flex;align-items:center;gap:var(--space-4);' }, [
+        U.el('div', { style: 'flex-grow:1;' }, [U.el('h3', { style: 'margin:0;', text: title }), U.el('p', { style: 'margin:var(--space-1) 0 0;', text: desc })]),
         U.el('label', { class: 'switch' }, [
           U.el('input', {
             type: 'checkbox',
@@ -1220,7 +1233,7 @@ export const PageAdmin = {
       ])
     ])
     listCol.append(progressBox, toolbar, listBox)
-    editCol.append(U.el('div', { class: 'empty-state', style: 'padding:2rem;', text: 'Pick a title on the left to write its Hungarian text.' }))
+    editCol.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-6);', text: 'Pick a title on the left to write its Hungarian text.' }))
 
     const loadProgress = async () => {
       try {
@@ -1246,7 +1259,7 @@ export const PageAdmin = {
     }
 
     const loadList = async () => {
-      listBox.replaceChildren(U.el('div', { class: 'spinner' }))
+      listBox.replaceChildren(P.spinner())
       try {
         const { data, total } = await YumeAPI.admin.translations.queue({
           limit: 30, offset: state.offset, publishedOnly: state.publishedOnly
@@ -1255,19 +1268,19 @@ export const PageAdmin = {
           U.el('div', { class: 'cat-count', text: `${total.toLocaleString(I18n.locale())} still need a Hungarian description` })
         )
         if (!data.length) {
-          listBox.append(U.el('div', { class: 'empty-state', style: 'padding:1rem;', text: 'Nothing left in this filter.' }))
+          listBox.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-4);', text: 'Nothing left in this filter.' }))
           return
         }
         for (const row of data) listBox.append(rowNode(row))
         if (total > state.offset + data.length) {
           listBox.append(U.el('button', {
             class: 'btn btn-ghost btn-sm',
-            style: 'width:100%;margin-top:.6rem;',
+            style: 'width:100%;margin-top:var(--space-2);',
             onclick: () => { state.offset += 30; loadList() }
           }, [document.createTextNode('Next 30')]))
         }
       } catch (e) {
-        listBox.replaceChildren(U.el('div', { class: 'empty-state', style: 'padding:1rem;', text: 'Could not load the queue: ' + e.message }))
+        listBox.replaceChildren(U.el('div', { class: 'empty-state', style: 'padding:var(--space-4);', text: 'Could not load the queue: ' + e.message }))
       }
     }
 
@@ -1291,12 +1304,12 @@ export const PageAdmin = {
     }
 
     const openEditor = async row => {
-      editCol.replaceChildren(U.el('div', { class: 'spinner' }))
+      editCol.replaceChildren(P.spinner())
       let payload
       try {
         payload = await YumeAPI.admin.translations.get(row.id)
       } catch (e) {
-        editCol.replaceChildren(U.el('div', { class: 'empty-state', style: 'padding:2rem;', text: 'Could not load: ' + e.message }))
+        editCol.replaceChildren(U.el('div', { class: 'empty-state', style: 'padding:var(--space-6);', text: 'Could not load: ' + e.message }))
         return
       }
 
@@ -1395,23 +1408,23 @@ export const PageAdmin = {
     listCol.append(toolbar, listBox)
 
     const loadList = async () => {
-      listBox.replaceChildren(U.el('div', { class: 'spinner' }))
+      listBox.replaceChildren(P.spinner())
       try {
         const { data, total } = await YumeAPI.admin.catalogue.list({ q: state.q, visibility: state.visibility, limit: 40 })
         listBox.replaceChildren()
         listBox.append(U.el('div', { class: 'cat-count', text: `${total.toLocaleString()} entries` }))
-        if (!data.length) { listBox.append(U.el('div', { class: 'empty-state', style: 'padding:1rem;', text: 'No matching anime.' })); return }
+        if (!data.length) { listBox.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-4);', text: 'No matching anime.' })); return }
         for (const a of data) listBox.append(this.catRow(a, state, openEditor))
       } catch (e) {
-        listBox.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+        listBox.replaceChildren(P.errorState(e.message))
       }
     }
 
     // ---- editor (null = create) ----
     const openEditor = async (anime) => {
-      editCol.replaceChildren(U.el('div', { class: 'spinner' }))
+      editCol.replaceChildren(P.spinner())
       let full = anime
-      if (anime?.id) { try { full = await YumeAPI.admin.catalogue.get(anime.id) } catch (e) { editCol.replaceChildren(U.el('div', { class: 'error-state', text: e.message })); return } }
+      if (anime?.id) { try { full = await YumeAPI.admin.catalogue.get(anime.id) } catch (e) { editCol.replaceChildren(P.errorState(e.message)); return } }
       state.selected = full?.id ?? null
       listBox.querySelectorAll('.cat-row').forEach(r => r.classList.toggle('active', r.dataset.id === state.selected))
       this.renderCatEditor(editCol, full, { can, onSaved: loadList, onDeleted: () => { editCol.replaceChildren(this.catPlaceholder()); loadList() } })
@@ -1558,7 +1571,7 @@ export const PageAdmin = {
     if (!fields.length) return
 
     const wrap = U.el('div', { class: 'cat-provenance' })
-    wrap.append(U.el('h3', { class: 'detail-section-title', style: 'margin:0 0 .5rem;', text: 'Metadata sources' }))
+    wrap.append(U.el('h3', { class: 'detail-section-title', style: 'margin:0 0 var(--space-2);', text: 'Metadata sources' }))
     wrap.append(U.el('p', { class: 'cat-vis-hint', text: 'A locked field was set by hand and is never overwritten by the AniList importer. Release it to let automatic updates resume.' }))
 
     const table = U.el('div', { class: 'prov-table' })
@@ -1588,13 +1601,39 @@ export const PageAdmin = {
 
   // Duplicate scan. Read-only by design: it proposes pairs and a human with
   // anime.merge confirms each one, because a merge cannot be undone.
-  async renderCatDuplicates (host, can, reload) {
-    host.replaceChildren(U.el('div', { class: 'spinner' }))
+  //
+  // Two scans, and which one runs is the operator's choice. Identical titles
+  // are the default: five times as many pairs and it returns immediately. The
+  // similar-title scan compares every title against every other in its year
+  // and format, which is a minute of database time on this catalogue — a
+  // reasonable thing to ask for and an unreasonable thing to be given for
+  // opening a tab.
+  async renderCatDuplicates (host, can, reload, mode = 'exact') {
+    host.replaceChildren(P.spinner())
     try {
-      const { data } = await YumeAPI.admin.catalogue.duplicates()
+      const { data } = await YumeAPI.admin.catalogue.duplicates({ mode })
       host.replaceChildren()
-      host.append(U.el('p', { class: 'cat-vis-hint', text: 'Entries with near-identical titles in the same year and format. Merging moves titles, synonyms, genres, tags, external ids and library entries onto the entry you keep, then deletes the other one. This cannot be undone.' }))
-      if (!data.length) { host.append(U.el('div', { class: 'empty-state', style: 'padding:1rem;', text: 'No likely duplicates found.' })); return }
+      const consequence = 'Merging moves titles, synonyms, genres, tags, external ids and library entries onto the entry you keep, then deletes the other one. This cannot be undone.'
+      host.append(U.el('p', {
+        class: 'cat-vis-hint',
+        text: (mode === 'exact'
+          ? 'Entries whose titles are identical, whatever year or format each one claims. '
+          : 'Entries with near-identical titles in the same year and format. ') + consequence
+      }))
+      host.append(U.el('div', { class: 'admin-toolbar' }, [
+        U.el('button', {
+          class: 'btn btn-sm' + (mode === 'exact' ? ' btn-primary' : ''),
+          type: 'button',
+          onclick: () => this.renderCatDuplicates(host, can, reload, 'exact')
+        }, [document.createTextNode('Identical titles')]),
+        U.el('button', {
+          class: 'btn btn-sm' + (mode === 'similar' ? ' btn-primary' : ''),
+          type: 'button',
+          title: 'Compares every title against every other in its year and format — expect this to take about a minute',
+          onclick: () => this.renderCatDuplicates(host, can, reload, 'similar')
+        }, [document.createTextNode('Similar titles (slow)')])
+      ]))
+      if (!data.length) { host.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-4);', text: 'No likely duplicates found.' })); return }
       for (const d of data) {
         const keep = (winner, loser, title) => can('anime.merge')
           ? U.el('button', {
@@ -1612,7 +1651,7 @@ export const PageAdmin = {
         ]))
       }
     } catch (e) {
-      host.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+      host.replaceChildren(P.errorState(e.message))
     }
   },
 
@@ -1650,11 +1689,11 @@ export const PageAdmin = {
     form.append(wrap)
 
     const load = async () => {
-      wrap.replaceChildren(U.el('div', { class: 'spinner' }))
+      wrap.replaceChildren(P.spinner())
       try {
         const { data } = await YumeAPI.admin.catalogue.episodes(anime.id)
         wrap.replaceChildren()
-        if (!data.length) { wrap.append(U.el('div', { class: 'empty-state', style: 'padding:.75rem;', text: 'No episodes yet.' })); return }
+        if (!data.length) { wrap.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-3);', text: 'No episodes yet.' })); return }
 
         // How much of the season is actually reachable, stated once rather
         // than left to be counted off the rows.
@@ -1715,7 +1754,7 @@ export const PageAdmin = {
               : null
           ]))
         }
-      } catch (e) { wrap.replaceChildren(U.el('div', { class: 'error-state', text: e.message })) }
+      } catch (e) { wrap.replaceChildren(P.errorState(e.message)) }
     }
     load()
   },
@@ -1757,12 +1796,12 @@ export const PageAdmin = {
     })
 
     const load = async () => {
-      list.replaceChildren(U.el('div', { class: 'spinner' }))
+      list.replaceChildren(P.spinner())
       try {
         const { data } = await YumeAPI.admin.catalogue.sources(ep.id)
         list.replaceChildren()
         if (!data.length) {
-          list.append(U.el('div', { class: 'empty-state', style: 'padding:.75rem;', text: 'No sources yet — this episode cannot be played.' }))
+          list.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-3);', text: 'No sources yet — this episode cannot be played.' }))
           return
         }
         for (const src of data) {
@@ -1800,7 +1839,7 @@ export const PageAdmin = {
           ]))
         }
       } catch (e) {
-        list.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+        list.replaceChildren(P.errorState(e.message))
       }
     }
 
@@ -1811,7 +1850,7 @@ export const PageAdmin = {
     // would mean three round trips to fix one episode.
     const extras = U.el('div')
     const loadExtras = async () => {
-      extras.replaceChildren(U.el('div', { class: 'spinner' }))
+      extras.replaceChildren(P.spinner())
       try {
         const [{ data: skips }, { data: subs }] = await Promise.all([
           YumeAPI.admin.catalogue.skips(ep.id),
@@ -1822,7 +1861,7 @@ export const PageAdmin = {
         extras.append(U.el('h4', { class: 'src-add-title', text: 'Skip intervals' }))
         const skipList = U.el('div', { class: 'src-list' })
         if (!skips.length) {
-          skipList.append(U.el('div', { class: 'empty-state', style: 'padding:.6rem;', text: 'None — the player falls back to AniSkip.' }))
+          skipList.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-2);', text: 'None — the player falls back to AniSkip.' }))
         }
         for (const seg of skips) {
           skipList.append(U.el('div', { class: 'src-row' }, [
@@ -1874,7 +1913,7 @@ export const PageAdmin = {
         extras.append(U.el('h4', { class: 'src-add-title', text: 'Subtitle tracks' }))
         const subList = U.el('div', { class: 'src-list' })
         if (!subs.length) {
-          subList.append(U.el('div', { class: 'empty-state', style: 'padding:.6rem;', text: 'None held here.' }))
+          subList.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-2);', text: 'None held here.' }))
         }
         for (const track of subs) {
           subList.append(U.el('div', { class: 'src-row' }, [
@@ -1921,7 +1960,7 @@ export const PageAdmin = {
           }, [document.createTextNode('Add track')])
         ]))
       } catch (e) {
-        extras.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+        extras.replaceChildren(P.errorState(e.message))
       }
     }
 
@@ -1990,7 +2029,7 @@ export const PageAdmin = {
       labelled('Air date', inp('air_date', { type: 'date' })),
       labelled('Duration (min)', inp('duration', { type: 'number', min: 0 })),
       labelled('Synopsis', U.el('textarea', { class: 'input', rows: 3, oninput: e => { d.synopsis = e.target.value } }, [document.createTextNode(d.synopsis)])),
-      U.el('div', { style: 'display:flex;gap:1.25rem;' }, [check('is_filler', 'Filler'), check('is_recap', 'Recap')])
+      U.el('div', { style: 'display:flex;gap:var(--space-4);' }, [check('is_filler', 'Filler'), check('is_recap', 'Recap')])
     ], async () => {
       if (d.number === '' || isNaN(Number(d.number))) return U.toast('A valid episode number is required', 'error')
       const num = v => v === '' || v == null ? null : Number(v)
@@ -2048,12 +2087,12 @@ export const PageAdmin = {
 
   async renderThemes (content) {
     const load = async () => {
-      content.replaceChildren(U.el('div', { class: 'spinner' }))
+      content.replaceChildren(P.spinner())
       try {
         const { data } = await YumeAPI.admin.themes.list()
         this.paintThemes(content, data, load)
       } catch (e) {
-        content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load themes: ' + e.message }))
+        content.replaceChildren(P.errorState('Failed to load themes: ' + e.message))
       }
     }
     await load()
@@ -2203,6 +2242,27 @@ export const PageAdmin = {
     ['withRelations', 'Has relations', 'Sequels, prequels, side stories.']
   ],
 
+  /**
+   * What is behind the gap, rather than how big it is.
+   *
+   * The bars above say how many titles have a description. They never said
+   * anything about the ones that do not, and those are three different
+   * situations with three different answers — one of which is "nothing, this
+   * is finished". Reported as counts rather than as bars because they are not
+   * shares of the catalogue and drawing them as one would invite adding them
+   * up, which is wrong: a title can be in more than one.
+   */
+  METADATA_GAPS: [
+    ['unreachable', 'Not reachable yet',
+      'Only a MAL id, so the enricher could never match them. A basic run now looks the AniList id up first.'],
+    ['neverAttempted', 'Never attempted',
+      'Mapped, still empty, and no run has reached them. This is work outstanding.'],
+    ['noSynopsisUpstream', 'Nothing upstream',
+      'Attempted, and AniList has no description either. Not a gap in this pipeline — nothing to fetch.'],
+    ['withoutEpisodes', 'No episodes at all',
+      'No episode rows, so the detail page has no list and Watch has nothing to open. Some are unreleased.']
+  ],
+
   async renderMetadata (content) {
     const state = { timer: null }
 
@@ -2217,7 +2277,7 @@ export const PageAdmin = {
         ])
         this.paintMetadata(content, data, conflicts, load)
       } catch (e) {
-        content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load metadata status: ' + e.message }))
+        content.replaceChildren(P.errorState('Failed to load metadata status: ' + e.message))
         clearInterval(state.timer)
       }
     }
@@ -2248,6 +2308,21 @@ export const PageAdmin = {
       ]))
     }
     content.append(U.el('h3', { class: 'detail-section-title', text: 'Coverage' }), bars)
+
+    // ---- what the gap is made of ----
+    const gaps = U.el('div', { class: 'meta-gaps' })
+    for (const [key, label, hint] of this.METADATA_GAPS) {
+      const n = cov[key]
+      if (n === undefined) continue // an older server that does not report it
+      gaps.append(U.el('div', { class: 'meta-gap' }, [
+        U.el('b', { class: 'meta-gap-value', text: Number(n).toLocaleString() }),
+        U.el('span', { class: 'meta-gap-label', text: label }),
+        U.el('span', { class: 'meta-gap-hint', text: hint })
+      ]))
+    }
+    if (gaps.children.length) {
+      content.append(U.el('h3', { class: 'detail-section-title', text: 'What is missing, and why' }), gaps)
+    }
 
     // ---- start a run ----
     const active = data.active
@@ -2318,7 +2393,7 @@ export const PageAdmin = {
     // ---- history ----
     content.append(U.el('h3', { class: 'detail-section-title', text: 'Recent runs' }))
     if (!data.runs?.length) {
-      content.append(U.el('div', { class: 'empty-state', text: 'No sync has been run from here yet.' }))
+      content.append(P.emptyState('No sync has been run from here yet.'))
     } else {
       const rows = U.el('div', { class: 'meta-rows' })
       for (const r of data.runs) {
@@ -2345,7 +2420,7 @@ export const PageAdmin = {
     // pairs are where real duplicates in our own catalogue surface.
     content.append(U.el('h3', { class: 'detail-section-title', text: `Unresolved id collisions (${conflicts.length})` }))
     if (!conflicts.length) {
-      content.append(U.el('div', { class: 'empty-state', text: 'Nothing waiting to be looked at.' }))
+      content.append(P.emptyState('Nothing waiting to be looked at.'))
       return
     }
     content.append(U.el('p', { class: 'meta-note', text: 'An importer could not attach one of these ids because another anime already held it. Most are legitimate season splits; the rest are duplicates worth merging.' }))
@@ -2390,7 +2465,7 @@ export const PageAdmin = {
       try {
         data = await YumeAPI.admin.monitoring.current()
       } catch (e) {
-        content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load monitoring: ' + e.message }))
+        content.replaceChildren(P.errorState('Failed to load monitoring: ' + e.message))
         return
       }
       this.paintMonitoring(content, data, state)
@@ -2549,7 +2624,7 @@ export const PageAdmin = {
     for (const [metric, label, max] of [['cpu.usage_pct', 'CPU %', 100], ['mem.used_pct', 'RAM %', 100], ['api.latency_ms', 'API latency (ms)', null], ['db.latency_ms', 'DB latency (ms)', null]]) {
       const box = U.el('div', { class: 'mon-trend' }, [
         U.el('div', { class: 'mon-trend-label', text: label }),
-        U.el('div', { class: 'spinner' })
+        P.spinner()
       ])
       trends.append(box)
       YumeAPI.admin.monitoring.history(metric, 24).then(res => {
@@ -2585,7 +2660,7 @@ export const PageAdmin = {
   async renderComponents (box) {
     box.replaceChildren(
       U.el('h2', { class: 'detail-section-title', text: 'Components & dependency graph' }),
-      U.el('div', { class: 'spinner' })
+      P.spinner()
     )
     let data
     try {
@@ -2674,9 +2749,9 @@ export const PageAdmin = {
     const paint = report => {
       output.replaceChildren()
       if (!report) { output.append(U.el('div', { class: 'mon-trend-empty', text: 'No diagnostic has been run yet.' })); return }
-      if (report.status === 'running') { output.append(U.el('div', { class: 'spinner' })); return }
+      if (report.status === 'running') { output.append(P.spinner()); return }
       if (report.status === 'failed') {
-        output.append(U.el('div', { class: 'error-state', text: report.error || 'The diagnostic run failed.' }))
+        output.append(P.errorState(report.error || 'The diagnostic run failed.'))
         return
       }
       const scored = (report.results || []).length - (report.results || []).filter(r => r.status === 'skip').length
@@ -2711,12 +2786,12 @@ export const PageAdmin = {
     const run = async () => {
       runBtn.disabled = true
       runBtn.textContent = 'Running…'
-      output.replaceChildren(U.el('div', { class: 'spinner' }))
+      output.replaceChildren(P.spinner())
       try {
         const { id } = await YumeAPI.admin.monitoring.runDiagnostic()
         poll(id)
       } catch (e) {
-        output.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+        output.replaceChildren(P.errorState(e.message))
         runBtn.disabled = false; runBtn.textContent = 'Run diagnostic'
       }
     }
@@ -2783,7 +2858,7 @@ export const PageAdmin = {
         state.updatedAt = new Date()
         this.paintOverview(content, data, health, state, load)
       } catch (e) {
-        content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load the overview: ' + e.message }))
+        content.replaceChildren(P.errorState('Failed to load the overview: ' + e.message))
         clearInterval(state.timer)
       }
     }
@@ -2855,7 +2930,7 @@ export const PageAdmin = {
 
     const contentSeries = [
       { name: 'Anime', values: data.series.content.map(r => Number(r.anime)), color: 'var(--accent)' },
-      { name: 'Episodes', values: data.series.content.map(r => Number(r.episodes)), color: 'var(--blue-400, #60a5fa)' },
+      { name: 'Episodes', values: data.series.content.map(r => Number(r.episodes)), color: 'var(--blue-400)' },
       { name: 'Comments', values: data.series.content.map(r => Number(r.comments)), color: 'var(--green-400)' }
     ]
     charts.append(this.dashPanel({
@@ -3031,7 +3106,7 @@ export const PageAdmin = {
       }),
       body: rows.childElementCount
         ? U.el('div', {}, [note, rows])
-        : U.el('div', { class: 'empty-state', style: 'padding:.8rem;', text: 'No metrics yet — the monitoring worker writes them once a minute.' })
+        : U.el('div', { class: 'empty-state', style: 'padding:var(--space-3);', text: 'No metrics yet — the monitoring worker writes them once a minute.' })
     })
   },
 
@@ -3052,7 +3127,7 @@ export const PageAdmin = {
     const table = U.el('div', { class: 'dash-table' })
 
     if (!groups.length) {
-      table.append(U.el('div', { class: 'empty-state', style: 'padding:.8rem;', text: 'Nothing failing. 🎉' }))
+      table.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-3);', text: 'Nothing failing. 🎉' }))
     } else {
       table.append(U.el('div', { class: 'dash-thead' }, [
         U.el('span', { text: 'Error' }),
@@ -3160,7 +3235,7 @@ export const PageAdmin = {
   activityPanel (activity) {
     const rows = U.el('div', { class: 'dash-feed' })
     if (!activity.length) {
-      rows.append(U.el('div', { class: 'empty-state', style: 'padding:.8rem;', text: 'Nothing recorded in the last 30 days.' }))
+      rows.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-3);', text: 'Nothing recorded in the last 30 days.' }))
     }
     for (const item of activity) {
       const [tone, label, glyph] = this.ACTIVITY_ART[item.action] ?? ['blue', item.action, 'shield']
@@ -3181,7 +3256,7 @@ export const PageAdmin = {
       action: U.el('button', {
         class: 'dash-link',
         type: 'button',
-        onclick: () => this.goto('audit')
+        onclick: () => this.goto('audit-log')
       }, [document.createTextNode('View all')]),
       body: rows
     })
@@ -3272,6 +3347,307 @@ export const PageAdmin = {
   },
 
   /** Move to another section from a link inside a panel. */
+  // ---- Audit status: what the last code audit found ----
+  //
+  // Not the audit *log* in Insight — that is what people did, this is what is
+  // wrong with the software. The two names collided all the way down: the
+  // section key, the client method and the route (YUME-AUDIT-0013).
+  //
+  // Everything on this screen comes from docs/audit-2026-09.json by way of
+  // GET /v1/admin/audit/report. Nothing is hardcoded, including the counts:
+  // the summary block recounts the findings it was given rather than trusting
+  // the file's own `summary`, so a report whose header disagrees with its body
+  // shows the disagreement instead of hiding it.
+
+  AUDIT_SEVERITIES: ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'],
+  AUDIT_CATEGORIES: ['security', 'functional', 'database', 'frontend'],
+  AUDIT_RANK: { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 },
+  AUDIT_EFFORT: { S: 'Small', M: 'Medium', L: 'Large' },
+
+  /** One severity chip. The word is always present: the colour is a second signal, never the only one. */
+  auditSeverityBadge (severity) {
+    return U.el('span', {
+      class: `vis-badge sev-badge sev-${String(severity).toLowerCase()}`,
+      text: String(severity)
+    })
+  },
+
+  auditStatusBadge (status) {
+    return U.el('span', {
+      class: `vis-badge aud-status aud-status-${String(status)}`,
+      text: String(status)
+    })
+  },
+
+  /**
+   * The header: when the audit ran, on what, and whether that is still true.
+   *
+   * The staleness line has three states rather than two. An image built
+   * without a stamped commit cannot know what it is running, and "we could not
+   * check" must not render as silence — silence reads as "current", which is
+   * the one thing this page must never imply without knowing it.
+   */
+  auditHeader (report, source, running) {
+    const when = new Date(report.generatedAt)
+    const shortSha = sha => String(sha).slice(0, 7)
+
+    const facts = U.el('div', { class: 'aud-facts' }, [
+      U.el('div', { class: 'aud-fact' }, [
+        U.el('span', { class: 'aud-fact-label', text: 'Audit ran' }),
+        U.el('span', { class: 'aud-fact-value', text: Number.isNaN(+when) ? String(report.generatedAt) : when.toLocaleString() }),
+        U.el('span', { class: 'aud-fact-note', text: Number.isNaN(+when) ? '' : U.relTime(when) })
+      ]),
+      U.el('div', { class: 'aud-fact' }, [
+        U.el('span', { class: 'aud-fact-label', text: 'On commit' }),
+        U.el('span', { class: 'aud-fact-value aud-sha', text: shortSha(report.commit) }),
+        U.el('span', { class: 'aud-fact-note', text: source?.path ?? '' })
+      ]),
+      U.el('div', { class: 'aud-fact' }, [
+        U.el('span', { class: 'aud-fact-label', text: 'Running' }),
+        U.el('span', {
+          class: 'aud-fact-value aud-sha',
+          text: running?.commit ? shortSha(running.commit) : 'unknown'
+        }),
+        U.el('span', {
+          class: 'aud-fact-note',
+          text: running?.commit ? '' : 'SOURCE_COMMIT is not set on this build'
+        })
+      ])
+    ])
+
+    const head = U.el('div', { class: 'aud-head' }, [facts])
+
+    if (running?.stale === true) {
+      head.append(U.el('div', { class: 'aud-warn aud-warn-stale' }, [
+        U.svg('<path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0"/>', 15),
+        U.el('span', {
+          text: `The code has changed since this audit ran — it describes ${shortSha(report.commit)}, ` +
+                `and ${shortSha(running.commit)} is running. Findings may be fixed, moved, or new.`
+        })
+      ]))
+    } else if (running?.stale === null || running?.stale === undefined) {
+      head.append(U.el('div', { class: 'aud-warn aud-warn-unknown' }, [
+        U.svg('<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>', 15),
+        U.el('span', {
+          text: 'Whether the running code still matches this audit could not be checked: ' +
+                'this build carries no commit stamp. Build with --build-arg GIT_COMMIT=$(git rev-parse HEAD) to get the check.'
+        })
+      ]))
+    }
+
+    return head
+  },
+
+  /**
+   * The counts.
+   *
+   * No score. A single number over findings of different kinds invents a
+   * precision nobody measured, and the obvious formula — weight the
+   * severities, divide by something — answers a question nobody asked. What is
+   * shown instead is the one ratio that means exactly what it says, with the
+   * sentence that says it directly underneath.
+   */
+  auditSummary (findings) {
+    const bySeverity = Object.fromEntries(this.AUDIT_SEVERITIES.map(s => [s, 0]))
+    let open = 0
+    let fixed = 0
+    let wontfix = 0
+    for (const f of findings) {
+      if (bySeverity[f.severity] !== undefined) bySeverity[f.severity]++
+      if (f.status === 'fixed') fixed++
+      else if (f.status === 'wontfix') wontfix++
+      else open++
+    }
+
+    const cards = U.el('div', { class: 'aud-counts' })
+    for (const severity of this.AUDIT_SEVERITIES) {
+      cards.append(U.el('div', { class: `aud-count sev-${severity.toLowerCase()}` }, [
+        U.el('b', { text: String(bySeverity[severity]) }),
+        U.el('span', { text: severity })
+      ]))
+    }
+
+    const total = findings.length
+    const share = total ? Math.round(fixed / total * 100) : 0
+    const meter = U.el('div', { class: 'aud-ratio' }, [
+      U.el('div', { class: 'aud-ratio-line' }, [
+        U.el('b', { text: `${fixed} of ${total}` }),
+        U.el('span', { text: ` findings recorded as fixed (${share}%)` })
+      ]),
+      U.el('div', {
+        class: 'aud-ratio-track',
+        role: 'img',
+        'aria-label': `${fixed} of ${total} findings recorded as fixed`
+      }, [
+        U.el('div', { class: 'aud-ratio-fill', style: `width:${share}%;` })
+      ]),
+      // Said plainly, because a bar without this sentence gets read as a grade.
+      U.el('p', {
+        class: 'aud-ratio-caption',
+        text: 'This measures how much of the audit has been worked through — nothing else. ' +
+              'It is not a security score, and it does not weigh a CRITICAL against a LOW.'
+      }),
+      U.el('div', { class: 'aud-ratio-split' }, [
+        U.el('span', { text: `${open} open` }),
+        U.el('span', { text: `${fixed} fixed` }),
+        ...(wontfix ? [U.el('span', { text: `${wontfix} won't fix` })] : [])
+      ])
+    ])
+
+    return U.el('div', { class: 'aud-summary' }, [cards, meter])
+  },
+
+  /** One finding: the line always shown, and the detail behind it. */
+  auditFindingRow (finding) {
+    const summary = U.el('summary', { class: 'aud-row-head' }, [
+      U.el('span', { class: 'aud-id', text: finding.id }),
+      this.auditSeverityBadge(finding.severity),
+      U.el('span', { class: 'aud-row-title', text: finding.title }),
+      U.el('span', { class: 'aud-file', text: `${finding.file}:${finding.line}` }),
+      U.el('span', { class: 'aud-category', text: finding.category }),
+      this.auditStatusBadge(finding.status)
+    ])
+
+    const field = (label, value) => U.el('div', { class: 'aud-field' }, [
+      U.el('span', { class: 'aud-field-label', text: label }),
+      U.el('p', { class: 'aud-field-value', text: value })
+    ])
+
+    return U.el('details', { class: 'aud-row' }, [
+      summary,
+      U.el('div', { class: 'aud-row-body' }, [
+        field('Impact', finding.impact),
+        field('Suggested fix', finding.suggestedFix),
+        U.el('div', { class: 'aud-field' }, [
+          U.el('span', { class: 'aud-field-label', text: 'Estimated work' }),
+          U.el('p', { class: 'aud-field-value', text: `${this.AUDIT_EFFORT[finding.effort] ?? finding.effort} (${finding.effort})` })
+        ])
+      ])
+    ])
+  },
+
+  /** The skeleton, shaped like what is coming, so the layout does not jump. */
+  auditSkeleton () {
+    const bar = (cls) => U.el('div', { class: `skeleton aud-skel ${cls}` })
+    const wrap = U.el('div', { class: 'aud-loading', 'aria-busy': 'true', 'aria-label': 'Loading the audit report' })
+    wrap.append(U.el('div', { class: 'aud-head' }, [
+      U.el('div', { class: 'aud-facts' }, [bar('aud-skel-fact'), bar('aud-skel-fact'), bar('aud-skel-fact')])
+    ]))
+    wrap.append(U.el('div', { class: 'aud-counts' }, [bar('aud-skel-count'), bar('aud-skel-count'), bar('aud-skel-count'), bar('aud-skel-count')]))
+    for (let i = 0; i < 6; i++) wrap.append(bar('aud-skel-row'))
+    return wrap
+  },
+
+  async renderAuditStatus (content) {
+    const state = { severity: '', category: '', status: 'open', q: '', sort: 'severity' }
+
+    content.replaceChildren(this.auditSkeleton())
+
+    let payload
+    try {
+      payload = await YumeAPI.admin.auditReport()
+    } catch (e) {
+      // The three failures this route can produce are different problems with
+      // different answers, and the reader is told which one they have. A page
+      // about what is wrong with the software must never answer "nothing" when
+      // what it means is "I could not read the file".
+      const detail = e?.status === 503
+        ? 'No audit report has been generated for this build, so there is nothing to show. This is not a clean result.'
+        : e?.status === 500
+          ? 'The audit report exists but could not be read, so its findings are unknown. This is not a clean result.'
+          : null
+      const box = U.el('div', { class: 'aud-fail' }, [
+        C.errorState(e, () => this.renderAuditStatus(content))
+      ])
+      if (detail) box.prepend(U.el('p', { class: 'aud-fail-note', text: detail }))
+      content.replaceChildren(box)
+      return
+    }
+
+    const { report, source, running } = payload
+    const findings = Array.isArray(report?.findings) ? report.findings : []
+
+    const list = U.el('div', { class: 'aud-list' })
+    const countLine = U.el('p', { class: 'aud-showing' })
+
+    const matches = f => {
+      if (state.severity && f.severity !== state.severity) return false
+      if (state.category && f.category !== state.category) return false
+      if (state.status && f.status !== state.status) return false
+      if (state.q) {
+        const needle = state.q.toLowerCase()
+        const hay = `${f.title} ${f.file} ${f.id}`.toLowerCase()
+        if (!hay.includes(needle)) return false
+      }
+      return true
+    }
+
+    const paintList = () => {
+      const shown = findings.filter(matches).sort((a, b) => (
+        state.sort === 'id'
+          ? String(a.id).localeCompare(String(b.id))
+          : (this.AUDIT_RANK[a.severity] ?? 9) - (this.AUDIT_RANK[b.severity] ?? 9) ||
+            String(a.id).localeCompare(String(b.id))
+      ))
+
+      list.replaceChildren()
+      if (!shown.length) {
+        // The empty state says when the audit ran, because "no findings" is
+        // only good news if it is recent — and an empty *filter* is not the
+        // same news as an empty *audit*.
+        const ran = new Date(report.generatedAt)
+        const filtered = findings.length > 0
+        list.append(U.el('div', { class: 'empty-state' }, [
+          U.el('div', { text: filtered ? 'No findings match these filters' : 'No open findings' }),
+          U.el('div', {
+            class: 'aud-empty-sub',
+            text: filtered
+              ? `${findings.length} findings in this report, none of them matching. The audit ran ${Number.isNaN(+ran) ? 'at an unreadable time' : U.relTime(ran)}.`
+              : `The audit ran ${Number.isNaN(+ran) ? 'at an unreadable time' : U.relTime(ran)}, on ${String(report.commit).slice(0, 7)}.`
+          })
+        ]))
+      } else {
+        for (const f of shown) list.append(this.auditFindingRow(f))
+      }
+      countLine.textContent = `Showing ${shown.length} of ${findings.length} findings`
+    }
+
+    const pick = (value, options, onchange) => U.el('select', {
+      class: 'select',
+      onchange: e => { onchange(e.target.value); paintList() }
+    }, options.map(([v, l]) => U.el('option', { value: v, text: l, selected: v === value })))
+
+    const bar = U.el('div', { class: 'admin-toolbar' }, [
+      pick(state.status, [['open', 'Open'], ['fixed', 'Fixed'], ['wontfix', "Won't fix"], ['', 'Any status']],
+        v => { state.status = v }),
+      pick(state.severity, [['', 'Any severity'], ...this.AUDIT_SEVERITIES.map(s => [s, s])],
+        v => { state.severity = v }),
+      pick(state.category, [['', 'Any category'], ...this.AUDIT_CATEGORIES.map(c => [c, c])],
+        v => { state.category = v }),
+      pick(state.sort, [['severity', 'Sort: severity'], ['id', 'Sort: identifier']],
+        v => { state.sort = v }),
+      U.el('input', {
+        class: 'input',
+        type: 'search',
+        placeholder: 'Title or file…',
+        'aria-label': 'Search findings by title or file',
+        style: 'max-width:14rem;',
+        oninput: U.debounce(e => { state.q = e.target.value.trim(); paintList() })
+      })
+    ])
+
+    content.replaceChildren(
+      this.auditHeader(report, source, running),
+      // Counted from the findings, not read from report.summary: a header that
+      // disagrees with its own body should be visible, not authoritative.
+      this.auditSummary(findings),
+      bar,
+      countLine,
+      list
+    )
+    paintList()
+  },
+
   goto (key) {
     window.location.hash = `#/admin?s=${key}`
     navigate()
@@ -3340,7 +3716,7 @@ export const PageAdmin = {
       for (const user of data) content.append(this.userRow(user, content, q))
 
       if (!data.length) {
-        content.append(U.el('div', { class: 'empty-state', text: 'No users match.' }))
+        content.append(P.emptyState('No users match.'))
       }
 
       const total = Number(totals?.total ?? 0)
@@ -3362,7 +3738,7 @@ export const PageAdmin = {
         ]))
       }
     } catch (e) {
-      content.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+      content.replaceChildren(P.errorState(e.message))
     }
   },
 
@@ -3390,7 +3766,7 @@ export const PageAdmin = {
           document.createTextNode(user.username + ' '),
           U.el('span', { class: 'badge' + tone, text: user.status }),
           ...(user.reports_against > 0
-            ? [U.el('span', { class: 'badge badge-bad', style: 'margin-left:.35rem;', text: `${user.reports_against} reported` })]
+            ? [U.el('span', { class: 'badge badge-bad', style: 'margin-left:var(--space-1);', text: `${user.reports_against} reported` })]
             : [])
         ]),
         U.el('div', { class: 'list-row-sub', text: facts.join(' • ') })
@@ -3410,7 +3786,7 @@ export const PageAdmin = {
    * make triaging a queue of accounts painful.
    */
   async userPanel (id, reload) {
-    const body = U.el('div', { class: 'user-panel' }, [U.el('div', { class: 'spinner' })])
+    const body = U.el('div', { class: 'user-panel' }, [P.spinner()])
     C.modalPanel('Account', [body])
 
     const load = async () => {
@@ -3418,7 +3794,7 @@ export const PageAdmin = {
         const d = await YumeAPI.admin.user(id)
         body.replaceChildren(...this.userPanelBody(d, { reload, refresh: load }))
       } catch (e) {
-        body.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+        body.replaceChildren(P.errorState(e.message))
       }
     }
     await load()
@@ -3635,7 +4011,7 @@ export const PageAdmin = {
         ]))
       }
     } catch (e) {
-      content.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+      content.replaceChildren(P.errorState(e.message))
     }
   },
 
@@ -3727,28 +4103,28 @@ export const PageAdmin = {
       ])
       content.replaceChildren()
 
-      content.append(U.el('div', { style: 'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:1rem;' }, [
+      content.append(U.el('div', { style: 'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:var(--space-4);margin-bottom:var(--space-4);' }, [
         U.el('p', { class: 'list-row-sub', style: 'max-width:40rem;', text: 'Outbound webhooks fire on the events you subscribe each one to. Discord endpoints get rich embeds; generic endpoints get signed JSON.' }),
         U.el('button', { class: 'btn btn-primary btn-sm', onclick: () => this.webhookForm(content, events, null) }, [document.createTextNode('+ New webhook')])
       ]))
 
       if (!data.length) {
-        content.append(U.el('div', { class: 'empty-state', text: 'No webhooks yet. Add one to start receiving events.' }))
+        content.append(P.emptyState('No webhooks yet. Add one to start receiving events.'))
         return
       }
 
       for (const hook of data) {
         const healthy = hook.enabled && hook.failure_count === 0
         content.append(U.el('div', { class: 'setting-card', style: 'max-width:none;' }, [
-          U.el('div', { style: 'display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;' }, [
-            U.el('span', { style: `width:.6rem;height:.6rem;border-radius:50%;background:${healthy ? 'var(--ok)' : hook.enabled ? 'var(--status-paused)' : 'var(--fg-faint)'};` }),
+          U.el('div', { style: 'display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;' }, [
+            U.el('span', { style: `width:.6rem;height:.6rem;border-radius:var(--radius-full);background:${healthy ? 'var(--ok)' : hook.enabled ? 'var(--status-paused)' : 'var(--fg-faint)'};` }),
             U.el('h3', { style: 'margin:0;', text: hook.name }),
             U.el('span', { class: 'ext-type-chip', text: hook.format }),
             U.el('span', { class: 'list-row-sub', text: `${hook.events.length} events • ${hook.delivery_count} deliveries` }),
             hook.last_error ? U.el('span', { class: 'badge', style: 'background:var(--danger);color:white;', text: 'last error: ' + hook.last_error }) : null
           ]),
-          U.el('div', { class: 'list-row-sub', style: 'margin:.4rem 0;word-break:break-all;', text: hook.url.replace(/\/[^/]+$/, '/•••') }),
-          U.el('div', { style: 'display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.6rem;' }, [
+          U.el('div', { class: 'list-row-sub', style: 'margin:var(--space-2) 0;word-break:break-all;', text: hook.url.replace(/\/[^/]+$/, '/•••') }),
+          U.el('div', { style: 'display:flex;gap:var(--space-2);flex-wrap:wrap;margin-top:var(--space-2);' }, [
             U.el('button', {
               class: 'btn btn-secondary btn-sm',
               onclick: async e => {
@@ -3778,7 +4154,7 @@ export const PageAdmin = {
         ]))
       }
     } catch (e) {
-      content.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+      content.replaceChildren(P.errorState(e.message))
     }
   },
 
@@ -3794,11 +4170,11 @@ export const PageAdmin = {
     const subscribed = new Set(hook?.events ?? events) // new hooks default to all events
     const checkboxes = events.map(ev => {
       const cb = U.el('input', { type: 'checkbox', value: ev, ...(subscribed.has(ev) ? { checked: '' } : {}) })
-      return U.el('label', { style: 'display:flex;gap:.5rem;align-items:center;font-size:.8rem;padding:.15rem 0;cursor:pointer;' }, [
-        cb, U.el('span', {}, [document.createTextNode(this.EVENT_LABELS[ev] ?? ev), U.el('code', { style: 'color:var(--fg-faint);margin-left:.4rem;font-family:var(--font-mono);font-size:.85em;', text: ev })])
+      return U.el('label', { style: 'display:flex;gap:var(--space-2);align-items:center;font-size:var(--text-xs);padding:var(--space-1) 0;cursor:pointer;' }, [
+        cb, U.el('span', {}, [document.createTextNode(this.EVENT_LABELS[ev] ?? ev), U.el('code', { style: 'color:var(--fg-faint);margin-left:var(--space-2);font-family:var(--font-mono);font-size:var(--text-xs);', text: ev })])
       ])
     })
-    const eventGrid = U.el('div', { style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:.1rem .75rem;margin-top:.4rem;' }, checkboxes)
+    const eventGrid = U.el('div', { style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:var(--space-1) var(--space-3);margin-top:var(--space-2);' }, checkboxes)
 
     const toggleAll = on => checkboxes.forEach(l => { l.querySelector('input').checked = on })
 
@@ -3810,7 +4186,7 @@ export const PageAdmin = {
         U.el('div', { style: 'display:flex;justify-content:space-between;align-items:center;' }, [
           U.el('label', { class: 'filter-group', style: 'display:block;', text: 'Events' }),
           U.el('div', {}, [
-            U.el('button', { class: 'section-more', style: 'margin-right:.75rem;', onclick: () => toggleAll(true) }, [document.createTextNode('All')]),
+            U.el('button', { class: 'section-more', style: 'margin-right:var(--space-3);', onclick: () => toggleAll(true) }, [document.createTextNode('All')]),
             U.el('button', { class: 'section-more', onclick: () => toggleAll(false) }, [document.createTextNode('None')])
           ])
         ]),

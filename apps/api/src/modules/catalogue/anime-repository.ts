@@ -188,6 +188,23 @@ export class AnimeRepository extends Repository {
     )
   }
 
+  /**
+   * How many catalogue rows this account has created in the last 24 hours.
+   *
+   * Read from `audit_logs`, which `anime.create` already writes and which is
+   * indexed on (actor_id, created_at DESC), so the cap that uses it costs one
+   * indexed lookup and needs no second ledger to keep in step with the first.
+   */
+  async recentCreationsBy (userId: string): Promise<number> {
+    const row = await this.queryOne<{ n: string }>(
+      `SELECT count(*) AS n FROM audit_logs
+        WHERE actor_id = $1 AND action = 'anime.create'
+          AND created_at > now() - interval '24 hours'`,
+      [userId]
+    )
+    return Number(row?.n ?? 0)
+  }
+
   /** Does this entry exist and is it linkable? */
   async isVisible (id: string): Promise<boolean> {
     return Boolean(await this.queryOne(
