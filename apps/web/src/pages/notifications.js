@@ -14,6 +14,7 @@ import { navigate, refreshNotifications } from '../shared/lib/shell.js'
 import { C } from '../shared/ui/components.js'
 import { T } from '../shared/i18n/i18n.js'
 import { Store } from '../shared/state/store.js'
+import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 import { YumeAPI } from '../shared/api/yume.js'
 
@@ -110,7 +111,7 @@ export const PageNotifications = {
     // ---- list ----
     const shown = all.filter(n => active === 'all' || (active === 'unread' ? !n.read : n.type === active))
     if (!shown.length) {
-      pad.append(U.el('div', { class: 'empty-state', text: active === 'all' ? 'No notifications yet. Add airing anime to your library and they show up here.' : 'Nothing in this filter.' }))
+      pad.append(P.emptyState(active === 'all' ? 'No notifications yet. Add airing anime to your library and they show up here.' : 'Nothing in this filter.'))
       return
     }
 

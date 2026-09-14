@@ -9,6 +9,7 @@ import { C } from '../shared/ui/components.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
 import { ProfileStats } from '../features/watch-history/profile-stats.js'
 import { Store } from '../shared/state/store.js'
+import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 import { WatchTime } from '../features/watch-history/watch-time.js'
 import { PageAchievements } from '../features/achievements/achievements.js'
@@ -52,7 +53,7 @@ export const PageDashboard = {
 
     const enabled = layout.filter(w => w.enabled)
     if (!enabled.length) {
-      pad.append(U.el('div', { class: 'empty-state', text: T('No widgets enabled. Use “Edit layout” to add some.') }))
+      pad.append(P.emptyState(T('No widgets enabled. Use “Edit layout” to add some.')))
       return
     }
 
@@ -62,7 +63,7 @@ export const PageDashboard = {
       if (node) { pad.append(node); rendered++ }
     }
     if (!rendered) {
-      pad.append(U.el('div', { class: 'empty-state', text: T('Nothing to show yet — add anime to your library and your dashboard fills in automatically.') }))
+      pad.append(P.emptyState(T('Nothing to show yet — add anime to your library and your dashboard fills in automatically.')))
     }
   },
 

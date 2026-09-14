@@ -5,6 +5,7 @@
 
 import { C } from '../../shared/ui/components.js'
 import { T } from '../../shared/i18n/i18n.js'
+import { P } from '../../shared/ui/primitives.js'
 import { U } from '../../shared/lib/dom.js'
 import { YumeAPI } from '../../shared/api/yume.js'
 
@@ -113,7 +114,7 @@ export const PageW2G = {
     try {
       room = await YumeAPI._request('/v1/w2g/' + encodeURIComponent(code))
     } catch (e) {
-      pad.append(U.el('div', { class: 'error-state', text: T('Room not found — it may have been closed.') }),
+      pad.append(P.errorState(T('Room not found — it may have been closed.')),
         U.el('div', { style: 'text-align:center;margin-top:var(--space-4);' }, [
           U.el('a', { class: 'btn btn-secondary btn-sm', href: '#/w2g' }, [document.createTextNode(T('Back'))])
         ]))
@@ -163,7 +164,7 @@ export const PageW2G = {
       })
       log('Connected to the room')
     } catch (e) {
-      pad.append(U.el('div', { class: 'error-state', text: e.message }))
+      pad.append(P.errorState(e.message))
     }
   }
 }

@@ -8,6 +8,7 @@ import { viewerProfile } from '../shared/lib/site-config.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
 import { ProfileStats } from '../features/watch-history/profile-stats.js'
 import { Store } from '../shared/state/store.js'
+import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 import { WatchTime } from '../features/watch-history/watch-time.js'
 import { PageAchievements } from '../features/achievements/achievements.js'
@@ -121,7 +122,7 @@ export const PageProfile = {
       .filter(([, count]) => count > 0)
 
     if (!statuses.length) {
-      pad.append(U.el('div', { class: 'empty-state', text: T('Your library is empty — add some anime and your stats will grow here.') }))
+      pad.append(P.emptyState(T('Your library is empty — add some anime and your stats will grow here.')))
       return
     }
 

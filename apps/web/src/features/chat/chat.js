@@ -14,6 +14,7 @@
 import { C } from '../../shared/ui/components.js'
 import { T } from '../../shared/i18n/i18n.js'
 import { viewerProfile } from '../../shared/lib/site-config.js'
+import { P } from '../../shared/ui/primitives.js'
 import { U } from '../../shared/lib/dom.js'
 import { YumeAPI } from '../../shared/api/yume.js'
 
@@ -39,7 +40,7 @@ export const Chat = {
     }
 
     if (!rooms.length) {
-      wrap.append(U.el('div', { class: 'empty-state', text: T('No chat rooms yet.') }))
+      wrap.append(P.emptyState(T('No chat rooms yet.')))
       return
     }
 
@@ -71,12 +72,12 @@ export const Chat = {
       ])
     )
 
-    const log = U.el('div', { class: 'chat-log' }, [U.el('div', { class: 'spinner' })])
+    const log = U.el('div', { class: 'chat-log' }, [P.spinner()])
     panel.append(log)
 
     let messages = []
     try { ({ data: messages } = await YumeAPI.chat.messages(room.slug)) } catch (e) {
-      log.replaceChildren(U.el('div', { class: 'error-state', text: T('Could not load the history: ') + e.message }))
+      log.replaceChildren(P.errorState(T('Could not load the history: ') + e.message))
     }
 
     log.replaceChildren()

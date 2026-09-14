@@ -5,6 +5,7 @@ import { Copy } from '../i18n/copy.js'
 import { featureOn, site } from '../lib/site-config.js'
 import { T } from '../i18n/i18n.js'
 import { Store } from '../state/store.js'
+import { P } from '../ui/primitives.js'
 import { U } from '../lib/dom.js'
 import { YumeAPI } from '../api/yume.js'
 
@@ -342,7 +343,7 @@ export const C = {
       }
       for (const media of mediaList) row.append(this.card(media, cardOptions(media)))
     }).catch(() => {
-      row.replaceChildren(U.el('div', { class: 'empty-state', text: T('Failed to load.') }))
+      row.replaceChildren(P.emptyState(T('Failed to load.')))
     })
 
     return section
@@ -498,7 +499,7 @@ export const C = {
     if (!featureOn('comments')) {
       return U.el('div', { class: 'empty-state', style: 'max-width:none;', text: T('Comments are turned off.') })
     }
-    const list = U.el('div', {}, [U.el('div', { class: 'spinner' })])
+    const list = U.el('div', {}, [P.spinner()])
 
     const load = async () => {
       const yumeId = await YumeAPI.yumeAnimeId(media)
@@ -563,7 +564,7 @@ export const C = {
           }
           for (const comment of byParent.get('root') ?? []) renderThread(comment, 0)
         } catch (e) {
-          list.append(U.el('div', { class: 'error-state', text: T('Failed to load comments: ') + e.message }))
+          list.append(P.errorState(T('Failed to load comments: ') + e.message))
         }
       } else {
         list.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-5);', text: T('No comments yet.') }))

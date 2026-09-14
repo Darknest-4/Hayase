@@ -13,6 +13,7 @@
 
 import { C } from '../../shared/ui/components.js'
 import { T } from '../../shared/i18n/i18n.js'
+import { P } from '../../shared/ui/primitives.js'
 import { U } from '../../shared/lib/dom.js'
 import { YumeAPI } from '../../shared/api/yume.js'
 
@@ -32,7 +33,7 @@ export const ArtworkPicker = {
     const backdrop = U.el('div', { class: 'modal-backdrop', id: 'artwork-picker' })
     const close = () => backdrop.remove()
 
-    const grid = U.el('div', { class: 'artwork-grid' }, [U.el('div', { class: 'spinner' })])
+    const grid = U.el('div', { class: 'artwork-grid' }, [P.spinner()])
     const note = U.el('p', { class: 'artwork-note' })
 
     const search = U.el('input', {
@@ -46,13 +47,13 @@ export const ArtworkPicker = {
     let generation = 0
     const load = async q => {
       const attempt = ++generation
-      grid.replaceChildren(U.el('div', { class: 'spinner' }))
+      grid.replaceChildren(P.spinner())
       let result
       try {
         result = await YumeAPI.profile.artwork({ kind, q })
       } catch (e) {
         if (attempt !== generation) return
-        grid.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+        grid.replaceChildren(P.errorState(e.message))
         return
       }
       // A slower earlier search must not overwrite a faster later one.
@@ -66,7 +67,7 @@ export const ArtworkPicker = {
       }[result.source] ?? ''
 
       if (!result.data.length) {
-        grid.append(U.el('div', { class: 'empty-state', text: T('Nothing matched.') }))
+        grid.append(P.emptyState(T('Nothing matched.')))
         return
       }
 

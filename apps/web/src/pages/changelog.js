@@ -10,6 +10,7 @@
 
 import { I18n, T } from '../shared/i18n/i18n.js'
 import { C } from '../shared/ui/components.js'
+import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 import { YumeAPI } from '../shared/api/yume.js'
 
@@ -44,7 +45,7 @@ export const PageChangelog = {
     }
     pad.append(rail)
 
-    const list = U.el('div', { class: 'changelog' }, [U.el('div', { class: 'spinner' })])
+    const list = U.el('div', { class: 'changelog' }, [P.spinner()])
     pad.append(list)
 
     let data
@@ -55,7 +56,7 @@ export const PageChangelog = {
 
     list.replaceChildren()
     if (!data.length) {
-      list.append(U.el('div', { class: 'empty-state', text: T('Nothing written here yet.') }))
+      list.append(P.emptyState(T('Nothing written here yet.')))
       return
     }
 

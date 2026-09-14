@@ -15,6 +15,7 @@ import { LibrarySync } from '../features/library-sync/library-sync.js'
 import { Prefs } from '../shared/state/preferences.js'
 import { Store } from '../shared/state/store.js'
 import { StreamEngine } from '../features/player/stream-engine.js'
+import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 import { WatchTime } from '../features/watch-history/watch-time.js'
 import { YumeAPI } from '../shared/api/yume.js'
@@ -33,16 +34,16 @@ export const PageWatch = {
     const w2gCode = params.get('w2g') ?? window.sessionStorage.getItem('w2g-pending')
 
     if (!animeId) {
-      root.append(U.el('div', { class: 'error-state', text: T('Invalid watch link.') }))
+      root.append(P.errorState(T('Invalid watch link.')))
       return
     }
 
-    root.append(U.el('div', { class: 'spinner' }))
+    root.append(P.spinner())
     let media
     try {
       media = await Catalogue.media(animeId)
     } catch (e) {
-      root.replaceChildren(U.el('div', { class: 'error-state', text: T('Failed to load anime: ') + e.message }))
+      root.replaceChildren(P.errorState(T('Failed to load anime: ') + e.message))
       return
     }
     root.replaceChildren()

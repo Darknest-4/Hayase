@@ -6,6 +6,7 @@ import { featureOn } from '../shared/lib/site-config.js'
 import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
 import { T } from '../shared/i18n/i18n.js'
+import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 
 export const PageSearch = {
@@ -72,7 +73,7 @@ export const PageSearch = {
 
     // image search (trace.moe): button, paste or drop a frame anywhere
     const imageSearch = async blob => {
-      results.replaceChildren(U.el('div', { class: 'spinner' }))
+      results.replaceChildren(P.spinner())
       loadMoreWrap.replaceChildren()
       try {
         const res = await fetch('https://api.trace.moe/search?anilistInfo&cutBorders', { method: 'POST', body: blob })
@@ -81,14 +82,14 @@ export const PageSearch = {
         const hits = (json.result ?? []).filter(r => r.similarity >= 0.8 && r.anilist?.id)
         const ids = [...new Set(hits.map(r => r.anilist.id))].slice(0, 10)
         if (!ids.length) {
-          results.replaceChildren(U.el('div', { class: 'empty-state', text: T('No confident match for that frame.') }))
+          results.replaceChildren(P.emptyState(T('No confident match for that frame.')))
           return
         }
         const page = await Catalogue.searchOrAniList({ ids, perPage: 20 })
         results.replaceChildren(C.grid(page.media ?? []))
         U.toast(`Best match: ${Math.round(hits[0].similarity * 100)}% • episode ${hits[0].episode ?? '?'}`)
       } catch (e) {
-        results.replaceChildren(U.el('div', { class: 'error-state', text: T('Image search failed: ') + e.message }))
+        results.replaceChildren(P.errorState(T('Image search failed: ') + e.message))
       }
     }
 
@@ -176,7 +177,7 @@ export const PageSearch = {
         results.replaceChildren(U.el('div', { class: 'grid' }, Array.from({ length: 12 }, () => C.skeletonCard())))
         loadMoreWrap.replaceChildren()
       } else {
-        loadMoreWrap.replaceChildren(U.el('div', { class: 'spinner' }))
+        loadMoreWrap.replaceChildren(P.spinner())
       }
 
       try {
@@ -188,7 +189,7 @@ export const PageSearch = {
 
         if (!append) {
           if (!media.length) {
-            results.replaceChildren(U.el('div', { class: 'empty-state', text: T('No results found.') }))
+            results.replaceChildren(P.emptyState(T('No results found.')))
           } else {
             results.replaceChildren(C.grid(media))
           }
@@ -205,7 +206,7 @@ export const PageSearch = {
         }
       } catch (e) {
         if (current !== token) return
-        results.replaceChildren(U.el('div', { class: 'error-state', text: T('Failed to load results: ') + e.message }))
+        results.replaceChildren(P.errorState(T('Failed to load results: ') + e.message))
         loadMoreWrap.replaceChildren()
       }
     }

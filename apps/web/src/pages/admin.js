@@ -9,6 +9,7 @@ import { Charts } from '../shared/ui/charts.js'
 import { C } from '../shared/ui/components.js'
 import { I18n } from '../shared/i18n/i18n.js'
 import { Store } from '../shared/state/store.js'
+import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 import { YumeAPI } from '../shared/api/yume.js'
 
@@ -383,7 +384,7 @@ export const PageAdmin = {
           this._headActions
         ])
       )
-      body.replaceChildren(U.el('div', { class: 'spinner' }))
+      body.replaceChildren(P.spinner())
       this[s.render](body)
     }
     select(state.section)
@@ -421,7 +422,7 @@ export const PageAdmin = {
         if (e.key !== 'Enter') return
         const id = e.target.value.trim()
         if (!id) return
-        detail.replaceChildren(U.el('div', { class: 'spinner' }))
+        detail.replaceChildren(P.spinner())
         try {
           const { occurrence, group } = await YumeAPI.admin.errorByRequest(id)
           if (group) { await showDetail(group) } else { detail.replaceChildren() }
@@ -448,7 +449,7 @@ export const PageAdmin = {
 
     const showDetail = async group => {
       state.open = group.id
-      detail.replaceChildren(U.el('div', { class: 'spinner' }))
+      detail.replaceChildren(P.spinner())
       try {
         const { group: g, occurrences } = await YumeAPI.admin.error(group.id)
         detail.replaceChildren()
@@ -465,7 +466,7 @@ export const PageAdmin = {
             }, [document.createTextNode(v === 'open' ? 'Reopen' : 'Mark ' + v)])))
         ]))
         if (!occurrences.length) {
-          detail.append(U.el('div', { class: 'empty-state', text: 'No occurrences recorded.' }))
+          detail.append(P.emptyState('No occurrences recorded.'))
           return
         }
         const occList = U.el('div', { class: 'err-occurrences' })
@@ -476,16 +477,16 @@ export const PageAdmin = {
             U.el('pre', { class: 'err-stack', text: occ.stack || occ.message })
           ]))
         }
-      } catch (e) { detail.replaceChildren(U.el('div', { class: 'error-state', text: e.message })) }
+      } catch (e) { detail.replaceChildren(P.errorState(e.message)) }
     }
 
     const load = async () => {
-      list.replaceChildren(U.el('div', { class: 'spinner' }))
+      list.replaceChildren(P.spinner())
       try {
         const { data } = await YumeAPI.admin.errors(state.status)
         list.replaceChildren()
         if (!data.length) {
-          list.append(U.el('div', { class: 'empty-state', text: state.status === 'open' ? 'No open errors. ' : 'Nothing here.' }))
+          list.append(P.emptyState(state.status === 'open' ? 'No open errors. ' : 'Nothing here.'))
           detail.replaceChildren(U.el('div', { class: 'cat-placeholder', text: 'Nothing to inspect.' }))
           return
         }
@@ -504,7 +505,7 @@ export const PageAdmin = {
           ]))
         }
         if (!state.open) detail.replaceChildren(U.el('div', { class: 'cat-placeholder', text: 'Select an error to see its stack.' }))
-      } catch (e) { list.replaceChildren(U.el('div', { class: 'error-state', text: e.message })) }
+      } catch (e) { list.replaceChildren(P.errorState(e.message)) }
     }
 
     content.replaceChildren(bar, wrap)
@@ -563,7 +564,7 @@ export const PageAdmin = {
     )
 
     const load = async () => {
-      rows.replaceChildren(U.el('div', { class: 'spinner' }))
+      rows.replaceChildren(P.spinner())
       pager.replaceChildren()
       try {
         const since = state.days
@@ -585,7 +586,7 @@ export const PageAdmin = {
 
         rows.replaceChildren()
         if (!data.length) {
-          rows.append(U.el('div', { class: 'empty-state', text: 'Nothing recorded for that.' }))
+          rows.append(P.emptyState('Nothing recorded for that.'))
           return
         }
         for (const r of data) rows.append(this.auditRow(r))
@@ -606,7 +607,7 @@ export const PageAdmin = {
             }, [document.createTextNode('Older →')])
           )
         }
-      } catch (e) { rows.replaceChildren(U.el('div', { class: 'error-state', text: e.message })) }
+      } catch (e) { rows.replaceChildren(P.errorState(e.message)) }
     }
 
     paintBar()
@@ -689,7 +690,7 @@ export const PageAdmin = {
     try {
       [rolesRes, catRes] = await Promise.all([YumeAPI.admin.roles(), YumeAPI.admin.permissionCatalog()])
     } catch (e) {
-      content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load roles: ' + e.message }))
+      content.replaceChildren(P.errorState('Failed to load roles: ' + e.message))
       return
     }
     content.replaceChildren()
@@ -850,7 +851,7 @@ export const PageAdmin = {
    */
   async renderSecurity (content) {
     const load = async () => {
-      content.replaceChildren(U.el('div', { class: 'spinner' }))
+      content.replaceChildren(P.spinner())
       try {
         // The posture is a separate request and must not be able to take the
         // controls down with it: an operator reaching this page mid-incident
@@ -887,7 +888,7 @@ export const PageAdmin = {
 
         content.append(this.revokeAllCard(load))
       } catch (e) {
-        content.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+        content.replaceChildren(P.errorState(e.message))
       }
     }
     await load()
@@ -1041,7 +1042,7 @@ export const PageAdmin = {
     try {
       data = await YumeAPI.admin.config()
     } catch (e) {
-      content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load config: ' + e.message }))
+      content.replaceChildren(P.errorState('Failed to load config: ' + e.message))
       return
     }
     content.replaceChildren()
@@ -1258,7 +1259,7 @@ export const PageAdmin = {
     }
 
     const loadList = async () => {
-      listBox.replaceChildren(U.el('div', { class: 'spinner' }))
+      listBox.replaceChildren(P.spinner())
       try {
         const { data, total } = await YumeAPI.admin.translations.queue({
           limit: 30, offset: state.offset, publishedOnly: state.publishedOnly
@@ -1303,7 +1304,7 @@ export const PageAdmin = {
     }
 
     const openEditor = async row => {
-      editCol.replaceChildren(U.el('div', { class: 'spinner' }))
+      editCol.replaceChildren(P.spinner())
       let payload
       try {
         payload = await YumeAPI.admin.translations.get(row.id)
@@ -1407,7 +1408,7 @@ export const PageAdmin = {
     listCol.append(toolbar, listBox)
 
     const loadList = async () => {
-      listBox.replaceChildren(U.el('div', { class: 'spinner' }))
+      listBox.replaceChildren(P.spinner())
       try {
         const { data, total } = await YumeAPI.admin.catalogue.list({ q: state.q, visibility: state.visibility, limit: 40 })
         listBox.replaceChildren()
@@ -1415,15 +1416,15 @@ export const PageAdmin = {
         if (!data.length) { listBox.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-4);', text: 'No matching anime.' })); return }
         for (const a of data) listBox.append(this.catRow(a, state, openEditor))
       } catch (e) {
-        listBox.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+        listBox.replaceChildren(P.errorState(e.message))
       }
     }
 
     // ---- editor (null = create) ----
     const openEditor = async (anime) => {
-      editCol.replaceChildren(U.el('div', { class: 'spinner' }))
+      editCol.replaceChildren(P.spinner())
       let full = anime
-      if (anime?.id) { try { full = await YumeAPI.admin.catalogue.get(anime.id) } catch (e) { editCol.replaceChildren(U.el('div', { class: 'error-state', text: e.message })); return } }
+      if (anime?.id) { try { full = await YumeAPI.admin.catalogue.get(anime.id) } catch (e) { editCol.replaceChildren(P.errorState(e.message)); return } }
       state.selected = full?.id ?? null
       listBox.querySelectorAll('.cat-row').forEach(r => r.classList.toggle('active', r.dataset.id === state.selected))
       this.renderCatEditor(editCol, full, { can, onSaved: loadList, onDeleted: () => { editCol.replaceChildren(this.catPlaceholder()); loadList() } })
@@ -1608,7 +1609,7 @@ export const PageAdmin = {
   // reasonable thing to ask for and an unreasonable thing to be given for
   // opening a tab.
   async renderCatDuplicates (host, can, reload, mode = 'exact') {
-    host.replaceChildren(U.el('div', { class: 'spinner' }))
+    host.replaceChildren(P.spinner())
     try {
       const { data } = await YumeAPI.admin.catalogue.duplicates({ mode })
       host.replaceChildren()
@@ -1650,7 +1651,7 @@ export const PageAdmin = {
         ]))
       }
     } catch (e) {
-      host.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+      host.replaceChildren(P.errorState(e.message))
     }
   },
 
@@ -1688,7 +1689,7 @@ export const PageAdmin = {
     form.append(wrap)
 
     const load = async () => {
-      wrap.replaceChildren(U.el('div', { class: 'spinner' }))
+      wrap.replaceChildren(P.spinner())
       try {
         const { data } = await YumeAPI.admin.catalogue.episodes(anime.id)
         wrap.replaceChildren()
@@ -1753,7 +1754,7 @@ export const PageAdmin = {
               : null
           ]))
         }
-      } catch (e) { wrap.replaceChildren(U.el('div', { class: 'error-state', text: e.message })) }
+      } catch (e) { wrap.replaceChildren(P.errorState(e.message)) }
     }
     load()
   },
@@ -1795,7 +1796,7 @@ export const PageAdmin = {
     })
 
     const load = async () => {
-      list.replaceChildren(U.el('div', { class: 'spinner' }))
+      list.replaceChildren(P.spinner())
       try {
         const { data } = await YumeAPI.admin.catalogue.sources(ep.id)
         list.replaceChildren()
@@ -1838,7 +1839,7 @@ export const PageAdmin = {
           ]))
         }
       } catch (e) {
-        list.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+        list.replaceChildren(P.errorState(e.message))
       }
     }
 
@@ -1849,7 +1850,7 @@ export const PageAdmin = {
     // would mean three round trips to fix one episode.
     const extras = U.el('div')
     const loadExtras = async () => {
-      extras.replaceChildren(U.el('div', { class: 'spinner' }))
+      extras.replaceChildren(P.spinner())
       try {
         const [{ data: skips }, { data: subs }] = await Promise.all([
           YumeAPI.admin.catalogue.skips(ep.id),
@@ -1959,7 +1960,7 @@ export const PageAdmin = {
           }, [document.createTextNode('Add track')])
         ]))
       } catch (e) {
-        extras.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+        extras.replaceChildren(P.errorState(e.message))
       }
     }
 
@@ -2086,12 +2087,12 @@ export const PageAdmin = {
 
   async renderThemes (content) {
     const load = async () => {
-      content.replaceChildren(U.el('div', { class: 'spinner' }))
+      content.replaceChildren(P.spinner())
       try {
         const { data } = await YumeAPI.admin.themes.list()
         this.paintThemes(content, data, load)
       } catch (e) {
-        content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load themes: ' + e.message }))
+        content.replaceChildren(P.errorState('Failed to load themes: ' + e.message))
       }
     }
     await load()
@@ -2276,7 +2277,7 @@ export const PageAdmin = {
         ])
         this.paintMetadata(content, data, conflicts, load)
       } catch (e) {
-        content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load metadata status: ' + e.message }))
+        content.replaceChildren(P.errorState('Failed to load metadata status: ' + e.message))
         clearInterval(state.timer)
       }
     }
@@ -2392,7 +2393,7 @@ export const PageAdmin = {
     // ---- history ----
     content.append(U.el('h3', { class: 'detail-section-title', text: 'Recent runs' }))
     if (!data.runs?.length) {
-      content.append(U.el('div', { class: 'empty-state', text: 'No sync has been run from here yet.' }))
+      content.append(P.emptyState('No sync has been run from here yet.'))
     } else {
       const rows = U.el('div', { class: 'meta-rows' })
       for (const r of data.runs) {
@@ -2419,7 +2420,7 @@ export const PageAdmin = {
     // pairs are where real duplicates in our own catalogue surface.
     content.append(U.el('h3', { class: 'detail-section-title', text: `Unresolved id collisions (${conflicts.length})` }))
     if (!conflicts.length) {
-      content.append(U.el('div', { class: 'empty-state', text: 'Nothing waiting to be looked at.' }))
+      content.append(P.emptyState('Nothing waiting to be looked at.'))
       return
     }
     content.append(U.el('p', { class: 'meta-note', text: 'An importer could not attach one of these ids because another anime already held it. Most are legitimate season splits; the rest are duplicates worth merging.' }))
@@ -2464,7 +2465,7 @@ export const PageAdmin = {
       try {
         data = await YumeAPI.admin.monitoring.current()
       } catch (e) {
-        content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load monitoring: ' + e.message }))
+        content.replaceChildren(P.errorState('Failed to load monitoring: ' + e.message))
         return
       }
       this.paintMonitoring(content, data, state)
@@ -2623,7 +2624,7 @@ export const PageAdmin = {
     for (const [metric, label, max] of [['cpu.usage_pct', 'CPU %', 100], ['mem.used_pct', 'RAM %', 100], ['api.latency_ms', 'API latency (ms)', null], ['db.latency_ms', 'DB latency (ms)', null]]) {
       const box = U.el('div', { class: 'mon-trend' }, [
         U.el('div', { class: 'mon-trend-label', text: label }),
-        U.el('div', { class: 'spinner' })
+        P.spinner()
       ])
       trends.append(box)
       YumeAPI.admin.monitoring.history(metric, 24).then(res => {
@@ -2659,7 +2660,7 @@ export const PageAdmin = {
   async renderComponents (box) {
     box.replaceChildren(
       U.el('h2', { class: 'detail-section-title', text: 'Components & dependency graph' }),
-      U.el('div', { class: 'spinner' })
+      P.spinner()
     )
     let data
     try {
@@ -2748,9 +2749,9 @@ export const PageAdmin = {
     const paint = report => {
       output.replaceChildren()
       if (!report) { output.append(U.el('div', { class: 'mon-trend-empty', text: 'No diagnostic has been run yet.' })); return }
-      if (report.status === 'running') { output.append(U.el('div', { class: 'spinner' })); return }
+      if (report.status === 'running') { output.append(P.spinner()); return }
       if (report.status === 'failed') {
-        output.append(U.el('div', { class: 'error-state', text: report.error || 'The diagnostic run failed.' }))
+        output.append(P.errorState(report.error || 'The diagnostic run failed.'))
         return
       }
       const scored = (report.results || []).length - (report.results || []).filter(r => r.status === 'skip').length
@@ -2785,12 +2786,12 @@ export const PageAdmin = {
     const run = async () => {
       runBtn.disabled = true
       runBtn.textContent = 'Running…'
-      output.replaceChildren(U.el('div', { class: 'spinner' }))
+      output.replaceChildren(P.spinner())
       try {
         const { id } = await YumeAPI.admin.monitoring.runDiagnostic()
         poll(id)
       } catch (e) {
-        output.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+        output.replaceChildren(P.errorState(e.message))
         runBtn.disabled = false; runBtn.textContent = 'Run diagnostic'
       }
     }
@@ -2857,7 +2858,7 @@ export const PageAdmin = {
         state.updatedAt = new Date()
         this.paintOverview(content, data, health, state, load)
       } catch (e) {
-        content.replaceChildren(U.el('div', { class: 'error-state', text: 'Failed to load the overview: ' + e.message }))
+        content.replaceChildren(P.errorState('Failed to load the overview: ' + e.message))
         clearInterval(state.timer)
       }
     }
@@ -3715,7 +3716,7 @@ export const PageAdmin = {
       for (const user of data) content.append(this.userRow(user, content, q))
 
       if (!data.length) {
-        content.append(U.el('div', { class: 'empty-state', text: 'No users match.' }))
+        content.append(P.emptyState('No users match.'))
       }
 
       const total = Number(totals?.total ?? 0)
@@ -3737,7 +3738,7 @@ export const PageAdmin = {
         ]))
       }
     } catch (e) {
-      content.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+      content.replaceChildren(P.errorState(e.message))
     }
   },
 
@@ -3785,7 +3786,7 @@ export const PageAdmin = {
    * make triaging a queue of accounts painful.
    */
   async userPanel (id, reload) {
-    const body = U.el('div', { class: 'user-panel' }, [U.el('div', { class: 'spinner' })])
+    const body = U.el('div', { class: 'user-panel' }, [P.spinner()])
     C.modalPanel('Account', [body])
 
     const load = async () => {
@@ -3793,7 +3794,7 @@ export const PageAdmin = {
         const d = await YumeAPI.admin.user(id)
         body.replaceChildren(...this.userPanelBody(d, { reload, refresh: load }))
       } catch (e) {
-        body.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+        body.replaceChildren(P.errorState(e.message))
       }
     }
     await load()
@@ -4010,7 +4011,7 @@ export const PageAdmin = {
         ]))
       }
     } catch (e) {
-      content.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+      content.replaceChildren(P.errorState(e.message))
     }
   },
 
@@ -4108,7 +4109,7 @@ export const PageAdmin = {
       ]))
 
       if (!data.length) {
-        content.append(U.el('div', { class: 'empty-state', text: 'No webhooks yet. Add one to start receiving events.' }))
+        content.append(P.emptyState('No webhooks yet. Add one to start receiving events.'))
         return
       }
 
@@ -4153,7 +4154,7 @@ export const PageAdmin = {
         ]))
       }
     } catch (e) {
-      content.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
+      content.replaceChildren(P.errorState(e.message))
     }
   },
 

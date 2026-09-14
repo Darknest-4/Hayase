@@ -13,11 +13,12 @@ import { C } from '../shared/ui/components.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
 import { Prefs } from '../shared/state/preferences.js'
 import { Store } from '../shared/state/store.js'
+import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 
 export const PageAnime = {
   async render (root, params, id) {
-    root.append(U.el('div', { class: 'spinner' }))
+    root.append(P.spinner())
 
     // Catalogue first, AniList as the fallback — see js/catalogue.js. `id` is
     // an AniList id or a Yume uuid; the resolver accepts either, which is what
@@ -26,11 +27,11 @@ export const PageAnime = {
     try {
       media = await Catalogue.media(id)
     } catch (e) {
-      root.replaceChildren(U.el('div', { class: 'error-state', text: T('Failed to load anime: ') + e.message }))
+      root.replaceChildren(P.errorState(T('Failed to load anime: ') + e.message))
       return
     }
     if (!media) {
-      root.replaceChildren(U.el('div', { class: 'empty-state', text: T('Anime not found.') }))
+      root.replaceChildren(P.emptyState(T('Anime not found.')))
       return
     }
 
@@ -403,10 +404,10 @@ export const PageAnime = {
   },
 
   renderTabEpisodes (wrap, media) {
-    const list = U.el('div', { class: 'episodes' }, [U.el('div', { class: 'spinner' })])
+    const list = U.el('div', { class: 'episodes' }, [P.spinner()])
     wrap.append(list)
     this.renderEpisodes(list, media).catch(() => {
-      list.replaceChildren(U.el('div', { class: 'empty-state', text: T('No episode data available.') }))
+      list.replaceChildren(P.emptyState(T('No episode data available.')))
     })
   },
 
@@ -426,7 +427,7 @@ export const PageAnime = {
     const relations = (media.relations?.edges ?? [])
       .filter(e => e.node?.type !== 'MANGA' && e.relationType !== 'CHARACTER' && e.node?.coverImage)
     if (!relations.length) {
-      if (!wrap.childElementCount) wrap.append(U.el('div', { class: 'empty-state', text: T('No known relations.') }))
+      if (!wrap.childElementCount) wrap.append(P.emptyState(T('No known relations.')))
       return
     }
     wrap.append(U.el('h3', { class: 'detail-section-title', text: T('Related') }))
@@ -534,7 +535,7 @@ export const PageAnime = {
     // Nothing: either the title is not in our catalogue, or the AniList deep
     // pass has not reached it yet. Admin → Metadata is where that is fixed,
     // and saying "no data" is honest about which of the two it is not.
-    wrap.append(U.el('div', { class: 'empty-state', text: T('No character data.') }))
+    wrap.append(P.emptyState(T('No character data.')))
   },
 
   renderTabComments (wrap, media) {
@@ -552,14 +553,14 @@ export const PageAnime = {
       return
     }
 
-    wrap.append(U.el('div', { class: 'empty-state', text: T('No recommendations yet.') }))
+    wrap.append(P.emptyState(T('No recommendations yet.')))
   },
 
   async renderEpisodes (wrap, media) {
     const episodes = await Catalogue.episodes(media)
 
     if (!episodes.length) {
-      wrap.replaceChildren(U.el('div', { class: 'empty-state', text: media.status === 'NOT_YET_RELEASED' ? 'Not yet aired.' : 'No episode data available.' }))
+      wrap.replaceChildren(P.emptyState(media.status === 'NOT_YET_RELEASED' ? 'Not yet aired.' : 'No episode data available.'))
       return
     }
 

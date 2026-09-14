@@ -6,6 +6,7 @@ import { navigate } from '../shared/lib/shell.js'
 import { C } from '../shared/ui/components.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
 import { Store } from '../shared/state/store.js'
+import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 
 export const PageHistory = {
@@ -32,7 +33,7 @@ export const PageHistory = {
 
     const history = Store.history()
     if (!history.length) {
-      pad.append(U.el('div', { class: 'empty-state', text: T('Nothing watched yet on this profile. Play an episode and it shows up here.') }))
+      pad.append(P.emptyState(T('Nothing watched yet on this profile. Play an episode and it shows up here.')))
       return
     }
 

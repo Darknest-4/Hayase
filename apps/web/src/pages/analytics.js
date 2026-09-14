@@ -7,6 +7,7 @@ import { C } from '../shared/ui/components.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
 import { ProfileStats } from '../features/watch-history/profile-stats.js'
 import { Store } from '../shared/state/store.js'
+import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 import { WatchTime } from '../features/watch-history/watch-time.js'
 
@@ -32,7 +33,7 @@ export const PageAnalytics = {
     const history = Store.history()
 
     if (!entries.length && !history.length) {
-      pad.append(U.el('div', { class: 'empty-state', text: T('No data yet on this profile. Add anime to your library and watch a few episodes — your analytics build up here automatically.') }))
+      pad.append(P.emptyState(T('No data yet on this profile. Add anime to your library and watch a few episodes — your analytics build up here automatically.')))
       return
     }
 

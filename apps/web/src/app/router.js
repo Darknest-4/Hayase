@@ -25,6 +25,7 @@ import { PageW2G } from '../features/watch-together/watch-together.js'
 import { PageWatch } from '../pages/watch.js'
 import { Prefs } from '../shared/state/preferences.js'
 import { Store } from '../shared/state/store.js'
+import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 import { YumeAPI } from '../shared/api/yume.js'
 
@@ -497,7 +498,7 @@ export const App = {
         results.replaceChildren(U.el('div', { class: 'search-modal-empty', text: T('search.prompt') }))
         return
       }
-      results.replaceChildren(U.el('div', { class: 'spinner' }))
+      results.replaceChildren(P.spinner())
       try {
         // The Yume catalogue answers from Postgres with tiered ranking, which
         // matches romaji/english/native titles and synonyms. When no backend
