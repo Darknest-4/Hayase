@@ -16,6 +16,7 @@ import { Prefs } from '../shared/state/preferences.js'
 import { Store } from '../shared/state/store.js'
 import { StreamEngine } from '../features/player/stream-engine.js'
 import { P } from '../shared/ui/primitives.js'
+import { titleTheme } from '../shared/lib/title-theme.js'
 import { U } from '../shared/lib/dom.js'
 import { WatchTime } from '../features/watch-history/watch-time.js'
 import { YumeAPI } from '../shared/api/yume.js'
@@ -54,7 +55,10 @@ export const PageWatch = {
     this._episode = episode
     this._total = total
 
-    const pad = U.el('div', { class: 'page-pad watch-page' })
+    // Themed by the title being watched, exactly as its detail page is — the
+    // player had no --custom at all, so the one screen you spend the most time
+    // on was the one that did not agree with the artwork on it.
+    const pad = U.el('div', { class: 'page-pad watch-page', style: titleTheme(media) })
     root.append(pad)
 
     // ---- header ----
