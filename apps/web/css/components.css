@@ -595,3 +595,116 @@ a.badge:hover { color: var(--accent); border-color: var(--accent); }
 }
 .error-state-detail { font: var(--type-metadata); color: var(--fg-muted); margin-top: var(--space-2); font-weight: var(--weight-normal); }
 .error-state-action { margin-top: var(--space-4); }
+
+
+/* ---------------------------------------------------------------------------
+   Landing page
+
+   The one screen a visitor sees before they have an account, so it is the one
+   place the type is allowed to be enormous. Everything else on the site is a
+   dense interface; this is a poster.
+   --------------------------------------------------------------------------- */
+
+.landing { max-width: 62rem; margin: 0 auto; padding: 0 var(--space-4); }
+
+.lp-hero {
+  position: relative;
+  min-height: min(82vh, 44rem);
+  display: flex; flex-direction: column; justify-content: center;
+  padding: var(--space-8) 0;
+  isolation: isolate;
+}
+
+/* The site's own name, outlined, barely there. Texture rather than content —
+   it is aria-hidden in the markup for the same reason. */
+.lp-watermark {
+  position: absolute;
+  inset-inline-start: -0.06em;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: -1;
+  font-size: clamp(6rem, 30vw, 20rem);
+  font-weight: var(--weight-black);
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: transparent;
+  -webkit-text-stroke: 1px color-mix(in oklab, var(--fg) 7%, transparent);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.lp-title {
+  font-size: clamp(2.5rem, 11vw, 5.5rem);
+  font-weight: var(--weight-extrabold);
+  line-height: var(--leading-tight);
+  letter-spacing: -0.03em;
+  margin: 0 0 var(--space-4);
+  text-wrap: balance;
+}
+/* The gradient sits on the opening words only — the rest stays solid, so the
+   effect reads as emphasis rather than as a coloured heading. */
+.lp-title-lead {
+  background: linear-gradient(100deg, var(--fg), color-mix(in oklab, var(--fg) 45%, var(--bg)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.lp-sub {
+  font: var(--type-subtitle);
+  color: var(--fg-muted);
+  max-width: 34rem;
+  margin: 0 0 var(--space-6);
+}
+
+.lp-cta { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+.lp-cta .btn { padding: var(--space-3) var(--space-6); font-size: var(--text-base); }
+
+.lp-section { padding: var(--space-8) 0; border-top: 1px solid var(--border); }
+
+.lp-eyebrow {
+  font: var(--type-metadata);
+  text-transform: uppercase;
+  letter-spacing: .2em;
+  color: var(--fg-faint);
+  margin: 0 0 var(--space-3);
+}
+
+.lp-display {
+  font-size: clamp(1.8rem, 6vw, 3.2rem);
+  font-weight: var(--weight-extrabold);
+  line-height: var(--leading-tight);
+  letter-spacing: -0.02em;
+  margin: 0 0 var(--space-4);
+  text-wrap: balance;
+}
+.lp-display-lead {
+  background: linear-gradient(100deg, var(--fg), color-mix(in oklab, var(--fg) 45%, var(--bg)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.lp-lead { font: var(--type-body); color: var(--fg-muted); max-width: 38rem; margin: 0 0 var(--space-7); }
+
+/* One feature per thumb-scroll on a phone, two columns once there is room. */
+.lp-features { display: grid; gap: var(--space-7); }
+@media (min-width: 720px) { .lp-features { grid-template-columns: 1fr 1fr; column-gap: var(--space-6); } }
+
+.lp-feature { display: flex; gap: var(--space-4); align-items: flex-start; }
+.lp-feature-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 2.5rem; height: 2.5rem; flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--accent);
+}
+.lp-feature-title { font: var(--type-subtitle); margin: 0 0 var(--space-1); }
+.lp-feature-body { font: var(--type-caption); color: var(--fg-muted); margin: 0; }
+
+.lp-signin { scroll-margin-top: var(--space-5); }
+.lp-signin .setting-card { margin-inline: 0; max-width: 26rem; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .landing { scroll-behavior: smooth; }
+}

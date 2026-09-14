@@ -14,6 +14,7 @@ import { I18n, T } from '../shared/i18n/i18n.js'
 import { Prefs } from '../shared/state/preferences.js'
 import { Store } from '../shared/state/store.js'
 import { P } from '../shared/ui/primitives.js'
+import { titleTheme } from '../shared/lib/title-theme.js'
 import { U } from '../shared/lib/dom.js'
 
 export const PageAnime = {
@@ -40,11 +41,11 @@ export const PageAnime = {
     // the original keeps the banner behind the whole page
     U.setBanner(media.bannerImage ?? U.cover(media))
 
-    // cover dominant color drives the accent chips, like --custom upstream
-    const custom = media.coverImage?.color ?? 'hsl(346.6 79% 51%)'
-    const customFg = contrastColor(custom)
-
-    const page = U.el('div', { class: 'detail-page', style: `--custom:${custom};--custom-fg:${customFg};` })
+    // The cover's dominant colour drives this page's accent — see
+    // shared/lib/title-theme.js. No literal default here: a title without a
+    // colour gets no --custom at all, and the CSS falls back to the site
+    // accent on its own.
+    const page = U.el('div', { class: 'detail-page', style: titleTheme(media) })
     root.append(page)
     const wrap = U.el('div', { class: 'detail-wrap' })
     page.append(wrap)
@@ -675,15 +676,6 @@ export const PageAnime = {
 }
 
 // contrast text (black/white) for a hex background, like text-contrast upstream
-function contrastColor (color) {
-  const hex = color.startsWith('#') ? color.slice(1) : null
-  if (!hex || hex.length < 6) return 'white'
-  const r = parseInt(hex.slice(0, 2), 16)
-  const g = parseInt(hex.slice(2, 4), 16)
-  const b = parseInt(hex.slice(4, 6), 16)
-  return (r * 299 + g * 587 + b * 114) / 1000 >= 128 ? 'black' : 'white'
-}
-
 // score chip color, like getBGColorForRating upstream
 function ratingColor (score) {
   if (score >= 75) return 'hsl(142 60% 38%)'

@@ -341,7 +341,12 @@ export const Catalogue = {
         romaji: row.romaji ?? row.canonical_title,
         english: row.english ?? null
       },
-      coverImage: { large: row.cover_key ?? '', extraLarge: row.cover_key ?? '', color: row.cover_color ?? null },
+      // Both spellings. The browse query sent `dominant_color` and the search
+      // query sent `dominant_color AS cover_color`, for the same column — so
+      // every card from a browse arrived with no colour and silently fell back
+      // to the site accent. The server is aligned now; reading both keeps a
+      // client that is a deploy behind from losing the colour again.
+      coverImage: { large: row.cover_key ?? '', extraLarge: row.cover_key ?? '', color: row.cover_color ?? row.dominant_color ?? null },
       format: row.format ?? null,
       status: row.status ?? null,
       seasonYear: row.season_year ?? null,

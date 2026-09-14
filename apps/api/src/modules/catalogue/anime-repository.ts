@@ -98,7 +98,7 @@ export class AnimeRepository extends Repository {
       `SELECT a.id, a.canonical_title, a.format, a.status, a.season, a.season_year,
               a.episode_count, a.average_score, a.popularity, a.is_adult,
               ${page.sort.column} AS sort_value,
-              img.object_key AS cover_key, img.blurhash, img.dominant_color
+              img.object_key AS cover_key, img.blurhash, img.dominant_color AS cover_color
        FROM anime a
        ${COVER}
        WHERE ${page.where.join(' AND ')}
