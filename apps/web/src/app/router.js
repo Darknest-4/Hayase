@@ -7,6 +7,7 @@ import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
 import { configure as configureFeatures, featureOn } from '../shared/lib/site-config.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
+import { Landing } from '../features/landing/landing.js'
 import { LibrarySync } from '../features/library-sync/library-sync.js'
 import { Onboarding } from '../features/onboarding/onboarding.js'
 import { PageAdmin } from '../pages/admin.js'
@@ -369,15 +370,17 @@ export const App = {
 
   _renderGate (page, gate, route) {
     const wrap = U.el('div', { class: 'gate' })
-    const siteName = this.config?.site?.name ?? 'Yume'
 
     if (gate.kind === 'site-login') {
-      wrap.append(
-        U.el('div', { class: 'gate-icon', text: '🔒' }),
-        U.el('h1', { class: 'gate-title', text: `${siteName} is private` }),
-        U.el('p', { class: 'gate-sub', text: T('Sign in to your account to continue.') }),
-        C.authCard(() => { this.afterAuth() })
-      )
+      // The whole-site gate is the landing page. A visitor who has never been
+      // here arrives at this branch, and a padlock with four words above a form
+      // told them nothing about what they were being asked to sign in to.
+      //
+      // Nothing is unlocked by this: `require_login` still decides what is
+      // reachable, and the landing page reads no catalogue data. It is the same
+      // gate with the reasons in front of the form instead of behind it.
+      Landing.render(page, this.config?.site, () => { this.afterAuth() })
+      return
     } else if (gate.kind === 'auth') {
       wrap.append(
         U.el('div', { class: 'gate-icon', text: '🔑' }),
