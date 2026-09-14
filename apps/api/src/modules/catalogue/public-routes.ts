@@ -244,11 +244,19 @@ const routes: FastifyPluginAsync = async fastify => {
     }
   }, async request => {
     const { q, ...filters } = request.query as { q: string } & SearchFilters
-    const data = await searchAnime(pool, q, filters)
+    // One row more than the page, so the answer can say whether another page
+    // exists. It could not before: the response was {data, query} with nothing
+    // about what came after it, so the web client had no way to offer more and
+    // a catalogue-backed search ended at its first page however many titles
+    // matched. Same shape of answer the browse route above already gives.
+    const limit = filters.limit ?? 20
+    const rows = await searchAnime(pool, q, { ...filters, limit: limit + 1 })
+    const hasMore = rows.length > limit
+    const data = rows.slice(0, limit)
     // telemetry is fire-and-forget: a zero-result query is a catalogue gap
     // worth reporting, but recording it must never delay the response
     void recordSearch(pool, q, data.length, request.headers['x-profile-id'] as string | undefined)
-    return { data, query: q }
+    return { data, query: q, hasMore }
   })
 
   // Quick-search box: same ranking, minimal payload, no telemetry (it fires

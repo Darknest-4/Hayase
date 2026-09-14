@@ -392,16 +392,20 @@ export const Catalogue = {
 
     // ---- free text ----
     if (variables.search) {
-      const rows = await YumeAPI.searchCatalogue(variables.search, {
+      const answer = await YumeAPI.searchCatalogue(variables.search, {
         genre: first(variables.genre) ?? undefined,
         season: first(variables.season) ?? undefined,
         year: variables.seasonYear ?? undefined,
         format: first(variables.format) ?? undefined,
         status: first(variables.status) ?? undefined,
+        offset: variables.offset || undefined,
         limit
       })
-      if (!rows?.length) return null
-      return { media: rows.map(r => this.toCard(r)) }
+      if (!answer?.data?.length) return null
+      // pageInfo, because that is what the pages read. Without it every
+      // catalogue answer looked like a last page and "Load more" never
+      // appeared, whatever the catalogue actually held.
+      return { media: answer.data.map(r => this.toCard(r)), pageInfo: { hasNextPage: !!answer.hasMore } }
     }
 
     // ---- filtered / sorted browse ----
@@ -412,10 +416,19 @@ export const Catalogue = {
       format: first(variables.format) ?? undefined,
       status: first(variables.status) ?? undefined,
       sort: this.SORTS[first(variables.sort)] ?? undefined,
+      cursor: variables.cursor ?? undefined,
       limit
     })
     if (!answer?.data?.length) return null
-    return { media: answer.data.map(r => this.toCard(r)), cursor: answer.cursor ?? null }
+    // `nextCursor` is the field the route sends. This read `answer.cursor`,
+    // which is never set, so the cursor was dropped on arrival and browse
+    // pagination could not have worked even once the caller asked for it.
+    const nextCursor = answer.nextCursor ?? null
+    return {
+      media: answer.data.map(r => this.toCard(r)),
+      cursor: nextCursor,
+      pageInfo: { hasNextPage: !!nextCursor }
+    }
   },
 
   /**

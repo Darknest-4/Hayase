@@ -230,7 +230,10 @@ export async function searchAnime (
   const q = prepareQuery(rawQuery)
   if (!q) return []
 
-  const limit = Math.min(50, Math.max(1, filters.limit ?? 20))
+  // 51, not 50. The route asks for one row more than it intends to show so it
+  // can tell the client whether another page exists; clamping at 50 would eat
+  // that probe exactly when a caller asks for the largest allowed page.
+  const limit = Math.min(51, Math.max(1, filters.limit ?? 20))
   const rankedByRelevance = !filters.sort || filters.sort === 'relevance'
 
   if (rankedByRelevance) {

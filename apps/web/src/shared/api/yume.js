@@ -498,12 +498,20 @@ export const YumeAPI = {
   // native titles and synonyms). The client stays usable without a backend —
   // callers fall back to AniList when these return null.
 
+  /**
+   * Returns `{ data, hasMore }`, not a bare array.
+   *
+   * It used to return just `data`, which threw away the only signal about
+   * whether another page existed — so every catalogue-backed search stopped at
+   * its first page. `null` still means the backend could not answer and the
+   * caller should use AniList.
+   */
   async searchCatalogue (query, filters = {}) {
     const params = new URLSearchParams({ q: query })
     for (const [k, v] of Object.entries(filters)) if (v !== undefined && v !== '' && v !== false) params.set(k, v)
     try {
-      const { data } = await this._request('/v1/anime/search?' + params.toString())
-      return data
+      const { data, hasMore } = await this._request('/v1/anime/search?' + params.toString())
+      return { data, hasMore: hasMore ?? false }
     } catch (e) {
       return null // backend unreachable — the caller uses AniList instead
     }

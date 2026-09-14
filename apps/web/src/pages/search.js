@@ -30,7 +30,9 @@ export const PageSearch = {
       format: params.get('format') ?? '',
       status: params.get('status') ?? '',
       sort: params.get('sort') ?? 'TRENDING_DESC',
-      page: 1
+      page: 1,
+      // Set from each browse answer; null means "start at the beginning".
+      cursor: null
     }
 
     const pad = U.el('div', { class: 'page-pad' })
@@ -168,6 +170,11 @@ export const PageSearch = {
       status: state.status ? [state.status] : null,
       sort: [state.search && state.sort === 'TRENDING_DESC' ? 'SEARCH_MATCH' : state.sort],
       page: state.page,
+      // AniList pages by page number; the catalogue pages by offset for a text
+      // search and by cursor for a browse. All three travel together because
+      // which one answers is decided inside Catalogue.search, not here.
+      offset: (state.page - 1) * 30,
+      cursor: state.cursor,
       perPage: 30
     })
 
@@ -197,6 +204,10 @@ export const PageSearch = {
           for (const m of media) grid.append(C.card(m))
         }
 
+        // Carry the cursor the catalogue browse answered with, so the next
+        // page starts where this one stopped.
+        state.cursor = page.cursor ?? null
+
         loadMoreWrap.replaceChildren()
         if (page.pageInfo?.hasNextPage) {
           loadMoreWrap.append(U.el('button', {
@@ -211,7 +222,7 @@ export const PageSearch = {
       }
     }
 
-    const reset = () => { state.page = 1; load(false) }
+    const reset = () => { state.page = 1; state.cursor = null; load(false) }
 
     load(false)
   }
