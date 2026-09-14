@@ -117,7 +117,7 @@ export const PageAnime = {
       U.el('div', { class: 'detail-cover' }, [U.el('img', { src: U.cover(media), alt: mainTitle })]),
       U.el('div', { class: 'detail-headings' }, [
         titleEl,
-        secondary ? U.el('h2', { class: 'detail-secondary', style: 'margin-top:.1rem;', text: secondary }) : null,
+        secondary ? U.el('h2', { class: 'detail-secondary', style: 'margin-top:var(--space-1);', text: secondary }) : null,
         starRow,
         chips,
         descNote,
@@ -634,7 +634,7 @@ export const PageAnime = {
         }, [
           thumb,
           U.el('div', { class: 'episode-body' }, [
-            U.el('div', { style: 'display:flex;align-items:center;gap:.5rem;' }, [
+            U.el('div', { style: 'display:flex;align-items:center;gap:var(--space-2);' }, [
               U.el('div', { class: 'episode-title', style: 'flex-grow:1;', text: ep.title ?? `Episode ${ep.episode}` }),
               canPlay ? null : U.el('span', { class: 'episode-nosource', text: T('No source') }),
               U.el('button', {

@@ -25,7 +25,7 @@ export const PageList = {
     const state = { tab: params.get('tab') ?? 'CURRENT', shown: PAGE }
 
     const tabsWrap = U.el('div', { class: 'tabs' })
-    const content = U.el('div', { style: 'margin-top:1.25rem;' })
+    const content = U.el('div', { style: 'margin-top:var(--space-4);' })
     pad.append(tabsWrap, content)
 
     const TABS = [...Object.entries(U.listStatusMap), ['FAVOURITES', 'Favourites']]
@@ -97,7 +97,7 @@ export const PageList = {
               title: T('-1 episode'),
               onclick: () => { Store.setProgress(media, (Store.entry(media.id)?.progress ?? 0) - 1); renderTabs(); renderContent() }
             }, [U.svg(C.MINUS, 13)]),
-            U.el('span', { style: 'font-weight:800;font-size:.85rem;min-width:4.5rem;text-align:center;', text: `${entry.progress ?? 0}${total} ep` }),
+            U.el('span', { style: 'font-weight:800;font-size:var(--text-sm);min-width:4.5rem;text-align:center;', text: `${entry.progress ?? 0}${total} ep` }),
             U.el('button', {
               class: 'icon-btn',
               title: T('+1 episode'),

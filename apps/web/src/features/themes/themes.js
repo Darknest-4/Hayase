@@ -75,7 +75,7 @@ export const PageThemes = {
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
     pad.append(U.el('h1', { class: 'page-title', text: T('Theme Engine') }))
-    pad.append(U.el('p', { class: 'list-row-sub', style: 'margin-top:-.5rem;', text: T('Personalise Yume. Changes apply instantly and are saved for this profile.') }))
+    pad.append(U.el('p', { class: 'list-row-sub', style: 'margin-top:-var(--space-2);', text: T('Personalise Yume. Changes apply instantly and are saved for this profile.') }))
     this.body(pad)
   },
 
@@ -141,7 +141,7 @@ export const PageThemes = {
     pad.append(U.el('div', { class: 'theme-custom-row' }, [
       picker,
       U.el('div', {}, [
-        U.el('div', { style: 'font-weight:700;font-size:.9rem;', text: T('Pick any colour') }),
+        U.el('div', { style: 'font-weight:700;font-size:var(--text-sm);', text: T('Pick any colour') }),
         U.el('div', { class: 'list-row-sub', text: T('Drag the picker — the whole UI recolours live.') })
       ]),
       U.el('button', {
@@ -160,10 +160,10 @@ export const PageThemes = {
       }),
       U.el('span', { class: 'slider' })
     ])
-    pad.append(U.el('div', { class: 'setting-card', style: 'display:flex;align-items:center;gap:1rem;margin-top:1rem;' }, [
+    pad.append(U.el('div', { class: 'setting-card', style: 'display:flex;align-items:center;gap:var(--space-4);margin-top:var(--space-4);' }, [
       U.el('div', { style: 'flex-grow:1;' }, [
         U.el('h3', { style: 'margin:0;', text: T('Tint surfaces') }),
-        U.el('p', { style: 'margin:.2rem 0 0;', text: T('Blend a hint of the accent colour into cards and panels.') })
+        U.el('p', { style: 'margin:var(--space-1) 0 0;', text: T('Blend a hint of the accent colour into cards and panels.') })
       ]),
       tint
     ]))
@@ -174,12 +174,12 @@ export const PageThemes = {
       U.el('div', { class: 'theme-preview-card' }, [
         U.el('div', { class: 'theme-preview-title', text: T('Attack on Titan') }),
         U.el('div', { class: 'theme-preview-sub', text: T('TV · Finished · 25 episodes') }),
-        U.el('div', { style: 'display:flex;gap:.5rem;margin-top:.75rem;' }, [
+        U.el('div', { style: 'display:flex;gap:var(--space-2);margin-top:var(--space-3);' }, [
           U.el('span', { class: 'btn btn-primary btn-sm', text: T('Play') }),
           U.el('span', { class: 'btn btn-secondary btn-sm', text: T('Add to list') }),
           U.el('span', { class: 'badge badge-outline', text: T('Action') })
         ]),
-        U.el('div', { class: 'ach-progress-track', style: 'margin-top:.9rem;' }, [
+        U.el('div', { class: 'ach-progress-track', style: 'margin-top:var(--space-4);' }, [
           U.el('div', { class: 'ach-progress-fill', style: 'width:68%;' })
         ])
       ])

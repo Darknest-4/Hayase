@@ -67,7 +67,7 @@ export const PageProfile = {
     }
     pad.append(tabs)
 
-    const content = U.el('div', { style: 'margin-top:1.25rem;' })
+    const content = U.el('div', { style: 'margin-top:var(--space-4);' })
     pad.append(content)
 
     if (active === 'analytics') PageAnalytics.body(content)

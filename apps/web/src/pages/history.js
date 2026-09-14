@@ -18,7 +18,7 @@ export const PageHistory = {
   },
 
   body (pad) {
-    pad.append(U.el('div', { style: 'display:flex;justify-content:flex-end;margin-bottom:.5rem;' }, [
+    pad.append(U.el('div', { style: 'display:flex;justify-content:flex-end;margin-bottom:var(--space-2);' }, [
       U.el('button', {
         class: 'btn btn-ghost btn-sm',
         onclick: () => {
@@ -52,7 +52,7 @@ export const PageHistory = {
       if (key === today) label = 'Today'
       else if (key === yesterday) label = 'Yesterday'
 
-      pad.append(U.el('h2', { class: 'detail-section-title', style: 'margin-bottom:.5rem;', text: label }))
+      pad.append(U.el('h2', { class: 'detail-section-title', style: 'margin-bottom:var(--space-2);', text: label }))
 
       for (const item of items) {
         const media = item.media

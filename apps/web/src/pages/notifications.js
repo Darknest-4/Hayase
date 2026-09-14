@@ -75,7 +75,7 @@ export const PageNotifications = {
     root.append(pad)
 
     // ---- toolbar ----
-    pad.append(U.el('div', { style: 'display:flex;gap:.5rem;justify-content:flex-end;margin-bottom:.5rem;' }, [
+    pad.append(U.el('div', { style: 'display:flex;gap:var(--space-2);justify-content:flex-end;margin-bottom:var(--space-2);' }, [
       U.el('button', {
         class: 'btn btn-ghost btn-sm',
         disabled: unread ? null : '',

@@ -750,7 +750,7 @@ export const PageAdmin = {
       const head = U.el('div', { class: 'roles-panel-head' }, [
         U.el('div', {}, [
           U.el('h3', { style: 'margin:0;', text: state.role.name }),
-          U.el('p', { class: 'list-row-sub', style: 'margin:.15rem 0 0;', text: isAdmin ? 'The admin role always holds every permission.' : `${state.granted.size} of ${total} permissions granted` })
+          U.el('p', { class: 'list-row-sub', style: 'margin:var(--space-1) 0 0;', text: isAdmin ? 'The admin role always holds every permission.' : `${state.granted.size} of ${total} permissions granted` })
         ]),
         U.el('input', { class: 'input', placeholder: 'Filter permissions…', value: state.filter, oninput: e => { state.filter = e.target.value.toLowerCase(); renderList() } })
       ])
@@ -1069,8 +1069,8 @@ export const PageAdmin = {
 
     const boolSetting = (key, title, desc) => {
       const on = settings[key] === true
-      return U.el('div', { class: 'setting-card', style: 'display:flex;align-items:center;gap:1rem;' }, [
-        U.el('div', { style: 'flex-grow:1;' }, [U.el('h3', { style: 'margin:0;', text: title }), U.el('p', { style: 'margin:.2rem 0 0;', text: desc })]),
+      return U.el('div', { class: 'setting-card', style: 'display:flex;align-items:center;gap:var(--space-4);' }, [
+        U.el('div', { style: 'flex-grow:1;' }, [U.el('h3', { style: 'margin:0;', text: title }), U.el('p', { style: 'margin:var(--space-1) 0 0;', text: desc })]),
         U.el('label', { class: 'switch' }, [
           U.el('input', {
             type: 'checkbox',
@@ -1232,7 +1232,7 @@ export const PageAdmin = {
       ])
     ])
     listCol.append(progressBox, toolbar, listBox)
-    editCol.append(U.el('div', { class: 'empty-state', style: 'padding:2rem;', text: 'Pick a title on the left to write its Hungarian text.' }))
+    editCol.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-6);', text: 'Pick a title on the left to write its Hungarian text.' }))
 
     const loadProgress = async () => {
       try {
@@ -1267,19 +1267,19 @@ export const PageAdmin = {
           U.el('div', { class: 'cat-count', text: `${total.toLocaleString(I18n.locale())} still need a Hungarian description` })
         )
         if (!data.length) {
-          listBox.append(U.el('div', { class: 'empty-state', style: 'padding:1rem;', text: 'Nothing left in this filter.' }))
+          listBox.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-4);', text: 'Nothing left in this filter.' }))
           return
         }
         for (const row of data) listBox.append(rowNode(row))
         if (total > state.offset + data.length) {
           listBox.append(U.el('button', {
             class: 'btn btn-ghost btn-sm',
-            style: 'width:100%;margin-top:.6rem;',
+            style: 'width:100%;margin-top:var(--space-2);',
             onclick: () => { state.offset += 30; loadList() }
           }, [document.createTextNode('Next 30')]))
         }
       } catch (e) {
-        listBox.replaceChildren(U.el('div', { class: 'empty-state', style: 'padding:1rem;', text: 'Could not load the queue: ' + e.message }))
+        listBox.replaceChildren(U.el('div', { class: 'empty-state', style: 'padding:var(--space-4);', text: 'Could not load the queue: ' + e.message }))
       }
     }
 
@@ -1308,7 +1308,7 @@ export const PageAdmin = {
       try {
         payload = await YumeAPI.admin.translations.get(row.id)
       } catch (e) {
-        editCol.replaceChildren(U.el('div', { class: 'empty-state', style: 'padding:2rem;', text: 'Could not load: ' + e.message }))
+        editCol.replaceChildren(U.el('div', { class: 'empty-state', style: 'padding:var(--space-6);', text: 'Could not load: ' + e.message }))
         return
       }
 
@@ -1412,7 +1412,7 @@ export const PageAdmin = {
         const { data, total } = await YumeAPI.admin.catalogue.list({ q: state.q, visibility: state.visibility, limit: 40 })
         listBox.replaceChildren()
         listBox.append(U.el('div', { class: 'cat-count', text: `${total.toLocaleString()} entries` }))
-        if (!data.length) { listBox.append(U.el('div', { class: 'empty-state', style: 'padding:1rem;', text: 'No matching anime.' })); return }
+        if (!data.length) { listBox.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-4);', text: 'No matching anime.' })); return }
         for (const a of data) listBox.append(this.catRow(a, state, openEditor))
       } catch (e) {
         listBox.replaceChildren(U.el('div', { class: 'error-state', text: e.message }))
@@ -1570,7 +1570,7 @@ export const PageAdmin = {
     if (!fields.length) return
 
     const wrap = U.el('div', { class: 'cat-provenance' })
-    wrap.append(U.el('h3', { class: 'detail-section-title', style: 'margin:0 0 .5rem;', text: 'Metadata sources' }))
+    wrap.append(U.el('h3', { class: 'detail-section-title', style: 'margin:0 0 var(--space-2);', text: 'Metadata sources' }))
     wrap.append(U.el('p', { class: 'cat-vis-hint', text: 'A locked field was set by hand and is never overwritten by the AniList importer. Release it to let automatic updates resume.' }))
 
     const table = U.el('div', { class: 'prov-table' })
@@ -1632,7 +1632,7 @@ export const PageAdmin = {
           onclick: () => this.renderCatDuplicates(host, can, reload, 'similar')
         }, [document.createTextNode('Similar titles (slow)')])
       ]))
-      if (!data.length) { host.append(U.el('div', { class: 'empty-state', style: 'padding:1rem;', text: 'No likely duplicates found.' })); return }
+      if (!data.length) { host.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-4);', text: 'No likely duplicates found.' })); return }
       for (const d of data) {
         const keep = (winner, loser, title) => can('anime.merge')
           ? U.el('button', {
@@ -1692,7 +1692,7 @@ export const PageAdmin = {
       try {
         const { data } = await YumeAPI.admin.catalogue.episodes(anime.id)
         wrap.replaceChildren()
-        if (!data.length) { wrap.append(U.el('div', { class: 'empty-state', style: 'padding:.75rem;', text: 'No episodes yet.' })); return }
+        if (!data.length) { wrap.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-3);', text: 'No episodes yet.' })); return }
 
         // How much of the season is actually reachable, stated once rather
         // than left to be counted off the rows.
@@ -1800,7 +1800,7 @@ export const PageAdmin = {
         const { data } = await YumeAPI.admin.catalogue.sources(ep.id)
         list.replaceChildren()
         if (!data.length) {
-          list.append(U.el('div', { class: 'empty-state', style: 'padding:.75rem;', text: 'No sources yet — this episode cannot be played.' }))
+          list.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-3);', text: 'No sources yet — this episode cannot be played.' }))
           return
         }
         for (const src of data) {
@@ -1860,7 +1860,7 @@ export const PageAdmin = {
         extras.append(U.el('h4', { class: 'src-add-title', text: 'Skip intervals' }))
         const skipList = U.el('div', { class: 'src-list' })
         if (!skips.length) {
-          skipList.append(U.el('div', { class: 'empty-state', style: 'padding:.6rem;', text: 'None — the player falls back to AniSkip.' }))
+          skipList.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-2);', text: 'None — the player falls back to AniSkip.' }))
         }
         for (const seg of skips) {
           skipList.append(U.el('div', { class: 'src-row' }, [
@@ -1912,7 +1912,7 @@ export const PageAdmin = {
         extras.append(U.el('h4', { class: 'src-add-title', text: 'Subtitle tracks' }))
         const subList = U.el('div', { class: 'src-list' })
         if (!subs.length) {
-          subList.append(U.el('div', { class: 'empty-state', style: 'padding:.6rem;', text: 'None held here.' }))
+          subList.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-2);', text: 'None held here.' }))
         }
         for (const track of subs) {
           subList.append(U.el('div', { class: 'src-row' }, [
@@ -2028,7 +2028,7 @@ export const PageAdmin = {
       labelled('Air date', inp('air_date', { type: 'date' })),
       labelled('Duration (min)', inp('duration', { type: 'number', min: 0 })),
       labelled('Synopsis', U.el('textarea', { class: 'input', rows: 3, oninput: e => { d.synopsis = e.target.value } }, [document.createTextNode(d.synopsis)])),
-      U.el('div', { style: 'display:flex;gap:1.25rem;' }, [check('is_filler', 'Filler'), check('is_recap', 'Recap')])
+      U.el('div', { style: 'display:flex;gap:var(--space-4);' }, [check('is_filler', 'Filler'), check('is_recap', 'Recap')])
     ], async () => {
       if (d.number === '' || isNaN(Number(d.number))) return U.toast('A valid episode number is required', 'error')
       const num = v => v === '' || v == null ? null : Number(v)
@@ -2929,7 +2929,7 @@ export const PageAdmin = {
 
     const contentSeries = [
       { name: 'Anime', values: data.series.content.map(r => Number(r.anime)), color: 'var(--accent)' },
-      { name: 'Episodes', values: data.series.content.map(r => Number(r.episodes)), color: 'var(--blue-400, #60a5fa)' },
+      { name: 'Episodes', values: data.series.content.map(r => Number(r.episodes)), color: 'var(--blue-400)' },
       { name: 'Comments', values: data.series.content.map(r => Number(r.comments)), color: 'var(--green-400)' }
     ]
     charts.append(this.dashPanel({
@@ -3105,7 +3105,7 @@ export const PageAdmin = {
       }),
       body: rows.childElementCount
         ? U.el('div', {}, [note, rows])
-        : U.el('div', { class: 'empty-state', style: 'padding:.8rem;', text: 'No metrics yet — the monitoring worker writes them once a minute.' })
+        : U.el('div', { class: 'empty-state', style: 'padding:var(--space-3);', text: 'No metrics yet — the monitoring worker writes them once a minute.' })
     })
   },
 
@@ -3126,7 +3126,7 @@ export const PageAdmin = {
     const table = U.el('div', { class: 'dash-table' })
 
     if (!groups.length) {
-      table.append(U.el('div', { class: 'empty-state', style: 'padding:.8rem;', text: 'Nothing failing. 🎉' }))
+      table.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-3);', text: 'Nothing failing. 🎉' }))
     } else {
       table.append(U.el('div', { class: 'dash-thead' }, [
         U.el('span', { text: 'Error' }),
@@ -3234,7 +3234,7 @@ export const PageAdmin = {
   activityPanel (activity) {
     const rows = U.el('div', { class: 'dash-feed' })
     if (!activity.length) {
-      rows.append(U.el('div', { class: 'empty-state', style: 'padding:.8rem;', text: 'Nothing recorded in the last 30 days.' }))
+      rows.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-3);', text: 'Nothing recorded in the last 30 days.' }))
     }
     for (const item of activity) {
       const [tone, label, glyph] = this.ACTIVITY_ART[item.action] ?? ['blue', item.action, 'shield']
@@ -3765,7 +3765,7 @@ export const PageAdmin = {
           document.createTextNode(user.username + ' '),
           U.el('span', { class: 'badge' + tone, text: user.status }),
           ...(user.reports_against > 0
-            ? [U.el('span', { class: 'badge badge-bad', style: 'margin-left:.35rem;', text: `${user.reports_against} reported` })]
+            ? [U.el('span', { class: 'badge badge-bad', style: 'margin-left:var(--space-1);', text: `${user.reports_against} reported` })]
             : [])
         ]),
         U.el('div', { class: 'list-row-sub', text: facts.join(' • ') })
@@ -4102,7 +4102,7 @@ export const PageAdmin = {
       ])
       content.replaceChildren()
 
-      content.append(U.el('div', { style: 'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:1rem;' }, [
+      content.append(U.el('div', { style: 'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:var(--space-4);margin-bottom:var(--space-4);' }, [
         U.el('p', { class: 'list-row-sub', style: 'max-width:40rem;', text: 'Outbound webhooks fire on the events you subscribe each one to. Discord endpoints get rich embeds; generic endpoints get signed JSON.' }),
         U.el('button', { class: 'btn btn-primary btn-sm', onclick: () => this.webhookForm(content, events, null) }, [document.createTextNode('+ New webhook')])
       ]))
@@ -4115,15 +4115,15 @@ export const PageAdmin = {
       for (const hook of data) {
         const healthy = hook.enabled && hook.failure_count === 0
         content.append(U.el('div', { class: 'setting-card', style: 'max-width:none;' }, [
-          U.el('div', { style: 'display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;' }, [
-            U.el('span', { style: `width:.6rem;height:.6rem;border-radius:50%;background:${healthy ? 'var(--ok)' : hook.enabled ? 'var(--status-paused)' : 'var(--fg-faint)'};` }),
+          U.el('div', { style: 'display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;' }, [
+            U.el('span', { style: `width:.6rem;height:.6rem;border-radius:var(--radius-full);background:${healthy ? 'var(--ok)' : hook.enabled ? 'var(--status-paused)' : 'var(--fg-faint)'};` }),
             U.el('h3', { style: 'margin:0;', text: hook.name }),
             U.el('span', { class: 'ext-type-chip', text: hook.format }),
             U.el('span', { class: 'list-row-sub', text: `${hook.events.length} events • ${hook.delivery_count} deliveries` }),
             hook.last_error ? U.el('span', { class: 'badge', style: 'background:var(--danger);color:white;', text: 'last error: ' + hook.last_error }) : null
           ]),
-          U.el('div', { class: 'list-row-sub', style: 'margin:.4rem 0;word-break:break-all;', text: hook.url.replace(/\/[^/]+$/, '/•••') }),
-          U.el('div', { style: 'display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.6rem;' }, [
+          U.el('div', { class: 'list-row-sub', style: 'margin:var(--space-2) 0;word-break:break-all;', text: hook.url.replace(/\/[^/]+$/, '/•••') }),
+          U.el('div', { style: 'display:flex;gap:var(--space-2);flex-wrap:wrap;margin-top:var(--space-2);' }, [
             U.el('button', {
               class: 'btn btn-secondary btn-sm',
               onclick: async e => {
@@ -4169,11 +4169,11 @@ export const PageAdmin = {
     const subscribed = new Set(hook?.events ?? events) // new hooks default to all events
     const checkboxes = events.map(ev => {
       const cb = U.el('input', { type: 'checkbox', value: ev, ...(subscribed.has(ev) ? { checked: '' } : {}) })
-      return U.el('label', { style: 'display:flex;gap:.5rem;align-items:center;font-size:.8rem;padding:.15rem 0;cursor:pointer;' }, [
-        cb, U.el('span', {}, [document.createTextNode(this.EVENT_LABELS[ev] ?? ev), U.el('code', { style: 'color:var(--fg-faint);margin-left:.4rem;font-family:var(--font-mono);font-size:.85em;', text: ev })])
+      return U.el('label', { style: 'display:flex;gap:var(--space-2);align-items:center;font-size:var(--text-xs);padding:var(--space-1) 0;cursor:pointer;' }, [
+        cb, U.el('span', {}, [document.createTextNode(this.EVENT_LABELS[ev] ?? ev), U.el('code', { style: 'color:var(--fg-faint);margin-left:var(--space-2);font-family:var(--font-mono);font-size:var(--text-xs);', text: ev })])
       ])
     })
-    const eventGrid = U.el('div', { style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:.1rem .75rem;margin-top:.4rem;' }, checkboxes)
+    const eventGrid = U.el('div', { style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:var(--space-1) var(--space-3);margin-top:var(--space-2);' }, checkboxes)
 
     const toggleAll = on => checkboxes.forEach(l => { l.querySelector('input').checked = on })
 
@@ -4185,7 +4185,7 @@ export const PageAdmin = {
         U.el('div', { style: 'display:flex;justify-content:space-between;align-items:center;' }, [
           U.el('label', { class: 'filter-group', style: 'display:block;', text: 'Events' }),
           U.el('div', {}, [
-            U.el('button', { class: 'section-more', style: 'margin-right:.75rem;', onclick: () => toggleAll(true) }, [document.createTextNode('All')]),
+            U.el('button', { class: 'section-more', style: 'margin-right:var(--space-3);', onclick: () => toggleAll(true) }, [document.createTextNode('All')]),
             U.el('button', { class: 'section-more', onclick: () => toggleAll(false) }, [document.createTextNode('None')])
           ])
         ]),

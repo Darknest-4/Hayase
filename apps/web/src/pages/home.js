@@ -130,7 +130,7 @@ export const PageHome = {
     })
     if (media.averageScore) {
       metaRow.append(U.el('span', { class: 'dot' }))
-      const score = U.el('span', { style: 'display:inline-flex;align-items:center;gap:.3rem;' })
+      const score = U.el('span', { style: 'display:inline-flex;align-items:center;gap:var(--space-1);' })
       const heart = U.svg(C.HEART, 14)
       heart.style.fill = 'var(--theme)'
       heart.style.stroke = 'var(--theme)'
@@ -147,7 +147,7 @@ export const PageHome = {
         metaRow,
         U.el('p', { class: 'hero-desc', text: U.plainDesc(media.description) }),
         (media.genres ?? []).length
-          ? U.el('div', { class: 'badges', style: 'margin-bottom:1rem;' }, media.genres.slice(0, 4).map(g =>
+          ? U.el('div', { class: 'badges', style: 'margin-bottom:var(--space-4);' }, media.genres.slice(0, 4).map(g =>
             U.el('a', { class: 'badge', href: `#/search?genre=${encodeURIComponent(g)}`, text: g })))
           : null,
         U.el('div', { class: 'hero-buttons' }, [

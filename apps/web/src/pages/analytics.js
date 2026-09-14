@@ -12,7 +12,10 @@ import { WatchTime } from '../features/watch-history/watch-time.js'
 
 export const PageAnalytics = {
   // a fixed, theme-neutral palette reused across the donut charts
-  PALETTE: ['#f43f6e', '#ff8fab', '#a78bfa', '#38bdf8', '#34d399', '#fbbf24', '#fb923c', '#f87171', '#818cf8', '#2dd4bf', '#e879f9', '#94a3b8'],
+  // The categorical series scale, from tokens.css. These are spent as SVG
+  // fill and as style.background, both of which resolve custom properties, so
+  // naming them costs nothing and lets the charts follow a theme.
+  PALETTE: Array.from({ length: 12 }, (_, i) => `var(--chart-${i + 1})`),
 
   // standalone route (kept as a fallback / deep-link target)
   render (root) {
@@ -112,8 +115,8 @@ export const PageAnalytics = {
   // ---- helpers ----
 
   _section (parent, title, sub) {
-    parent.append(U.el('h2', { class: 'detail-section-title', style: 'margin-top:2rem;', text: title }))
-    if (sub) parent.append(U.el('p', { class: 'list-row-sub', style: 'margin:-.35rem 0 .5rem;', text: sub }))
+    parent.append(U.el('h2', { class: 'detail-section-title', style: 'margin-top:var(--space-6);', text: title }))
+    if (sub) parent.append(U.el('p', { class: 'list-row-sub', style: 'margin:-var(--space-1) 0 var(--space-2);', text: sub }))
   },
 
   _panel (child) {

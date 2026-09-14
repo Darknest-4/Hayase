@@ -37,7 +37,7 @@ export const PageDashboard = {
       subtitle: T('Your dashboard'),
       actions: U.el('a', {
         class: 'btn btn-secondary btn-sm',
-        style: 'margin-top:.8rem;',
+        style: 'margin-top:var(--space-3);',
         href: editing ? '#/dashboard' : '#/dashboard?edit=1'
       }, [document.createTextNode(editing ? '✓ Done' : '⚙ Edit layout')])
     }))
@@ -179,10 +179,10 @@ export const PageDashboard = {
     const list = U.el('div', { class: 'dash-ach-list' })
     for (const a of near) {
       list.append(U.el('div', { class: 'dash-ach-row' }, [
-        U.el('span', { class: 'ach-icon', style: 'width:2.2rem;height:2.2rem;font-size:1.2rem;', text: a.icon }),
+        U.el('span', { class: 'ach-icon', style: 'width:2.2rem;height:2.2rem;font-size:var(--text-lg);', text: a.icon }),
         U.el('div', { style: 'flex-grow:1;min-width:0;' }, [
           U.el('div', { class: 'notif-title', text: a.name }),
-          U.el('div', { class: 'ach-progress-track', style: 'margin-top:.35rem;' }, [U.el('div', { class: 'ach-progress-fill', style: `width:${a.pct}%;` })])
+          U.el('div', { class: 'ach-progress-track', style: 'margin-top:var(--space-1);' }, [U.el('div', { class: 'ach-progress-fill', style: `width:${a.pct}%;` })])
         ]),
         U.el('span', { class: 'ach-progress-text', text: `${a.current}/${a.target}` })
       ]))

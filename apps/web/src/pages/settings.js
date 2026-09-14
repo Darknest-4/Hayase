@@ -109,7 +109,7 @@ export const PageSettings = {
         }
       }, [document.createTextNode(T('Sync now'))])
       wrap.append(this._card('Library sync', 'Your library status and episode progress sync to your account and follow you across devices while signed in.',
-        U.el('div', { style: 'display:flex;gap:.6rem;flex-wrap:wrap;' }, [syncBtn, statusEl])))
+        U.el('div', { style: 'display:flex;gap:var(--space-2);flex-wrap:wrap;' }, [syncBtn, statusEl])))
     }
     wrap.append(this._card('Yume server', 'Backend endpoint for accounts, the catalogue and sync. Leave as-is for local development.',
       U.el('input', {
@@ -203,7 +203,7 @@ export const PageSettings = {
     const settings = Store.settings()
 
     // full Theme Engine, embedded (base, accent presets, custom colour, preview)
-    wrap.append(U.el('p', { class: 'list-row-sub', style: 'margin:0 0 1rem;', text: T('Personalise Yume — base, accent and surface tint apply instantly and are saved for this profile.') }))
+    wrap.append(U.el('p', { class: 'list-row-sub', style: 'margin:0 0 var(--space-4);', text: T('Personalise Yume — base, accent and surface tint apply instantly and are saved for this profile.') }))
     PageThemes.body(wrap)
 
     // title language
@@ -262,7 +262,7 @@ export const PageSettings = {
     const settings = Store.settings()
     const prefs = settings.notifPrefs ?? { airing: true, resume: true, achievement: true }
 
-    wrap.append(U.el('p', { class: 'list-row-sub', style: 'margin-bottom:1rem;', text: T('Choose which notifications appear in your inbox. These are generated from your library and activity — no account required.') }))
+    wrap.append(U.el('p', { class: 'list-row-sub', style: 'margin-bottom:var(--space-4);', text: T('Choose which notifications appear in your inbox. These are generated from your library and activity — no account required.') }))
 
     for (const [key, title, desc] of [
       ['airing', 'Airing episodes', 'When a new episode of something in your library airs.'],
@@ -296,7 +296,7 @@ export const PageSettings = {
       U.el('button', { class: 'btn btn-secondary btn-sm', onclick: () => Store.clearCache() }, [document.createTextNode(T('Clear cache'))])
     ))
     wrap.append(this._card('My data', 'Your anime list, favourites and progress live only in this browser (localStorage). Export it as JSON to back it up or move devices.',
-      U.el('div', { style: 'display:flex;gap:.6rem;flex-wrap:wrap;' }, [
+      U.el('div', { style: 'display:flex;gap:var(--space-2);flex-wrap:wrap;' }, [
         U.el('button', {
           class: 'btn btn-secondary btn-sm',
           onclick: () => {

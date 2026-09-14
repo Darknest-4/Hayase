@@ -521,7 +521,7 @@ export const Store = {
     const rules = []
     if (s.themeAccent) {
       rules.push(`--accent:${s.themeAccent}`)
-      rules.push(`--accent-hover:color-mix(in srgb, ${s.themeAccent} 82%, #000)`)
+      rules.push(`--accent-hover:color-mix(in srgb, ${s.themeAccent} 82%, var(--scrim))`)
       rules.push(`--accent-soft:color-mix(in srgb, ${s.themeAccent} 14%, transparent)`)
     }
     if (s.themeTint) {
