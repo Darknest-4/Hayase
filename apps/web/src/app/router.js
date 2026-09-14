@@ -694,6 +694,44 @@ export const App = {
     })
   },
 
+  /**
+   * The collapse tab on the mobile navigation pill.
+   *
+   * Labels cost about a third of the bar's height, and somebody who knows the
+   * five icons would rather have that third back. The choice is remembered,
+   * because a viewer who collapses it means it for more than one page.
+   *
+   * Built here rather than in index.html: it only exists below 720px, and a
+   * control the desktop never shows has no business in the served markup where
+   * a screen reader on a wide window would still announce it.
+   */
+  initNavCollapse () {
+    const sidebar = document.getElementById('sidebar')
+    if (!sidebar || sidebar.querySelector('.nav-collapse')) return
+
+    const apply = collapsed => {
+      sidebar.classList.toggle('nav-collapsed', collapsed)
+      tab.setAttribute('aria-expanded', String(!collapsed))
+      tab.setAttribute('aria-label', collapsed ? T('Feliratok mutatása') : T('Feliratok elrejtése'))
+    }
+
+    const tab = U.el('button', {
+      class: 'nav-collapse',
+      type: 'button',
+      'aria-controls': 'sidebar',
+      onclick: () => {
+        const collapsed = !sidebar.classList.contains('nav-collapsed')
+        apply(collapsed)
+        try { window.localStorage.setItem('yume-nav-collapsed', collapsed ? '1' : '0') } catch { /* storage blocked: the choice just does not persist */ }
+      }
+    }, [U.svg('<polyline points="6 9 12 15 18 9"/>', 16)])
+
+    sidebar.append(tab)
+    let remembered = false
+    try { remembered = window.localStorage.getItem('yume-nav-collapsed') === '1' } catch { /* see above */ }
+    apply(remembered)
+  },
+
   openMoreSheet () {
     const current = this.parseHash().route
     const backdrop = U.el('div', { class: 'more-backdrop', id: 'more-backdrop', onclick: () => this.closeMoreSheet() })
@@ -785,6 +823,7 @@ export const App = {
     this.applyNavLabels()
     this.initSearchModal()
     this.initMobileMore()
+    this.initNavCollapse()
     window.addEventListener('hashchange', () => { this.closeMoreSheet(); this.navigate() })
 
     // load DB-driven site config + permissions, apply the site name, then route

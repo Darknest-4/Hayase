@@ -3991,22 +3991,54 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
 /* mobile: bottom navigation bar — 4 primary tabs + a More sheet */
 @media (max-width: 720px) {
   .app-shell { flex-direction: column; }
-  .page { padding-bottom: calc(4.4rem + env(safe-area-inset-bottom, 0px)); }
+  /* the pill's height, plus the gap it floats above, plus the system inset */
+  .page { padding-bottom: calc(5.4rem + env(safe-area-inset-bottom, 0px)); }
+  /* A floating pill, inset from every edge, rather than a bar welded to the
+     bottom. Two reasons beyond the look: content scrolls visibly underneath
+     it, which says the page continues; and on a phone with a gesture bar the
+     inset is where the system's own handle wants to live anyway. */
   .sidebar {
     position: fixed;
-    left: 0; right: 0; bottom: 0;
-    width: 100%;
+    left: var(--space-3); right: var(--space-3);
+    bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+    width: auto;
     height: auto;
     flex-direction: row;
     justify-content: space-around;
     align-items: stretch;
     gap: 0;
-    border-top: 1px solid var(--border);
-    border-right: none;
-    padding: var(--space-1) var(--space-1) calc(var(--space-1) + env(safe-area-inset-bottom, 0px));
-    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    padding: var(--space-2) var(--space-1);
+    background: var(--bg-overlay);
+    box-shadow: var(--shadow-3);
     z-index: 80;
+    transition: padding var(--dur) var(--ease);
   }
+
+  /* The collapse tab. It sits on the pill's top edge rather than inside it,
+     so it costs the row no width — there are five tabs across a 375px screen
+     already and a sixth control would push the labels to ellipses. */
+  .nav-collapse {
+    position: absolute;
+    top: 0; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 3rem; height: 1.5rem;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg-overlay);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-full);
+    color: var(--fg-faint);
+    cursor: pointer;
+    padding: 0;
+  }
+  .nav-collapse svg { width: 1rem; height: 1rem; transition: transform var(--dur) var(--ease); }
+  .sidebar.nav-collapsed .nav-collapse svg { transform: rotate(180deg); }
+
+  /* Collapsed: icons only. The labels go, the targets do not — the row keeps
+     its height so a thumb aiming at the same place still lands on it. */
+  .sidebar.nav-collapsed .sidebar-btn.nav-primary span,
+  .sidebar.nav-collapsed .sidebar-btn.nav-more span { display: none; }
   .sidebar-logo, .sidebar-spacer, #profile-switcher { display: none; }
   /* only the primary tabs + More appear on the bar */
   .sidebar-btn { display: none; }
@@ -4042,20 +4074,13 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
   }
   .sidebar-btn.nav-primary:hover,
   .sidebar-btn.nav-more:hover { background: transparent; color: var(--fg-muted); }
+  /* Active is a filled pill, not a tint. On a dark bar a colour change alone
+     is a weak signal at a glance, and the pill is the one shape on the bar
+     that carries a background — so the eye finds it without reading. */
   .sidebar-btn.nav-primary.active,
-  .sidebar-btn.nav-more.active { background: transparent; color: var(--accent); }
-  /* active indicator bar along the top edge of the tab */
-  .sidebar-btn.nav-primary.active::before,
-  .sidebar-btn.nav-more.active::before {
-    content: '';
-    position: absolute;
-    top: -.35rem;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 1.7rem;
-    height: 2px;
-    border-radius: var(--radius-full);
-    background: var(--accent);
+  .sidebar-btn.nav-more.active {
+    background: var(--fg);
+    color: var(--bg);
   }
   /* notification badge repositioned above the labeled tab icon */
   .sidebar-btn.nav-primary .notif-badge { top: .2rem; right: auto; left: 50%; margin-left: var(--space-1); }
