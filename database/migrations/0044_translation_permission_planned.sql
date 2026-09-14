@@ -1,0 +1,22 @@
+-- ============================================================================
+-- 0044 — translation.run is planned, not active
+-- ============================================================================
+-- 0042 added the permission as `active`, and the work it was meant to guard
+-- was stopped before the routes were written. So nothing enforces it, and
+-- `permission-status.test.ts` said so in as many words:
+--
+--   marked "active" but no route enforces them — the Roles screen is
+--   overstating these: translation.run
+--
+-- That test exists because a permission listed as active is a promise the
+-- Roles screen makes to an operator: grant this and something changes. A slug
+-- nothing checks makes that promise falsely, and the operator finds out by
+-- granting it and watching nothing happen.
+--
+-- `planned` is the honest status for a permission whose feature is written
+-- down and not built — the same state `audit.view` sat in from 0012. The row
+-- stays so the eventual worker does not need a new slug; it simply stops
+-- claiming to do anything today.
+-- ============================================================================
+
+UPDATE permissions SET status = 'planned' WHERE slug = 'translation.run';

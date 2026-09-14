@@ -695,7 +695,7 @@ const routes: FastifyPluginAsync = async fastify => {
         type: 'object',
         additionalProperties: false,
         properties: {
-          kind: { enum: ['basic', 'deep'] },
+          kind: { enum: ['basic', 'deep', 'artwork'] },
           scope: { enum: ['missing', 'all'] },
           // A first run on a new deployment wants a small number to check the
           // shape of what comes back before committing to half an hour.
@@ -711,7 +711,7 @@ const routes: FastifyPluginAsync = async fastify => {
     let run
     try {
       run = await startRun({
-        kind: kind as 'basic' | 'deep',
+        kind: kind as 'basic' | 'deep' | 'artwork',
         scope: scope as 'missing' | 'all',
         limit: body.limit ?? null,
         startedBy: request.user.sub

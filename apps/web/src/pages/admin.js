@@ -2329,7 +2329,10 @@ export const PageAdmin = {
     const active = data.active
     const kind = U.el('select', { class: 'select' }, [
       U.el('option', { value: 'basic', text: 'Basic — synopsis, art, score, genres' }),
-      U.el('option', { value: 'deep', text: 'Deep — cast, staff, relations' })
+      U.el('option', { value: 'deep', text: 'Deep — cast, staff, relations' }),
+      // ani.zip rather than AniList, so it is the one pass that does not wait
+      // on AniList's rate limit — about five minutes for the catalogue.
+      U.el('option', { value: 'artwork', text: 'Artwork — logos, backdrops, external ids, HU titles' })
     ])
     const scope = U.el('select', { class: 'select' }, [
       U.el('option', { value: 'missing', text: 'Only what is missing' }),

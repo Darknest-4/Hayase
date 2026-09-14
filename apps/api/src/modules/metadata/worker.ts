@@ -27,9 +27,10 @@ import { settings as siteSettings } from '../settings/site-settings.ts'
 import { emitEvent } from '../webhooks/delivery.ts'
 import { enrichFromAniList } from '../../integrations/anilist/sync.ts'
 import { enrichDeepFromAniList } from '../../integrations/anilist/deep-sync.ts'
+import { syncArtwork } from '../../integrations/anizip/sync.ts'
 
 /**
- * The two passes, reached through an object rather than called directly.
+ * The three passes, reached through an object rather than called directly.
  *
  * Both talk to AniList over the network, so a test that drove the handler
  * would either hit a live third party — rate-limited, and not ours to hammer
@@ -40,14 +41,18 @@ import { enrichDeepFromAniList } from '../../integrations/anilist/deep-sync.ts'
  */
 export const passes = {
   basic: enrichFromAniList,
-  deep: enrichDeepFromAniList
+  deep: enrichDeepFromAniList,
+  // ani.zip rather than AniList, and so not gated on external_sync_enabled in
+  // the same way — but it is still an outbound call to somebody else's
+  // service, so it honours the same switch. See startRun.
+  artwork: syncArtwork
 }
 
 import type { Job } from '../../infrastructure/queue/index.ts'
 
 export interface MetadataRun {
   id: string
-  kind: 'basic' | 'deep'
+  kind: 'basic' | 'deep' | 'artwork'
   scope: 'missing' | 'all'
   max_items: number | null
   status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
@@ -97,7 +102,7 @@ export class ExternalSyncDisabled extends Error {
 }
 
 export async function startRun (opts: {
-  kind: 'basic' | 'deep'
+  kind: 'basic' | 'deep' | 'artwork'
   scope: 'missing' | 'all'
   limit?: number | null
   startedBy?: string | null
@@ -183,7 +188,20 @@ export async function handleMetadataJob (job: Job): Promise<void> {
   const limit = run.max_items ?? undefined
 
   try {
-    if (run.kind === 'deep') {
+    if (run.kind === 'artwork') {
+      const result = await passes.artwork({
+        onlyMissing,
+        ...(limit ? { limit } : {}),
+        shouldStop,
+        onProgress: async (done, total, counts) => await record(done, total, { ...counts })
+      })
+      await finish(runId, {
+        mapped: result.mapped,
+        images: result.images,
+        titles: result.titles,
+        missed: result.missed
+      }, result.examined)
+    } else if (run.kind === 'deep') {
       const result = await passes.deep({
         onlyMissing,
         ...(limit ? { limit } : {}),
@@ -199,7 +217,7 @@ export async function handleMetadataJob (job: Job): Promise<void> {
         failed: result.failed,
         rowFailures: result.rowFailures
       }, result.processed)
-    } else {
+    } else if (run.kind === 'basic') {
       const result = await passes.basic({
         onlyMissing,
         ...(limit ? { limit } : {}),
@@ -216,6 +234,19 @@ export async function handleMetadataJob (job: Job): Promise<void> {
         // of the catalogue stopped being invisible to the enricher.
         linked: result.linked
       }, result.processed)
+    } else {
+      // An explicit arm, because the fallthrough used to be `else` and that is
+      // a silent trap: a worker older than the API does not know a newly added
+      // kind, drops into the last branch and runs **a different pass**, then
+      // records it as a success. That happened — an `artwork` run came back
+      // `done 40/40` carrying the basic pass's counters, because the queue is
+      // in the database and the worker is a separate image that had not been
+      // rebuilt.
+      //
+      // Failing here makes the mismatch visible in the panel instead of
+      // producing work nobody asked for.
+      throw new Error(`Unknown metadata run kind "${run.kind}" — this worker is older than the run that queued it`)
+
     }
   } catch (err) {
     // The message, not the stack: this string is shown to an operator in the
