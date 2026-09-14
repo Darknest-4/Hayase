@@ -202,16 +202,51 @@ export const PageWatch = {
         U.el('span', { class: 'wep-count', text: `${total}` })
       ])
     ])
+    // Long series are paged, the way the detail page's episode list already
+    // is. This rail drew every episode unconditionally: ONE PIECE is 1168 in
+    // this catalogue, so opening it built 1168 rows — twice, once before the
+    // episode metadata arrives and once after — and left a rail nobody can
+    // navigate by scrolling.
+    //
+    // Only above the threshold. A 26-episode series is better as one list
+    // than as one list plus a control that offers a single range, so shows
+    // shorter than this behave exactly as they did.
+    const RANGE = 100
+    const paged = total > RANGE
+    const progress = Store.entry(media.id)?.progress ?? 0
+    // Open on the block holding the episode being watched, not on the first.
+    let rangeStart = paged ? Math.floor((episode - 1) / RANGE) * RANGE + 1 : 1
+
+    const ranges = paged ? U.el('div', { class: 'eplist-ranges wep-ranges' }) : null
+    if (ranges) panel.append(ranges)
+
     const list = U.el('div', { class: 'wep-list' })
     panel.append(list)
     side.append(panel)
 
-    const progress = Store.entry(media.id)?.progress ?? 0
+    let lastMeta = null
+
+    const renderRanges = () => {
+      if (!ranges) return
+      ranges.replaceChildren()
+      for (let s = 1; s <= total; s += RANGE) {
+        const e = Math.min(s + RANGE - 1, total)
+        ranges.append(U.el('button', {
+          class: 'eplist-range' + (s === rangeStart ? ' active' : ''),
+          type: 'button',
+          text: `${s}–${e}`,
+          onclick: () => { rangeStart = s; renderRanges(); renderRows(lastMeta) }
+        }))
+      }
+    }
 
     const renderRows = meta => {
+      lastMeta = meta
       const byNum = meta ? new Map(meta.map(e => [e.episode, e])) : null
       list.replaceChildren()
-      for (let n = 1; n <= total; n++) {
+      const from = paged ? rangeStart : 1
+      const to = paged ? Math.min(rangeStart + RANGE - 1, total) : total
+      for (let n = from; n <= to; n++) {
         const ep = byNum?.get(n)
         const active = n === episode
         list.append(U.el('a', {
@@ -235,6 +270,7 @@ export const PageWatch = {
       list.querySelector('.wep.active')?.scrollIntoView({ block: 'center' })
     }
 
+    renderRanges()
     renderRows(null)
     Catalogue.episodes(media).then(meta => { if (meta?.length) renderRows(meta) }).catch(() => {})
   },

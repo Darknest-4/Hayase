@@ -293,12 +293,14 @@ export const PageAnime = {
       ? [media.startDate.year, media.startDate.month, media.startDate.day].filter(Boolean).join('.')
       : null
 
+    // Format, Episodes, Status and Season are deliberately absent: the chip row
+    // under the title already carries all four, about two hundred pixels above
+    // this panel, and each chip is a link into search while a row here is not.
+    // Showing "TV" twice on one screen is not thoroughness, it is noise — so
+    // the chips keep the facts you navigate by and this panel keeps the ones
+    // they do not mention.
     const rows = [
-      ['Format', U.format(media)],
-      ['Episodes', media.episodes ? String(media.episodes) : null],
       ['Duration', media.duration ? `${media.duration} min` : null],
-      ['Status', U.statusMap[media.status]],
-      ['Season', U.seasonYear(media) || null],
       ['Start date', start],
       ['Studio', media.studios?.nodes?.[0]?.name],
       ['Source', prettify(media.source)],

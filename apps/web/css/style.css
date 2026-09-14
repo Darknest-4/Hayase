@@ -695,7 +695,11 @@ a.chip:hover { filter: brightness(.85); }
   transition: color var(--dur), border-color var(--dur), background var(--dur);
 }
 .eplist-range:hover { color: var(--fg); }
-.eplist-range.active { background: var(--custom, var(--accent)); border-color: var(--custom, var(--accent)); color: var(--custom-fg, white); }
+.eplist-range.active { background: var(--custom, var(--accent)); border-color: var(--custom, var(--accent)); color: var(--custom-fg, var(--accent-fg)); }
+/* The watch rail reuses .eplist-range from the detail page; it only needs the
+   row itself placed inside the panel. */
+.wep-ranges { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); }
+
 .episode-resume { height: 3px; border-radius: var(--radius-full); background: var(--border); margin-top: var(--space-2); max-width: 20rem; overflow: clip; }
 .episode-resume > div { height: 100%; background: var(--custom, var(--accent)); border-radius: var(--radius-full); }
 
