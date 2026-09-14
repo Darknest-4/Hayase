@@ -21,6 +21,7 @@ const KINDS = ['added', 'changed', 'fixed', 'removed', 'security'] as const
 /** One release with its lines, in the shape the page renders. */
 const SELECT_RELEASES = `
   SELECT r.id, r.version, r.title, r.summary, r.status, r.released_on, r.position,
+         r.is_public, r.category,
          COALESCE(
            (SELECT jsonb_agg(jsonb_build_object('id', e.id, 'kind', e.kind, 'body', e.body)
                              ORDER BY e.position, e.kind)
@@ -43,8 +44,13 @@ const routes: FastifyPluginAsync = async fastify => {
   }, async request => {
     const { status, limit = 50 } = request.query as { status?: string, limit?: number }
     const params: unknown[] = []
-    let where = ''
-    if (status) { params.push(status); where = `WHERE r.status = $${params.length}` }
+    // Private releases are recorded but not published. The filter is here, on
+    // the open read, rather than left to the caller: "write it all down and
+    // publish part of it" is only true if forgetting the filter is impossible.
+    // Authors use GET /all, which does not apply it.
+    const clauses = ['r.is_public']
+    if (status) { params.push(status); clauses.push(`r.status = $${params.length}`) }
+    const where = `WHERE ${clauses.join(' AND ')}`
     params.push(limit)
 
     // Ordered by an explicit position, not by the version string: "0.9.10"
@@ -68,6 +74,17 @@ const routes: FastifyPluginAsync = async fastify => {
 
   // ---- writing ----
 
+  /**
+   * Everything, published or not, for the people who write it.
+   *
+   * The open read hides `is_public = false`; this one must not, or a private
+   * release would be invisible to the person who has to decide when to publish
+   * it. Same permission as writing, because that is who it is for.
+   */
+  fastify.get('/all', { onRequest: fastify.requirePermission('changelog.manage') }, async () => ({
+    data: await query(`${SELECT_RELEASES} ORDER BY r.position DESC, r.released_on DESC NULLS FIRST LIMIT 200`)
+  }))
+
   fastify.post('/', {
     onRequest: fastify.requirePermission('changelog.manage'),
     schema: {
@@ -81,6 +98,8 @@ const routes: FastifyPluginAsync = async fastify => {
           status: { enum: [...STATUSES], default: 'planned' },
           releasedOn: { type: 'string', format: 'date' },
           position: { type: 'integer', minimum: 0, maximum: 100000 },
+          isPublic: { type: 'boolean' },
+          category: { type: ['string', 'null'], maxLength: 40 },
           entries: {
             type: 'array',
             maxItems: 200,
@@ -101,7 +120,8 @@ const routes: FastifyPluginAsync = async fastify => {
   }, async (request, reply) => {
     const body = request.body as {
       version: string, title: string, summary?: string, status?: string,
-      releasedOn?: string, position?: number, entries?: Array<{ kind: string, body: string }>
+      releasedOn?: string, position?: number, isPublic?: boolean, category?: string | null,
+      entries?: Array<{ kind: string, body: string }>
     }
 
     const clash = await queryOne('SELECT 1 FROM releases WHERE version = $1', [body.version])
@@ -113,10 +133,12 @@ const routes: FastifyPluginAsync = async fastify => {
     // the page would show a version heading with nothing under it.
     const release = await transaction(async (client: pg.PoolClient) => {
       const { rows } = await client.query(
-        `INSERT INTO releases (version, title, summary, status, released_on, position)
-         VALUES ($1, $2, $3, $4, $5, COALESCE($6, (SELECT COALESCE(max(position), 0) + 10 FROM releases)))
-         RETURNING id, version, title, status, released_on, position`,
-        [body.version, body.title, body.summary ?? null, body.status ?? 'planned', body.releasedOn ?? null, body.position ?? null]
+        `INSERT INTO releases (version, title, summary, status, released_on, position, is_public, category)
+         VALUES ($1, $2, $3, $4, $5, COALESCE($6, (SELECT COALESCE(max(position), 0) + 10 FROM releases)),
+                 COALESCE($7, true), $8)
+         RETURNING id, version, title, status, released_on, position, is_public, category`,
+        [body.version, body.title, body.summary ?? null, body.status ?? 'planned', body.releasedOn ?? null,
+          body.position ?? null, body.isPublic ?? null, body.category ?? null]
       )
       const created = rows[0]!
       await writeEntries(client, String(created.id), body.entries ?? [])
@@ -137,6 +159,8 @@ const routes: FastifyPluginAsync = async fastify => {
           status: { enum: [...STATUSES] },
           releasedOn: { type: 'string', format: 'date' },
           position: { type: 'integer', minimum: 0, maximum: 100000 },
+          isPublic: { type: 'boolean' },
+          category: { type: ['string', 'null'], maxLength: 40 },
           entries: {
             type: 'array',
             maxItems: 200,
@@ -162,7 +186,8 @@ const routes: FastifyPluginAsync = async fastify => {
     if (!exists) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
 
     const map: Record<string, string> = {
-      title: 'title', summary: 'summary', status: 'status', releasedOn: 'released_on', position: 'position'
+      title: 'title', summary: 'summary', status: 'status', releasedOn: 'released_on', position: 'position',
+      isPublic: 'is_public', category: 'category'
     }
     await transaction(async (client: pg.PoolClient) => {
       const sets: string[] = []

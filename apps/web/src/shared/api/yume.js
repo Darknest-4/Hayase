@@ -723,6 +723,16 @@ export const YumeAPI = {
   },
 
   admin: {
+    // ---- announcements ----
+    // Authoring lives under /v1/announcements rather than /v1/admin, because
+    // the resource is the same one the read serves; only the permission
+    // differs. `allAnnouncements` is the authoring view — it includes messages
+    // whose window has not opened yet and ones that have closed.
+    allAnnouncements: () => YumeAPI._request('/v1/announcements/all', { auth: true }),
+    createAnnouncement: body => YumeAPI._request('/v1/announcements', { method: 'POST', auth: true, body }),
+    updateAnnouncement: (id, body) => YumeAPI._request(`/v1/announcements/${id}`, { method: 'PATCH', auth: true, body }),
+    deleteAnnouncement: id => YumeAPI._request(`/v1/announcements/${id}`, { method: 'DELETE', auth: true }),
+
     users: ({ query, status, role, sort, limit, offset } = {}) => {
       const params = new URLSearchParams()
       if (query) params.set('query', query)
