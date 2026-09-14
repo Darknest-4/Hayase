@@ -844,12 +844,32 @@ a.chip:hover { filter: brightness(.85); }
   max-width: 52rem;
   margin-top: var(--space-3);
 }
-.detail-desc.clamped {
+/* The clamp lives on the wrapper so the fade and the button can sit over the
+   paragraph's last line rather than after it. A gradient is what says "there
+   is more"; the button is what does something about it. */
+.detail-desc-wrap { position: relative; }
+.detail-desc-wrap.clamped .detail-desc {
   display: -webkit-box;
   -webkit-line-clamp: 5;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.detail-desc-wrap.clamped::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 4.5em;
+  background: linear-gradient(to bottom, transparent, var(--bg) 92%);
+  pointer-events: none;
+}
+.detail-desc-wrap .showmore {
+  position: relative;
+  z-index: 1;
+  display: block;
+  margin: var(--space-2) auto 0;
+}
+/* Expanded, the fade is gone and the button is simply the next thing down. */
+.detail-desc-wrap:not(.clamped) .showmore { margin-top: var(--space-3); }
 .desc-toggle {
   color: var(--fg-faint);
   font-size: var(--text-xs);
