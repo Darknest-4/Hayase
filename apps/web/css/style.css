@@ -466,10 +466,16 @@ body::before {
 /* ===== search page ===== */
 
 .filters {
-  display: flex;
-  flex-wrap: wrap;
+  /* A grid rather than a wrapping flex row. The search field carried
+     flex-grow:1, so it absorbed every pixel of slack on the first line and
+     pushed the last control — Sort — onto a line of its own with the rest of
+     the width empty beside it. Columns that size themselves mean the controls
+     pack evenly at any width, and the row count changes without anything
+     being stranded. */
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
   gap: var(--space-3);
-  align-items: flex-end;
+  align-items: end;
   position: sticky;
   top: 0;
   z-index: 20;
@@ -479,7 +485,16 @@ body::before {
   padding: var(--space-3) var(--space-4);
   margin-bottom: var(--space-3);
 }
+/* No min-width:0 here on purpose. A grid track's automatic minimum is its
+   content, which is what stops the image-search button — the one control
+   whose label is a sentence — from spilling out of its column into the next
+   one. */
 .filter-group { display: flex; flex-direction: column; gap: var(--space-1); }
+.filter-group .btn { white-space: normal; }
+/* The one free-text field among seven selects: worth two columns wherever the
+   grid has more than two to give. */
+.filters > .filter-group:first-child { grid-column: span 2; }
+@media (max-width: 560px) { .filters > .filter-group:first-child { grid-column: span 1; } }
 .filter-group label {
   font-size: var(--text-xs);
   font-weight: var(--weight-black);

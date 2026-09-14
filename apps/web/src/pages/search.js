@@ -139,7 +139,7 @@ export const PageSearch = {
     ])
     pad.append(filterBox)
     filterBox.append(U.el('div', { class: 'filters' }, [
-      U.el('div', { class: 'filter-group', style: 'flex-grow:1;' }, [U.el('label', { text: T('Search') }), searchInput]),
+      U.el('div', { class: 'filter-group' }, [U.el('label', { text: T('Search') }), searchInput]),
       // A blank label put this control under the neighbouring field's heading,
       // so on a phone the image-search button read as part of GENRE. It says
       // what it is now.
