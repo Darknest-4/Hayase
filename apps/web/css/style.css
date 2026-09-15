@@ -702,6 +702,16 @@ a.chip:hover { filter: brightness(.85); }
 
 /* rich Continue Watching button */
 .play-group:has(.play-btn-rich) { width: auto; min-width: 250px; }
+/* Nincs mit lejátszani: ugyanaz a gomb, de nem gomb. Nem elrejtve — a
+   helye marad, és megmondja, miért nem történik semmi. */
+.play-btn-empty {
+  background: var(--bg-raised);
+  color: var(--fg-muted);
+  cursor: not-allowed;
+  border: 1px solid var(--border);
+}
+.play-btn-empty:hover { filter: none; }
+
 .play-btn-rich {
   position: relative;
   display: flex; align-items: center; gap: var(--space-3);

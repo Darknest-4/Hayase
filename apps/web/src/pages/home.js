@@ -2,7 +2,7 @@
 // Continue Watching, Your List, Popular This Season, Trending Now,
 // All Time Popular and genre rows.
 
-import { site } from '../shared/lib/site-config.js'
+import { playbackAvailable, site } from '../shared/lib/site-config.js'
 import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
 import { T } from '../shared/i18n/i18n.js'
@@ -167,7 +167,13 @@ export const PageHome = {
             U.el('a', { class: 'badge', href: `#/search?genre=${encodeURIComponent(g)}`, text: T(g) })))
           : null,
         U.el('div', { class: 'hero-buttons' }, [
-          U.el('a', { class: 'btn btn-primary', href: `#/watch/${media.id}:${(Store.entry(media.id)?.progress ?? 0) + 1}` }, [U.svg(C.PLAY, 15), document.createTextNode(T('Watch now'))]),
+          // Lejátszás csak ott, ahol a példány tud is játszani valamit.
+          // Forrás nélkül ez a gomb egy lejátszóoldalra vitt, ami rögtön
+          // visszadobott — a „Részletek" viszont oda visz, ahol tényleg van
+          // mit nézni: a leírás, az évad és az epizódlista.
+          playbackAvailable()
+            ? U.el('a', { class: 'btn btn-primary', href: `#/watch/${media.id}:${(Store.entry(media.id)?.progress ?? 0) + 1}` }, [U.svg(C.PLAY, 15), document.createTextNode(T('Watch now'))])
+            : U.el('a', { class: 'btn btn-primary', href: `#/anime/${media.id}` }, [document.createTextNode(T('Read more'))]),
           Store.entry(media.id)
             ? null
             : U.el('button', {
@@ -175,7 +181,12 @@ export const PageHome = {
               onclick: e => { Store.saveEntry(media, { status: 'PLANNING' }); U.toast(T('Added to Planning')); e.target.textContent = '✓ In your list' }
             }, [document.createTextNode(T('+ Add to list'))]),
           U.el('button', { class: 'btn btn-secondary', onclick: () => C.trailerModal(media.trailer) }, [document.createTextNode(T('Trailer'))]),
-          U.el('a', { class: 'btn btn-ghost', href: `#/anime/${media.id}` }, [document.createTextNode(T('Details'))])
+          // A „Részletek" csak akkor külön gomb, ha az elsődleges a lejátszás.
+          // Forrás nélkül az elsődleges viszi a részletoldalra, és két
+          // egyforma gomb egymás mellett nem választás, csak zaj.
+          playbackAvailable()
+            ? U.el('a', { class: 'btn btn-ghost', href: `#/anime/${media.id}` }, [document.createTextNode(T('Details'))])
+            : null
         ])
       ])
     )

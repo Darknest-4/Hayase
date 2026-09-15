@@ -168,6 +168,48 @@ export const PageAnime = {
     ])
     actions.append(playGroup)
 
+    /*
+     * A nagy lejátszásgomb a semmibe mutathat.
+     *
+     * Hogy egy részhez van-e forrás, azt csak az epizódlista tudja, és az
+     * később érkezik — a gomb addigra kirajzolódott. Amint megjött, a gomb
+     * vagy átáll az első lejátszhatóra, vagy megmondja, hogy nincs miből.
+     *
+     * A „nem tudjuk" itt sem ugyanaz, mint a „nincs": egy AniList-címnél,
+     * amit sosem importáltunk, nincs epizódsor, amire forrást lehetne
+     * akasztani, és ott a gomb marad, ahogy volt.
+     */
+    const playAnchor = playGroup.firstElementChild
+    Catalogue.episodes(media).then(list => {
+      if (!playAnchor?.isConnected || !list?.length) return
+      if (!list.some(e => e.sourceCount !== undefined)) return
+
+      const target = list.find(e => e.episode === targetEp)
+      if (target && (target.sourceCount === undefined || target.sourceCount > 0)) return
+
+      const firstPlayable = list.find(e => (e.sourceCount ?? 0) > 0)
+      if (firstPlayable) {
+        playAnchor.href = `#/watch/${media.id}:${firstPlayable.episode}`
+        const sub = playAnchor.querySelector('small')
+        if (sub) sub.textContent = `${T('Episode')} ${firstPlayable.episode}`
+        return
+      }
+
+      const dead = U.el('button', {
+        class: 'play-btn play-btn-rich play-btn-empty',
+        type: 'button',
+        disabled: '',
+        title: T('Nothing to play this episode from yet.')
+      }, [
+        U.svg(C.PLAY, 16),
+        U.el('span', { class: 'play-btn-text' }, [
+          U.el('b', { text: T('No source yet') }),
+          U.el('small', { text: T('The episode list below is complete.') })
+        ])
+      ])
+      playAnchor.replaceWith(dead)
+    }).catch(() => { /* a lekérdezés hibája nem bizonyíték a forrás hiányára */ })
+
     // `title` shows a tooltip; `aria-label` is what a screen reader reads.
     // These buttons have no text at all, so without the second one they are
     // announced as "button" and nothing else.

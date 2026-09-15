@@ -2,7 +2,7 @@
 // Reusable render helpers: cards, horizontal sections, skeletons, modals.
 
 import { Copy } from '../i18n/copy.js'
-import { featureOn, site } from '../lib/site-config.js'
+import { featureOn, playbackAvailable, site } from '../lib/site-config.js'
 import { T } from '../i18n/i18n.js'
 import { Store } from '../state/store.js'
 import { P } from '../ui/primitives.js'
@@ -316,8 +316,13 @@ export const C = {
             U.el('a', { class: 'preview-genre', href: `#/search?genre=${encodeURIComponent(g)}`, text: g, onclick: () => this._closePreview() })))
           : null,
         U.el('div', { class: 'preview-actions' }, [
-          U.el('a', { class: 'btn btn-primary btn-sm', style: 'flex-grow:1;justify-content:center;', href: `#/watch/${media.id}:${next}`, onclick: () => this._closePreview() },
-            [U.svg(this.PLAY, 12), document.createTextNode(entry?.progress ? ` Continue Ep ${next}` : ' Watch now')]),
+          // Ugyanaz, mint a főoldali kiemelésen: forrás nélkül nem lejátszást
+          // ígérünk, hanem a részletoldalt.
+          !playbackAvailable()
+            ? U.el('a', { class: 'btn btn-primary btn-sm', style: 'flex-grow:1;justify-content:center;', href: `#/anime/${media.id}`, onclick: () => this._closePreview() },
+              [document.createTextNode(T('Details'))])
+            : U.el('a', { class: 'btn btn-primary btn-sm', style: 'flex-grow:1;justify-content:center;', href: `#/watch/${media.id}:${next}`, onclick: () => this._closePreview() },
+              [U.svg(this.PLAY, 12), document.createTextNode(entry?.progress ? `${T('Continue')} ${T('Ep')} ${next}` : T('Watch now'))]),
           listBtn,
           favBtn,
           U.el('a', { class: 'preview-icon-btn', title: T('Details'), href: `#/anime/${media.id}`, onclick: () => this._closePreview() },

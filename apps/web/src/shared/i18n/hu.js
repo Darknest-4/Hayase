@@ -70,6 +70,7 @@ I18n.register('hu', {
 
   // ---------------------------------------------------------------- lejátszás
   'Watch now': 'Megnézem',
+  'Read more': 'Tudj meg többet',
   'Start Watching': 'Megnézem',
   Play: 'Lejátszás',
   'Play next': 'Következő',
@@ -80,6 +81,9 @@ I18n.register('hu', {
   'Continue Watching': 'Folytatás',
   'Pick something to watch': 'Válassz valamit',
   'Mark watched': 'Megnézettnek jelöl',
+  'No source yet': 'Még nincs forrás',
+  'Autoplaying in': 'Automatikus indítás:',
+  'The episode list below is complete.': 'Az epizódok listája lent megvan.',
   'Skip intro': 'Főcím átugrása',
   'Auto-skip intro / outro': 'Főcím és végefőcím automatikus átugrása',
   Fullscreen: 'Teljes képernyő',
