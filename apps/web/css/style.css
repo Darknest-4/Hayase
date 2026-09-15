@@ -318,6 +318,14 @@ body::before {
   color: var(--fg);
   line-height: 1.4;
 }
+.card-cover .card-airing span:last-child {
+  /* „3 nap múlva" elfér; egy hosszabb nyelven a borító szélessége dönt, nem
+     a szöveg. */
+  max-width: 7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .card-airing-dot {
   width: .35rem; height: .35rem;
   border-radius: var(--radius-full);

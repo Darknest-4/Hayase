@@ -109,6 +109,10 @@ export class AnimeRepository extends Repository {
     return this.query(
       `SELECT a.id, a.canonical_title, a.format, a.status, a.season, a.season_year,
               a.episode_count, a.average_score, a.popularity, a.is_adult,
+              -- Mikor jön a következő rész. A kártya ebből rajzolja az
+              -- „Adásban" jelvényt konkrét dátummá; enélkül az oszlop
+              -- kiszámolódik és soha nem hagyja el az adatbázist.
+              a.next_airing_at, a.next_airing_ep,
               ${page.sort.column} AS sort_value,
               img.object_key AS cover_key, img.blurhash, img.dominant_color AS cover_color,
               bimg.object_key AS banner_key

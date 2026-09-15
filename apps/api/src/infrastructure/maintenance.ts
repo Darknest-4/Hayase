@@ -73,6 +73,51 @@ export async function pruneRows (): Promise<Array<{ table: string, deleted: numb
   return results
 }
 
+/**
+ * „Mikor jön a következő rész" — levezetve abból, amit már tudunk.
+ *
+ * Az `anime.next_airing_at` és `next_airing_ep` oszlop az első migráció óta
+ * megvan, indexe is van, és mind a 32 390 sorban NULL volt: soha semmi nem
+ * töltötte. Az adat viszont ott van az epizódokban — 1711 jövőbeli
+ * `air_date` 228 címhez —, csak senki nem vezette le belőle.
+ *
+ * Amit ez a NULL elvett: a kártyák „Ep 7 · 3 nap múlva" jelvényét, az
+ * áttekintő „Hamarosan adásban" widgetét, a részletoldal adásrendi sorát és
+ * az értesítéseket, amiket a kliens a `nextAiringEpisode`-ból épít. Mind ott
+ * volt megírva, és mind egy üres oszlopra nézett.
+ *
+ * Óránként fut, mert ennyi pontosság kell hozzá: egy epizód, ami az elmúlt
+ * órában ment adásba, már nem „következő".
+ *
+ * Csak publikált epizódot vesz figyelembe. Egy rejtett sor nem ígéret: ha az
+ * üzemeltető nem adta ki, akkor a látogatónak nincs miért várnia rá.
+ */
+export async function refreshNextAiring (): Promise<{ filled: number, cleared: number }> {
+  // Előbb a lejártak: egy cím, aminek az utolsó jövőbeli epizódja is adásba
+  // ment, nem kap új értéket az alábbi UPDATE-től, tehát a régi beragadna.
+  const cleared = await query<{ id: string }>(
+    `UPDATE anime SET next_airing_at = NULL, next_airing_ep = NULL
+      WHERE next_airing_at IS NOT NULL AND next_airing_at <= now()
+      RETURNING id`)
+
+  const filled = await query<{ id: string }>(
+    `UPDATE anime a
+        SET next_airing_at = next.air_date,
+            next_airing_ep = next.number
+       FROM (
+         SELECT DISTINCT ON (e.anime_id) e.anime_id, e.air_date, e.number
+           FROM episodes e
+          WHERE e.air_date > now() AND e.visibility = 'public'
+          ORDER BY e.anime_id, e.air_date
+       ) AS next
+      WHERE next.anime_id = a.id
+        AND (a.next_airing_at IS DISTINCT FROM next.air_date
+             OR a.next_airing_ep IS DISTINCT FROM next.number::smallint)
+      RETURNING a.id`)
+
+  return { filled: filled.length, cleared: cleared.length }
+}
+
 export async function handleMaintenanceJob (_job: Job): Promise<void> {
   // Spent and expired handshake tickets. Short-lived by design, so this only
   // stops the table growing without bound.
@@ -82,4 +127,5 @@ export async function handleMaintenanceJob (_job: Job): Promise<void> {
   await pruneExpired()
   await pruneRows()
   await pruneDoneJobs()
+  await refreshNextAiring()
 }

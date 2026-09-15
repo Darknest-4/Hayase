@@ -32,9 +32,14 @@ export const C = {
     // írjuk ki — a „Befejezett" minden második kártyán ott lenne, és nem
     // mondana semmit.
     if (media.status === 'RELEASING') {
-      cover.append(U.el('div', { class: 'card-airing' }, [
+      // Ha tudjuk, mikor jön a következő rész, azt mondjuk — „3 nap múlva"
+      // többet ér, mint „Adásban", és ugyanannyi helyet foglal. A dátum a
+      // katalógus epizódsoraiból vezetődik le óránként; ahol nincs, ott marad
+      // a puszta tény.
+      const air = media.nextAiringEpisode?.airingAt
+      cover.append(U.el('div', { class: 'card-airing', title: air ? `${T('Episode')} ${media.nextAiringEpisode.episode}` : null }, [
         U.el('span', { class: 'card-airing-dot' }),
-        U.el('span', { text: T(U.statusMap.RELEASING) })
+        U.el('span', { text: air ? U.relTime(new Date(air * 1000)) : T(U.statusMap.RELEASING) })
       ]))
     }
 

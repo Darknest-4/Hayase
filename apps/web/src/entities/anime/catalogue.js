@@ -357,6 +357,12 @@ export const Catalogue = {
       episodes: row.episode_count ?? null,
       averageScore: row.average_score ?? null,
       isAdult: row.is_adult ?? false,
+      // Mikor jön a következő rész. A kártya „Adásban" jelvénye ebből lesz
+      // konkrét („7. rész, 3 nap múlva"); a részletoldal ugyanezt az alakot
+      // várja, ezért itt is ugyanúgy épül, mint a teljes rekordban.
+      nextAiringEpisode: row.next_airing_at
+        ? { episode: row.next_airing_ep ?? null, airingAt: Math.floor(new Date(row.next_airing_at).getTime() / 1000) }
+        : null,
       _fromCatalogue: true
     }
   },
