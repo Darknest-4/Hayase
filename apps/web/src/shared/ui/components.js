@@ -443,9 +443,9 @@ export const C = {
           onChange()
         }
       }, [
-        U.el('option', { value: '', text: entry ? 'Remove from list' : 'Add to list…' }),
+        U.el('option', { value: '', text: T(entry ? 'Remove from list' : 'Add to list…') }),
         ...Object.entries(U.listStatusMap).map(([value, label]) =>
-          U.el('option', { value, text: label, ...(entry?.status === value ? { selected: '' } : {}) }))
+          U.el('option', { value, text: T(label), ...(entry?.status === value ? { selected: '' } : {}) }))
       ])
       wrap.append(select)
 
@@ -471,10 +471,10 @@ export const C = {
         class: `btn btn-sm ${fav ? 'btn-theme' : 'btn-ghost'}`,
         onclick: () => {
           const nowFav = Store.toggleFavourite(media.id)
-          U.toast(nowFav ? 'Added to favourites' : 'Removed from favourites')
+          U.toast(T(nowFav ? 'Added to favourites' : 'Removed from favourites'))
           render()
         }
-      }, [U.svg(this.HEART, 14), document.createTextNode(fav ? 'Favourited' : 'Favourite')]))
+      }, [U.svg(this.HEART, 14), document.createTextNode(T(fav ? 'Favourited' : 'Favourite'))]))
     }
 
     render()

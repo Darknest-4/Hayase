@@ -172,7 +172,10 @@ export const PageAnime = {
     // These buttons have no text at all, so without the second one they are
     // announced as "button" and nothing else.
     const iconBtn = (content, title, onclick, active = false) => {
-      const btn = U.el('button', { class: 'detail-icon-btn' + (active ? ' active' : ''), title, 'aria-label': title, onclick })
+      // A címke tooltipként és aria-labelként is megjelenik: egy fordítatlan
+      // szó itt kétszer látszik, egyszer szemmel, egyszer felolvasva.
+      const label = T(title)
+      const btn = U.el('button', { class: 'detail-icon-btn' + (active ? ' active' : ''), title: label, 'aria-label': label, onclick })
       btn.append(content)
       return btn
     }
@@ -184,7 +187,7 @@ export const PageAnime = {
       const now = Store.toggleFavourite(media.id)
       heart.style.fill = now ? 'currentColor' : 'none'
       e.currentTarget.classList.toggle('active', now)
-      U.toast(now ? 'Added to favourites' : 'Removed from favourites')
+      U.toast(T(now ? 'Added to favourites' : 'Removed from favourites'))
     }, Store.isFavourite(media.id)))
 
     // bookmark (quick planning add)
@@ -418,7 +421,7 @@ export const PageAnime = {
     }, [
       U.el('option', { value: '', text: entry ? T('✕ Remove from list') : T('＋ Add to List') }),
       ...Object.entries(U.listStatusMap).map(([value, label]) =>
-        U.el('option', { value, text: label, ...(entry?.status === value ? { selected: '' } : {}) }))
+        U.el('option', { value, text: T(label), ...(entry?.status === value ? { selected: '' } : {}) }))
     ])
     return select
   },

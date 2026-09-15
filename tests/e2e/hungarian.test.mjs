@@ -48,8 +48,16 @@ const REASON = !chromium
 const ROUTES = ['home', 'search', 'list', 'notifications', 'profile', 'settings',
   'community', 'schedule', 'dashboard', 'changelog']
 
+// A két képernyő, aminek azonosító kell — és amin a legtöbb szöveg van. A
+// részletoldal fülsávja és infókártyája volt a legnagyobb szivárgás, a
+// lejátszó pedig az egyetlen hely, ahol a felület a videó fölé kerül.
+const WITH_ID = [
+  { name: 'anime/:id', path: id => `anime/${id}` },
+  { name: 'watch/:id', path: id => `watch/${id}:1` }
+]
+
 describe('a magyar felületen nincs lefordítatlan szöveg', { skip: REASON }, () => {
-  let server, browser, pool, page, base, keys
+  let server, browser, pool, page, base, keys, sampleId
   const username = 'e2ehu' + randomBytes(4).toString('hex')
 
   before(async () => {
@@ -78,6 +86,17 @@ describe('a magyar felületen nincs lefordítatlan szöveg', { skip: REASON }, (
       body: JSON.stringify({ email: `${username}@example.com`, username, password: 'Correct-Horse-Battery-9' })
     })
     const account = await res.json()
+
+    // Egy valódi cím a katalógusból: egy kitalált azonosító a „nincs ilyen"
+    // képernyőt adná vissza, amin három sor szöveg van, és a teszt boldogan
+    // zöld lenne anélkül, hogy a részletoldalt egyszer is megnézte volna.
+    const sample = await pool.query(
+      `SELECT a.id FROM anime a
+        WHERE a.visibility = 'public'
+          AND EXISTS (SELECT 1 FROM anime_images i WHERE i.anime_id = a.id AND i.kind = 'cover')
+        ORDER BY a.popularity DESC NULLS LAST
+        LIMIT 1`)
+    sampleId = sample.rows[0]?.id ?? null
 
     browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM ?? undefined })
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
@@ -109,29 +128,42 @@ describe('a magyar felületen nincs lefordítatlan szöveg', { skip: REASON }, (
     assert.ok(keys.length > 200, `only ${keys.length} translated entries`)
   })
 
+  const scan = async route => {
+    await page.goto(`${base}/#/${route}`, { waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(2200)
+    return page.evaluate(translatable => {
+      const set = new Set(translatable)
+      const found = new Set()
+      const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+      let node
+      while ((node = walk.nextNode())) {
+        const text = node.textContent.trim()
+        if (text && set.has(text)) found.add(text)
+      }
+      // A látható szöveg fele nem szövegcsomópont: placeholder, title és
+      // aria-label. A keresőmező placeholdere pont ilyen volt.
+      for (const el of document.querySelectorAll('[placeholder],[title],[aria-label]')) {
+        for (const attr of ['placeholder', 'title', 'aria-label']) {
+          const value = el.getAttribute(attr)
+          if (value && set.has(value.trim())) found.add(value.trim())
+        }
+      }
+      return [...found]
+    }, keys)
+  }
+
   for (const route of ROUTES) {
     it(`#/${route}`, async () => {
-      await page.goto(`${base}/#/${route}`, { waitUntil: 'domcontentloaded' })
-      await page.waitForTimeout(2200)
-      const leaks = await page.evaluate(translatable => {
-        const set = new Set(translatable)
-        const found = new Set()
-        const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
-        let node
-        while ((node = walk.nextNode())) {
-          const text = node.textContent.trim()
-          if (text && set.has(text)) found.add(text)
-        }
-        // A látható szöveg fele nem szövegcsomópont: placeholder, title és
-        // aria-label. A keresőmező placeholdere pont ilyen volt.
-        for (const el of document.querySelectorAll('[placeholder],[title],[aria-label]')) {
-          for (const attr of ['placeholder', 'title', 'aria-label']) {
-            const value = el.getAttribute(attr)
-            if (value && set.has(value.trim())) found.add(value.trim())
-          }
-        }
-        return [...found]
-      }, keys)
+      const leaks = await scan(route)
+      assert.deepEqual(leaks, [], `these have a Hungarian translation and are shown in English on #/${route}`)
+    })
+  }
+
+  for (const screen of WITH_ID) {
+    it(`#/${screen.name}`, async (t) => {
+      if (!sampleId) return t.skip('the catalogue is empty')
+      const route = screen.path(sampleId)
+      const leaks = await scan(route)
       assert.deepEqual(leaks, [], `these have a Hungarian translation and are shown in English on #/${route}`)
     })
   }

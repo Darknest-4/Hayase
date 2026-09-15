@@ -107,10 +107,12 @@ export const PageWatch = {
       onclick: () => {
         const progress = Store.entry(media.id)?.progress ?? 0
         Store.setProgress(media, watched && progress === episode ? episode - 1 : episode)
-        U.toast(watched ? `Episode ${episode} unmarked` : `Episode ${episode} marked as watched`)
+        U.toast(watched
+          ? `${T('Episode')} ${episode} — ${T('unmarked')}`
+          : `${T('Episode')} ${episode} — ${T('marked as watched')}`)
         navigate()
       }
-    }, [U.svg(C.CHECK, 13), document.createTextNode(watched ? 'Watched' : 'Mark watched')])
+    }, [U.svg(C.CHECK, 13), document.createTextNode(T(watched ? 'Watched' : 'Mark watched'))])
 
     const keepSrc = src ? `?src=${encodeURIComponent(decodeURIComponent(src))}` : ''
     col.append(U.el('div', { class: 'watch-actions' }, [
