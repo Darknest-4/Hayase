@@ -58,6 +58,7 @@ export const PageAdmin = {
     { key: 'overview', group: 'insight', label: 'Áttekintés', sub: 'A platform állapota és statisztikája', perm: 'admin.analytics.view', render: 'renderOverview', icon: '<path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>' },
     { key: 'errors', group: 'insight', label: 'Hibák', sub: 'Csoportosított hibák és hívási láncok', perm: 'admin.analytics.view', render: 'renderErrors', icon: '<path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0"/>' },
     { key: 'audit-log', group: 'insight', label: 'Napló', sub: 'Ki mit változtatott, és mikor', perm: 'admin.users.manage', render: 'renderAudit', icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6"/><path d="M9 11h2"/>' },
+    { key: 'analytics', group: 'insight', label: 'Látogatottság', sub: 'Kik jártak itt, és mit csináltak', perm: 'analytics.view', render: 'renderAnalytics', icon: '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>' },
 
     { key: 'users', group: 'people', label: 'Felhasználók', sub: 'Fiókok, felfüggesztések, kitiltások', perm: 'admin.users.manage', render: 'renderUsers', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
     { key: 'roles', group: 'people', label: 'Szerepkörök', sub: 'Jogosultságok és szerepkörök', perm: 'roles.manage', render: 'renderRoles', icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>' },
@@ -877,6 +878,369 @@ export const PageAdmin = {
    * — this platform has shipped switches that switched nothing, and a control
    * that cannot say where it bites is the next one.
    */
+  // ---- látogatottság -------------------------------------------------------
+  //
+  // Öt kérdés, egy képernyőn, füleken. Nem öt sáv-bejegyzés: mindegyik
+  // ugyanarról szól (kik jártak itt és mit csináltak), és öt külön bejegyzés a
+  // rálban abból öt különálló dolgot csinálna.
+  //
+  // Az időtartomány a fejlécben áll, és MINDEN fülre érvényes. Ez azért
+  // fontos, mert a leggyakoribb félreolvasás az, amikor a bal oldali szám 7
+  // napra, a jobb oldali 30-ra vonatkozik, és senki nem veszi észre.
+
+  ANALYTICS_TABS: [
+    ['visitors', 'Látogatók'],
+    ['anime', 'Címek'],
+    ['search', 'Keresés'],
+    ['users', 'Fiókok'],
+    ['devices', 'Eszközök'],
+    ['performance', 'Teljesítmény']
+  ],
+
+  ANALYTICS_RANGES: [
+    ['today', 'Ma'], ['yesterday', 'Tegnap'], ['7d', '7 nap'],
+    ['30d', '30 nap'], ['90d', '90 nap'], ['365d', 'Egy év']
+  ],
+
+  async renderAnalytics (content) {
+    const state = {
+      tab: this._analyticsTab ?? 'visitors',
+      range: this._analyticsRange ?? '7d'
+    }
+
+    const draw = async () => {
+      this._analyticsTab = state.tab
+      this._analyticsRange = state.range
+      content.replaceChildren(P.spinner())
+
+      // Fejlécvezérlők: a tartomány egyszer, mindenre.
+      if (this._headActions) {
+        this._headActions.replaceChildren(
+          U.el('div', { class: 'dash-ranges' }, this.ANALYTICS_RANGES.map(([value, label]) =>
+            U.el('button', {
+              class: 'dash-range' + (state.range === value ? ' active' : ''),
+              type: 'button',
+              onclick: () => { state.range = value; draw() }
+            }, [document.createTextNode(label)])))
+        )
+      }
+
+      const tabs = U.el('div', { class: 'report-tabs', style: 'margin-bottom:var(--space-4);' },
+        this.ANALYTICS_TABS.map(([value, label]) =>
+          U.el('button', {
+            class: 'report-tab' + (state.tab === value ? ' on' : ''),
+            type: 'button',
+            onclick: () => { state.tab = value; draw() }
+          }, [document.createTextNode(label)])))
+
+      const body = U.el('div')
+      content.replaceChildren(tabs, body)
+      body.replaceChildren(P.spinner())
+
+      try {
+        await this['analytics' + state.tab[0].toUpperCase() + state.tab.slice(1)](body, state.range)
+      } catch (e) {
+        body.replaceChildren(P.errorState('A kimutatás betöltése nem sikerült: ' + e.message))
+      }
+    }
+
+    await draw()
+  },
+
+  /** Egy szám és az előző, azonos hosszú időszak ugyanaz a száma. */
+  analyticsKpi (label, value, previous, { tone = 'blue', icon = '<circle cx="12" cy="12" r="10"/>', suffix = '' } = {}) {
+    const now = Number(value) || 0
+    const before = Number(previous)
+    // Nincs összehasonlítás ≠ nulla változás. Egy friss telepítésen az előző
+    // időszak nem „lapos", hanem nem létezik, és ezt ki is írjuk.
+    const known = Number.isFinite(before) && before > 0
+    const delta = known ? Math.round(((now - before) / before) * 100) : null
+    const dir = delta == null ? 'flat' : delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat'
+    return U.el('div', { class: 'dash-kpi' }, [
+      U.el('span', { class: 'dash-kpi-icon tone-' + tone }, [U.svg(icon, 17)]),
+      U.el('div', { class: 'dash-kpi-body' }, [
+        U.el('div', { class: 'dash-kpi-value', text: now.toLocaleString(I18n.locale()) + suffix }),
+        U.el('div', { class: 'dash-kpi-label', text: label }),
+        U.el('div', { class: 'dash-kpi-delta dash-kpi-' + dir }, [
+          U.el('span', { class: 'dash-kpi-arrow', text: delta == null ? '—' : (delta > 0 ? '+' : '') + delta + '%' }),
+          U.el('span', { class: 'dash-kpi-compare', text: delta == null ? 'nincs mihez mérni' : 'az előző időszakhoz' })
+        ])
+      ])
+    ])
+  },
+
+  /** Rövid idő emberi alakban: 0:00-s másodperceket senki nem olvas. */
+  analyticsDuration (seconds) {
+    const s = Math.max(0, Math.round(Number(seconds) || 0))
+    if (s < 60) return s + ' mp'
+    const m = Math.floor(s / 60)
+    if (m < 60) return `${m} p ${String(s % 60).padStart(2, '0')} mp`
+    return `${Math.floor(m / 60)} ó ${String(m % 60).padStart(2, '0')} p`
+  },
+
+  /** Egy egyszerű táblázat — érték, szám, arány. */
+  analyticsTable (rows, { head = ['', ''], empty = 'Nincs adat.' } = {}) {
+    if (!rows.length) return P.emptyState(empty)
+    const total = rows.reduce((n, r) => n + (Number(r[1]) || 0), 0) || 1
+    const wrap = U.el('div', { class: 'meta-rows' })
+    for (const [label, value, extra] of rows) {
+      const pct = Math.round((Number(value) || 0) / total * 100)
+      wrap.append(U.el('div', { class: 'meta-row backup-row' }, [
+        U.el('div', { class: 'meta-row-main' }, [
+          U.el('div', { class: 'meta-row-title', text: String(label) }),
+          // A sáv a sor alatt: egy arány számként nehezebben olvasható, mint
+          // hosszként, és a kettő együtt a legjobb.
+          U.el('div', { style: 'height:3px;border-radius:2px;margin-top:6px;background:var(--accent);opacity:.65;width:' + Math.max(2, pct) + '%;' })
+        ]),
+        U.el('div', { style: 'text-align:right;white-space:nowrap;' }, [
+          U.el('div', { style: 'font-variant-numeric:tabular-nums;font-weight:700;', text: Number(value).toLocaleString(I18n.locale()) }),
+          U.el('div', { class: 'meta-row-sub', text: extra != null ? String(extra) : pct + '%' })
+        ])
+      ]))
+    }
+    return U.el('div', {}, [U.el('div', { class: 'dash-panel-subhead', text: head[0] }), wrap])
+  },
+
+  async analyticsVisitors (body, range) {
+    const [data, live] = await Promise.all([
+      YumeAPI.admin.analytics.visitors(range),
+      YumeAPI.admin.analytics.realtime().catch(() => null)
+    ])
+    const t = data.totals ?? {}
+    const p = data.previous ?? {}
+    body.replaceChildren()
+
+    if (live) {
+      body.append(U.el('div', { class: 'callout', style: 'margin-bottom:var(--space-4);' }, [
+        U.el('strong', { text: `${live.live?.online ?? 0} látogató van most itt` }),
+        document.createTextNode(
+          ` — ebből ${live.live?.signed_in ?? 0} bejelentkezve, ${live.live?.page_views_5m ?? 0} oldalletöltés az elmúlt öt percben.` +
+          (live.api?.samples ? ` Az API válaszideje p95 ${live.api.p95_ms} ms.` : ''))
+      ]))
+    }
+
+    const kpis = U.el('div', { class: 'dash-kpis' }, [
+      this.analyticsKpi('Munkamenet', t.sessions, p.sessions, { tone: 'blue', icon: '<path d="M3 12h18"/><path d="M12 3v18"/>' }),
+      this.analyticsKpi('Oldalletöltés', t.page_views, p.page_views, { tone: 'violet', icon: '<rect x="3" y="3" width="18" height="18" rx="2"/>' }),
+      this.analyticsKpi('Napi átlag látogató', t.avg_daily_visitors, p.avg_daily_visitors, { tone: 'green', icon: '<path d="M16 21v-2a4 4 0 0 0-8 0v2"/><circle cx="12" cy="7" r="4"/>' }),
+      this.analyticsKpi('Regisztráció', t.registrations, p.registrations, { tone: 'amber', icon: '<path d="M12 5v14"/><path d="M5 12h14"/>' })
+    ])
+    body.append(kpis)
+
+    // Az egyedi látogató nem adható össze napokon át, és ezt ki kell mondani,
+    // különben a „napi átlag" úgy olvasódik, mintha összeg volna.
+    body.append(U.el('p', {
+      class: 'list-row-sub',
+      style: 'margin:0 0 var(--space-4);',
+      text:
+      'Az egyedi látogatók száma naponta értendő: ugyanaz az ember két napon két látogató, mert a látogatói kulcs naponta cserélődik. ' +
+      'Ez szándékos — napokon átívelő követés nélkül a „visszatérő" csak a bejelentkezetteknél pontos.'
+    }))
+
+    const days = data.days ?? []
+    if (days.length > 1) {
+      const labels = days.map(d => this.dayLabel(d.day))
+      body.append(this.dashPanel({
+        title: 'Forgalom',
+        sub: 'Munkamenetek és oldalletöltések naponta',
+        body: Charts.lines([
+          { name: 'Munkamenet', values: days.map(d => Number(d.sessions)), color: 'var(--accent)' },
+          { name: 'Oldalletöltés', values: days.map(d => Number(d.page_views)), color: 'var(--blue-400)' }
+        ], { labels, label: 'Napi forgalom', height: 190 })
+      }))
+    }
+
+    const lower = U.el('div', { class: 'dash-lower' })
+    lower.append(this.dashPanel({
+      title: 'Mi történt',
+      sub: 'Az időszak alatt',
+      body: U.el('div', {}, [
+        this.analyticsTable([
+          ['Belépés', t.logins, null],
+          ['Sikertelen belépés', t.failed_logins, null],
+          ['Keresés', t.searches, null],
+          ['Találat nélküli keresés', t.zero_result_searches, null],
+          ['Elindított epizód', t.episode_starts, null],
+          ['Befejezett epizód', t.episode_completions, null],
+          ['Hiba', t.errors, null]
+        ], { head: ['Események'] }),
+        U.el('p', {
+          class: 'list-row-sub',
+          style: 'margin-top:var(--space-3);',
+          text:
+          `Átlagos látogatáshossz: ${this.analyticsDuration(t.avg_duration_sec)} · ` +
+          `összes nézett idő: ${this.analyticsDuration(t.watch_seconds)}`
+        })
+      ])
+    }))
+    body.append(lower)
+  },
+
+  async analyticsAnime (body, range) {
+    const data = await YumeAPI.admin.analytics.anime(range, 50)
+    body.replaceChildren()
+    if (!data.data?.length) {
+      body.append(P.emptyState('Ebben az időszakban egyetlen címhez sem érkezett megtekintés. ' +
+        'A napi összesítő óránként frissül — ha most kapcsoltad be a mérést, ez holnap lesz beszédes.'))
+      return
+    }
+    const rows = U.el('div', { class: 'meta-rows' })
+    for (const a of data.data) {
+      rows.append(U.el('div', { class: 'meta-row backup-row' }, [
+        U.el('div', { class: 'meta-row-main' }, [
+          U.el('div', { class: 'meta-row-title', text: a.title }),
+          U.el('div', {
+            class: 'meta-row-sub',
+            text:
+            `${Number(a.unique_viewers ?? 0).toLocaleString(I18n.locale())} egyedi néző · ` +
+            `${Number(a.episode_starts ?? 0)} indítás · ${Number(a.episode_completions ?? 0)} befejezés` +
+            (a.completion_pct != null ? ` (${a.completion_pct}%)` : '') +
+            ` · ${this.analyticsDuration(a.watch_seconds)} nézve`
+          })
+        ]),
+        U.el('div', { style: 'text-align:right;' }, [
+          U.el('div', { style: 'font-variant-numeric:tabular-nums;font-weight:700;', text: Number(a.views ?? 0).toLocaleString(I18n.locale()) }),
+          U.el('div', { class: 'meta-row-sub', text: 'megtekintés' })
+        ])
+      ]))
+    }
+    body.append(rows)
+  },
+
+  async analyticsSearch (body, range) {
+    const data = await YumeAPI.admin.analytics.search(range)
+    body.replaceChildren()
+    const lower = U.el('div', { class: 'dash-lower' })
+
+    lower.append(this.dashPanel({
+      title: 'Amire kerestek',
+      sub: 'A leggyakoribb kifejezések',
+      body: this.analyticsTable(
+        (data.top ?? []).slice(0, 20).map(r => [r.term, r.searches, `${r.avg_results ?? 0} találat · ${r.clicks ?? 0} kattintás`]),
+        { head: ['Kifejezés'], empty: 'Ebben az időszakban nem kerestek semmire.' })
+    }))
+
+    // Ez a leghasznosabb keresési kimutatás: minden sor egy hiányzó cím vagy
+    // egy rossz írásmód, amire VAN kereslet.
+    lower.append(this.dashPanel({
+      title: 'Amire nem volt találat',
+      sub: 'Minden sor egy hiányzó cím vagy egy rossz írásmód',
+      body: this.analyticsTable(
+        (data.zero ?? []).slice(0, 20).map(r => [r.term, r.searches, null]),
+        { head: ['Kifejezés'], empty: 'Minden keresés talált valamit.' })
+    }))
+    body.append(lower)
+
+    const daily = data.daily ?? []
+    if (daily.length > 1) {
+      body.append(this.dashPanel({
+        title: 'Keresések naponta',
+        sub: 'Összes és találat nélküli',
+        body: Charts.lines([
+          { name: 'Keresés', values: daily.map(d => Number(d.searches)), color: 'var(--accent)' },
+          { name: 'Találat nélkül', values: daily.map(d => Number(d.zero_result_searches)), color: 'var(--danger)' }
+        ], { labels: daily.map(d => this.dayLabel(d.day)), label: 'Keresések', height: 170 })
+      }))
+    }
+  },
+
+  async analyticsUsers (body, range) {
+    const data = await YumeAPI.admin.analytics.users(range)
+    const t = data.totals ?? {}
+    body.replaceChildren()
+
+    body.append(U.el('div', { class: 'dash-kpis' }, [
+      this.analyticsKpi('Összes fiók', t.total, null, { tone: 'blue', icon: '<path d="M16 21v-2a4 4 0 0 0-8 0v2"/><circle cx="12" cy="7" r="4"/>' }),
+      this.analyticsKpi('Új az időszakban', t.new_in_window, null, { tone: 'green', icon: '<path d="M12 5v14"/><path d="M5 12h14"/>' }),
+      this.analyticsKpi('Aktív 30 napban', t.active_30d, t.active_7d, { tone: 'violet', icon: '<circle cx="12" cy="12" r="10"/>' }),
+      this.analyticsKpi('Korlátozott', t.restricted, null, { tone: 'amber', icon: '<path d="M12 9v4"/><path d="M12 17h.01"/>' })
+    ]))
+
+    // A „30 napban aktív" mellé a 7 napos kerül összehasonlításnak, és ez
+    // NEM időbeli változás — ezért ki is írjuk, mert a kártya alatt álló
+    // százalék máskülönben trendnek olvasódna.
+    body.append(U.el('p', {
+      class: 'list-row-sub',
+      style: 'margin:0 0 var(--space-4);',
+      text:
+      `Az elmúlt 7 napban ${t.active_7d ?? 0} fiók lépett be, 30 napban ${t.active_30d ?? 0}. ` +
+      `Törölt fiók: ${t.deleted ?? 0}.`
+    }))
+
+    const daily = data.daily ?? []
+    if (daily.length > 1) {
+      body.append(this.dashPanel({
+        title: 'Regisztráció és belépés',
+        sub: 'Naponta',
+        body: Charts.lines([
+          { name: 'Regisztráció', values: daily.map(d => Number(d.registrations)), color: 'var(--green-400)' },
+          { name: 'Belépés', values: daily.map(d => Number(d.logins)), color: 'var(--accent)' },
+          { name: 'Sikertelen belépés', values: daily.map(d => Number(d.failed_logins)), color: 'var(--danger)' }
+        ], { labels: daily.map(d => this.dayLabel(d.day)), label: 'Fiókaktivitás', height: 190 })
+      }))
+    }
+
+    const byDim = dim => (data.devices ?? []).filter(r => r.dimension === dim).map(r => [r.value, r.sessions, null])
+    const lower = U.el('div', { class: 'dash-lower' })
+    for (const [dim, title] of [['device', 'Eszköz'], ['browser', 'Böngésző'], ['os', 'Operációs rendszer']]) {
+      lower.append(this.dashPanel({
+        title,
+        sub: 'Bejelentkezett és névtelen munkamenetek együtt',
+        body: this.analyticsTable(byDim(dim), { head: [title], empty: 'Még nincs mérés.' })
+      }))
+    }
+    body.append(lower)
+  },
+
+  async analyticsDevices (body, range) {
+    const [device, browser, os, referrer, entry] = await Promise.all([
+      YumeAPI.admin.analytics.breakdown('device', range),
+      YumeAPI.admin.analytics.breakdown('browser', range),
+      YumeAPI.admin.analytics.breakdown('os', range),
+      YumeAPI.admin.analytics.breakdown('referrer', range),
+      YumeAPI.admin.analytics.breakdown('entry_route', range)
+    ])
+    body.replaceChildren()
+    const lower = U.el('div', { class: 'dash-lower' })
+    const panel = (title, sub, data, empty) => this.dashPanel({
+      title,
+      sub,
+      body: this.analyticsTable((data.data ?? []).map(r => [r.value, r.sessions, null]), { head: [title], empty })
+    })
+    lower.append(panel('Eszköz', 'Munkamenetek eszközosztályonként', device, 'Még nincs mérés.'))
+    lower.append(panel('Böngésző', 'Amit valóban használnak', browser, 'Még nincs mérés.'))
+    lower.append(panel('Operációs rendszer', '', os, 'Még nincs mérés.'))
+    lower.append(panel('Honnan jönnek', 'A hivatkozó gazdagépe, útvonal nélkül', referrer, 'Még nincs mérés.'))
+    lower.append(panel('Belépő oldal', 'Ahol a látogatás kezdődött', entry, 'Még nincs mérés.'))
+    body.append(lower)
+    body.append(U.el('p', {
+      class: 'list-row-sub',
+      text:
+      'A hivatkozóból csak a gazdagépet tároljuk, az útvonalat nem: egy teljes hivatkozó URL keresőkifejezést vagy magánoldal címét is tartalmazhatja.'
+    }))
+  },
+
+  async analyticsPerformance (body, range) {
+    const data = await YumeAPI.admin.analytics.performance(range)
+    body.replaceChildren()
+    const lower = U.el('div', { class: 'dash-lower' })
+    lower.append(this.dashPanel({
+      title: 'Mérőszámok',
+      sub: 'p95 szerint rendezve',
+      body: this.analyticsTable(
+        (data.byMetric ?? []).map(m => [m.metric, m.p95, `p50 ${m.p50} ms · p99 ${m.p99} ms · ${m.samples} minta`]),
+        { head: ['Mérőszám'], empty: 'Nincs mérés ebben az időszakban.' })
+    }))
+    lower.append(this.dashPanel({
+      title: 'A leglassabb végpontok',
+      sub: 'p95, legalább hat mintából',
+      body: this.analyticsTable(
+        (data.worstRoutes ?? []).map(r => [r.route, r.p95, `${r.samples} minta`]),
+        { head: ['Végpont'], empty: 'Nincs végpontonkénti mérés.' })
+    }))
+    body.append(lower)
+  },
+
   // ---- mentések ------------------------------------------------------------
 
   /**
@@ -1336,10 +1700,10 @@ export const PageAdmin = {
       U.el('button', {
         class: 'btn btn-sm btn-danger',
         onclick: async () => {
-          const reason = window.prompt('Sign every account out of every device — why?')
+          const reason = window.prompt('Miért jelentkeztetsz ki mindenkit minden eszközről?')
           if (!reason || reason.trim().length < 3) return
-          const typed = window.prompt('This signs you out too. Type REVOKE to confirm.')
-          if (typed !== 'REVOKE') { U.toast('Megszakítva'); return }
+          const typed = window.prompt('Ez téged is kijelentkeztet. Írd be: VISSZAVONOM')
+          if (typed !== 'VISSZAVONOM') { U.toast('Megszakítva'); return }
           try {
             const { revoked } = await YumeAPI.admin.revokeAllSessions(reason.trim())
             U.toast(`${revoked} sessions revoked — signing you out`)
@@ -2210,7 +2574,7 @@ export const PageAdmin = {
             U.el('button', {
               class: 'btn btn-ghost btn-sm cat-ep-del',
               onclick: async () => {
-                if (!confirm('Remove this source?')) return
+                if (!confirm('Törlöd ezt a forrást?')) return
                 try {
                   await YumeAPI.admin.catalogue.removeSource(src.id)
                   await load()
@@ -3318,7 +3682,7 @@ export const PageAdmin = {
       sub: 'Napi belépések',
       body: Charts.lines(
         [{ name: 'Active', values: data.series.users.map(r => Number(r.active)), color: 'var(--accent)' }],
-        { labels, label: 'Daily active users', height: 190 }
+        { labels, label: 'Napi aktív felhasználók', height: 190 }
       )
     }))
 
@@ -3331,7 +3695,7 @@ export const PageAdmin = {
       title: 'Tartalmi aktivitás',
       sub: 'Naponta hozzáadott sorok',
       legend: contentSeries,
-      body: Charts.lines(contentSeries, { labels, label: 'Content added per day', height: 190, area: false })
+      body: Charts.lines(contentSeries, { labels, label: 'Naponta hozzáadott tartalom', height: 190, area: false })
     }))
 
     if (health) charts.append(this.healthPanel(health))
@@ -4346,10 +4710,94 @@ export const PageAdmin = {
         U.el('h4', { class: 'user-section-title', text: 'Műveletek' }),
         actions
       ]),
-      section('Moderation history', historyRows, 'Nothing has ever been done to this account.'),
-      section('Administrative changes', auditRows, 'No roles granted, no sessions ended.'),
-      section('Sign-in events', securityRows, 'No recorded sign-in activity.')
+      section('Moderációs előzmény', historyRows, 'Ezzel a fiókkal még soha nem történt semmi.'),
+      section('Adminisztratív változások', auditRows, 'Nem kapott szerepkört, és nem jelentkeztették ki.'),
+      section('Belépési események', securityRows, 'Nincs rögzített belépési tevékenység.'),
+      this.accountActivitySection(a.id)
     ]
+  },
+
+  /**
+   * Tevékenység, munkamenetek, eszközök — külön jogosultsággal, külön kéréssel.
+   *
+   * Nem a felhasználói panel fő lekérdezésébe húzva, két okból:
+   *
+   *   * ehhez MÁS jogosultság kell (`analytics.accounts`), mint a fiók
+   *     kezeléséhez. Aki moderál, attól még nem feltétlenül nézheti végig
+   *     valakinek az idővonalát;
+   *   * ha nincs jogosultság, a végpont nem létezik (404), és akkor ez a
+   *     szakasz egyszerűen eltűnik — nem üres dobozként áll ott azzal, hogy
+   *     „nincs jogod".
+   */
+  accountActivitySection (userId) {
+    const box = U.el('div', { class: 'user-section' }, [
+      U.el('h4', { class: 'user-section-title', text: 'Tevékenység és eszközök' }),
+      U.el('div', { class: 'user-section-empty', text: 'Betöltés…' })
+    ])
+
+    YumeAPI.admin.analytics.account(userId, { limit: 40 }).then(data => {
+      box.replaceChildren(U.el('h4', { class: 'user-section-title', text: 'Tevékenység és eszközök' }))
+
+      const w = data.watch ?? {}
+      box.append(U.el('p', {
+        class: 'user-section-note',
+        text:
+        `${w.episodes_started ?? 0} elindított epizód · ${w.episodes_finished ?? 0} befejezett · ` +
+        `${this.analyticsDuration(w.watch_seconds)} nézve · ${w.favorites ?? 0} kedvenc · ` +
+        `${w.library_entries ?? 0} könyvtári bejegyzés · ${w.comments ?? 0} hozzászólás`
+      }))
+
+      const rows = (data.events ?? []).map(e => U.el('div', { class: 'user-history-row' }, [
+        // A hivatkozási szám az, amit egy bejelentésben idézni lehet.
+        U.el('span', { class: 'user-history-action', text: e.reference }),
+        U.el('span', {
+          class: 'user-history-reason',
+          text: e.result === 'success' ? '' : e.result,
+          title: JSON.stringify(e.metadata ?? {})
+        }),
+        U.el('span', { class: 'user-history-by', text: e.event }),
+        U.el('time', {
+          class: 'user-history-when',
+          text: U.relTime(new Date(e.created_at)),
+          title: new Date(e.created_at).toLocaleString(I18n.locale())
+        })
+      ]))
+      box.append(rows.length
+        ? U.el('div', { class: 'user-history' }, rows)
+        : U.el('div', { class: 'user-section-empty', text: 'Nincs rögzített esemény. A fiókesemények naplózása 2026 szeptemberében indult.' }))
+
+      const devices = (data.devices ?? []).map(dv => U.el('div', { class: 'user-history-row' }, [
+        U.el('span', { class: 'user-history-action', text: dv.platform }),
+        U.el('span', { class: 'user-history-reason', text: dv.name ?? '' }),
+        U.el('span', { class: 'user-history-by', text: '' }),
+        U.el('time', { class: 'user-history-when', text: U.relTime(new Date(dv.last_seen_at)) })
+      ]))
+      if (devices.length) {
+        box.append(U.el('h4', { class: 'user-section-title', style: 'margin-top:var(--space-4);', text: 'Eszközök' }))
+        box.append(U.el('div', { class: 'user-history' }, devices))
+      }
+
+      const sessions = (data.sessions ?? []).slice(0, 10).map(se => U.el('div', { class: 'user-history-row' }, [
+        U.el('span', { class: 'user-history-action', text: se.active ? 'élő' : 'lezárt' }),
+        U.el('span', { class: 'user-history-reason', text: se.device_name ?? se.platform ?? '' }),
+        U.el('span', { class: 'user-history-by', text: '' }),
+        U.el('time', {
+          class: 'user-history-when',
+          text: U.relTime(new Date(se.created_at)),
+          title: new Date(se.created_at).toLocaleString(I18n.locale())
+        })
+      ]))
+      if (sessions.length) {
+        box.append(U.el('h4', { class: 'user-section-title', style: 'margin-top:var(--space-4);', text: 'Munkamenetek' }))
+        box.append(U.el('div', { class: 'user-history' }, sessions))
+      }
+    }).catch(() => {
+      // Nincs jogosultság (404), vagy a végpont nem elérhető — a szakasz
+      // eltűnik. Egy „nincs jogod" doboz nem információ, csak hely.
+      box.remove()
+    })
+
+    return box
   },
 
   /**
