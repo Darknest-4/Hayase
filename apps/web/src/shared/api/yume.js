@@ -624,6 +624,9 @@ export const YumeAPI = {
     _api: null,
 
     list (status) { return this._api._request('/v1/changelog' + (status ? `?status=${status}` : '')) },
+    // A szerkesztő nézete: a nem publikus kiadásokat is tartalmazza, és ezért
+    // jogosultsághoz kötött (changelog.manage).
+    all () { return this._api._request('/v1/changelog/all', { auth: true }) },
     get (version) { return this._api._request(`/v1/changelog/${encodeURIComponent(version)}`) },
     create (release) { return this._api._request('/v1/changelog', { method: 'POST', auth: true, body: release }) },
     update (id, patch) { return this._api._request(`/v1/changelog/${id}`, { method: 'PATCH', auth: true, body: patch }) },
