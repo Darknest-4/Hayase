@@ -223,6 +223,8 @@ body::before {
   color: var(--fg-faint);
   cursor: pointer;
   transition: color var(--dur) var(--ease), transform var(--dur) var(--ease);
+  /* was 18px: a row's only link out of it has to be pressable. */
+  display: inline-flex; align-items: center; min-height: 24px;
 }
 .section-more::after { content: ' →'; }
 .section-more:hover { color: var(--accent); transform: translateX(2px); }
@@ -360,7 +362,15 @@ body::before {
 .footer-tagline { color: var(--fg-faint); font-size: var(--text-sm); margin: var(--space-2) 0 0; line-height: 1.5; }
 .footer-col { display: flex; flex-direction: column; gap: var(--space-2); }
 .footer-col h4 { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .06em; color: var(--fg-faint); margin: 0 0 var(--space-1); font-weight: var(--weight-bold); }
-.footer-col a { color: var(--fg-muted); font-size: var(--text-sm); font-weight: var(--weight-medium); transition: color var(--dur); }
+/* 24px is the floor, on every width — not only below 820px.
+   The mobile block further down raises these to 44px for a thumb; this is the
+   desktop case, which was 21px and had no exemption to lean on: a link in a
+   column list is not an inline target in a sentence. */
+.footer-col a {
+  color: var(--fg-muted); font-size: var(--text-sm); font-weight: var(--weight-medium);
+  transition: color var(--dur);
+  display: flex; align-items: center; min-height: 24px;
+}
 .footer-col a:hover { color: var(--accent); }
 .footer-bottom {
   display: flex; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2);
@@ -844,12 +854,32 @@ a.chip:hover { filter: brightness(.85); }
   max-width: 52rem;
   margin-top: var(--space-3);
 }
-.detail-desc.clamped {
+/* The clamp lives on the wrapper so the fade and the button can sit over the
+   paragraph's last line rather than after it. A gradient is what says "there
+   is more"; the button is what does something about it. */
+.detail-desc-wrap { position: relative; }
+.detail-desc-wrap.clamped .detail-desc {
   display: -webkit-box;
   -webkit-line-clamp: 5;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.detail-desc-wrap.clamped::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 4.5em;
+  background: linear-gradient(to bottom, transparent, var(--bg) 92%);
+  pointer-events: none;
+}
+.detail-desc-wrap .showmore {
+  position: relative;
+  z-index: 1;
+  display: block;
+  margin: var(--space-2) auto 0;
+}
+/* Expanded, the fade is gone and the button is simply the next thing down. */
+.detail-desc-wrap:not(.clamped) .showmore { margin-top: var(--space-3); }
 .desc-toggle {
   color: var(--fg-faint);
   font-size: var(--text-xs);
@@ -1290,7 +1320,10 @@ svg.chart .chart-name { font-size: var(--text-xs); fill: var(--fg); dominant-bas
 .theme-swatch-base { font-size: var(--text-xs); color: var(--fg-faint); text-transform: capitalize; }
 
 .theme-custom-row { display: flex; align-items: center; gap: var(--space-3); background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); }
-.theme-color-input { width: 3rem; height: 3rem; padding: 0; border: none; border-radius: var(--radius-md); background: none; cursor: pointer; }
+/* flex-shrink: 0, because this sits in a flex row and `width` alone is a
+   suggestion there: measured at 2x48, 3x48 and 12x48 on narrow screens, where
+   a colour swatch stops being a colour swatch. */
+.theme-color-input { width: 3rem; height: 3rem; flex-shrink: 0; padding: 0; border: none; border-radius: var(--radius-md); background: none; cursor: pointer; }
 .theme-color-input::-webkit-color-swatch-wrapper { padding: 0; }
 .theme-color-input::-webkit-color-swatch { border: 1px solid var(--border); border-radius: var(--radius-md); }
 
@@ -1326,7 +1359,10 @@ svg.chart .chart-name { font-size: var(--text-xs); fill: var(--fg); dominant-bas
 
 .dash-widget { margin-bottom: var(--space-6); }
 .dash-widget-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
-.dash-widget-link { font-size: var(--text-xs); font-weight: var(--weight-bold); color: var(--fg-faint); white-space: nowrap; }
+.dash-widget-link { font-size: var(--text-xs); font-weight: var(--weight-bold); color: var(--fg-faint); white-space: nowrap;
+  /* a row's link out of it: 24px is the floor. */
+  display: inline-flex; align-items: center; justify-content: center; min-height: 24px; min-width: 24px;
+}
 .dash-widget-link:hover { color: var(--accent); }
 .dash-airing-list, .dash-ach-list { display: flex; flex-direction: column; gap: var(--space-2); }
 .dash-ach-row { display: flex; align-items: center; gap: var(--space-3); background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); }
@@ -1515,7 +1551,9 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
 .setting-card p { margin: 0 0 var(--space-3); color: var(--fg-faint); font-size: var(--text-sm); }
 
 /* toggle switch */
-.switch { position: relative; display: inline-block; width: 2.6rem; height: 1.45rem; }
+/* 24px, not 23. A switch is the target — the input inside it is 0x0 by
+   design — so the switch's own box is what has to clear the floor. */
+.switch { position: relative; display: inline-block; width: 2.6rem; height: 1.5rem; }
 .switch input { opacity: 0; width: 0; height: 0; }
 .switch .slider {
   position: absolute; inset: 0;
@@ -2036,6 +2074,9 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
   color: var(--fg);
   display: inline-block;
   margin-bottom: var(--space-2);
+  /* was 21px. The way back to the series is the one navigation the player
+     screen has; it must not be the smallest target on it. */
+  min-height: 24px;
 }
 .player-top .player-back { margin-bottom: 0; }
 .player-back:hover { color: var(--custom, var(--accent)); }
@@ -2361,6 +2402,8 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
   padding: var(--space-1);
   border-radius: var(--radius-sm);
   transition: color var(--dur) var(--ease), transform var(--dur) var(--ease);
+  /* the rail collapse control was 23px — one pixel under: 24px is the floor. */
+  display: inline-flex; align-items: center; justify-content: center; min-height: 24px; min-width: 24px;
 }
 .admin-nav-collapse:hover { color: var(--fg); }
 .admin-nav-collapse:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -2794,7 +2837,10 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
   text-transform: uppercase; color: var(--fg-faint);
   margin: var(--space-3) 0 var(--space-1);
 }
-.dash-link { border: none; background: none; cursor: pointer; font-family: inherit; color: var(--accent); font-size: var(--text-xs); font-weight: var(--weight-bold); padding: 0; }
+.dash-link { border: none; background: none; cursor: pointer; font-family: inherit; color: var(--accent); font-size: var(--text-xs); font-weight: var(--weight-bold); padding: 0;
+  /* a panel link out was 16px: 24px is the floor. */
+  display: inline-flex; align-items: center; justify-content: center; min-height: 24px; min-width: 24px;
+}
 .dash-link:hover { text-decoration: underline; }
 
 .dash-legend { display: flex; gap: var(--space-3); flex-wrap: wrap; }
@@ -3966,6 +4012,27 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
    Anything that overrides a component belongs after every component. Keep new
    breakpoints in this block, at the end of the file.
    =========================================================================== */
+/* ---- admin: announcements ---- */
+.adm-head-row {
+  display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; gap: var(--space-4); margin-bottom: var(--space-4);
+}
+.adm-ann-head { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.adm-ann-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-3); }
+.adm-ann-form { display: flex; flex-direction: column; gap: var(--space-4); }
+.adm-ann-form .textarea { min-height: 8rem; }
+
+/* A kezdőképernyőnek saját fejléce van. Az alkalmazás krómja — az oldalsáv,
+   telefonon a lebegő pill — lekerül róla: kijelentkezve öt olyan helyre
+   mutatna, ahová úgysem lehet eljutni, belépve pedig két navigáció versenyezne
+   egymással ugyanazon a képernyőn. */
+body.landing-route .sidebar { display: none; }
+body.landing-route .page { padding-bottom: 0; }
+
+/* A hozzászólás spoiler-jelölője nyers checkbox volt: 13x13, a 24px-es padló
+   alatt. A natív vezérlő méretét csak így lehet emelni. */
+.comment-spoiler { width: 1.5rem; height: 1.5rem; flex-shrink: 0; accent-color: var(--accent); cursor: pointer; }
+
 /* ===== responsive ===== */
 
 /* tablet: collapse the two-column detail/watch layouts */
@@ -3981,22 +4048,54 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
 /* mobile: bottom navigation bar — 4 primary tabs + a More sheet */
 @media (max-width: 720px) {
   .app-shell { flex-direction: column; }
-  .page { padding-bottom: calc(4.4rem + env(safe-area-inset-bottom, 0px)); }
+  /* the pill's height, plus the gap it floats above, plus the system inset */
+  .page { padding-bottom: calc(5.4rem + env(safe-area-inset-bottom, 0px)); }
+  /* A floating pill, inset from every edge, rather than a bar welded to the
+     bottom. Two reasons beyond the look: content scrolls visibly underneath
+     it, which says the page continues; and on a phone with a gesture bar the
+     inset is where the system's own handle wants to live anyway. */
   .sidebar {
     position: fixed;
-    left: 0; right: 0; bottom: 0;
-    width: 100%;
+    left: var(--space-3); right: var(--space-3);
+    bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+    width: auto;
     height: auto;
     flex-direction: row;
     justify-content: space-around;
     align-items: stretch;
     gap: 0;
-    border-top: 1px solid var(--border);
-    border-right: none;
-    padding: var(--space-1) var(--space-1) calc(var(--space-1) + env(safe-area-inset-bottom, 0px));
-    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    padding: var(--space-2) var(--space-1);
+    background: var(--bg-overlay);
+    box-shadow: var(--shadow-3);
     z-index: 80;
+    transition: padding var(--dur) var(--ease);
   }
+
+  /* The collapse tab. It sits on the pill's top edge rather than inside it,
+     so it costs the row no width — there are five tabs across a 375px screen
+     already and a sixth control would push the labels to ellipses. */
+  .nav-collapse {
+    position: absolute;
+    top: 0; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 3rem; height: 1.5rem;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg-overlay);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-full);
+    color: var(--fg-faint);
+    cursor: pointer;
+    padding: 0;
+  }
+  .nav-collapse svg { width: 1rem; height: 1rem; transition: transform var(--dur) var(--ease); }
+  .sidebar.nav-collapsed .nav-collapse svg { transform: rotate(180deg); }
+
+  /* Collapsed: icons only. The labels go, the targets do not — the row keeps
+     its height so a thumb aiming at the same place still lands on it. */
+  .sidebar.nav-collapsed .sidebar-btn.nav-primary span,
+  .sidebar.nav-collapsed .sidebar-btn.nav-more span { display: none; }
   .sidebar-logo, .sidebar-spacer, #profile-switcher { display: none; }
   /* only the primary tabs + More appear on the bar */
   .sidebar-btn { display: none; }
@@ -4032,20 +4131,13 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
   }
   .sidebar-btn.nav-primary:hover,
   .sidebar-btn.nav-more:hover { background: transparent; color: var(--fg-muted); }
+  /* Active is a filled pill, not a tint. On a dark bar a colour change alone
+     is a weak signal at a glance, and the pill is the one shape on the bar
+     that carries a background — so the eye finds it without reading. */
   .sidebar-btn.nav-primary.active,
-  .sidebar-btn.nav-more.active { background: transparent; color: var(--accent); }
-  /* active indicator bar along the top edge of the tab */
-  .sidebar-btn.nav-primary.active::before,
-  .sidebar-btn.nav-more.active::before {
-    content: '';
-    position: absolute;
-    top: -.35rem;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 1.7rem;
-    height: 2px;
-    border-radius: var(--radius-full);
-    background: var(--accent);
+  .sidebar-btn.nav-more.active {
+    background: var(--fg);
+    color: var(--bg);
   }
   /* notification badge repositioned above the labeled tab icon */
   .sidebar-btn.nav-primary .notif-badge { top: .2rem; right: auto; left: 50%; margin-left: var(--space-1); }

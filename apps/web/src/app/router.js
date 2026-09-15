@@ -7,6 +7,7 @@ import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
 import { configure as configureFeatures, featureOn } from '../shared/lib/site-config.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
+import { Announcements } from '../features/announcements/announcements.js'
 import { Landing } from '../features/landing/landing.js'
 import { LibrarySync } from '../features/library-sync/library-sync.js'
 import { Onboarding } from '../features/onboarding/onboarding.js'
@@ -32,6 +33,9 @@ import { YumeAPI } from '../shared/api/yume.js'
 
 export const App = {
   routes: {
+    // Saját útvonal, nem csak a kapu. Belépve is elérhető: aki már fiókkal
+    // jön, annak is joga van megnézni, mit ígér az oldal.
+    landing: (root, params) => Landing.render(root, App.config?.site, () => { App.afterAuth() }),
     home: (root, params) => PageHome.render(root, params),
     search: (root, params) => PageSearch.render(root, params),
     schedule: (root, params) => PageSchedule.render(root, params),
@@ -154,6 +158,12 @@ export const App = {
      * panel's own rail.
      */
     document.body.classList.toggle('admin-route', route === 'admin')
+    // A kezdőképernyőnek saját fejléce van, és telefonon nem kér alsó sávot:
+    // aki még nem lépett be, annak a lebegő pill öt olyan helyre mutat, ahová
+    // úgysem juthat el.
+    // A jelölést a `_renderGate` és a `landing` útvonal is átírhatja: a kapu a
+    // kezdőképernyőt rajzolja olyan útvonalon, amit még máshogy hívnak.
+    document.body.classList.toggle('landing-route', route === 'landing')
 
     document.querySelectorAll('.sidebar-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.route === route || ((route === 'anime' || route === 'watch') && btn.dataset.route === 'home'))
@@ -200,6 +210,12 @@ export const App = {
     // site footer on standard content pages (not on immersive / picker
     // screens, and not under the admin panel — see CHROMELESS)
     if (!this.CHROMELESS.includes(route)) page.append(C.footer())
+
+    // News last, and deliberately not awaited. A message about the site is
+    // never more urgent than the site, and a modal that beats the first paint
+    // makes the app look like it is asking permission to start. It answers at
+    // most once per page load and never twice for the same message.
+    if (YumeAPI.user()) Announcements.check().catch(() => {})
   },
 
   /**
@@ -241,10 +257,10 @@ export const App = {
    * The immersive screens (the player, watch-together, the profile picker)
    * plus the admin panel, which brings its own frame entirely.
    */
-  CHROMELESS: ['watch', 'w2g', 'admin'],
+  CHROMELESS: ['watch', 'w2g', 'admin', 'landing'],
 
   // routes always reachable so users can configure the server / sign in
-  _gateExempt: ['settings'],
+  _gateExempt: ['settings', 'landing'],
 
   /**
    * Routes that must never be reachable by accident.
@@ -372,13 +388,13 @@ export const App = {
     const wrap = U.el('div', { class: 'gate' })
 
     if (gate.kind === 'site-login') {
-      // The whole-site gate is the landing page. A visitor who has never been
-      // here arrives at this branch, and a padlock with four words above a form
-      // told them nothing about what they were being asked to sign in to.
-      //
-      // Nothing is unlocked by this: `require_login` still decides what is
-      // reachable, and the landing page reads no catalogue data. It is the same
-      // gate with the reasons in front of the form instead of behind it.
+      // A kapu ugyanazt a kezdőképernyőt rajzolja, amit a #/landing útvonal:
+      // egy landing van, nem kettő. `require_login` továbbra is eldönti, mi
+      // érhető el — ez csak annyi, hogy a lakat helyett van mit nézni.
+      // A kapun át is a kezdőképernyő jön, tehát az alkalmazás krómja itt is
+      // lekerül — különben a lebegő pill öt olyan helyre mutatna, ahová egy
+      // kijelentkezett látogató nem juthat el.
+      document.body.classList.add('landing-route')
       Landing.render(page, this.config?.site, () => { this.afterAuth() })
       return
     } else if (gate.kind === 'auth') {
@@ -687,6 +703,44 @@ export const App = {
     })
   },
 
+  /**
+   * The collapse tab on the mobile navigation pill.
+   *
+   * Labels cost about a third of the bar's height, and somebody who knows the
+   * five icons would rather have that third back. The choice is remembered,
+   * because a viewer who collapses it means it for more than one page.
+   *
+   * Built here rather than in index.html: it only exists below 720px, and a
+   * control the desktop never shows has no business in the served markup where
+   * a screen reader on a wide window would still announce it.
+   */
+  initNavCollapse () {
+    const sidebar = document.getElementById('sidebar')
+    if (!sidebar || sidebar.querySelector('.nav-collapse')) return
+
+    const apply = collapsed => {
+      sidebar.classList.toggle('nav-collapsed', collapsed)
+      tab.setAttribute('aria-expanded', String(!collapsed))
+      tab.setAttribute('aria-label', collapsed ? T('Feliratok mutatása') : T('Feliratok elrejtése'))
+    }
+
+    const tab = U.el('button', {
+      class: 'nav-collapse',
+      type: 'button',
+      'aria-controls': 'sidebar',
+      onclick: () => {
+        const collapsed = !sidebar.classList.contains('nav-collapsed')
+        apply(collapsed)
+        try { window.localStorage.setItem('yume-nav-collapsed', collapsed ? '1' : '0') } catch { /* storage blocked: the choice just does not persist */ }
+      }
+    }, [U.svg('<polyline points="6 9 12 15 18 9"/>', 16)])
+
+    sidebar.append(tab)
+    let remembered = false
+    try { remembered = window.localStorage.getItem('yume-nav-collapsed') === '1' } catch { /* see above */ }
+    apply(remembered)
+  },
+
   openMoreSheet () {
     const current = this.parseHash().route
     const backdrop = U.el('div', { class: 'more-backdrop', id: 'more-backdrop', onclick: () => this.closeMoreSheet() })
@@ -778,6 +832,7 @@ export const App = {
     this.applyNavLabels()
     this.initSearchModal()
     this.initMobileMore()
+    this.initNavCollapse()
     window.addEventListener('hashchange', () => { this.closeMoreSheet(); this.navigate() })
 
     // load DB-driven site config + permissions, apply the site name, then route

@@ -153,7 +153,16 @@ export function invalidatePermissions (userId?: string): void {
   else { permissionCache.clear(); versionCache.clear() }
 }
 
-async function loadPermissions (userId: string): Promise<Set<string>> {
+/**
+ * The permission slugs a user holds, cached until `invalidatePermissions()`.
+ *
+ * Exported because a route sometimes has to *widen* what it returns for
+ * somebody privileged rather than refuse somebody who is not — the
+ * announcements read is open to everyone and shows staff-only messages to
+ * staff. `requirePermission` cannot express that: it is a gate, and this is a
+ * question.
+ */
+export async function loadPermissions (userId: string): Promise<Set<string>> {
   const hit = permissionCache.get(userId)
   if (hit && hit.expires > Date.now()) return hit.permissions
 

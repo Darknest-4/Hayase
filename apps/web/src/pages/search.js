@@ -95,7 +95,7 @@ export const PageSearch = {
       }
     }
 
-    const filePick = U.el('input', { type: 'file', accept: 'image/*', style: 'display:none;' })
+    const filePick = U.el('input', { type: 'file', accept: 'image/*', style: 'display:none;', 'aria-label': 'Kép feltöltése kereséshez' })
     filePick.addEventListener('change', () => { if (filePick.files[0]) imageSearch(filePick.files[0]) })
     const imageBtn = U.el('button', { class: 'btn btn-ghost', title: T('Search by image (or paste/drop a frame)'), onclick: () => filePick.click() }, [document.createTextNode(T('Upload a frame'))])
 

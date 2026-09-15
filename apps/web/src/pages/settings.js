@@ -58,11 +58,20 @@ export const PageSettings = {
   },
 
   _card (title, desc, ...children) {
-    return U.el('div', { class: 'setting-card' }, [
-      U.el('h3', { text: title }),
+    const card = U.el('div', { class: 'setting-card' }, [
+      U.el('h2', { text: title }),
       desc ? U.el('p', { text: desc }) : null,
       ...children
     ])
+    // The card's heading *is* the control's name — it sits two lines above it
+    // and says exactly what the field does. A screen reader could not hear
+    // that, because a heading is not a label, so several settings announced
+    // as bare "edit text". Applied here rather than at each call site: every
+    // card in this page gets it, and a new one cannot forget.
+    for (const field of card.querySelectorAll('input, select, textarea')) {
+      if (!field.getAttribute('aria-label') && !field.closest('label')) field.setAttribute('aria-label', title)
+    }
+    return card
   },
 
   // ---- Account ----
@@ -154,7 +163,7 @@ export const PageSettings = {
     for (const group of ['language', 'content', 'playback']) {
       const items = spec.filter(item => item.group === group)
       if (!items.length) continue
-      wrap.append(U.el('h3', { class: 'settings-group-title', text: T(GROUP_TITLES[group]) }))
+      wrap.append(U.el('h2', { class: 'settings-group-title', text: T(GROUP_TITLES[group]) }))
 
       for (const item of items) {
         const options = choices[item.key] ?? EXTRA[item.key]

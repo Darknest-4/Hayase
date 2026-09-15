@@ -517,6 +517,30 @@ export const YumeAPI = {
     }
   },
 
+  // ---- announcements ----
+  // One message, written by an operator, read by everybody. The read is
+  // authenticated like everything else on a private instance; `dismissed`
+  // comes back resolved per profile so the client does not have to ask twice
+  // or risk showing something already closed on another device.
+
+  async announcements () {
+    try {
+      const { data } = await this._request('/v1/announcements', { auth: true })
+      return data
+    } catch (e) {
+      return null // never let the news break the page it sits on
+    }
+  },
+
+  async dismissAnnouncement (id) {
+    try {
+      await this._request(`/v1/announcements/${id}/dismiss`, { method: 'POST', auth: true })
+      return true
+    } catch (e) {
+      return false
+    }
+  },
+
   async suggest (query, limit = 8) {
     try {
       const { data } = await this._request(`/v1/anime/suggest?q=${encodeURIComponent(query)}&limit=${limit}`)
@@ -699,6 +723,16 @@ export const YumeAPI = {
   },
 
   admin: {
+    // ---- announcements ----
+    // Authoring lives under /v1/announcements rather than /v1/admin, because
+    // the resource is the same one the read serves; only the permission
+    // differs. `allAnnouncements` is the authoring view — it includes messages
+    // whose window has not opened yet and ones that have closed.
+    allAnnouncements: () => YumeAPI._request('/v1/announcements/all', { auth: true }),
+    createAnnouncement: body => YumeAPI._request('/v1/announcements', { method: 'POST', auth: true, body }),
+    updateAnnouncement: (id, body) => YumeAPI._request(`/v1/announcements/${id}`, { method: 'PATCH', auth: true, body }),
+    deleteAnnouncement: id => YumeAPI._request(`/v1/announcements/${id}`, { method: 'DELETE', auth: true }),
+
     users: ({ query, status, role, sort, limit, offset } = {}) => {
       const params = new URLSearchParams()
       if (query) params.set('query', query)

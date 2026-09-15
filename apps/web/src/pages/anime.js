@@ -1,4 +1,4 @@
-/* global window, document */
+/* global window, document, requestAnimationFrame */
 // Anime detail page — faithful to the original Hayase layout:
 // content scrolls over the global banner; cover bottom-aligned next to a
 // huge title; chips tinted with the cover's dominant color (score chip
@@ -90,7 +90,7 @@ export const PageAnime = {
       : null
 
     const descText = U.plainDesc(media.description)
-    const desc = U.el('div', { class: 'detail-desc clamped', text: descText })
+    const desc = U.el('div', { class: 'detail-desc', text: descText })
 
     // Say so when the description is not in the language the viewer asked for.
     //
@@ -103,15 +103,28 @@ export const PageAnime = {
     const descNote = descText && gotLang && gotLang !== wantLang && gotLang !== 'unknown'
       ? U.el('p', { class: 'detail-desc-note', text: T('This description has not been translated yet.') })
       : null
-    const moreBtn = descText.length > 220
-      ? U.el('button', {
-        class: 'showmore',
-        onclick: e => {
-          const clamped = desc.classList.toggle('clamped')
-          e.currentTarget.textContent = clamped ? 'Show more ⌄' : 'Show less ⌃'
-        }
-      }, [document.createTextNode(T('Show more ⌄'))])
-      : null
+    // The description and its toggle are one element, because the toggle sits
+    // *on* the fade rather than under the paragraph: the gradient is what says
+    // there is more, and the button is what does something about it.
+    const moreBtn = U.el('button', {
+      class: 'showmore',
+      hidden: true,
+      onclick: e => {
+        const clamped = descWrap.classList.toggle('clamped')
+        e.currentTarget.textContent = clamped ? T('Olvass többet') : T('Mutass kevesebbet')
+      }
+    }, [document.createTextNode(T('Olvass többet'))])
+
+    const descWrap = U.el('div', { class: 'detail-desc-wrap clamped' }, [desc, moreBtn])
+
+    // Whether there is anything to reveal is a question about the rendered
+    // box, not about the string. The old test was `length > 220`, and the clamp
+    // is five lines — so every description between about 220 and 400 characters
+    // offered a button that did nothing when pressed.
+    requestAnimationFrame(() => {
+      if (desc.scrollHeight > desc.clientHeight + 4) moreBtn.hidden = false
+      else descWrap.classList.remove('clamped')
+    })
 
     const titleEl = U.el('h1', { class: 'detail-title', text: mainTitle })
 
@@ -123,8 +136,7 @@ export const PageAnime = {
         starRow,
         chips,
         descNote,
-        desc,
-        moreBtn
+        descWrap
       ])
     ]))
 
