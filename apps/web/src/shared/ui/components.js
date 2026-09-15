@@ -6,6 +6,7 @@ import { featureOn, site } from '../lib/site-config.js'
 import { T } from '../i18n/i18n.js'
 import { Store } from '../state/store.js'
 import { P } from '../ui/primitives.js'
+import { titleTheme } from '../lib/title-theme.js'
 import { U } from '../lib/dom.js'
 import { YumeAPI } from '../api/yume.js'
 
@@ -332,6 +333,52 @@ export const C = {
       U.el('div', { class: 'card-cover skeleton' }),
       U.el('div', { class: 'card-title skeleton', style: 'height:1em;border-radius:var(--radius-sm);' })
     ])
+  },
+
+  /**
+   * Fekvő bannerkártya: a sorozat saját kulcsművészete, a címmel ráégetve.
+   *
+   * Nem a portré kártya szélesebb változata. Azért van, hogy egy sor *másképp*
+   * nézzen ki, mint a fölötte lévő — nyolc egyforma sor egyetlen falnak
+   * olvas, és a nyolcadiknál már senki nem néz oda.
+   *
+   * Bannere 7 959 címnek van; amelyiknek nincs, az a borítójára esik vissza,
+   * és a sor attól még működik — csak kevésbé látványos.
+   */
+  bannerCard (media) {
+    const art = media.bannerImage || U.cover(media)
+    const card = U.el('a', {
+      class: 'bcard',
+      href: `#/anime/${media.id}`,
+      style: titleTheme(media)
+    }, [
+      U.el('div', { class: 'bcard-art' }, [
+        U.el('img', { src: art, alt: '', loading: 'lazy' })
+      ]),
+      U.el('div', { class: 'bcard-scrim' }, [
+        U.el('span', { class: 'bcard-title', text: U.title(media) }),
+        U.el('span', { class: 'bcard-meta', text: [U.format(media), media.episodes ? `${media.episodes} rész` : null].filter(Boolean).join(' · ') })
+      ])
+    ])
+    return card
+  },
+
+  /** Ugyanaz a sor, fekvő kártyákkal. */
+  bannerSection (title, mediaPromise, { moreHref = null } = {}) {
+    const row = U.el('div', { class: 'hscroll hscroll-banner' },
+      Array.from({ length: 3 }, () => U.el('div', { class: 'bcard skeleton' })))
+    const head = U.el('div', { class: 'section-head' }, [
+      U.el('h2', { class: 'section-title', text: title })
+    ])
+    if (moreHref) head.append(U.el('a', { class: 'section-more', href: moreHref, text: T('View more') }))
+    const wrap = U.el('section', { class: 'section section-banner' }, [head, row])
+
+    Promise.resolve(mediaPromise).then(mediaList => {
+      if (!mediaList?.length) { wrap.remove(); return }
+      row.replaceChildren(...mediaList.slice(0, 12).map(m => this.bannerCard(m)))
+    }).catch(() => { wrap.remove() })
+
+    return wrap
   },
 
   // horizontal scrolling section fed by a promise resolving to a media array

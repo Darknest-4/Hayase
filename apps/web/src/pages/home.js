@@ -23,18 +23,26 @@ export const PageHome = {
     // the hero already says where you are to anybody who can see it.
     root.append(U.el('h1', { class: 'sr-only', text: site()?.name ?? 'Yume' }), hero, sections)
 
-    // sections, same order/variables as the original home page
+    // A sorok váltakoznak, és ez szabály, nem sorrendi véletlen: minden
+    // műfaj-sor két portré sor közé esik. A műfaj-sorok fekvő bannerekkel
+    // jelennek meg (lásd lentebb), tehát minden második sorban változik a
+    // forma — enélkül tíz egyforma sor egyetlen falnak olvas, és a
+    // nyolcadiknál már senki nem néz oda.
+    //
+    // A műfaj-sorok azért alkalmasak erre, mert olcsók és végtelenek:
+    // ugyanaz a lekérdezés más műfajjal. Így lesz hosszú a lap anélkül, hogy
+    // többféle tartalom kellene hozzá.
     const defs = [
       { title: T('home.rails.popularSeason'), vars: { sort: ['POPULARITY_DESC'], season, seasonYear: year } },
-      { title: T('home.rails.trending'), vars: { sort: ['TRENDING_DESC'] } },
-      { title: T('home.rails.airing'), vars: { sort: ['POPULARITY_DESC'], status: ['RELEASING'] } },
-      { title: T('home.rails.allTimePopular'), vars: { sort: ['POPULARITY_DESC'] } },
-      { title: T('home.rails.topRated'), vars: { sort: ['SCORE_DESC'] } },
-      { title: T('home.rails.movies'), vars: { sort: ['POPULARITY_DESC'], format: ['MOVIE'] } },
-      { title: T('home.rails.romance'), vars: { sort: ['TRENDING_DESC'], genre: ['Romance'] } },
       { title: T('home.rails.action'), vars: { sort: ['TRENDING_DESC'], genre: ['Action'] } },
+      { title: T('home.rails.trending'), vars: { sort: ['TRENDING_DESC'] } },
+      { title: T('home.rails.romance'), vars: { sort: ['TRENDING_DESC'], genre: ['Romance'] } },
+      { title: T('home.rails.airing'), vars: { sort: ['POPULARITY_DESC'], status: ['RELEASING'] } },
+      { title: T('home.rails.fantasy'), vars: { sort: ['TRENDING_DESC'], genre: ['Fantasy'] } },
+      { title: T('home.rails.allTimePopular'), vars: { sort: ['POPULARITY_DESC'] } },
       { title: T('home.rails.adventure'), vars: { sort: ['TRENDING_DESC'], genre: ['Adventure'] } },
-      { title: T('home.rails.fantasy'), vars: { sort: ['TRENDING_DESC'], genre: ['Fantasy'] } }
+      { title: T('home.rails.topRated'), vars: { sort: ['SCORE_DESC'] } },
+      { title: T('home.rails.movies'), vars: { sort: ['POPULARITY_DESC'], format: ['MOVIE'] } }
     ]
 
     // local-list driven sections (Continue Watching / Your List)
@@ -85,7 +93,15 @@ export const PageHome = {
       if (def.vars.status) params.set('status', def.vars.status[0])
       params.set('sort', def.vars.sort[0])
 
-      sections.append(C.section(def.title, Catalogue.searchOrAniList(def.vars).then(page => page.media ?? []), {
+      // A műfaj-sorok fekvő bannerekkel jelennek meg, a többi portré
+      // borítókkal — így minden második sorban változik a forma. Nyolc
+      // egyforma sor egyetlen falnak olvas; ez a váltakozás az, ami miatt
+      // nem az.
+      // `.bind(C)`, mert a metódus kiemelése egy változóba leválasztja az
+      // objektumról: a `this` odabent `undefined` lenne, és a sor a saját
+      // skeletonjánál dőlne el.
+      const render = def.vars.genre ? C.bannerSection.bind(C) : C.section.bind(C)
+      sections.append(render(def.title, Catalogue.searchOrAniList(def.vars).then(page => page.media ?? []), {
         moreHref: '#/search?' + params.toString()
       }))
     }
