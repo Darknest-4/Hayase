@@ -53,7 +53,7 @@ adatvesztést vagy kódfuttatást enged.
 |---|---|---|
 | **SEC-01** | IDOR | A hírek elvetése idegen profil nevében írt sort. **Javítva.** |
 | **PERF-01** | adatbázis | A főoldal hat teljes tábla-olvasást indított betöltésenként. **Javítva.** |
-| **OPS-01** | mentés | A mentések csak ezen a gépen élnek. **Nyitva — döntést igényel.** |
+| **OPS-01** | mentés | A mentések csak ezen a gépen élnek. **Lezárva — a tulajdonos vállalt kockázatként fogadta el;** cserébe a mentés panelről kezelhető lett. |
 
 ### P2
 
@@ -63,6 +63,7 @@ adatvesztést vagy kódfuttatást enged.
 | **SEC-03** | konfiguráció | A Redis definíciója minden interfészre publikált volna. **Javítva.** |
 | **SEC-04** | CSRF | A modell helyes, de nem volt teszt, ami tartsa. **Javítva.** |
 | **ARCH-01** | ismétlés | A profil-feloldó három helyen létezett, egy negyediken hiányzott. **Javítva.** |
+| **OPS-02** | rendelkezésre állás | A csak olvasható mód minden írást visszautasított — beleértve a visszaállítást, aminek pont a csak olvasható mód az előfeltétele. A gomb, aminek vészhelyzetben kellene működnie, soha nem volt megnyomható. **Javítva.** |
 
 ### P3
 
@@ -84,7 +85,11 @@ perf: index the three orderings the home page actually asks for
 ```
 
 Új tesztek: `idor.test.ts` (7 eset), `csrf.test.ts` (4), `plain-desc.test.mjs`
-(6), `tests/e2e/xss.test.mjs` (3 motor).
+(6), `tests/e2e/xss.test.mjs` (3 motor), `backups.test.ts` (12).
+
+Az `OPS-02` nem olvasásból került elő, hanem abból, hogy a visszaállítás
+tesztje 503-at kapott 409 helyett. Két külön-külön helyes szabály zárta ki
+egymást; egyik kód sem „hibás", és végigolvasva egyik sem tűnt volna annak.
 
 Mindegyik javításnál ellenőriztem, hogy a hozzá írt teszt **meg is fogja** a
 hibát: a régi kódot visszatéve elbukik, az újjal átmegy. Ezt az IDOR-nál és az
@@ -94,8 +99,10 @@ XSS-nél is elvégeztem.
 
 ## Mi maradt
 
-* **OPS-01** — a mentés nem megy el a gépről. Ez a példány tulajdonosának
-  döntése (hová, milyen költséggel); a `BACKUP_SYNC_CMD` már létezik hozzá.
+* ~~OPS-01~~ — a tulajdonos döntött: offsite másolat nem kell. Vállalt
+  kockázat, nem megoldott probléma — egy lemezhiba egyszerre viszi az
+  adatbázist és a mentéseit. A `BACKUP_SYNC_CMD` a helyén marad, és a panel
+  kiírja a mentések fölé, hogy hol élnek.
 * ~~DOC-01~~ — javítva, és **túlbecsültem**: a dokumentáció maga jelzi a
   bővítményplatform törlését (`0031_remove_extension_platform`) és a saját
   elavultságát is. Egy valódi ellentmondás volt benne — a „mi van kész" leltár

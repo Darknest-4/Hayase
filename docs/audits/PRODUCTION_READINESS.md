@@ -17,9 +17,9 @@
 | Dokumentáció | **8**/10 | 63 718 sor, és nagyrészt igaz. A bővítményplatform maradványai elavultak. |
 | SEO | **8**/10 | Címek, leírások, sitemap, strukturált adat; saját tesztfájllal. |
 | Akadálymentesség | **8**/10 | Teljes audit futott (536 → 0), billentyűzet és fókusz rendben. |
-| Megbízhatóság | **7**/10 | Ellenőrzött mentés, de csak egy gépen. Ez a legnagyobb nyitott kockázat. |
+| Megbízhatóság | **8**/10 | Ellenőrzött mentés, panelről kezelhető és visszaállítható — de csak egy gépen. Ez a legnagyobb vállalt kockázat. |
 
-**Összesített: 8,4 / 10**
+**Összesített: 8,5 / 10**
 
 ---
 
@@ -31,11 +31,21 @@ Nincs.
 
 ## Magas prioritás (P1)
 
-1. **A mentések nem hagyják el a gépet.** (`OPS-01`) A mechanizmus kész
-   (`BACKUP_SYNC_CMD`), a döntés a tulajdonosé: hová, milyen megőrzéssel.
-   Ez ma az egyetlen olyan kockázat, ami adatvesztéshez vezethet.
+Nincs.
 
-*A másik két P1 — az IDOR és a böngészés indexei — javítva.*
+*Mindhárom korábbi P1 lezárva: az IDOR, a böngészés indexei, és — tulajdonosi
+döntéssel — az `OPS-01`.*
+
+**`OPS-01` — a mentések nem hagyják el a gépet.** A tulajdonos döntése:
+offsite másolat egyelőre nem kell. Ez **elfogadott kockázat**, nem megoldott
+probléma, és a különbség számít: egy lemezhiba ezen a gépen egyszerre viszi az
+adatbázist és mind a tizennyolc mentését. A mechanizmus a helyén marad
+(`BACKUP_SYNC_CMD`), és a panel ki is írja a mentések fölé, hogy a másolatok
+itt élnek — hogy a döntés látható maradjon, ne felejtődjön el.
+
+Amit a döntés helyett kaptunk, az a kezelhetőség: a mentés ki- és
+bekapcsolható, kézzel indítható, ellenőrizhető és visszaállítható a panelről,
+`backup.manage` jogosultsággal. Eddig mindegyikhez SSH kellett.
 
 ---
 
@@ -45,8 +55,9 @@ Nincs.
 WebSocket-réteg tesztet kapott, és a megismételt biztonsági ellenőrzésre
 szabály került.*
 
-1. A mentés offsite másolata — lásd a P1-et; amíg nincs döntés, ez a
-   legnagyobb nyitott kockázat.
+1. A mentés offsite másolata — lásd a P1-et. A döntés megszületett (nem kell),
+   így ez már nem nyitott kérdés, hanem vállalt kockázat. Ha egyszer mégis kell:
+   a `BACKUP_SYNC_CMD` egyetlen sor a `.env`-ben, kód nem változik.
 
 ---
 
