@@ -10,6 +10,7 @@
 // between five minutes and four is not worth being the reason it rate-limits.
 
 import { asId, fetchMapping, IMAGE_KIND, usableUrl } from './client.ts'
+import type { AniZipRecord } from './client.ts'
 import { query, transaction } from '../../infrastructure/database/index.ts'
 
 import type pg from 'pg'
@@ -23,7 +24,10 @@ export interface ArtworkCounts {
   images: number
   titles: number
   episodes: number
-  missed: number
+  /** A szolgáltatásnak nincs erről a címről semmije. Ez rendben van. */
+  absent: number
+  /** Fojtás vagy hiba — a munka elveszett, nem elvégeztük. Ez nincs rendben. */
+  refused: number
 }
 
 interface Candidate { anime_id: string, anilist_id: number }
@@ -42,7 +46,19 @@ export async function syncArtwork (opts: {
   onProgress?: (done: number, total: number, counts: ArtworkCounts) => void | Promise<void>
   shouldStop?: () => boolean | Promise<boolean>
 } = {}): Promise<ArtworkCounts> {
-  const counts: ArtworkCounts = { examined: 0, mapped: 0, images: 0, titles: 0, episodes: 0, missed: 0 }
+  const counts: ArtworkCounts = { examined: 0, mapped: 0, images: 0, titles: 0, episodes: 0, absent: 0, refused: 0 }
+  // Ütemezés. Az első futás 20 510 címet kérdezett meg három perc alatt —
+  // ~114 kérés másodpercenként egy ingyenes, önkéntesek üzemeltette
+  // szolgáltatás felé —, és 18 152-t elvesztett. Nem az adat hiányzott, hanem
+  // túl gyorsan kérdeztünk.
+  //
+  // A késleltetés a válaszokból tanul: minden elutasítás lassít, minden
+  // sikeres köteg óvatosan gyorsít vissza. Így egy jó napon gyors marad, egy
+  // rosszon pedig nem vész el a munka.
+  let delayMs = 120
+  const slower = () => { delayMs = Math.min(4000, Math.round(delayMs * 2)) }
+  const faster = () => { delayMs = Math.max(120, Math.round(delayMs * 0.85)) }
+  const pause = async (ms: number) => await new Promise(resolve => setTimeout(resolve, ms))
 
   // „Ami még hiányzik" két dolgot jelent, mert a passz kettőt tölt: artworköt
   // és epizódtartalmat. Egy cím, ami már kapott logót, de az epizódjai
@@ -70,19 +86,26 @@ export async function syncArtwork (opts: {
     // because the fiftieth had a malformed URL.
     for (let j = 0; j < slice.length; j += CONCURRENCY) {
       const group = slice.slice(j, j + CONCURRENCY)
-      const records = await Promise.all(group.map(async c => ({ c, rec: await fetchMapping(c.anilist_id) })))
+      const outcomes = await Promise.all(group.map(async c => ({ c, out: await fetchMapping(c.anilist_id) })))
 
-      for (const { c, rec } of records) {
+      let refusedHere = 0
+      for (const { c, out } of outcomes) {
         counts.examined++
-        if (!rec) { counts.missed++; continue }
+        if (out.kind === 'absent') { counts.absent++; continue }
+        if (out.kind === 'refused') { counts.refused++; refusedHere++; continue }
         try {
-          await writeOne(c, rec, counts)
+          await writeOne(c, out.record, counts)
         } catch {
-          // One title's bad data must not end the pass. It is counted as a
-          // miss so the run's totals still add up.
-          counts.missed++
+          // Egy cím rossz adata nem állíthatja meg a passzt. Elutasításnak
+          // számít, hogy az összegek stimmeljenek.
+          counts.refused++
         }
       }
+
+      // A csoport eredménye szabja a következő tempót.
+      if (refusedHere) slower()
+      else faster()
+      await pause(delayMs)
     }
     await opts.onProgress?.(Math.min(i + BATCH, total), total, counts)
   }
@@ -90,8 +113,7 @@ export async function syncArtwork (opts: {
   return counts
 }
 
-async function writeOne (c: Candidate, rec: Awaited<ReturnType<typeof fetchMapping>>, counts: ArtworkCounts): Promise<void> {
-  if (!rec) return
+async function writeOne (c: Candidate, rec: AniZipRecord, counts: ArtworkCounts): Promise<void> {
   const m = rec.mappings ?? {}
 
   await transaction(async (client: pg.PoolClient) => {
