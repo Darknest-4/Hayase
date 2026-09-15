@@ -68,7 +68,7 @@ adatvesztést vagy kódfuttatást enged.
 
 | ID | terület | mi |
 |---|---|---|
-| **DOC-01** | dokumentáció | A `docs/` több helyen a bővítményplatformról ír, ami a 0.6.0-ban kikerült. **Nyitva.** |
+| **DOC-01** | dokumentáció | A „mi van kész" leltár még késznek sorolta a bővítményboltot és a profilválasztót. **Javítva** — és a lelet súlyát lejjebb vettem, lásd alább. |
 
 ---
 
@@ -96,7 +96,10 @@ XSS-nél is elvégeztem.
 
 * **OPS-01** — a mentés nem megy el a gépről. Ez a példány tulajdonosának
   döntése (hová, milyen költséggel); a `BACKUP_SYNC_CMD` már létezik hozzá.
-* **DOC-01** — a dokumentáció bővítményekre hivatkozó részei.
+* ~~DOC-01~~ — javítva, és **túlbecsültem**: a dokumentáció maga jelzi a
+  bővítményplatform törlését (`0031_remove_extension_platform`) és a saját
+  elavultságát is. Egy valódi ellentmondás volt benne — a „mi van kész" leltár
+  késznek sorolta a boltot és a profilválasztót —, az javítva.
 * **Nulla videóforrás.** Nem hiba, hanem tény: a lejátszás minden útja le van
   zárva, amíg nincs forrás.
 * **A jogosultság-katalógus 327 „tervezett" sora** angolul van. Nem létező

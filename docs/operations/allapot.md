@@ -67,8 +67,15 @@ bővítmény‑rendszerrel.
 - [x] **Könyvtár** — listák/haladás modellje a DB‑ben (`library_entries`, `watch_progress`, `watch_history_*`)
 - [x] **Közösség** — kommentek (like, spoiler, thread), közösségi feed
 - [x] **Watch Together** — szobák, chat, szinkron lejátszás (WebSocket)
-- [x] **Bővítmény‑store** — extension‑ök, verziók, review, telepítés, fejlesztői portál
-- [x] **Profilok** — „ki nézi" váltó, per‑profil statisztika, achievement/badge modell
+- [~] **Bővítmény‑store** — ~~extension‑ök, verziók, review, telepítés, fejlesztői portál~~
+      **Megszűnt** a 0.6.0‑ban (`0031_remove_extension_platform`). Egy homokozó,
+      egy átnézési folyamat és egy bolt — hét bővítményhez, amiket mi írtunk. A
+      funkciók bekerültek a platformba: a lejátszás forrásai, a feliratok, az
+      átugorható szakaszok és a témák ma a katalógus részei.
+- [~] **Profilok** — ~~„ki nézi" váltó, per‑profil statisztika~~
+      A profilválasztó **megszűnt** a 0.7.0‑ban: fiókonként pontosan egy profil
+      van, adatbázis‑szinten kikényszerítve (`0035`). A statisztika és az
+      achievement/badge modell megmaradt, a profilhoz kötve.
 - [x] **Analitika/Dashboard** — platform‑áttekintés, trending, hibacsoportok, napi rollup
 
 ### Admin & üzemeltetés

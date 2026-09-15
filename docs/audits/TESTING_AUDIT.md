@@ -4,10 +4,10 @@
 
 | réteg | fájl | eset |
 |---|---:|---:|
-| API (integrációs, valódi adatbázissal) | 57 | 675 |
-| kliens (egység, DOM-csonkkal) | 26 | 312 |
-| végpontok közti (Playwright, 3 motor) | 4 | 26 |
-| **összesen** | **87** | **1 013** |
+| API (integrációs, valódi adatbázissal) | 61 | 694 |
+| kliens (egység, DOM-csonkkal) | 27 | 312 |
+| végpontok közti (Playwright, 3 motor) | 6 | 40 |
+| **összesen** | **94** | **1 046** |
 
 Mind zöld. Lefuttattam, nem feltételeztem.
 
@@ -33,9 +33,11 @@ a sebezhető kóddal is átment.
 
 ## Ami hiányzott, és most sem teljes
 
-* **WebSocket.** Nincs tesztfájl rá. A réteg megvan (jegy, korlátok,
-  újrahitelesítés), a viselkedése nincs kikötve. A közös nézés az egyetlen
-  funkció, ami rajta él.
+* ~~WebSocket.~~ **Megoldva**: `websocket.test.ts`, nyolc eset, valódi
+  sockettel valódi kiszolgálóhoz. Jegy nélkül, hamis jeggyel, kétszer használt
+  jeggyel, túl nagy kerettel, idegen csatornával, értelmezhetetlen kerettel.
+  Egy WebSocket-réteget mockkal vizsgálni annyi, mint a zárat a rajza alapján
+  ellenőrizni.
 * **Terheléses és fuzz-vizsgálat.** Nincs, és nem is írtam.
 * **Vizuális regresszió.** A reszponzív teszt túlcsordulást és
   érintőfelület-méretet mér, nem kinézetet.

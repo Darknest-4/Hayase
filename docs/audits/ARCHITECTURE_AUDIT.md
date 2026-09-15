@@ -78,9 +78,20 @@ olyan teszt, ami a megismételt biztonsági ellenőrzést megtalálná.** A klie
 van rétegtesztje; a szervernek nincs „ez a fajta ellenőrzés csak egy helyen
 létezhet" szabálya.
 
-Ezt nem oldottam meg. Egy ilyen szabály megírható (pl. „az `x-profile-id`
-fejlécet csak a `middleware/profile.ts` olvashatja"), és a mai javítás után
-igaz is lenne. Jelöltnek hagyom, nem találgatásnak.
+**Megoldva.** `apps/api/test/single-source-guards.test.ts`, négy szabály, mind
+formára:
+
+* az `x-profile-id` fejlécet egyetlen modul olvashatja;
+* a „ez a beérkezett azonosító ezé a fióké?" lekérdezés egyetlen helyen él;
+* tokent csak a hitelesítési modul ír alá;
+* kérésből származó érték nem kerülhet sablonliterállal SQL-be.
+
+Ellenőrizve, hogy fog is: a régi sort visszatéve a második szabály elbukik, és
+megnevezi a pontos fájlt.
+
+Az első változatom túl tágra sikerült — minden `FROM user_profiles … user_id`
+alakot jelentett, és öt ártatlan helyet talált. Azok a fiók *saját* profilját
+keresik ki; ott nincs beérkező azonosító, amit el lehetne hinni.
 
 ---
 
