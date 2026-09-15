@@ -109,7 +109,7 @@ ahogy a láblécét. **Javítva.**
 
 ---
 
-## Öt álpozitív, és miért érdemes leírni őket
+## Hat álpozitív, és miért érdemes leírni őket
 
 Egyik sem a termék hibája volt. Mind az öt meggyőzően nézett ki.
 
@@ -131,6 +131,14 @@ Egyik sem a termék hibája volt. Mind az öt meggyőzően nézett ki.
 
 5. **„Az alkalmazás nem indul el."** A mérés egy **429-es** hibalapot mért:
    a saját tesztjeim futottak bele a rate limitbe.
+
+6. **„A bejelentkezett felhasználó navigációja üres."** A `responsive.test.mjs`
+   a tokent az első betöltés *után* írta be, és minden további `goto` csak a
+   hash-ben tért el — ami nem tölti újra az oldalt. Az alkalmazás egyszer
+   indult el, bejelentkezés nélkül; a `requireLogin` ág elrejtette a menü
+   mind a nyolc elemét. A lapok tartalma közben rendben renderelődött, mert
+   azt a render olvassa a tárolóból — így a hiba kilenc szélességen át
+   zölden futott. (Javítva: a token `addInitScript`-tel megy be.)
 
 A tanulság nem az, hogy óvatosnak kell lenni, hanem hogy **a mérőeszközt
 ugyanúgy ellenőrizni kell, mint a mért dolgot** — negatív teszttel. A

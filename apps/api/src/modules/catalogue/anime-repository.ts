@@ -24,6 +24,18 @@ import { db } from '../../infrastructure/database/index.ts'
 /** The cover image every card needs, joined the same way everywhere. */
 const COVER = "LEFT JOIN anime_images img ON img.anime_id = a.id AND img.kind = 'cover' AND img.is_primary"
 
+/*
+ * A banner is not a cover.
+ *
+ * A browse row carried only the cover, so a rail that wants to be a wide
+ * feature strip rather than a column of posters had nothing to draw with —
+ * and 7 959 titles have a banner sitting unused in anime_images. Its own
+ * join rather than widening COVER: half the callers do not want it, and a
+ * second LEFT JOIN on an indexed column costs nothing when nobody selects
+ * from it.
+ */
+const BANNER = "LEFT JOIN anime_images bimg ON bimg.anime_id = a.id AND bimg.kind = 'banner' AND bimg.is_primary"
+
 /** The external id the client uses to link a row it only knows from AniList. */
 const MAPPING = 'LEFT JOIN anime_mappings m ON m.anime_id = a.id'
 
@@ -98,9 +110,11 @@ export class AnimeRepository extends Repository {
       `SELECT a.id, a.canonical_title, a.format, a.status, a.season, a.season_year,
               a.episode_count, a.average_score, a.popularity, a.is_adult,
               ${page.sort.column} AS sort_value,
-              img.object_key AS cover_key, img.blurhash, img.dominant_color AS cover_color
+              img.object_key AS cover_key, img.blurhash, img.dominant_color AS cover_color,
+              bimg.object_key AS banner_key
        FROM anime a
        ${COVER}
+       ${BANNER}
        WHERE ${page.where.join(' AND ')}
        ORDER BY ${page.sort.column} ${page.sort.dir} NULLS ${page.sort.nulls}, a.id
        LIMIT $${page.params.length}`,

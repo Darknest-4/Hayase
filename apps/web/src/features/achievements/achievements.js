@@ -110,7 +110,7 @@ export const PageAchievements = {
     pad.append(U.el('div', { class: 'ach-banner' }, [
       U.el('div', { class: 'ach-level-badge', text: String(level) }),
       U.el('div', { style: 'flex-grow:1;min-width:12rem;' }, [
-        U.el('div', { class: 'ach-level-title', text: `Level ${level}` }),
+        U.el('div', { class: 'ach-level-title', text: `${T('Level')} ${level}` }),
         U.el('div', { class: 'ach-level-xp', text: `${xp.toLocaleString(I18n.locale())} XP · ${(levelCeil - xp).toLocaleString(I18n.locale())} to next level` }),
         U.el('div', { class: 'ach-level-track' }, [U.el('div', { class: 'ach-level-fill', style: `width:${levelPct}%;` })])
       ]),

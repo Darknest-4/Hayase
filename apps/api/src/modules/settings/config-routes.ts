@@ -25,6 +25,19 @@ interface FlagRow {
   sort: number
 }
 
+/**
+ * Tart-e ez a példány egyetlen engedélyezett forrást is.
+ *
+ * `EXISTS`, nem `count`: a kérdés az, hogy van-e, nem az, hogy mennyi — és
+ * egy részleges indexen az első találatnál megáll. Minden /v1/config kérés
+ * lefuttatja, ami az oldalbetöltésenként egy.
+ */
+async function anyPlayableSource (): Promise<boolean> {
+  const rows = await query<{ any: boolean }>(
+    'SELECT EXISTS (SELECT 1 FROM video_sources WHERE enabled) AS any')
+  return rows[0]?.any === true
+}
+
 // the shape the client consumes: site + a flat flags map
 async function buildPublicConfig (): Promise<unknown> {
   const [flags, settings] = await Promise.all([
@@ -37,6 +50,20 @@ async function buildPublicConfig (): Promise<unknown> {
       tagline: settings.tagline ?? '',
       requireLogin: settings.require_login === true,
       registrationOpen: settings.registration_open !== false,
+      /*
+       * A nyelvi házirend a példányé, nem a nézőé.
+       *
+       * `defaultLanguage` az, amit valaki kap, aki még nem választott — eddig
+       * a böngésző nyelvéből tippeltünk, ami egy magyar oldalon angolt ad egy
+       * angol rendszernyelvű magyar látogatónak.
+       *
+       * `languageSwitching` azt mondja meg, van-e egyáltalán választás.
+       * Kikapcsolva az onboarding nyelvi lépése és a beállítások
+       * nyelvválasztója eltűnik. A kliens innen tudja meg, tehát nem elrejtés:
+       * az API ugyanazt mondja, amit a felület mutat.
+       */
+      defaultLanguage: typeof settings.default_language === 'string' ? settings.default_language : 'hu',
+      languageSwitching: settings.language_switching === true,
       /*
        * Whether this instance can actually send a reset mail.
        *
@@ -56,7 +83,21 @@ async function buildPublicConfig (): Promise<unknown> {
        * exceptions is one nobody can argue their way past — so the field
        * takes the name that does not need an exception.
        */
-      recoveryAvailable: passwordResetConfigured()
+      recoveryAvailable: passwordResetConfigured(),
+      /*
+       * Van-e egyáltalán bármi, amit ez a példány le tud játszani.
+       *
+       * Ez a példányról szól, nem egy címről. A katalógus 32 390 címet és
+       * 364 064 epizódot tart nyilván, videóforrást viszont nullát — ilyenkor
+       * minden „Megnézem" gomb csapda: elvisz egy lejátszóoldalra, ami
+       * végigpróbál nulla jelöltet, és a végén közli, hogy nincs miből.
+       *
+       * Egy epizódonkénti ellenőrzés ezt nem oldja meg: a főoldali kiemelés,
+       * a kártyák lebegő gombja és a gyorsnézet mind egy cím ismerete nélkül
+       * rajzolódik ki. Egy példányszintű tény viszont egy lekérdezés, amit a
+       * kliens amúgy is elvégez induláskor.
+       */
+      playbackAvailable: await anyPlayableSource()
     },
     // The preference spec is public because the settings screen and the
     // onboarding wizard both render from it, and both have to work for a
@@ -148,7 +189,7 @@ export const adminConfig: FastifyPluginAsync = async fastify => {
 
   fastify.patch('/settings/:key', {
     schema: {
-      params: { type: 'object', properties: { key: { enum: ['site_name', 'tagline', 'require_login', 'registration_open', 'monitor_thresholds'] } } },
+      params: { type: 'object', properties: { key: { enum: ['site_name', 'tagline', 'require_login', 'registration_open', 'monitor_thresholds', 'default_language', 'language_switching'] } } },
       body: { type: 'object', required: ['value'], properties: { value: {} } }
     }
   }, async (request, reply) => {

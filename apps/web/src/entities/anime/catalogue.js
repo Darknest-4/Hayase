@@ -347,6 +347,10 @@ export const Catalogue = {
       // to the site accent. The server is aligned now; reading both keeps a
       // client that is a deploy behind from losing the colour again.
       coverImage: { large: row.cover_key ?? '', extraLarge: row.cover_key ?? '', color: row.cover_color ?? row.dominant_color ?? null },
+      // 7 959 címnek van bannere, és eddig egyik sem jutott el a kártyáig: a
+      // böngésző-lekérdezés csak a borítót választotta ki. Enélkül egy fekvő
+      // sor nem tud mit rajzolni.
+      bannerImage: row.banner_key ?? null,
       format: row.format ?? null,
       status: row.status ?? null,
       seasonYear: row.season_year ?? null,

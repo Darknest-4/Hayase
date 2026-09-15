@@ -4,7 +4,7 @@
 // style. Each section is a builder that returns its content node.
 
 import { navigate, refreshChrome, refreshNotifications } from '../shared/lib/shell.js'
-import { configure } from '../shared/lib/site-config.js'
+import { configure, site } from '../shared/lib/site-config.js'
 import { C } from '../shared/ui/components.js'
 import { T } from '../shared/i18n/i18n.js'
 import { LibrarySync } from '../features/library-sync/library-sync.js'
@@ -59,8 +59,8 @@ export const PageSettings = {
 
   _card (title, desc, ...children) {
     const card = U.el('div', { class: 'setting-card' }, [
-      U.el('h2', { text: title }),
-      desc ? U.el('p', { text: desc }) : null,
+      U.el('h2', { text: T(title) }),
+      desc ? U.el('p', { text: T(desc) }) : null,
       ...children
     ])
     // The card's heading *is* the control's name — it sits two lines above it
@@ -69,7 +69,7 @@ export const PageSettings = {
     // as bare "edit text". Applied here rather than at each call site: every
     // card in this page gets it, and a new one cannot forget.
     for (const field of card.querySelectorAll('input, select, textarea')) {
-      if (!field.getAttribute('aria-label') && !field.closest('label')) field.setAttribute('aria-label', title)
+      if (!field.getAttribute('aria-label') && !field.closest('label')) field.setAttribute('aria-label', T(title))
     }
     return card
   },
@@ -160,8 +160,15 @@ export const PageSettings = {
     }
     const GROUP_TITLES = { language: 'Interface', content: 'Catalogue', playback: 'Playback' }
 
+    // Ha a példány kikapcsolta a nyelvváltást, a felület nyelvének nincs mit
+    // választani — a sor eltüntetése itt nem elrejtés, mert az I18n is a
+    // házirendet követi és a /v1/config ugyanezt mondja. Egy vezérlő, ami
+    // nem változtat semmin, rosszabb, mint ha ott sincs.
+    const switching = site()?.languageSwitching !== false
+
     for (const group of ['language', 'content', 'playback']) {
       const items = spec.filter(item => item.group === group)
+        .filter(item => switching || item.key !== 'language.ui')
       if (!items.length) continue
       wrap.append(U.el('h2', { class: 'settings-group-title', text: T(GROUP_TITLES[group]) }))
 

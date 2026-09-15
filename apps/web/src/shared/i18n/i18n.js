@@ -159,10 +159,21 @@ export const I18n = {
    * Re-rendering is handed in rather than reached for, so this module has no
    * opinion about the router and stays testable without one.
    */
-  init (onLanguageChange) {
+  init (onLanguageChange, policy = null) {
     const prefs = Prefs
+    // A példány házirendje erősebb a néző preferenciájánál, ha a váltás ki van
+    // kapcsolva: ilyenkor nincs mit választani, tehát a tárolt érték sem
+    // számít. Ez nem elrejtés — a beállítások és az onboarding nyelvi lépése
+    // is eltűnik, és az API ugyanezt mondja a /v1/config-ban.
+    if (policy && policy.languageSwitching === false) {
+      this.setLanguage(policy.defaultLanguage ?? 'hu')
+      return this._lang
+    }
     if (prefs) {
-      this.setLanguage(prefs.language())
+      // A példány alapértelmezése, ha a néző még nem választott — a böngésző
+      // nyelvéből tippelni egy magyar oldalon angolt ad egy angol
+      // rendszernyelvű magyar látogatónak.
+      this.setLanguage(prefs.hasLanguage?.() ? prefs.language() : (policy?.defaultLanguage ?? prefs.language()))
       prefs.onChange(changed => {
         if (!('language.ui' in changed)) return
         this.setLanguage(changed['language.ui'])

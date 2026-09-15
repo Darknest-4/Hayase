@@ -110,13 +110,22 @@ export const U = {
 
   seasonMap: { WINTER: 'Winter', SPRING: 'Spring', SUMMER: 'Summer', FALL: 'Fall' },
 
+  // Ezek a térképek angolul tartják a kanonikus szöveget, a megjelenítés
+  // pedig lefordítja. Eddig nem fordították le sehol: a kártyák és a hero
+  // „Movie · Fall 2024 · Finished"-et írtak ki magyar felületen is.
   format (media) {
-    return this.formatMap[media?.format] ?? media?.format ?? ''
+    const label = this.formatMap[media?.format] ?? media?.format ?? ''
+    return label ? I18n.t(label) : ''
+  },
+
+  status (media) {
+    const label = this.statusMap[media?.status] ?? ''
+    return label ? I18n.t(label) : ''
   },
 
   seasonYear (media) {
     if (!media?.season || !media?.seasonYear) return media?.startDate?.year ?? ''
-    return `${this.seasonMap[media.season]} ${media.seasonYear}`
+    return `${I18n.t(this.seasonMap[media.season])} ${media.seasonYear}`
   },
 
   episodeCount (media) {
@@ -136,17 +145,40 @@ export const U = {
     return { season, year }
   },
 
+  /**
+   * „3 napja", „2 óra múlva" — a néző nyelvén.
+   *
+   * Kézzel írt angol volt („3 days ago"), és tíz helyen jelent meg: a
+   * hozzászólásokon, a fórumon, az értesítéseken, az adásrendi jelvényen és az
+   * admin hibalistáin. A magyar nem is ragozható úgy, ahogy ez a függvény
+   * csinálta — az Intl viszont tudja, és minden nyelven tudja.
+   *
+   * Az Intl.RelativeTimeFormat mindenhol elérhető, ahol ez a kliens fut; a
+   * védőág egy régi WebView kedvéért van, és az angolra esik vissza, nem egy
+   * hibára.
+   */
   relTime (date) {
     const diff = +date - Date.now()
     const abs = Math.abs(diff)
     const units = [[86400000 * 7, 'week'], [86400000, 'day'], [3600000, 'hour'], [60000, 'minute']]
+
+    let format
+    try {
+      format = new Intl.RelativeTimeFormat(I18n.locale(), { numeric: 'auto' })
+    } catch (error) {
+      format = null
+    }
+
     for (const [ms, name] of units) {
       if (abs >= ms) {
         const val = Math.round(abs / ms)
+        if (format) return format.format(diff > 0 ? val : -val, name)
         return diff > 0 ? `in ${val} ${name}${val > 1 ? 's' : ''}` : `${val} ${name}${val > 1 ? 's' : ''} ago`
       }
     }
-    return diff > 0 ? 'soon' : 'just now'
+    // Egy percen belül: az Intl „ebben a percben"-t adna, ami pontos, de nem
+    // az, amit az ember mond.
+    return I18n.t(diff > 0 ? 'soon' : 'just now')
   },
 
   airDate (str) {

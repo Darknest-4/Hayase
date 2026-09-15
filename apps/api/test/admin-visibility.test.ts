@@ -109,6 +109,23 @@ describe('administration is invisible without permission', { skip: HAS_DB ? fals
     }
   })
 
+  test('the catalogue-wide episode publish is hidden without episode.edit', async () => {
+    // It publishes every episode of every visible title in one call, which is
+    // the one mutation in this module that cannot be undone by re-reading a
+    // single row. What it must never be is reachable by an ordinary account.
+    //
+    // Deliberately not exercised with visibility:'public' here: the suite runs
+    // against a real database, and a test that publishes the whole catalogue
+    // to check that it can is not a test, it is a deployment.
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/catalogue/episodes/visibility/all',
+      headers: { authorization: `Bearer ${plain}` },
+      payload: { visibility: 'public' }
+    })
+    assert.equal(res.statusCode, 404, res.body)
+  })
+
   test('an unauthenticated request is still 401, not 404', async () => {
     // Without a token there is no account to hide the route from, and 401 is
     // what tells a client to sign in rather than to give up.

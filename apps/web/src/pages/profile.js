@@ -122,7 +122,7 @@ export const PageProfile = {
       .filter(([, count]) => count > 0)
 
     if (!statuses.length) {
-      pad.append(P.emptyState(T('Your library is empty — add some anime and your stats will grow here.')))
+      pad.append(P.emptyState(T('Your library is empty — add some anime and your stats will grow here.'), { action: U.el('a', { class: 'btn btn-primary btn-sm', href: '#/search', text: T('Browse the catalogue') }) }))
       return
     }
 

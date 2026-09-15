@@ -23,6 +23,17 @@ export function site () {
   return config?.site ?? null
 }
 
+/**
+ * Tud-e ez a példány bármit lejátszani.
+ *
+ * Alapértelmezésben igen: amíg a konfiguráció meg nem jött, egy elrejtett
+ * gomb rosszabb, mint egy, ami esetleg nem vezet sehova — a lejátszóoldal
+ * kapuja úgyis megfogja. Csak egy határozott `false` rejt el bármit.
+ */
+export function playbackAvailable () {
+  return site()?.playbackAvailable !== false
+}
+
 /** The preference schema the server publishes, when it has been loaded. */
 export function preferences () {
   return config?.preferences ?? null

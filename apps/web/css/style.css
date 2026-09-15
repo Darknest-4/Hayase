@@ -130,6 +130,12 @@ body::before {
 }
 .sidebar-spacer { flex-grow: 1; }
 
+/* A feliratkapcsoló csak a mobil pirulán létezik — ott ő nyitja és csukja a
+   címkéket. Nagyobb kijelzőn soha nem volt rá szabály, így alapértelmezett
+   gombként rajzolódott ki: egy világosszürke sáv a menü alján, kérdőjeles
+   szereppel. Ott nincs mit kapcsolgatni, tehát nincs is ott. */
+.nav-collapse { display: none; }
+
 /* ===== main page area ===== */
 
 .page {
@@ -294,6 +300,30 @@ body::before {
   color: var(--fg);
 }
 .card-score svg { width: .62rem; height: .62rem; fill: var(--accent); stroke: var(--accent); }
+
+/* „Adásban" — ugyanaz a lebegő pirula, mint a pontszámé, az átellenes
+   sarokban. Csak a futó címeken jelenik meg, tehát nem zaj: ahol ott van, ott
+   tényleg mond valamit. */
+.card-cover .card-airing {
+  position: absolute;
+  top: .5rem; right: .5rem;
+  display: flex; align-items: center; gap: var(--space-1);
+  padding: .15rem var(--space-2);
+  background: color-mix(in oklab, var(--bg) 78%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--fg);
+  line-height: 1.4;
+}
+.card-airing-dot {
+  width: .35rem; height: .35rem;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  flex-shrink: 0;
+}
 
 .card-progress {
   position: absolute;
@@ -672,6 +702,16 @@ a.chip:hover { filter: brightness(.85); }
 
 /* rich Continue Watching button */
 .play-group:has(.play-btn-rich) { width: auto; min-width: 250px; }
+/* Nincs mit lejátszani: ugyanaz a gomb, de nem gomb. Nem elrejtve — a
+   helye marad, és megmondja, miért nem történik semmi. */
+.play-btn-empty {
+  background: var(--bg-raised);
+  color: var(--fg-muted);
+  cursor: not-allowed;
+  border: 1px solid var(--border);
+}
+.play-btn-empty:hover { filter: none; }
+
 .play-btn-rich {
   position: relative;
   display: flex; align-items: center; gap: var(--space-3);
@@ -4999,4 +5039,45 @@ body.landing-route .page { padding-bottom: 0; }
      the line rather than enlarge the target. They clear WCAG 2.5.8's 24 px. */
   .badge { min-height: 32px; display: inline-flex; align-items: center; }
   a.spotlight-credit { min-height: 32px; display: inline-flex; align-items: center; }
+}
+
+/* Az ikonsáv feliratokat kap, ahol elfér.
+   Az auditban ez volt a legrégebbi megoldatlan tétel: tizenkét ikon, felirat
+   nélkül, és a jelentésük csak hover után derül ki — egérrel lassan, érintéssel
+   soha. A tooltipek eddig is ott voltak (applyNavLabels írja őket), csak nem
+   pótolják a feliratot.
+   1280px fölött a tartalomnak 13rem elvétele nem fáj: a rácsok úgyis a
+   --content-max-ig nőnek, és a leszűkült oldalon is kifér ugyanannyi kártya.
+   Ez alatt marad a sáv, amilyen volt. */
+@media (min-width: 1280px) {
+  .sidebar {
+    width: var(--sidebar-w-expanded);
+    align-items: stretch;
+    padding: var(--space-3) var(--space-2);
+  }
+  .sidebar-logo {
+    width: auto;
+    justify-content: flex-start;
+    gap: var(--space-3);
+    padding: 0 var(--space-2);
+  }
+  .sidebar-logo-text {
+    display: block;
+    font: var(--type-heading);
+    letter-spacing: -0.01em;
+  }
+  .sidebar-btn {
+    width: auto;
+    justify-content: flex-start;
+    gap: var(--space-3);
+    padding: 0 var(--space-2);
+  }
+  .sidebar-btn span { display: block; font: var(--type-body); }
+  /* A jelvény eddig az ikon sarkában ült, mert nem volt mellette semmi. Most
+     a sor végére kerül, ahol nem takarja a feliratot. */
+  .sidebar-btn .notif-badge {
+    position: static;
+    margin-inline-start: auto;
+  }
+  .sidebar-profile { justify-content: flex-start; }
 }

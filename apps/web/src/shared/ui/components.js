@@ -2,10 +2,11 @@
 // Reusable render helpers: cards, horizontal sections, skeletons, modals.
 
 import { Copy } from '../i18n/copy.js'
-import { featureOn, site } from '../lib/site-config.js'
+import { featureOn, playbackAvailable, site } from '../lib/site-config.js'
 import { T } from '../i18n/i18n.js'
 import { Store } from '../state/store.js'
 import { P } from '../ui/primitives.js'
+import { titleTheme } from '../lib/title-theme.js'
 import { U } from '../lib/dom.js'
 import { YumeAPI } from '../api/yume.js'
 
@@ -25,6 +26,18 @@ export const C = {
 
     if (entry) cover.append(U.el('div', { class: `card-status-dot dot-${entry.status}` }))
 
+    // Fut-e még. A borítóról ez nem derül ki, és a katalógusban ez az egyetlen
+    // olyan tény, ami magától változik: egy befejezett sorozat holnap is
+    // befejezett, egy futó holnap egy résszel hosszabb. A többi állapotot nem
+    // írjuk ki — a „Befejezett" minden második kártyán ott lenne, és nem
+    // mondana semmit.
+    if (media.status === 'RELEASING') {
+      cover.append(U.el('div', { class: 'card-airing' }, [
+        U.el('span', { class: 'card-airing-dot' }),
+        U.el('span', { text: T(U.statusMap.RELEASING) })
+      ]))
+    }
+
     if (media.averageScore) {
       cover.append(U.el('div', { class: 'card-score' }, [
         U.svg(this.HEART, 11),
@@ -42,7 +55,7 @@ export const C = {
     // play affordance revealed on hover
     cover.append(U.el('div', { class: 'card-play' }, [U.svg(this.PLAY, 18)]))
 
-    const sub = subline ?? [U.format(media), U.seasonYear(media), media.episodes ? `${media.episodes} ep` : null].filter(Boolean).join(' • ')
+    const sub = subline ?? [U.format(media), U.seasonYear(media), media.episodes ? `${media.episodes} ${T('ep')}` : null].filter(Boolean).join(' • ')
 
     const card = U.el('a', { class: 'card', href: `#/anime/${media.id}` }, [
       cover,
@@ -264,7 +277,7 @@ export const C = {
 
     // meta chips instead of a plain dot-row
     const metaChips = U.el('div', { class: 'preview-chips' },
-      [U.format(media), U.seasonYear(media), media.episodes ? media.episodes + ' ep' : null, U.statusMap[media.status]]
+      [U.format(media), U.seasonYear(media), media.episodes ? `${media.episodes} ${T('ep')}` : null, U.status(media)]
         .filter(Boolean).map(t => U.el('span', { class: 'preview-chip', text: t })))
 
     // actions: Play + add-to-list + favourite
@@ -303,8 +316,13 @@ export const C = {
             U.el('a', { class: 'preview-genre', href: `#/search?genre=${encodeURIComponent(g)}`, text: g, onclick: () => this._closePreview() })))
           : null,
         U.el('div', { class: 'preview-actions' }, [
-          U.el('a', { class: 'btn btn-primary btn-sm', style: 'flex-grow:1;justify-content:center;', href: `#/watch/${media.id}:${next}`, onclick: () => this._closePreview() },
-            [U.svg(this.PLAY, 12), document.createTextNode(entry?.progress ? ` Continue Ep ${next}` : ' Watch now')]),
+          // Ugyanaz, mint a főoldali kiemelésen: forrás nélkül nem lejátszást
+          // ígérünk, hanem a részletoldalt.
+          !playbackAvailable()
+            ? U.el('a', { class: 'btn btn-primary btn-sm', style: 'flex-grow:1;justify-content:center;', href: `#/anime/${media.id}`, onclick: () => this._closePreview() },
+              [document.createTextNode(T('Details'))])
+            : U.el('a', { class: 'btn btn-primary btn-sm', style: 'flex-grow:1;justify-content:center;', href: `#/watch/${media.id}:${next}`, onclick: () => this._closePreview() },
+              [U.svg(this.PLAY, 12), document.createTextNode(entry?.progress ? `${T('Continue')} ${T('Ep')} ${next}` : T('Watch now'))]),
           listBtn,
           favBtn,
           U.el('a', { class: 'preview-icon-btn', title: T('Details'), href: `#/anime/${media.id}`, onclick: () => this._closePreview() },
@@ -332,6 +350,52 @@ export const C = {
       U.el('div', { class: 'card-cover skeleton' }),
       U.el('div', { class: 'card-title skeleton', style: 'height:1em;border-radius:var(--radius-sm);' })
     ])
+  },
+
+  /**
+   * Fekvő bannerkártya: a sorozat saját kulcsművészete, a címmel ráégetve.
+   *
+   * Nem a portré kártya szélesebb változata. Azért van, hogy egy sor *másképp*
+   * nézzen ki, mint a fölötte lévő — nyolc egyforma sor egyetlen falnak
+   * olvas, és a nyolcadiknál már senki nem néz oda.
+   *
+   * Bannere 7 959 címnek van; amelyiknek nincs, az a borítójára esik vissza,
+   * és a sor attól még működik — csak kevésbé látványos.
+   */
+  bannerCard (media) {
+    const art = media.bannerImage || U.cover(media)
+    const card = U.el('a', {
+      class: 'bcard',
+      href: `#/anime/${media.id}`,
+      style: titleTheme(media)
+    }, [
+      U.el('div', { class: 'bcard-art' }, [
+        U.el('img', { src: art, alt: '', loading: 'lazy' })
+      ]),
+      U.el('div', { class: 'bcard-scrim' }, [
+        U.el('span', { class: 'bcard-title', text: U.title(media) }),
+        U.el('span', { class: 'bcard-meta', text: [U.format(media), media.episodes ? `${media.episodes} rész` : null].filter(Boolean).join(' · ') })
+      ])
+    ])
+    return card
+  },
+
+  /** Ugyanaz a sor, fekvő kártyákkal. */
+  bannerSection (title, mediaPromise, { moreHref = null } = {}) {
+    const row = U.el('div', { class: 'hscroll hscroll-banner' },
+      Array.from({ length: 3 }, () => U.el('div', { class: 'bcard skeleton' })))
+    const head = U.el('div', { class: 'section-head' }, [
+      U.el('h2', { class: 'section-title', text: title })
+    ])
+    if (moreHref) head.append(U.el('a', { class: 'section-more', href: moreHref, text: T('View more') }))
+    const wrap = U.el('section', { class: 'section section-banner' }, [head, row])
+
+    Promise.resolve(mediaPromise).then(mediaList => {
+      if (!mediaList?.length) { wrap.remove(); return }
+      row.replaceChildren(...mediaList.slice(0, 12).map(m => this.bannerCard(m)))
+    }).catch(() => { wrap.remove() })
+
+    return wrap
   },
 
   // horizontal scrolling section fed by a promise resolving to a media array
@@ -384,9 +448,9 @@ export const C = {
           onChange()
         }
       }, [
-        U.el('option', { value: '', text: entry ? 'Remove from list' : 'Add to list…' }),
+        U.el('option', { value: '', text: T(entry ? 'Remove from list' : 'Add to list…') }),
         ...Object.entries(U.listStatusMap).map(([value, label]) =>
-          U.el('option', { value, text: label, ...(entry?.status === value ? { selected: '' } : {}) }))
+          U.el('option', { value, text: T(label), ...(entry?.status === value ? { selected: '' } : {}) }))
       ])
       wrap.append(select)
 
@@ -412,10 +476,10 @@ export const C = {
         class: `btn btn-sm ${fav ? 'btn-theme' : 'btn-ghost'}`,
         onclick: () => {
           const nowFav = Store.toggleFavourite(media.id)
-          U.toast(nowFav ? 'Added to favourites' : 'Removed from favourites')
+          U.toast(T(nowFav ? 'Added to favourites' : 'Removed from favourites'))
           render()
         }
-      }, [U.svg(this.HEART, 14), document.createTextNode(fav ? 'Favourited' : 'Favourite')]))
+      }, [U.svg(this.HEART, 14), document.createTextNode(T(fav ? 'Favourited' : 'Favourite'))]))
     }
 
     render()

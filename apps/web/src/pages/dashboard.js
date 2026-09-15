@@ -63,7 +63,12 @@ export const PageDashboard = {
       if (node) { pad.append(node); rendered++ }
     }
     if (!rendered) {
-      pad.append(P.emptyState(T('Nothing to show yet — add anime to your library and your dashboard fills in automatically.')))
+      pad.append(P.emptyState(
+        T('Nothing to show yet — add anime to your library and your dashboard fills in automatically.'),
+        {
+          action: U.el('a', { class: 'btn btn-primary btn-sm', href: '#/search', text: T('Browse the catalogue') })
+        }
+      ))
     }
   },
 
@@ -107,8 +112,8 @@ export const PageDashboard = {
 
   _section (title, body, opts = {}) {
     const head = U.el('div', { class: 'dash-widget-head' }, [
-      U.el('h2', { class: 'detail-section-title', style: 'margin:0;', text: title }),
-      opts.link ? U.el('a', { class: 'dash-widget-link', href: opts.link, text: opts.linkText ?? 'See all →' }) : null
+      U.el('h2', { class: 'detail-section-title', style: 'margin:0;', text: T(title) }),
+      opts.link ? U.el('a', { class: 'dash-widget-link', href: opts.link, text: T(opts.linkText ?? 'See all →') }) : null
     ])
     return U.el('section', { class: 'dash-widget' }, [head, body])
   },
@@ -140,7 +145,7 @@ export const PageDashboard = {
         U.el('img', { src: m.coverImage?.large ?? '', alt: '', loading: 'lazy' }),
         U.el('div', { class: 'list-row-grow' }, [
           U.el('div', { class: 'list-row-title', text: U.title(m) }),
-          U.el('div', { class: 'list-row-sub', text: `Episode ${m.nextAiringEpisode.episode} · ${U.relTime(new Date(m.nextAiringEpisode.airingAt * 1000))}` })
+          U.el('div', { class: 'list-row-sub', text: `${T('Episode')} ${m.nextAiringEpisode.episode} · ${U.relTime(new Date(m.nextAiringEpisode.airingAt * 1000))}` })
         ])
       ]))
     }
@@ -149,6 +154,13 @@ export const PageDashboard = {
 
   _widget_stats () {
     const entries = Object.values(Store.list())
+    // Négy nulla nem adat. Üres könyvtárnál ez a csempesor azt üzente, hogy
+    // „itt ez van, és ennyi" — pedig csak még nincs miből számolni. A widget
+    // ilyenkor nem rajzol semmit, és az oldal saját üres állapota veszi át,
+    // ami legalább megmondja, mit kezdjen vele az ember. A könyvtár
+    // szinkronja után a router újrarajzolja az oldalt (library-synced), tehát
+    // a friss eszközön sem marad üresen.
+    if (!entries.length) return null
     const episodes = entries.reduce((s, e) => s + (e.progress ?? 0), 0)
     // Measured, not estimated. This used to be `progress * nominal runtime`,
     // which credited a flat 24 minutes the instant an episode was marked —

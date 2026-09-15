@@ -346,7 +346,12 @@ const routes: FastifyPluginAsync = async fastify => {
    * device. Somebody who thinks their account is compromised wants this;
    * somebody closing a laptop does not.
    */
-  fastify.post('/logout-all', { preHandler: fastify.authenticate, schema: { body: logoutBody } }, async (request, reply) => {
+  // Törzsséma nélkül, szándékosan: ez az útvonal nem olvas törzset. A
+  // deklarált séma azt jelentette, hogy egy törzs *nélküli* POST 400-at kapott
+  // („body must be object") — pont ez a hívás pedig az, amit valaki akkor
+  // keres, amikor úgy érzi, feltörték a fiókját, és nyers curl-lel vagy egy
+  // másik klienssel próbálja. A `{}` megkövetelése ott csapda, nem védelem.
+  fastify.post('/logout-all', { preHandler: fastify.authenticate }, async (request, reply) => {
     await accounts.revokeAllSessions(request.user.sub)
     await revokeTokens(request.user.sub)
     await accounts.log(request.user.sub, 'logout_all', request.ip, request.headers['user-agent'] ?? null)

@@ -248,7 +248,13 @@ describe('dictionary health', () => {
     // the value and moved on. A few words genuinely are the same in Hungarian,
     // so those are named here rather than the check being dropped — the point
     // is to catch the accident, not to forbid a correct translation.
-    const SAME_IN_HUNGARIAN = new Set(['Spoiler', 'Fantasy'])
+    // Műfajok és forrásanyagok, amiket a magyar is így hív. Ezek nem
+    // beragadt angol szövegek: a „Mecha" magyarul is mecha, és lefordítva
+    // („Robotos") senki nem keresne rá.
+    const SAME_IN_HUNGARIAN = new Set([
+      'Spoiler', 'Fantasy', 'Manga', 'Light novel', 'Visual novel',
+      'Horror', 'Mecha', 'Thriller', 'Ecchi', 'Hentai'
+    ])
     const { I18n } = load()
     const dict = I18n.dictionary('hu')
     const same = Object.entries(dict)

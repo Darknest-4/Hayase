@@ -47,6 +47,23 @@ export const PageWatch = {
       root.replaceChildren(P.errorState(T('Failed to load anime: ') + e.message))
       return
     }
+    // Van-e egyáltalán miből lejátszani ezt a részt?
+    //
+    // Eddig a lejátszóoldal felépült, a motor végigpróbálta a nulla jelöltet,
+    // és a végén kiírta, hogy nincs forrás — a látogató addigra egy üres
+    // lejátszót és egy epizódlistát kapott, amiből semmi nem indul el. A
+    // részletoldal epizódsorai ezt már tudták (nem kattinthatók, „Nincs
+    // forrás" jelvénnyel), de a nagy lejátszásgomb, a következő/előző, egy
+    // könyvjelző és a beírt cím megkerülte őket.
+    //
+    // A kapu itt van, mert ez az egyetlen pont, amin mind átmegy.
+    if (!await this.hasSomethingToPlay(media, episode, src)) {
+      root.replaceChildren()
+      U.toast(T('Nothing to play this episode from yet.'), 'error')
+      window.location.replace(`#/anime/${media.id}`)
+      return
+    }
+
     root.replaceChildren()
     U.setBanner(null)
 
@@ -107,19 +124,23 @@ export const PageWatch = {
       onclick: () => {
         const progress = Store.entry(media.id)?.progress ?? 0
         Store.setProgress(media, watched && progress === episode ? episode - 1 : episode)
-        U.toast(watched ? `Episode ${episode} unmarked` : `Episode ${episode} marked as watched`)
+        U.toast(watched
+          ? `${T('Episode')} ${episode} — ${T('unmarked')}`
+          : `${T('Episode')} ${episode} — ${T('marked as watched')}`)
         navigate()
       }
-    }, [U.svg(C.CHECK, 13), document.createTextNode(watched ? 'Watched' : 'Mark watched')])
+    }, [U.svg(C.CHECK, 13), document.createTextNode(T(watched ? 'Watched' : 'Mark watched'))])
 
     const keepSrc = src ? `?src=${encodeURIComponent(decodeURIComponent(src))}` : ''
     col.append(U.el('div', { class: 'watch-actions' }, [
+      // Egy szomszéd, amihez nincs forrás, nem ajánlat: a kapu úgyis
+      // visszadobná a részletoldalra, és az egy kattintás a semmiért.
       U.el('a', {
-        class: 'btn btn-secondary btn-sm' + (episode <= 1 ? ' hidden' : ''),
+        class: 'btn btn-secondary btn-sm' + (episode > 1 && this.canPlayEpisode(episode - 1) ? '' : ' hidden'),
         href: `#/watch/${media.id}:${episode - 1}`
       }, [document.createTextNode(T('‹ Previous'))]),
       U.el('a', {
-        class: 'btn btn-secondary btn-sm' + (episode >= total ? ' hidden' : ''),
+        class: 'btn btn-secondary btn-sm' + (episode < total && this.canPlayEpisode(episode + 1) ? '' : ' hidden'),
         href: `#/watch/${media.id}:${episode + 1}`
       }, [document.createTextNode(T('Next ›'))]),
       // Watch Together — opens the sync-room popup (feature-flagged)
@@ -467,6 +488,55 @@ export const PageWatch = {
    * already fetched and cached by the time playback starts, so this is a map
    * lookup rather than a request.
    */
+  /**
+   * Elindulhat-e egyáltalán a lejátszás.
+   *
+   * Ugyanaz a szabály, amit a részletoldal epizódsorai használnak: a
+   * katalógus saját, engedélyezett forrásai döntenek — de a „nem tudjuk" nem
+   * ugyanaz, mint a „nincs". Egy AniList-címnél, amit sosem importáltunk,
+   * nincs epizódsor, amire forrást lehetne akasztani; ott a kapu nem szólal
+   * meg, mert nem tud semmit.
+   *
+   * A kézzel beírt cím (?src=) mindig átmegy: azt a látogató hozta magával.
+   */
+  async hasSomethingToPlay (media, episode, src) {
+    if (src) return true
+    await this.loadEpisodeRows(media)
+    return this.canPlayEpisode(episode)
+  },
+
+  /**
+   * Az epizódsorok, egyszer lekérve, az egész oldal idejére.
+   *
+   * A Catalogue gyorsítótáraz, de a lejátszón belüli gombok (előző, következő,
+   * „következik") szinkron döntést hoznak — ezért a sorok itt ülnek, nem egy
+   * ígéret mögött.
+   */
+  async loadEpisodeRows (media) {
+    try {
+      this._episodeRows = await Catalogue.episodes(media)
+    } catch (error) {
+      // A lekérdezés hibája nem bizonyíték a forrás hiányára.
+      console.warn('[watch] episode list unavailable:', error.message)
+      this._episodeRows = []
+    }
+    return this._episodeRows
+  },
+
+  /**
+   * Van-e ehhez a részhez engedélyezett forrás.
+   *
+   * A „nem tudjuk" itt is átenged: üres lista (nem importált cím) vagy
+   * hiányzó `sourceCount` esetén nincs mire alapozni a tiltást.
+   */
+  canPlayEpisode (number) {
+    const rows = this._episodeRows
+    if (!rows?.length) return true
+    const row = rows.find(e => e.episode === number)
+    if (!row || row.sourceCount === undefined) return true
+    return row.sourceCount > 0
+  },
+
   async _episodeId (media, episode) {
     if (!media?.yumeId) return null
     try {
@@ -889,14 +959,18 @@ export const PageWatch = {
   // ---- up-next end card ----
   _showUpNext (shell, media, episode, total) {
     shell.querySelector('.player-upnext')?.remove()
+    // Nem ajánljuk fel, és főleg nem indítjuk el magától azt, amihez nincs
+    // forrás — az automatikus lejátszás egyenesen a részletoldalra dobná
+    // vissza a nézőt, öt másodperccel azután, hogy letette a távirányítót.
+    if (!this.canPlayEpisode(episode + 1)) return
     const autoplay = Store.settings().autoplay !== false
     const go = () => { window.location.hash = `#/watch/${media.id}:${episode + 1}` }
 
-    const countLabel = U.el('span', { text: autoplay ? 'Autoplaying in 5…' : '' })
+    const countLabel = U.el('span', { text: autoplay ? `${T('Autoplaying in')} 5…` : '' })
     const card = U.el('div', { class: 'player-upnext' }, [
       U.el('div', { class: 'player-upnext-inner' }, [
         U.el('div', { class: 'player-upnext-label', text: T('Up next') }),
-        U.el('div', { class: 'player-upnext-title', text: `Episode ${episode + 1}` }),
+        U.el('div', { class: 'player-upnext-title', text: `${T('Episode')} ${episode + 1}` }),
         U.el('div', { style: 'display:flex;gap:var(--space-2);justify-content:center;margin-top:var(--space-4);flex-wrap:wrap;' }, [
           U.el('button', { class: 'btn btn-primary', onclick: go }, [U.svg(C.PLAY, 14), document.createTextNode(T(' Play next'))]),
           U.el('button', { class: 'btn btn-ghost', onclick: () => card.remove() }, [document.createTextNode(T('Dismiss'))])
@@ -910,7 +984,7 @@ export const PageWatch = {
       let n = 5
       const timer = setInterval(() => {
         n--
-        countLabel.textContent = `Autoplaying in ${n}…`
+        countLabel.textContent = `${T('Autoplaying in')} ${n}…`
         if (n <= 0 || !document.body.contains(card)) { clearInterval(timer); if (document.body.contains(card)) go() }
       }, 1000)
     }

@@ -15,7 +15,7 @@ const PAGE = 60
 export const PageList = {
   render (root, params) {
     const total = Object.keys(Store.list()).length
-    root.append(C.spotlight(T('Library'), { subtitle: total ? `${total} ${total === 1 ? 'title' : 'titles'} tracked` : 'Your anime, tracked' }))
+    root.append(C.spotlight(T('Library'), { subtitle: total ? `${total} ${T('titles tracked')}` : T('Your anime, tracked') }))
 
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
@@ -41,7 +41,7 @@ export const PageList = {
           class: 'tab' + (state.tab === value ? ' active' : ''),
           onclick: () => { state.shown = PAGE; state.tab = value; renderTabs(); renderContent() }
         }, [
-          document.createTextNode(label),
+          document.createTextNode(T(label)),
           U.el('span', { class: 'count', text: String(count) })
         ])
         tabsWrap.append(tab)
@@ -54,7 +54,7 @@ export const PageList = {
       if (state.tab === 'FAVOURITES') {
         const favs = Store.favourites()
         if (!favs.length) {
-          content.append(P.emptyState(T('No favourites yet.')))
+          content.append(P.emptyState(T('No favourites yet.'), { action: U.el('a', { class: 'btn btn-primary btn-sm', href: '#/search', text: T('Browse the catalogue') }) }))
           return
         }
         content.append(P.spinner())
@@ -72,7 +72,7 @@ export const PageList = {
         .sort((a, b) => b.updatedAt - a.updatedAt)
 
       if (!entries.length) {
-        content.append(P.emptyState(T('Nothing here yet. Add anime from their detail page.')))
+        content.append(P.emptyState(T('Nothing here yet. Add anime from their detail page.'), { action: U.el('a', { class: 'btn btn-primary btn-sm', href: '#/search', text: T('Browse the catalogue') }) }))
         return
       }
 

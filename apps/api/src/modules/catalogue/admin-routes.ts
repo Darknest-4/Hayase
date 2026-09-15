@@ -188,7 +188,9 @@ const routes: FastifyPluginAsync = async fastify => {
       body.season_year ?? null, body.episode_count ?? null, body.episode_duration ?? null,
       body.synopsis ?? null, body.source_material ?? null, body.is_adult ?? null, body.visibility ?? null
     ])
-    await audit(request.user.sub, 'anime.create', 'anime', created?.id ?? null, null, { title: created?.canonical_title })
+    // A '?' csak védekezés: az INSERT ... RETURNING mindig ad sort. Ha mégsem,
+    // a bejegyzés akkor is meglegyen — egy null alany némán eldobná.
+    await audit(request.user.sub, 'anime.create', 'anime', created?.id ?? 'unknown', null, { title: created?.canonical_title })
     void emitEvent('catalogue.changed', { action: 'created', title: created?.canonical_title, by: request.user.username })
     return reply.code(201).send(created)
   })
@@ -346,6 +348,41 @@ const routes: FastifyPluginAsync = async fastify => {
       })
     }
     return { visibility, changed: changed.length, episodes: changed.map(row => row.number) }
+  })
+
+  /**
+   * The same act, over the whole catalogue.
+   *
+   * `episode.edit` is the same permission the per-anime call needs — this is
+   * the same decision, taken once instead of 32 000 times — and it is audited
+   * as one entry with the count, because that is what an operator will look
+   * for afterwards.
+   */
+  fastify.post('/episodes/visibility/all', {
+    onRequest: fastify.requirePermission('episode.edit', { hide: true }),
+    schema: {
+      body: {
+        type: 'object',
+        required: ['visibility'],
+        additionalProperties: false,
+        properties: { visibility: { enum: VISIBILITIES } }
+      }
+    }
+  }, async (request) => {
+    const { visibility } = request.body as { visibility: string }
+    const { changed } = await catalogue.bulkEpisodeVisibility(visibility)
+
+    // A tett alanya maga a katalógus: nincs egyetlen epizód, amire mutatna, és
+    // a darabszám az, ami egy hónap múlva olvashatóvá teszi a bejegyzést.
+    await audit(request.user.sub, 'episode.visibility.all', 'catalogue', 'all', null, { visibility, count: changed })
+    if (changed) {
+      void emitEvent('catalogue.changed', {
+        action: `${visibility} × ${changed} episode(s), catalogue-wide`,
+        title: 'the whole catalogue',
+        by: request.user.username
+      })
+    }
+    return { visibility, changed }
   })
 
   fastify.delete('/episodes/:eid', {

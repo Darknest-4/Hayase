@@ -21,6 +21,7 @@ export const Copy = {
     themes: 'Themes',
     admin: 'Admin',
     settings: 'Settings',
+    profile: 'Profile',
     more: 'More'
   },
 

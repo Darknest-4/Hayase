@@ -198,8 +198,12 @@ export async function handleMetadataJob (job: Job): Promise<void> {
       await finish(runId, {
         mapped: result.mapped,
         images: result.images,
+        episodes: result.episodes,
         titles: result.titles,
-        missed: result.missed
+        absent: result.absent,
+        // Külön a hiányzótól. Egy futás, ami sok elutasítást gyűjt, nem
+        // elvégezte a munkát, hanem elvesztette — és ezt a panelen látni kell.
+        refused: result.refused
       }, result.examined)
     } else if (run.kind === 'deep') {
       const result = await passes.deep({

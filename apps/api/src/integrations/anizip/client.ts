@@ -23,23 +23,50 @@ export interface AniZipMappings {
   anilist_id?: number | null
 }
 
+/** Egy epizód, ahogy ani.zip küldi. A kulcs a lekérdezésben az epizódszám. */
+export interface AniZipEpisode {
+  title?: Record<string, string>
+  overview?: string | null
+  summary?: string | null
+  image?: string | null
+  runtime?: number | null
+  length?: number | null
+  airDate?: string | null
+  tvdbId?: number | null
+  anidbEid?: number | null
+  episodeNumber?: number | null
+  absoluteEpisodeNumber?: number | null
+}
+
 export interface AniZipRecord {
   titles?: Record<string, string>
   images?: AniZipImage[]
   mappings?: AniZipMappings
+  episodes?: Record<string, AniZipEpisode>
   episodeCount?: number
 }
 
 const BASE = process.env.ANIZIP_URL ?? 'https://api.ani.zip'
 
+/** Miért nem jött adat. A kettő nem ugyanaz, és eddig az volt. */
+export type FetchOutcome =
+  | { kind: 'ok', record: AniZipRecord }
+  /** A szolgáltatás válaszolt, és nincs erről a címről semmije. */
+  | { kind: 'absent' }
+  /** Fojtás vagy hiba: van adat, csak most nem adják ide. */
+  | { kind: 'refused', status: number }
+
 /**
- * One title, or null when ani.zip has nothing for it.
+ * Egy cím.
  *
- * Null rather than throwing for a 404: a catalogue of thirty thousand contains
- * plenty of obscure entries nobody has mapped, and a pass that stops on the
- * first of them is a pass that never finishes.
+ * A 404 és a 429 **nem** ugyanaz, pedig korábban mindkettő `null` lett. Egy
+ * 32 000 soros katalógusban bőven van olyan, amit soha senki nem képezett le
+ * — az „absent", és nem baj. A 429 viszont azt jelenti, hogy túl gyorsan
+ * kérdezünk, és ha azt is hiányzó adatnak vesszük, a futás sikert jelent
+ * miközben elveszti a munkája nagy részét. Pontosan ez történt: 20 510
+ * címből 18 152 „hiányzott" három perc alatt.
  */
-export async function fetchMapping (anilistId: number, signal?: AbortSignal): Promise<AniZipRecord | null> {
+export async function fetchMapping (anilistId: number, signal?: AbortSignal): Promise<FetchOutcome> {
   let res: Response
   try {
     res = await fetch(`${BASE}/mappings?anilist_id=${anilistId}`, {
@@ -47,13 +74,16 @@ export async function fetchMapping (anilistId: number, signal?: AbortSignal): Pr
       ...(signal ? { signal } : {})
     })
   } catch {
-    return null
+    // Hálózati hiba: nem tudjuk, van-e adat. Elutasításnak vesszük, mert a
+    // biztonságosabb feltételezés az, hogy még jöhetne.
+    return { kind: 'refused', status: 0 }
   }
-  if (!res.ok) return null
+  if (res.status === 404) return { kind: 'absent' }
+  if (!res.ok) return { kind: 'refused', status: res.status }
   try {
-    return await res.json() as AniZipRecord
+    return { kind: 'ok', record: await res.json() as AniZipRecord }
   } catch {
-    return null
+    return { kind: 'absent' }
   }
 }
 

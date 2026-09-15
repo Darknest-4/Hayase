@@ -166,12 +166,34 @@ async function complete (job: Job): Promise<void> {
  * means racing whatever else is in the queue.
  */
 export async function failJob (job: Job, error: Error): Promise<void> {
-  // exponential backoff: 30s, 2m, 8m, 32m
+  /*
+   * „Túl gyorsan küldesz" nem ugyanaz, mint „elhasalt".
+   *
+   * A Discord 429-cel válaszol, és megmondja, mennyit várjon a hívó — ez
+   * néhány száz ezredmásodperc. Az általános visszalépés viszont fél percet,
+   * majd két percet, majd nyolcat vár, tehát egy megfojtott sorozat órákra
+   * szétcsúszik. Ha a hiba magával hozza a pontos időt, azt használjuk.
+   *
+   * A kísérletszámláló így is nő: egy végpont, ami mindig 429-cel válaszol,
+   * nem örökké próbálkozandó.
+   */
+  const retryAfterMs = (error as Error & { retryAfterMs?: number }).retryAfterMs
+  const asked = typeof retryAfterMs === 'number' && retryAfterMs >= 0
+
   await query(
-    `UPDATE jobs SET locked_at = NULL, last_error = $2,
-       run_at = now() + (interval '30 seconds' * power(4, attempts - 1))
-     WHERE id = $1`,
-    [job.id, error.message.slice(0, 2000)]
+    asked
+      // A kért idő, öt percben maximálva: egy hibás fejléc ne tudjon egy
+      // feladatot a jövő hétre tolni.
+      ? `UPDATE jobs SET locked_at = NULL, last_error = $2,
+           run_at = now() + make_interval(secs => $3)
+         WHERE id = $1`
+      // exponential backoff: 30s, 2m, 8m, 32m
+      : `UPDATE jobs SET locked_at = NULL, last_error = $2,
+           run_at = now() + (interval '30 seconds' * power(4, attempts - 1))
+         WHERE id = $1`,
+    asked
+      ? [job.id, error.message.slice(0, 2000), Math.min(300, Math.ceil((retryAfterMs as number) / 1000))]
+      : [job.id, error.message.slice(0, 2000)]
   )
 
   // retries exhausted → surface it (never for webhook jobs: avoids loops)

@@ -18,12 +18,16 @@ import { passes, handleMetadataJob, activeRun, coverage, requestCancel } from '.
 
 import type { FastifyInstance } from 'fastify'
 import type pg from 'pg'
+import { publicInstance } from './support/instance.ts'
 
 const HAS_DB = Boolean(process.env.DATABASE_URL)
 process.env.JWT_SECRET ??= 'metadata-sync-secret-long-enough-0123456789'
 process.env.AUTH_RATE_LIMIT_MAX ??= '200'
 
 describe('metadata synchronisation', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
+  // Ez a suite nem a bejelentkezési kapuról szól.
+  publicInstance()
+
   let app: FastifyInstance
   let pool: pg.Pool
   const usernames: string[] = []
@@ -269,17 +273,29 @@ describe('metadata synchronisation', { skip: HAS_DB ? false : 'no DATABASE_URL' 
     if (anime.length < 2) return // an empty catalogue has nothing to collide
 
     const external = String(900000000 + Math.floor(Math.random() * 1e6))
+    // `seen_count` magasra állítva szándékosan. A lista százban maximált és
+    // seen_count szerint rendezett; egy éles példányon, ahol 679 ütközés vár,
+    // egy frissen beszúrt sor az ablakon kívülre esett — és a teszt ezt a kód
+    // hibájának jelentette. Ami itt állítás tárgya, az a „legsürgősebb
+    // ütközés látszik-e", nem az, hogy hány sor van a táblában.
     const inserted = (await pool.query(
-      `INSERT INTO mapping_conflicts (anime_id, provider, external_id, held_by, source)
-       VALUES ($1, 'mal', $2, $3, 'test') RETURNING id`,
+      `INSERT INTO mapping_conflicts (anime_id, provider, external_id, held_by, source, seen_count)
+       VALUES ($1, 'mal', $2, $3, 'test', 1000000) RETURNING id`,
       [anime[0].id, external, anime[1].id]
     )).rows[0]
 
     try {
       const list = await app.inject({ url: '/v1/admin/catalogue/metadata/conflicts', headers: headers() })
       assert.equal(list.statusCode, 200, list.body)
-      const found = (list.json() as Array<{ id: string, external_id: string, holder_title: string }>)
-        .find(c => c.external_id === external)
+      const body = list.json() as {
+        data: Array<{ id: string, external_id: string, holder_title: string }>
+        total: number
+      }
+      // A darabszám a teljes hátralék, nem a visszaadott sorok száma: a panel
+      // ebből írja a fejlécét, és a kettő összekeverése hatszoros
+      // alulmondáshoz vezetett.
+      assert.ok(body.total >= body.data.length, 'the total must count what the page does not show')
+      const found = body.data.find(c => c.external_id === external)
       assert.ok(found, 'the collision was not listed')
       // Both sides of the pair, because the pair is the point: it is where a
       // real duplicate in our own catalogue shows up.

@@ -164,6 +164,34 @@ export class CatalogueAdminRepository extends Repository {
     )
   }
 
+  /**
+   * Publish (or unpublish) every episode of every visible title at once.
+   *
+   * The per-anime call above is the editorial workflow: a batch of subtitles
+   * lands and a season goes live. This one is the migration that workflow
+   * assumes has already happened — a catalogue imported from AniList arrives
+   * with `visibility = 'hidden'` on all of it, because that is the column
+   * default, and nobody publishes 32 000 titles by hand. Until someone does,
+   * every detail page in the catalogue says it has no episode data while the
+   * rows sit there in full.
+   *
+   * Hidden titles are left alone: an anime that an operator took down does not
+   * get its episodes published by a catalogue-wide sweep.
+   */
+  bulkEpisodeVisibility (visibility: string): Promise<{ changed: number }> {
+    return this.queryOne<{ changed: number }>(
+      `WITH updated AS (
+         UPDATE episodes e SET visibility = $1, updated_at = now()
+           FROM anime a
+          WHERE a.id = e.anime_id
+            AND a.visibility = 'public'
+            AND e.visibility IS DISTINCT FROM $1
+        RETURNING e.id)
+       SELECT count(*)::int AS changed FROM updated`,
+      [visibility]
+    ) as Promise<{ changed: number }>
+  }
+
   removeEpisode (episodeId: string): Promise<Record<string, unknown> | undefined> {
     return this.queryOne('DELETE FROM episodes WHERE id = $1 RETURNING number', [episodeId])
   }
@@ -292,18 +320,32 @@ export class CatalogueAdminRepository extends Repository {
    * but the pairs are also where real duplicates surface — and nobody goes
    * looking in a table they were never shown.
    */
-  mappingConflicts (): Promise<Array<Record<string, unknown>>> {
-    return this.query(
-      `SELECT c.id, c.provider, c.external_id, c.source, c.seen_count, c.first_seen, c.last_seen,
-              c.anime_id, a.canonical_title AS anime_title,
-              c.held_by, h.canonical_title AS holder_title
-         FROM mapping_conflicts c
-         JOIN anime a ON a.id = c.anime_id
-         LEFT JOIN anime h ON h.id = c.held_by
-        WHERE c.resolved_at IS NULL
-        ORDER BY c.seen_count DESC, c.last_seen DESC
-        LIMIT 100`
-    )
+  /**
+   * The unresolved collisions, most-seen first — and how many there are.
+   *
+   * The count is not decoration. The list is capped at a hundred, and the
+   * panel drew its own heading from the array it got: with 679 collisions
+   * waiting it said „Unresolved id collisions (100)", which is not a
+   * truncated answer but a wrong one. An operator reading it would think the
+   * backlog was a sixth of its real size.
+   */
+  async mappingConflicts (): Promise<{ data: Array<Record<string, unknown>>, total: number }> {
+    const [data, count] = await Promise.all([
+      this.query(
+        `SELECT c.id, c.provider, c.external_id, c.source, c.seen_count, c.first_seen, c.last_seen,
+                c.anime_id, a.canonical_title AS anime_title,
+                c.held_by, h.canonical_title AS holder_title
+           FROM mapping_conflicts c
+           JOIN anime a ON a.id = c.anime_id
+           LEFT JOIN anime h ON h.id = c.held_by
+          WHERE c.resolved_at IS NULL
+          ORDER BY c.seen_count DESC, c.last_seen DESC
+          LIMIT 100`
+      ),
+      this.queryOne<{ total: number }>(
+        'SELECT count(*)::int AS total FROM mapping_conflicts WHERE resolved_at IS NULL')
+    ])
+    return { data, total: count?.total ?? data.length }
   }
 
   /** `resolved_at IS NULL` in the WHERE so resolving twice is a 404, not a silent overwrite. */

@@ -18,11 +18,15 @@ import { after, before, describe, test } from 'node:test'
 
 import type { FastifyInstance } from 'fastify'
 import type pg from 'pg'
+import { publicInstance } from './support/instance.ts'
 
 const HAS_DB = Boolean(process.env.DATABASE_URL)
 process.env.JWT_SECRET ??= 'deep-test-secret-long-enough-0123456789'
 
 describe('deep AniList metadata', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
+  // Ez a suite nem a bejelentkezési kapuról szól.
+  publicInstance()
+
   let pool: pg.Pool
   let app: FastifyInstance
   let upsertDeep: typeof import('../src/integrations/anilist/deep-sync.ts').upsertDeep

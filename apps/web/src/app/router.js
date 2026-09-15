@@ -444,6 +444,23 @@ export const App = {
     page.append(wrap)
   },
 
+  /**
+   * A varázsló, de nem a kezdőképernyő fölött.
+   *
+   * Az első látogató eddig nem a landingot látta, hanem egy beállítás-ablakot
+   * a tetején — ami ráadásul lefedte a jobb felső profilikont, vagyis az
+   * egyetlen utat a belépéshez. A kérdései (címek nyelve, felnőtt tartalom)
+   * egy profil beállításai; a marketingoldalon még nincs profil, amire
+   * vonatkoznának.
+   *
+   * Nem elveszik, csak eltolódik: belépés után az afterAuth() újra megpróbálja,
+   * és akkor már az alkalmazáson belül vagyunk.
+   */
+  maybeOnboard () {
+    if (document.body.classList.contains('landing-route')) return
+    Onboarding?.maybeOpen()
+  },
+
   // re-load config + permissions after a login/logout, then re-render
   async afterAuth () {
     await this.loadConfig()
@@ -456,10 +473,34 @@ export const App = {
 
     if (YumeAPI.user()) LibrarySync?.init() // pull the account library + start mirroring
     else LibrarySync?.reset() // signed out → stop mirroring
+
+    // Belépés után már nem a kezdőképernyőn vagyunk: ha a varázsló eddig
+    // kimaradt, most jön el az ideje.
+    if (YumeAPI.user()) Prefs?.pull().then(() => this.maybeOnboard())
+  },
+
+  /**
+   * A példány nyelvi házirendjének érvényesítése.
+   *
+   * A config aszinkron érkezik, az I18n.init pedig az első festés előtt fut —
+   * különben angol villanna fel és javítaná magát. Így a házirend itt kerül
+   * rá, amint megjött, és csak akkor rajzol újra, ha tényleg változott valami.
+   */
+  applyLanguagePolicy () {
+    const site = this.config?.site
+    if (!site) return
+    const before = I18n.language()
+    if (site.languageSwitching === false) I18n.setLanguage(site.defaultLanguage ?? 'hu')
+    else if (!Prefs?.hasLanguage?.()) I18n.setLanguage(site.defaultLanguage ?? I18n.language())
+    if (I18n.language() !== before) {
+      this.applyNavLabels()
+      this.navigate()
+    }
   },
 
   async loadConfig () {
     this.config = await YumeAPI.config()
+    this.applyLanguagePolicy()
     // The account's own profile row, which is where the picture lives. Best
     // effort: a viewer who is signed out, or an instance that cannot answer,
     // gets the initial-letter avatar rather than an error.
@@ -489,6 +530,9 @@ export const App = {
     const backdrop = document.getElementById('search-modal')
     const input = document.getElementById('search-modal-input')
     backdrop.classList.remove('hidden')
+    // A placeholder az index.html-ben angolul áll, és statikus markupot semmi
+    // nem fordít. Nyitáskor is beállítjuk, mert a nyelv közben változhatott.
+    input.placeholder = T('search.placeholder')
     input.value = ''
     document.getElementById('search-modal-results').replaceChildren(
       U.el('div', { class: 'search-modal-empty', text: T('search.prompt') })
@@ -504,6 +548,8 @@ export const App = {
     const backdrop = document.getElementById('search-modal')
     const input = document.getElementById('search-modal-input')
     const results = document.getElementById('search-modal-results')
+
+    input.placeholder = T('search.placeholder')
 
     backdrop.addEventListener('click', e => {
       if (e.target === backdrop) this.closeSearchModal()
@@ -556,7 +602,7 @@ export const App = {
             U.el('img', { src: m.coverImage?.large ?? '', alt: '' }),
             U.el('div', {}, [
               U.el('div', { class: 'search-result-title', text: U.title(m) }),
-              U.el('div', { class: 'search-result-sub', text: [U.format(m), U.seasonYear(m), m.episodes ? `${m.episodes} ep` : null].filter(Boolean).join(' • ') })
+              U.el('div', { class: 'search-result-sub', text: [U.format(m), U.seasonYear(m), m.episodes ? `${m.episodes} ${T('ep')}` : null].filter(Boolean).join(' • ') })
             ])
           ]))
         }
@@ -805,8 +851,15 @@ export const App = {
    */
   applyNavLabels () {
     document.querySelectorAll('.sidebar-btn').forEach(btn => {
-      const span = btn.querySelector('span')
-      const key = btn.id === 'nav-more' ? 'more' : btn.dataset.route
+      // Az első span nem mindig a felirat: a profilgombon az avatar áll elöl,
+      // és amíg `querySelector('span')`-t kerestünk, a gomb tooltipje a
+      // rókaemodzsi lett. A `:scope >` sem díszítés — az avatar maga is egy
+      // spant tartalmaz (C.avatar rajzolja bele), ami fabejárásban előbb jön,
+      // mint a felirat, tehát egy mély keresés a *képbe* írná a szöveget.
+      const span = btn.querySelector(':scope > span:not(.sidebar-avatar):not(.notif-badge)')
+      const key = btn.id === 'nav-more'
+        ? 'more'
+        : btn.id === 'profile-switcher' ? 'profile' : btn.dataset.route
       if (span && key && Copy?.nav?.[key]) span.textContent = T('nav.' + key)
       const label = span?.textContent
       if (label) btn.title = label
@@ -857,9 +910,9 @@ export const App = {
     // never answered. Both are off the critical path: the page is already
     // rendered by now, so neither can delay the first paint.
     if (YumeAPI.user()) {
-      Prefs?.pull().then(() => Onboarding?.maybeOpen())
+      Prefs?.pull().then(() => this.maybeOnboard())
     } else {
-      Onboarding?.maybeOpen()
+      this.maybeOnboard()
     }
     window.addEventListener('library-synced', () => {
       if (['home', 'list', 'dashboard'].includes(this.parseHash().route)) this.navigate()

@@ -830,6 +830,9 @@ export const YumeAPI = {
       removeEpisode: eid => YumeAPI._request(`/v1/admin/catalogue/episodes/${eid}`, { method: 'DELETE', auth: true }),
       // Publish or take down a whole range at once: { visibility, from?, to? }
       episodeVisibility: (id, body) => YumeAPI._request(`/v1/admin/catalogue/${id}/episodes/visibility`, { method: 'POST', auth: true, body }),
+      // Ugyanaz az egész katalógusra: { visibility }. Csak publikus címek
+      // epizódjait érinti.
+      episodeVisibilityAll: body => YumeAPI._request('/v1/admin/catalogue/episodes/visibility/all', { method: 'POST', auth: true, body }),
       // metadata provenance & duplicate handling
       unlock: (id, fields) => YumeAPI._request(`/v1/admin/catalogue/${id}/unlock`, { method: 'POST', auth: true, body: { fields } }),
       // `exact` by default, matching the server. The `similar` pass compares

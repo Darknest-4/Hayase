@@ -2,7 +2,7 @@
 // Continue Watching, Your List, Popular This Season, Trending Now,
 // All Time Popular and genre rows.
 
-import { site } from '../shared/lib/site-config.js'
+import { playbackAvailable, site } from '../shared/lib/site-config.js'
 import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
 import { T } from '../shared/i18n/i18n.js'
@@ -23,18 +23,26 @@ export const PageHome = {
     // the hero already says where you are to anybody who can see it.
     root.append(U.el('h1', { class: 'sr-only', text: site()?.name ?? 'Yume' }), hero, sections)
 
-    // sections, same order/variables as the original home page
+    // A sorok váltakoznak, és ez szabály, nem sorrendi véletlen: minden
+    // műfaj-sor két portré sor közé esik. A műfaj-sorok fekvő bannerekkel
+    // jelennek meg (lásd lentebb), tehát minden második sorban változik a
+    // forma — enélkül tíz egyforma sor egyetlen falnak olvas, és a
+    // nyolcadiknál már senki nem néz oda.
+    //
+    // A műfaj-sorok azért alkalmasak erre, mert olcsók és végtelenek:
+    // ugyanaz a lekérdezés más műfajjal. Így lesz hosszú a lap anélkül, hogy
+    // többféle tartalom kellene hozzá.
     const defs = [
       { title: T('home.rails.popularSeason'), vars: { sort: ['POPULARITY_DESC'], season, seasonYear: year } },
-      { title: T('home.rails.trending'), vars: { sort: ['TRENDING_DESC'] } },
-      { title: T('home.rails.airing'), vars: { sort: ['POPULARITY_DESC'], status: ['RELEASING'] } },
-      { title: T('home.rails.allTimePopular'), vars: { sort: ['POPULARITY_DESC'] } },
-      { title: T('home.rails.topRated'), vars: { sort: ['SCORE_DESC'] } },
-      { title: T('home.rails.movies'), vars: { sort: ['POPULARITY_DESC'], format: ['MOVIE'] } },
-      { title: T('home.rails.romance'), vars: { sort: ['TRENDING_DESC'], genre: ['Romance'] } },
       { title: T('home.rails.action'), vars: { sort: ['TRENDING_DESC'], genre: ['Action'] } },
+      { title: T('home.rails.trending'), vars: { sort: ['TRENDING_DESC'] } },
+      { title: T('home.rails.romance'), vars: { sort: ['TRENDING_DESC'], genre: ['Romance'] } },
+      { title: T('home.rails.airing'), vars: { sort: ['POPULARITY_DESC'], status: ['RELEASING'] } },
+      { title: T('home.rails.fantasy'), vars: { sort: ['TRENDING_DESC'], genre: ['Fantasy'] } },
+      { title: T('home.rails.allTimePopular'), vars: { sort: ['POPULARITY_DESC'] } },
       { title: T('home.rails.adventure'), vars: { sort: ['TRENDING_DESC'], genre: ['Adventure'] } },
-      { title: T('home.rails.fantasy'), vars: { sort: ['TRENDING_DESC'], genre: ['Fantasy'] } }
+      { title: T('home.rails.topRated'), vars: { sort: ['SCORE_DESC'] } },
+      { title: T('home.rails.movies'), vars: { sort: ['POPULARITY_DESC'], format: ['MOVIE'] } }
     ]
 
     // local-list driven sections (Continue Watching / Your List)
@@ -85,7 +93,15 @@ export const PageHome = {
       if (def.vars.status) params.set('status', def.vars.status[0])
       params.set('sort', def.vars.sort[0])
 
-      sections.append(C.section(def.title, Catalogue.searchOrAniList(def.vars).then(page => page.media ?? []), {
+      // A műfaj-sorok fekvő bannerekkel jelennek meg, a többi portré
+      // borítókkal — így minden második sorban változik a forma. Nyolc
+      // egyforma sor egyetlen falnak olvas; ez a váltakozás az, ami miatt
+      // nem az.
+      // `.bind(C)`, mert a metódus kiemelése egy változóba leválasztja az
+      // objektumról: a `this` odabent `undefined` lenne, és a sor a saját
+      // skeletonjánál dőlne el.
+      const render = def.vars.genre ? C.bannerSection.bind(C) : C.section.bind(C)
+      sections.append(render(def.title, Catalogue.searchOrAniList(def.vars).then(page => page.media ?? []), {
         moreHref: '#/search?' + params.toString()
       }))
     }
@@ -119,8 +135,8 @@ export const PageHome = {
     const meta = [
       U.format(media),
       U.seasonYear(media),
-      media.episodes ? `${media.episodes} Episodes` : null,
-      U.statusMap[media.status]
+      media.episodes ? `${media.episodes} ${T('episodes')}` : null,
+      U.status(media)
     ].filter(Boolean)
 
     const metaRow = U.el('div', { class: 'hero-meta' })
@@ -148,10 +164,16 @@ export const PageHome = {
         U.el('p', { class: 'hero-desc', text: U.plainDesc(media.description) }),
         (media.genres ?? []).length
           ? U.el('div', { class: 'badges', style: 'margin-bottom:var(--space-4);' }, media.genres.slice(0, 4).map(g =>
-            U.el('a', { class: 'badge', href: `#/search?genre=${encodeURIComponent(g)}`, text: g })))
+            U.el('a', { class: 'badge', href: `#/search?genre=${encodeURIComponent(g)}`, text: T(g) })))
           : null,
         U.el('div', { class: 'hero-buttons' }, [
-          U.el('a', { class: 'btn btn-primary', href: `#/watch/${media.id}:${(Store.entry(media.id)?.progress ?? 0) + 1}` }, [U.svg(C.PLAY, 15), document.createTextNode(T('Watch now'))]),
+          // Lejátszás csak ott, ahol a példány tud is játszani valamit.
+          // Forrás nélkül ez a gomb egy lejátszóoldalra vitt, ami rögtön
+          // visszadobott — a „Részletek" viszont oda visz, ahol tényleg van
+          // mit nézni: a leírás, az évad és az epizódlista.
+          playbackAvailable()
+            ? U.el('a', { class: 'btn btn-primary', href: `#/watch/${media.id}:${(Store.entry(media.id)?.progress ?? 0) + 1}` }, [U.svg(C.PLAY, 15), document.createTextNode(T('Watch now'))])
+            : U.el('a', { class: 'btn btn-primary', href: `#/anime/${media.id}` }, [document.createTextNode(T('Read more'))]),
           Store.entry(media.id)
             ? null
             : U.el('button', {
@@ -159,7 +181,12 @@ export const PageHome = {
               onclick: e => { Store.saveEntry(media, { status: 'PLANNING' }); U.toast(T('Added to Planning')); e.target.textContent = '✓ In your list' }
             }, [document.createTextNode(T('+ Add to list'))]),
           U.el('button', { class: 'btn btn-secondary', onclick: () => C.trailerModal(media.trailer) }, [document.createTextNode(T('Trailer'))]),
-          U.el('a', { class: 'btn btn-ghost', href: `#/anime/${media.id}` }, [document.createTextNode(T('Details'))])
+          // A „Részletek" csak akkor külön gomb, ha az elsődleges a lejátszás.
+          // Forrás nélkül az elsődleges viszi a részletoldalra, és két
+          // egyforma gomb egymás mellett nem választás, csak zaj.
+          playbackAvailable()
+            ? U.el('a', { class: 'btn btn-ghost', href: `#/anime/${media.id}` }, [document.createTextNode(T('Details'))])
+            : null
         ])
       ])
     )

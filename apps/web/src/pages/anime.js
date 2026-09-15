@@ -64,17 +64,17 @@ export const PageAnime = {
     const entry = Store.entry(media.id)
     const count = media.episodes ?? (media.nextAiringEpisode ? media.nextAiringEpisode.episode - 1 : null)
     const ofChip = entry?.progress != null && count
-      ? `${entry.progress} of ${count}`
-      : count ? `${count} episodes` : media.duration ? `${media.duration} min` : 'N/A'
+      ? `${entry.progress} / ${count}`
+      : count ? `${count} ${T('episodes')}` : media.duration ? `${media.duration} ${T('min')}` : '—'
 
     const chips = U.el('div', { class: 'chip-row' }, [
       U.el('span', { class: 'chip', text: ofChip }),
       U.el('a', { class: 'chip', href: `#/search?format=${media.format ?? ''}`, text: U.format(media) }),
-      U.el('a', { class: 'chip', href: `#/search?status=${media.status ?? ''}`, text: U.statusMap[media.status] ?? '' }),
+      U.el('a', { class: 'chip', href: `#/search?status=${media.status ?? ''}`, text: U.status(media) }),
       U.seasonYear(media) ? U.el('a', { class: 'chip', href: `#/search?season=${media.season ?? ''}&year=${media.seasonYear ?? ''}`, text: String(U.seasonYear(media)) }) : null,
       media.averageScore ? U.el('span', { class: 'chip', style: `background:${ratingColor(media.averageScore)};color:white;`, text: media.averageScore + '%' }) : null,
       media.nextAiringEpisode?.airingAt
-        ? U.el('span', { class: 'chip chip-airing', text: `Ep ${media.nextAiringEpisode.episode} ${U.relTime(new Date(media.nextAiringEpisode.airingAt * 1000))}` })
+        ? U.el('span', { class: 'chip chip-airing', text: `${T('Ep')} ${media.nextAiringEpisode.episode} ${U.relTime(new Date(media.nextAiringEpisode.airingAt * 1000))}` })
         : null
     ])
 
@@ -149,10 +149,10 @@ export const PageAnime = {
     const resumeAt = resumeNextEp || resumeCurEp
     const estTotal = (media.duration || 24) * 60
 
-    const playLabel = progress || resumeAt ? 'Continue Watching' : 'Start Watching'
+    const playLabel = progress || resumeAt ? T('Continue Watching') : T('Start Watching')
     const playSub = resumeAt
-      ? `Episode ${targetEp} • ${U.fmtTime(resumeAt)} / ${U.fmtTime(estTotal)}`
-      : `Episode ${targetEp}`
+      ? `${T('Episode')} ${targetEp} • ${U.fmtTime(resumeAt)} / ${U.fmtTime(estTotal)}`
+      : `${T('Episode')} ${targetEp}`
 
     const actions = U.el('div', { class: 'detail-actions-row' })
     const playGroup = U.el('div', { class: 'play-group' }, [
@@ -168,11 +168,56 @@ export const PageAnime = {
     ])
     actions.append(playGroup)
 
+    /*
+     * A nagy lejátszásgomb a semmibe mutathat.
+     *
+     * Hogy egy részhez van-e forrás, azt csak az epizódlista tudja, és az
+     * később érkezik — a gomb addigra kirajzolódott. Amint megjött, a gomb
+     * vagy átáll az első lejátszhatóra, vagy megmondja, hogy nincs miből.
+     *
+     * A „nem tudjuk" itt sem ugyanaz, mint a „nincs": egy AniList-címnél,
+     * amit sosem importáltunk, nincs epizódsor, amire forrást lehetne
+     * akasztani, és ott a gomb marad, ahogy volt.
+     */
+    const playAnchor = playGroup.firstElementChild
+    Catalogue.episodes(media).then(list => {
+      if (!playAnchor?.isConnected || !list?.length) return
+      if (!list.some(e => e.sourceCount !== undefined)) return
+
+      const target = list.find(e => e.episode === targetEp)
+      if (target && (target.sourceCount === undefined || target.sourceCount > 0)) return
+
+      const firstPlayable = list.find(e => (e.sourceCount ?? 0) > 0)
+      if (firstPlayable) {
+        playAnchor.href = `#/watch/${media.id}:${firstPlayable.episode}`
+        const sub = playAnchor.querySelector('small')
+        if (sub) sub.textContent = `${T('Episode')} ${firstPlayable.episode}`
+        return
+      }
+
+      const dead = U.el('button', {
+        class: 'play-btn play-btn-rich play-btn-empty',
+        type: 'button',
+        disabled: '',
+        title: T('Nothing to play this episode from yet.')
+      }, [
+        U.svg(C.PLAY, 16),
+        U.el('span', { class: 'play-btn-text' }, [
+          U.el('b', { text: T('No source yet') }),
+          U.el('small', { text: T('The episode list below is complete.') })
+        ])
+      ])
+      playAnchor.replaceWith(dead)
+    }).catch(() => { /* a lekérdezés hibája nem bizonyíték a forrás hiányára */ })
+
     // `title` shows a tooltip; `aria-label` is what a screen reader reads.
     // These buttons have no text at all, so without the second one they are
     // announced as "button" and nothing else.
     const iconBtn = (content, title, onclick, active = false) => {
-      const btn = U.el('button', { class: 'detail-icon-btn' + (active ? ' active' : ''), title, 'aria-label': title, onclick })
+      // A címke tooltipként és aria-labelként is megjelenik: egy fordítatlan
+      // szó itt kétszer látszik, egyszer szemmel, egyszer felolvasva.
+      const label = T(title)
+      const btn = U.el('button', { class: 'detail-icon-btn' + (active ? ' active' : ''), title: label, 'aria-label': label, onclick })
       btn.append(content)
       return btn
     }
@@ -184,7 +229,7 @@ export const PageAnime = {
       const now = Store.toggleFavourite(media.id)
       heart.style.fill = now ? 'currentColor' : 'none'
       e.currentTarget.classList.toggle('active', now)
-      U.toast(now ? 'Added to favourites' : 'Removed from favourites')
+      U.toast(T(now ? 'Added to favourites' : 'Removed from favourites'))
     }, Store.isFavourite(media.id)))
 
     // bookmark (quick planning add)
@@ -241,7 +286,9 @@ export const PageAnime = {
     // ---- genre chips row (tags live in the sidebar card) ----
     const chipScroll = U.el('div', { class: 'chips-scroll' })
     for (const genre of media.genres ?? []) {
-      chipScroll.append(U.el('a', { class: 'genre-chip', href: `#/search?genre=${encodeURIComponent(genre)}`, text: genre }))
+      // A felirat fordul, a hivatkozás értéke nem: a keresés az angol nevet
+      // várja, mert a katalógus is azt tárolja.
+      chipScroll.append(U.el('a', { class: 'genre-chip', href: `#/search?genre=${encodeURIComponent(genre)}`, text: T(genre) }))
     }
     if (chipScroll.children.length) wrap.append(chipScroll)
 
@@ -253,7 +300,7 @@ export const PageAnime = {
       comments: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
       recommendations: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>'
     }
-    const tabDefs = [['episodes', 'Episodes'], ['relations', 'Relations'], ['characters', 'Characters'], ['comments', 'Comments'], ['recommendations', 'Recommendations']]
+    const tabDefs = [['episodes', T('Episodes')], ['relations', T('Relations')], ['characters', T('Characters')], ['comments', T('Comments')], ['recommendations', T('Recommendations')]]
     const tabBar = U.el('div', { class: 'dtabs' })
     const tabContent = U.el('div', { class: 'dtab-content' })
     const rendered = {}
@@ -296,12 +343,15 @@ export const PageAnime = {
     if (air?.airingAt) {
       side.append(U.el('div', { class: 'side-card side-airing' }, [
         U.el('div', { class: 'side-airing-label', text: T('Next episode') }),
-        U.el('div', { class: 'side-airing-ep', text: `Episode ${air.episode}` }),
+        U.el('div', { class: 'side-airing-ep', text: `${T('Episode')} ${air.episode}` }),
         U.el('div', { class: 'side-airing-time', text: U.relTime(new Date(air.airingAt * 1000)) })
       ]))
     }
 
-    const prettify = v => v ? String(v).replaceAll('_', ' ').toLowerCase().replace(/^\w/, c => c.toUpperCase()) : null
+    // ORIGINAL → „Eredeti". Az enum hat értéket vehet fel, tehát a fordítás
+    // egy kulcs, nem egy szótár: a T() a szépített alakot kapja, és ha nincs
+    // magyar sora, az angol marad — nem egy azonosító.
+    const prettify = v => v ? T(String(v).replaceAll('_', ' ').toLowerCase().replace(/^\w/, c => c.toUpperCase())) : null
     const start = media.startDate?.year
       ? [media.startDate.year, media.startDate.month, media.startDate.day].filter(Boolean).join('.')
       : null
@@ -313,14 +363,14 @@ export const PageAnime = {
     // the chips keep the facts you navigate by and this panel keeps the ones
     // they do not mention.
     const rows = [
-      ['Duration', media.duration ? `${media.duration} min` : null],
-      ['Start date', start],
-      ['Studio', media.studios?.nodes?.[0]?.name],
-      ['Source', prettify(media.source)],
-      ['Country', media.countryOfOrigin],
-      ['Mean score', media.meanScore ? media.meanScore + '%' : null],
-      ['Popularity', media.popularity ? media.popularity.toLocaleString(I18n.locale()) : null],
-      ['Favourites', media.favourites ? media.favourites.toLocaleString(I18n.locale()) : null]
+      [T('Duration'), media.duration ? `${media.duration} ${T('min')}` : null],
+      [T('Start date'), start],
+      [T('Studio'), media.studios?.nodes?.[0]?.name],
+      [T('Source'), prettify(media.source)],
+      [T('Country'), media.countryOfOrigin],
+      [T('Mean score'), media.meanScore ? media.meanScore + '%' : null],
+      [T('Popularity'), media.popularity ? media.popularity.toLocaleString(I18n.locale()) : null],
+      [T('Favourites'), media.favourites ? media.favourites.toLocaleString(I18n.locale()) : null]
     ].filter(([, v]) => v)
 
     side.append(U.el('div', { class: 'side-card' }, [
@@ -413,7 +463,7 @@ export const PageAnime = {
     }, [
       U.el('option', { value: '', text: entry ? T('✕ Remove from list') : T('＋ Add to List') }),
       ...Object.entries(U.listStatusMap).map(([value, label]) =>
-        U.el('option', { value, text: label, ...(entry?.status === value ? { selected: '' } : {}) }))
+        U.el('option', { value, text: T(label), ...(entry?.status === value ? { selected: '' } : {}) }))
     ])
     return select
   },
@@ -578,7 +628,9 @@ export const PageAnime = {
     const episodes = await Catalogue.episodes(media)
 
     if (!episodes.length) {
-      wrap.replaceChildren(P.emptyState(media.status === 'NOT_YET_RELEASED' ? 'Not yet aired.' : 'No episode data available.'))
+      // T() nélkül ez a két mondat angolul jelent meg, pedig a fordítása
+      // ott volt a szótárban — a fenti ág (428. sor) fordítja, ez nem.
+      wrap.replaceChildren(P.emptyState(T(media.status === 'NOT_YET_RELEASED' ? 'Not yet aired.' : 'No episode data available.')))
       return
     }
 
@@ -599,7 +651,9 @@ export const PageAnime = {
       const head = U.el('div', { class: 'eplist-head' }, [
         U.el('div', { class: 'eplist-title' }, [
           U.el('b', { text: T('Episodes') }),
-          U.el('span', { text: `${episodes.length} episodes${media.duration ? ` • ${media.duration} min each` : ''}` })
+          U.el('span', {
+            text: `${episodes.length} ${T('episodes')}${media.duration ? ` • ${T('each')} ${media.duration} ${T('min')}` : ''}`
+          })
         ])
       ])
       if (episodes.length > 30) {

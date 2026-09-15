@@ -33,7 +33,7 @@ export const PageHistory = {
 
     const history = Store.history()
     if (!history.length) {
-      pad.append(P.emptyState(T('Nothing watched yet on this profile. Play an episode and it shows up here.')))
+      pad.append(P.emptyState(T('Nothing watched yet on this profile. Play an episode and it shows up here.'), { action: U.el('a', { class: 'btn btn-primary btn-sm', href: '#/search', text: T('Browse the catalogue') }) }))
       return
     }
 
@@ -64,7 +64,7 @@ export const PageHistory = {
           U.el('img', { src: media.coverImage?.large ?? '', alt: U.title(media), loading: 'lazy' }),
           U.el('div', { class: 'list-row-grow' }, [
             U.el('div', { class: 'list-row-title', text: U.title(media) }),
-            U.el('div', { class: 'list-row-sub', text: `Episode ${item.episode} • ${new Date(item.at).toLocaleTimeString(I18n.locale(), { hour: '2-digit', minute: '2-digit' })}` })
+            U.el('div', { class: 'list-row-sub', text: `${T('Episode')} ${item.episode} • ${new Date(item.at).toLocaleTimeString(I18n.locale(), { hour: '2-digit', minute: '2-digit' })}` })
           ]),
           U.svg(C.PLAY, 16)
         ]))
