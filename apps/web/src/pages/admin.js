@@ -23,36 +23,36 @@ export const PageAdmin = {
    * doing it, what they are doing it to, and how the machine underneath is.
    */
   GROUPS: [
-    { key: 'insight', label: 'Insight' },
-    { key: 'people', label: 'People' },
-    { key: 'content', label: 'Content' },
-    { key: 'system', label: 'System' }
+    { key: 'insight', label: 'Betekintés' },
+    { key: 'people', label: 'Emberek' },
+    { key: 'content', label: 'Tartalom' },
+    { key: 'system', label: 'Rendszer' }
   ],
 
   SECTIONS: [
-    { key: 'overview', group: 'insight', label: 'Áttekintés', sub: 'Platform health & analytics', perm: 'admin.analytics.view', render: 'renderOverview', icon: '<path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>' },
-    { key: 'errors', group: 'insight', label: 'Hibák', sub: 'Grouped faults & stack traces', perm: 'admin.analytics.view', render: 'renderErrors', icon: '<path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0"/>' },
-    { key: 'audit-log', group: 'insight', label: 'Napló', sub: 'Who changed what, and when', perm: 'admin.users.manage', render: 'renderAudit', icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6"/><path d="M9 11h2"/>' },
+    { key: 'overview', group: 'insight', label: 'Áttekintés', sub: 'A platform állapota és statisztikája', perm: 'admin.analytics.view', render: 'renderOverview', icon: '<path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>' },
+    { key: 'errors', group: 'insight', label: 'Hibák', sub: 'Csoportosított hibák és hívási láncok', perm: 'admin.analytics.view', render: 'renderErrors', icon: '<path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0"/>' },
+    { key: 'audit-log', group: 'insight', label: 'Napló', sub: 'Ki mit változtatott, és mikor', perm: 'admin.users.manage', render: 'renderAudit', icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6"/><path d="M9 11h2"/>' },
 
-    { key: 'users', group: 'people', label: 'Felhasználók', sub: 'Accounts, suspensions & bans', perm: 'admin.users.manage', render: 'renderUsers', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
-    { key: 'roles', group: 'people', label: 'Szerepkörök', sub: 'Permissions & RBAC', perm: 'roles.manage', render: 'renderRoles', icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>' },
-    { key: 'reports', group: 'people', label: 'Bejelentések', sub: 'Moderation queue', perm: 'community.moderate', render: 'renderReports', icon: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>' },
+    { key: 'users', group: 'people', label: 'Felhasználók', sub: 'Fiókok, felfüggesztések, kitiltások', perm: 'admin.users.manage', render: 'renderUsers', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
+    { key: 'roles', group: 'people', label: 'Szerepkörök', sub: 'Jogosultságok és szerepkörök', perm: 'roles.manage', render: 'renderRoles', icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>' },
+    { key: 'reports', group: 'people', label: 'Bejelentések', sub: 'Moderálási sor', perm: 'community.moderate', render: 'renderReports', icon: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>' },
 
-    { key: 'catalogue', group: 'content', label: 'Katalógus', sub: 'Anime, episodes & publishing', perm: 'anime.view', render: 'renderCatalogue', icon: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>' },
-    { key: 'metadata', group: 'content', label: 'Metaadatok', sub: 'AniList coverage & sync runs', perm: 'anime.edit', render: 'renderMetadata', icon: '<path d="M21 12a9 9 0 1 1-6.2-8.6"/><path d="M21 3v6h-6"/>' },
-    { key: 'translations', group: 'content', label: 'Fordítások', sub: 'Hungarian titles & descriptions', perm: 'anime.edit', render: 'renderTranslations', icon: '<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>' },
+    { key: 'catalogue', group: 'content', label: 'Katalógus', sub: 'Animék, epizódok, publikálás', perm: 'anime.view', render: 'renderCatalogue', icon: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>' },
+    { key: 'metadata', group: 'content', label: 'Metaadatok', sub: 'AniList-lefedettség és szinkronfutások', perm: 'anime.edit', render: 'renderMetadata', icon: '<path d="M21 12a9 9 0 1 1-6.2-8.6"/><path d="M21 3v6h-6"/>' },
+    { key: 'translations', group: 'content', label: 'Fordítások', sub: 'Magyar címek és leírások', perm: 'anime.edit', render: 'renderTranslations', icon: '<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>' },
 
-    { key: 'monitoring', group: 'system', label: 'Infrastruktúra', sub: 'VPS health & services', perm: 'system.metrics.view', render: 'renderMonitoring', icon: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>' },
-    { key: 'announcements', group: 'system', label: 'Hírek', sub: 'Site-wide messages', perm: 'announcement.manage', render: 'renderAnnouncements', icon: '<path d="M3 11v3a1 1 0 0 0 1 1h3l4 4V6L7 10H4a1 1 0 0 0-1 1z"/><path d="M16 9a4 4 0 0 1 0 6"/><path d="M19.5 6a8 8 0 0 1 0 12"/>' },
-    { key: 'webhooks', group: 'system', label: 'Webhookok', sub: 'Outbound integrations', perm: 'admin.webhooks.manage', render: 'renderWebhooks', icon: '<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>' },
-    { key: 'themes', group: 'system', label: 'Témák', sub: 'Colours viewers can choose', perm: 'theme.publish', render: 'renderThemes', icon: '<circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2a10 10 0 0 0 0 20 2 2 0 0 0 2-2v-1a2 2 0 0 1 2-2h2a4 4 0 0 0 4-4 10 10 0 0 0-10-11"/>' },
-    { key: 'security', group: 'system', label: 'Biztonság', sub: 'Posture & emergency controls', perm: 'security.manage', render: 'renderSecurity', icon: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>' },
+    { key: 'monitoring', group: 'system', label: 'Infrastruktúra', sub: 'A kiszolgáló állapota és szolgáltatásai', perm: 'system.metrics.view', render: 'renderMonitoring', icon: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>' },
+    { key: 'announcements', group: 'system', label: 'Hírek', sub: 'Az egész oldalra szóló üzenetek', perm: 'announcement.manage', render: 'renderAnnouncements', icon: '<path d="M3 11v3a1 1 0 0 0 1 1h3l4 4V6L7 10H4a1 1 0 0 0-1 1z"/><path d="M16 9a4 4 0 0 1 0 6"/><path d="M19.5 6a8 8 0 0 1 0 12"/>' },
+    { key: 'webhooks', group: 'system', label: 'Webhookok', sub: 'Kimenő integrációk', perm: 'admin.webhooks.manage', render: 'renderWebhooks', icon: '<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>' },
+    { key: 'themes', group: 'system', label: 'Témák', sub: 'Színek, amikből a látogatók választhatnak', perm: 'theme.publish', render: 'renderThemes', icon: '<circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2a10 10 0 0 0 0 20 2 2 0 0 0 2-2v-1a2 2 0 0 1 2-2h2a4 4 0 0 0 4-4 10 10 0 0 0-10-11"/>' },
+    { key: 'security', group: 'system', label: 'Biztonság', sub: 'Biztonsági állapot és vészkapcsolók', perm: 'security.manage', render: 'renderSecurity', icon: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>' },
     // The code audit, which is not the audit *log* in Insight above — that one
     // is what people did, this one is what is wrong with the software. It took
     // the shorter key because /admin/audit is the address it was specified at;
     // the log moved to audit-log. See YUME-AUDIT-0013.
-    { key: 'audit', group: 'system', label: 'Auditállapot', sub: 'Findings from the last code audit', perm: 'audit.read', render: 'renderAuditStatus', icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 11 2 2 4-4"/>' },
-    { key: 'config', group: 'system', label: 'Beállítások', sub: 'Feature flags & settings', perm: 'settings.system', render: 'renderConfig', icon: '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>' }
+    { key: 'audit', group: 'system', label: 'Auditállapot', sub: 'A legutóbbi kódaudit észrevételei', perm: 'audit.read', render: 'renderAuditStatus', icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 11 2 2 4-4"/>' },
+    { key: 'config', group: 'system', label: 'Beállítások', sub: 'Funkciókapcsolók és beállítások', perm: 'settings.system', render: 'renderConfig', icon: '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>' }
   ],
 
   /**
@@ -397,7 +397,7 @@ export const PageAdmin = {
   // errorOccurrences and setErrorGroupStatus were all written and none had a
   // caller, so a 500 was only ever noticed because a user complained.
 
-  ERR_STATUS: { open: ['Open', 'vis-hidden'], resolved: ['Resolved', 'vis-public'], ignored: ['Ignored', 'vis-unlisted'] },
+  ERR_STATUS: { open: ['Nyitott', 'vis-hidden'], resolved: ['Megoldva', 'vis-public'], ignored: ['Figyelmen kívül', 'vis-unlisted'] },
 
   async renderErrors (content) {
     const state = { status: 'open', open: null }
@@ -443,7 +443,7 @@ export const PageAdmin = {
       U.el('select', {
         class: 'select',
         onchange: e => { state.status = e.target.value; load() }
-      }, [['open', 'Open'], ['all', 'All'], ['resolved', 'Resolved'], ['ignored', 'Ignored']].map(([v, l]) =>
+      }, [['open', 'Nyitott'], ['all', 'Mind'], ['resolved', 'Megoldva'], ['ignored', 'Figyelmen kívül']].map(([v, l]) =>
         U.el('option', { value: v, text: l, selected: v === state.status }))),
       lookup
     ])
@@ -1569,14 +1569,14 @@ export const PageAdmin = {
     ]))
 
     form.append(U.el('div', { class: 'cat-grid' }, [
-      field('Title', input('canonical_title', { placeholder: 'Kanonikus cím' })),
-      field('Format', select('format', this.FORMATS)),
-      field('Status', select('status', this.STATUSES)),
-      field('Season', select('season', this.SEASONS, true)),
-      field('Season year', input('season_year', { type: 'number', min: 1900, max: 2100 })),
-      field('Episodes (planned)', input('episode_count', { type: 'number', min: 0 })),
-      field('Episode duration (min)', input('episode_duration', { type: 'number', min: 0 })),
-      field('Source material', input('source_material', { placeholder: 'MANGA, LIGHT_NOVEL…' }))
+      field('Cím', input('canonical_title', { placeholder: 'Kanonikus cím' })),
+      field('Formátum', select('format', this.FORMATS)),
+      field('Állapot', select('status', this.STATUSES)),
+      field('Évad', select('season', this.SEASONS, true)),
+      field('Évad éve', input('season_year', { type: 'number', min: 1900, max: 2100 })),
+      field('Epizódok (tervezett)', input('episode_count', { type: 'number', min: 0 })),
+      field('Epizódhossz (perc)', input('episode_duration', { type: 'number', min: 0 })),
+      field('Forrásanyag', input('source_material', { placeholder: 'MANGA, LIGHT_NOVEL…' }))
     ]))
     form.append(field('Synopsis', U.el('textarea', { class: 'input', rows: 4, ...(editable ? {} : { disabled: '' }), oninput: e => { draft.synopsis = e.target.value } }, [document.createTextNode(draft.synopsis)])))
     form.append(U.el('label', { class: 'cat-check' }, [
@@ -2037,13 +2037,13 @@ export const PageAdmin = {
     const backdrop = C.modalShell(`Playback — ${anime.canonical_title}, episode ${Number(ep.number)}`, [
       list,
       U.el('h4', { class: 'src-add-title', text: 'Forrás hozzáadása' }),
-      field('Type', select('kind', this.SOURCE_KINDS)),
-      field('Reference', refInput),
+      field('Típus', select('kind', this.SOURCE_KINDS)),
+      field('Hivatkozás', refInput),
       U.el('div', { class: 'src-add-grid' }, [
-        field('Provider', U.el('input', { class: 'input', placeholder: 'A látogatóknak látszik', oninput: e => { draft.provider = e.target.value } })),
-        field('Resolution', select('resolution', [['', '—'], ['2160', '2160p'], ['1080', '1080p'], ['720', '720p'], ['540', '540p'], ['480', '480p']])),
-        field('Audio', select('variant', [['', '—'], ['sub', 'Subbed'], ['dub', 'Dubbed'], ['raw', 'Raw']])),
-        field('Priority', U.el('input', { class: 'input', type: 'number', placeholder: '0', oninput: e => { draft.priority = e.target.value } }))
+        field('Szolgáltató', U.el('input', { class: 'input', placeholder: 'A látogatóknak látszik', oninput: e => { draft.provider = e.target.value } })),
+        field('Felbontás', select('resolution', [['', '—'], ['2160', '2160p'], ['1080', '1080p'], ['720', '720p'], ['540', '540p'], ['480', '480p']])),
+        field('Hang', select('variant', [['', '—'], ['sub', 'Feliratos'], ['dub', 'Szinkronos'], ['raw', 'Nyers']])),
+        field('Prioritás', U.el('input', { class: 'input', type: 'number', placeholder: '0', oninput: e => { draft.priority = e.target.value } }))
       ]),
       U.el('p', { class: 'src-note', text: 'Az alacsonyabb prioritás kerül előbb sorra. A rendszer csak a hivatkozást tárolja — a videót soha.' }),
       extras
@@ -2249,7 +2249,7 @@ export const PageAdmin = {
     content.append(
       U.el('h3', { class: 'detail-section-title', text: 'Téma hozzáadása' }),
       U.el('div', { class: 'src-add-grid' }, [
-        field('Name', U.el('input', {
+        field('Név', U.el('input', {
           class: 'input',
           placeholder: 'A látogatóknak látszik',
           oninput: e => {
@@ -2263,16 +2263,16 @@ export const PageAdmin = {
             }
           }
         })),
-        field('Slug', slugInput = U.el('input', {
+        field('Azonosító', slugInput = U.el('input', {
           class: 'input',
           placeholder: 'my-theme',
           oninput: e => { draft.slugTouched = true; draft.slug = e.target.value }
         })),
-        field('Base', U.el('select', {
+        field('Alap', U.el('select', {
           class: 'select',
           onchange: e => { draft.base = e.target.value }
         }, [U.el('option', { value: 'dark', text: 'Sötét' }), U.el('option', { value: 'light', text: 'Világos' })])),
-        field('Accent', U.el('input', {
+        field('Kiemelőszín', U.el('input', {
           class: 'theme-color-input',
           type: 'color',
           value: '#7c5cff',
@@ -3003,7 +3003,7 @@ export const PageAdmin = {
 
     charts.append(this.dashPanel({
       title: 'Felhasználói aktivitás',
-      sub: 'Sign-ins per day',
+      sub: 'Napi belépések',
       body: Charts.lines(
         [{ name: 'Active', values: data.series.users.map(r => Number(r.active)), color: 'var(--accent)' }],
         { labels, label: 'Daily active users', height: 190 }
@@ -3017,7 +3017,7 @@ export const PageAdmin = {
     ]
     charts.append(this.dashPanel({
       title: 'Tartalmi aktivitás',
-      sub: 'Rows added per day',
+      sub: 'Naponta hozzáadott sorok',
       legend: contentSeries,
       body: Charts.lines(contentSeries, { labels, label: 'Content added per day', height: 190, area: false })
     }))
@@ -3370,7 +3370,7 @@ export const PageAdmin = {
     const slices = [
       { label: 'Completed', value: done, color: 'var(--green-400)' },
       { label: 'Pending', value: pending, color: 'var(--accent)' },
-      { label: 'Failed', value: failed, color: 'var(--danger)' }
+      { label: 'Elhasalt', value: failed, color: 'var(--danger)' }
     ].filter(slice => slice.value > 0)
 
     const ring = U.el('div', { class: 'dash-ring' }, [
@@ -3384,7 +3384,7 @@ export const PageAdmin = {
     const legend = U.el('div', { class: 'dash-joblegend' }, [
       ['Completed', done, 'var(--green-400)'],
       ['Pending', pending, 'var(--accent)'],
-      ['Failed', failed, 'var(--danger)'],
+      ['Elhasalt', failed, 'var(--danger)'],
       ['Dead', dead, 'var(--fg-faint)']
     ].map(([label, value, colour]) => U.el('div', { class: 'dash-joblegend-row' }, [
       U.el('span', { class: 'dash-legend-dot', style: `background:${colour};` }),
@@ -3598,8 +3598,8 @@ export const PageAdmin = {
     return U.el('details', { class: 'aud-row' }, [
       summary,
       U.el('div', { class: 'aud-row-body' }, [
-        field('Impact', finding.impact),
-        field('Suggested fix', finding.suggestedFix),
+        field('Hatás', finding.impact),
+        field('Javasolt javítás', finding.suggestedFix),
         U.el('div', { class: 'aud-field' }, [
           U.el('span', { class: 'aud-field-label', text: 'Becsült munka' }),
           U.el('p', { class: 'aud-field-value', text: `${this.AUDIT_EFFORT[finding.effort] ?? finding.effort} (${finding.effort})` })
@@ -3702,9 +3702,9 @@ export const PageAdmin = {
     const bar = U.el('div', { class: 'admin-toolbar' }, [
       pick(state.status, [['open', 'Nyitott'], ['fixed', 'Javítva'], ['wontfix', 'Nem javítjuk'], ['', 'Bármilyen állapot']],
         v => { state.status = v }),
-      pick(state.severity, [['', 'Any severity'], ...this.AUDIT_SEVERITIES.map(s => [s, s])],
+      pick(state.severity, [['', 'Bármilyen súlyosság'], ...this.AUDIT_SEVERITIES.map(s => [s, s])],
         v => { state.severity = v }),
-      pick(state.category, [['', 'Any category'], ...this.AUDIT_CATEGORIES.map(c => [c, c])],
+      pick(state.category, [['', 'Bármilyen kategória'], ...this.AUDIT_CATEGORIES.map(c => [c, c])],
         v => { state.category = v }),
       pick(state.sort, [['severity', 'Sort: severity'], ['id', 'Sort: identifier']],
         v => { state.sort = v }),
@@ -4039,7 +4039,7 @@ export const PageAdmin = {
    * differently from the ninth from a reporter whose last eight were
    * dismissed, and that difference decides most of these.
    */
-  REPORT_TABS: [['open', 'Open'], ['reviewing', 'Reviewing'], ['resolved', 'Resolved'], ['dismissed', 'Dismissed'], ['all', 'Everything']],
+  REPORT_TABS: [['open', 'Nyitott'], ['reviewing', 'Vizsgálat alatt'], ['resolved', 'Lezárva'], ['dismissed', 'Elutasítva'], ['all', 'Mind']],
 
   async renderReports (content, state = {}) {
     const q = { status: 'open', subjectType: '', offset: 0, ...state }
