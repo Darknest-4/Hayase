@@ -898,6 +898,13 @@ export const YumeAPI = {
     // A sebességkorlátok átírása. Ugyanaz a jogosultság, ami a
     // vészkapcsolókat is nyitja, és ugyanúgy auditált.
     setRateLimits: body => YumeAPI._request('/v1/admin/security/limits', { method: 'PATCH', auth: true, body }),
+    // Mentések. Az API nem látja a kötetet — ezek a hívások kérést írnak egy
+    // táblába, amit a mentőkonténer ciklusa vesz fel.
+    backups: () => YumeAPI._request('/v1/admin/backups', { auth: true }),
+    backupNow: reason => YumeAPI._request('/v1/admin/backups', { method: 'POST', auth: true, body: { reason } }),
+    backupSchedule: body => YumeAPI._request('/v1/admin/backups/schedule', { method: 'PATCH', auth: true, body }),
+    backupVerify: body => YumeAPI._request('/v1/admin/backups/verify', { method: 'POST', auth: true, body }),
+    backupRestore: body => YumeAPI._request('/v1/admin/backups/restore', { method: 'POST', auth: true, body }),
     setControl: (key, value, reason) =>
       YumeAPI._request(`/v1/admin/security/${encodeURIComponent(key)}`, {
         method: 'POST', auth: true, body: { value, reason }

@@ -3208,6 +3208,12 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
 .meta-row-main { min-width: 0; }
 .meta-row-title { font-family: var(--font-mono); font-weight: var(--weight-semibold); color: var(--fg); }
 .meta-row-sub { color: var(--fg-faint); margin-top: var(--space-1); }
+/* A mentések listája ugyanazt a sort használja, de csak két cellája van: a
+   fájl és a gombjai. A négyoszlopos rács ilyenkor a névnek adott 1fr-t nyomja
+   össze, és 390px-en a dátum szavanként tördelődött. */
+.backup-row { grid-template-columns: minmax(0, 1fr) auto; }
+.backup-row-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; justify-content: flex-end; }
+
 /* Spans the row so a long message is readable instead of squeezed into a cell. */
 .meta-row-error { grid-column: 1 / -1; color: var(--danger); font-family: var(--font-mono); }
 
@@ -4995,6 +5001,18 @@ body.landing-route .page { padding-bottom: 0; }
    than two lines of it. Nothing scrolls sideways at any width. */
 @media (max-width: 820px) {
   .aud-summary { grid-template-columns: 1fr; }
+}
+
+/* Mentések telefonon.
+   A gombok a fájlnév alá kerülnek, nem mellé: két gomb és egy 40 karakteres
+   fájlnév egy 390px-es sorban azt jelenti, hogy valamelyik elveszti a helyét,
+   és az a fájlnév lesz — pont az, amit a visszaállítás előtt el kell olvasni. */
+@media (max-width: 560px) {
+  .backup-row { grid-template-columns: 1fr; gap: var(--space-2); }
+  .backup-row-actions { justify-content: flex-start; }
+  /* Egy oszlopban a jelvény kinyúlna a sor teljes szélességére, és egy
+     sorszélességű „kész" felirat úgy néz ki, mint egy gomb. */
+  .backup-row > .badge { justify-self: start; }
 }
 
 @media (max-width: 560px) {
