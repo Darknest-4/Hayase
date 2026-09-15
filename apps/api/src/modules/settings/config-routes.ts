@@ -38,6 +38,20 @@ async function buildPublicConfig (): Promise<unknown> {
       requireLogin: settings.require_login === true,
       registrationOpen: settings.registration_open !== false,
       /*
+       * A nyelvi házirend a példányé, nem a nézőé.
+       *
+       * `defaultLanguage` az, amit valaki kap, aki még nem választott — eddig
+       * a böngésző nyelvéből tippeltünk, ami egy magyar oldalon angolt ad egy
+       * angol rendszernyelvű magyar látogatónak.
+       *
+       * `languageSwitching` azt mondja meg, van-e egyáltalán választás.
+       * Kikapcsolva az onboarding nyelvi lépése és a beállítások
+       * nyelvválasztója eltűnik. A kliens innen tudja meg, tehát nem elrejtés:
+       * az API ugyanazt mondja, amit a felület mutat.
+       */
+      defaultLanguage: typeof settings.default_language === 'string' ? settings.default_language : 'hu',
+      languageSwitching: settings.language_switching === true,
+      /*
        * Whether this instance can actually send a reset mail.
        *
        * /forgot answers 204 whether or not the account exists — that is
@@ -148,7 +162,7 @@ export const adminConfig: FastifyPluginAsync = async fastify => {
 
   fastify.patch('/settings/:key', {
     schema: {
-      params: { type: 'object', properties: { key: { enum: ['site_name', 'tagline', 'require_login', 'registration_open', 'monitor_thresholds'] } } },
+      params: { type: 'object', properties: { key: { enum: ['site_name', 'tagline', 'require_login', 'registration_open', 'monitor_thresholds', 'default_language', 'language_switching'] } } },
       body: { type: 'object', required: ['value'], properties: { value: {} } }
     }
   }, async (request, reply) => {

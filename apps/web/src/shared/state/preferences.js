@@ -262,6 +262,11 @@ export const Prefs = {
    * confirmation for the overwhelming majority — a Hungarian browser gets
    * Hungarian already chosen and the step is one click.
    */
+  /** Választott-e már a néző, vagy csak alapértelmezést lát. */
+  hasLanguage () {
+    return this.all()['language.ui'] != null
+  },
+
   guessLanguage () {
     const tags = [window.navigator?.language, ...(window.navigator?.languages ?? [])]
     for (const tag of tags) {

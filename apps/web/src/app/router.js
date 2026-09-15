@@ -458,8 +458,28 @@ export const App = {
     else LibrarySync?.reset() // signed out → stop mirroring
   },
 
+  /**
+   * A példány nyelvi házirendjének érvényesítése.
+   *
+   * A config aszinkron érkezik, az I18n.init pedig az első festés előtt fut —
+   * különben angol villanna fel és javítaná magát. Így a házirend itt kerül
+   * rá, amint megjött, és csak akkor rajzol újra, ha tényleg változott valami.
+   */
+  applyLanguagePolicy () {
+    const site = this.config?.site
+    if (!site) return
+    const before = I18n.language()
+    if (site.languageSwitching === false) I18n.setLanguage(site.defaultLanguage ?? 'hu')
+    else if (!Prefs?.hasLanguage?.()) I18n.setLanguage(site.defaultLanguage ?? I18n.language())
+    if (I18n.language() !== before) {
+      this.applyNavLabels()
+      this.navigate()
+    }
+  },
+
   async loadConfig () {
     this.config = await YumeAPI.config()
+    this.applyLanguagePolicy()
     // The account's own profile row, which is where the picture lives. Best
     // effort: a viewer who is signed out, or an instance that cannot answer,
     // gets the initial-letter avatar rather than an error.

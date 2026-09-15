@@ -32,6 +32,7 @@ import { applyNavLabels, navigate } from '../../shared/lib/shell.js'
 import { C } from '../../shared/ui/components.js'
 import { I18n, T } from '../../shared/i18n/i18n.js'
 import { Prefs } from '../../shared/state/preferences.js'
+import { site } from '../../shared/lib/site-config.js'
 import { U } from '../../shared/lib/dom.js'
 
 export const Onboarding = {
@@ -95,12 +96,30 @@ export const Onboarding = {
 
   // ---------------------------------------------------------------- render
 
+  /**
+   * A lépések, amiket ez a példány egyáltalán megkérdez.
+   *
+   * Ha a nyelvváltás ki van kapcsolva, a nyelvi lépés nem az első kérdés,
+   * hanem nulla kérdés — megmutatni egy választást, aminek nincs
+   * következménye, rosszabb, mint meg sem kérdezni.
+   */
+  steps () {
+    const switching = site()?.languageSwitching !== false
+    return this.STEPS.filter(step => switching || step.id !== 'language')
+  },
+
   open () {
     this._open = true
 
     // Answers live here until the final save. Pre-seeded from the browser for
     // language and from the defaults for everything else.
-    const answers = { ...Prefs.all(), 'language.ui': Prefs.guessLanguage() }
+    // A példány házirendje dönti el, mi az alapértelmezés — a böngésző
+    // nyelvéből tippelni egy magyar oldalon angolt ad egy angol rendszernyelvű
+    // magyar látogatónak. A tipp csak akkor marad, ha a váltás egyáltalán él.
+    const policyLang = site()?.defaultLanguage ?? 'hu'
+    const switching = site()?.languageSwitching !== false
+    const answers = { ...Prefs.all(), 'language.ui': switching ? Prefs.guessLanguage() : policyLang }
+    const steps = this.steps()
     let step = 0
     let finished = false
 
@@ -142,7 +161,7 @@ export const Onboarding = {
 
     // ---- one step ----
     const draw = () => {
-      const spec = this.STEPS[step]
+      const spec = steps[step]
       body.replaceChildren(
         U.el('h2', { class: 'onboard-title', text: T(spec.title) }),
         U.el('p', { class: 'onboard-lead', text: T(spec.lead) }),
@@ -162,14 +181,14 @@ export const Onboarding = {
     }
 
     const paint = () => {
-      dots.replaceChildren(...this.STEPS.map((_, i) =>
+      dots.replaceChildren(...steps.map((_, i) =>
         U.el('span', { class: 'onboard-dot' + (i === step ? ' active' : '') })
       ))
       backBtn.style.visibility = step === 0 ? 'hidden' : 'visible'
       backBtn.textContent = T('Back')
-      nextBtn.textContent = step === this.STEPS.length - 1 ? T('Done') : T('Continue')
+      nextBtn.textContent = step === steps.length - 1 ? T('Done') : T('Continue')
       skipBtn.textContent = T('Later')
-      backdrop.setAttribute('aria-label', T(this.STEPS[step].title))
+      backdrop.setAttribute('aria-label', T(steps[step].title))
     }
 
     const finish = skipped => {
@@ -188,7 +207,7 @@ export const Onboarding = {
     }
 
     nextBtn.addEventListener('click', () => {
-      if (step < this.STEPS.length - 1) { step++; draw(); paint() } else finish(false)
+      if (step < steps.length - 1) { step++; draw(); paint() } else finish(false)
     })
     backBtn.addEventListener('click', () => { if (step > 0) { step--; draw(); paint() } })
     skipBtn.addEventListener('click', () => finish(true))

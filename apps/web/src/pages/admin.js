@@ -1107,6 +1107,34 @@ export const PageAdmin = {
       textSetting('tagline', 'Tagline', 'Short description used around the app.')
     )
 
+    // ---------- nyelv ----------
+    // Két külön kérdés, ezért két vezérlő: mi az alapértelmezés, és van-e
+    // egyáltalán mit választani. A váltás kikapcsolva nem elrejtés — az
+    // onboarding nyelvi lépése és a beállítások nyelvsora is eltűnik, és a
+    // /v1/config ugyanezt mondja.
+    const langSelect = P.select(
+      [['hu', 'Magyar'], ['en', 'English']],
+      {
+        value: settings.default_language ?? 'hu',
+        'aria-label': 'Alapértelmezett nyelv',
+        onchange: async e => {
+          try { await YumeAPI.admin.setSetting('default_language', e.target.value); U.toast('Alapértelmezett nyelv mentve'); await applyLive() } catch (err) { U.toast(err.message, 'error') }
+        }
+      }
+    )
+    content.append(U.el('div', { class: 'setting-card', style: 'display:flex;align-items:center;gap:var(--space-4);' }, [
+      U.el('div', { style: 'flex-grow:1;' }, [
+        U.el('h3', { style: 'margin:0;', text: 'Alapértelmezett nyelv' }),
+        U.el('p', { style: 'margin:var(--space-1) 0 0;', text: 'Ezt kapja, aki még nem választott. A böngésző nyelve nem dönt helyette.' })
+      ]),
+      langSelect
+    ]))
+    content.append(boolSetting(
+      'language_switching',
+      'Nyelvváltás engedélyezése',
+      'Kikapcsolva mindenki az alapértelmezett nyelvet kapja, és a nyelvválasztó eltűnik az onboardingból és a beállításokból.'
+    ))
+
     // ---------- feature flags ----------
     const flags = data.flags ?? []
     const groups = { page: 'Pages', feature: 'Features' }
