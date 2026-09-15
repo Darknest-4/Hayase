@@ -22,6 +22,31 @@ export const PageAdmin = {
    * are how the work actually divides: what is happening right now, who is
    * doing it, what they are doing it to, and how the machine underneath is.
    */
+  /**
+   * A jogosultságok csoportjai.
+   *
+   * A csoport neve az adatbázisban azonosító (`permissions.group`), és a
+   * szűrés is arra megy — ezért nem ott fordítjuk, hanem itt, megjelenítéskor.
+   * Ami nincs a térképen, az a saját nevén jelenik meg: egy új csoport nem
+   * tűnik el attól, hogy még nincs magyar neve.
+   */
+  PERM_GROUPS: {
+    admin: 'Adminisztráció',
+    ai: 'Mesterséges intelligencia',
+    analytics: 'Statisztika',
+    anime: 'Anime',
+    catalogue: 'Katalógus',
+    community: 'Közösség',
+    developer: 'Fejlesztői',
+    gamification: 'Játékosítás',
+    library: 'Könyvtár',
+    moderation: 'Moderálás',
+    security: 'Biztonság',
+    streaming: 'Lejátszás',
+    system: 'Rendszer',
+    users: 'Felhasználók'
+  },
+
   GROUPS: [
     { key: 'insight', label: 'Betekintés' },
     { key: 'people', label: 'Emberek' },
@@ -752,7 +777,7 @@ export const PageAdmin = {
       const head = U.el('div', { class: 'roles-panel-head' }, [
         U.el('div', {}, [
           U.el('h3', { style: 'margin:0;', text: state.role.name }),
-          U.el('p', { class: 'list-row-sub', style: 'margin:var(--space-1) 0 0;', text: isAdmin ? 'The admin role always holds every permission.' : `${state.granted.size} of ${total} permissions granted` })
+          U.el('p', { class: 'list-row-sub', style: 'margin:var(--space-1) 0 0;', text: isAdmin ? 'Az admin szerepkörnél mindig minden jogosultság megvan.' : `${total} jogosultságból ${state.granted.size} megadva` })
         ]),
         U.el('input', { class: 'input', placeholder: 'Jogosultságok szűrése…', value: state.filter, oninput: e => { state.filter = e.target.value.toLowerCase(); renderList() } })
       ])
@@ -761,9 +786,9 @@ export const PageAdmin = {
       const liveTotal = catalog.filter(p => p.status === 'active').length
       panel.append(U.el('p', { class: 'perm-legend' }, [
         U.el('span', { class: 'perm-badge perm-badge-live', text: 'LIVE' }),
-        document.createTextNode(` ${liveTotal} permissions are enforced by a route today · `),
-        U.el('span', { class: 'perm-badge perm-badge-planned', text: 'planned' }),
-        document.createTextNode(` ${total - liveTotal} are catalogued for upcoming modules (#2–#5).`)
+        document.createTextNode(` — ${liveTotal} jogosultságot érvényesít ma útvonal · `),
+        U.el('span', { class: 'perm-badge perm-badge-planned', text: 'tervezett' }),
+        document.createTextNode(` — ${total - liveTotal} későbbi modulokhoz van katalogizálva.`)
       ]))
 
       const listWrap = U.el('div', { class: 'perm-groups' })
@@ -778,10 +803,10 @@ export const PageAdmin = {
           const liveInGroup = visible.filter(p => p.status === 'active').length
           const groupBox = U.el('div', { class: 'perm-group' }, [
             U.el('div', { class: 'perm-group-head' }, [
-              U.el('span', { class: 'perm-group-title', text: group }),
-              liveInGroup ? U.el('span', { class: 'perm-live-count', title: `${liveInGroup} enforced by a route today`, text: `${liveInGroup} live` }) : null,
+              U.el('span', { class: 'perm-group-title', text: this.PERM_GROUPS[group] ?? group }),
+              liveInGroup ? U.el('span', { class: 'perm-live-count', title: `${liveInGroup} jogosultságot érvényesít ma útvonal`, text: `${liveInGroup} él` }) : null,
               U.el('span', { class: 'perm-group-count', text: `${grantedInGroup}/${visible.length}` }),
-              isAdmin ? null : U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => bulk(visible, grantedInGroup < visible.length) }, [document.createTextNode(grantedInGroup < visible.length ? 'Grant all' : 'Revoke all')])
+              isAdmin ? null : U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => bulk(visible, grantedInGroup < visible.length) }, [document.createTextNode(grantedInGroup < visible.length ? 'Mindet megadom' : 'Mindet elveszem')])
             ])
           ])
           for (const p of visible) {
