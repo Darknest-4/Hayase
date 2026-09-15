@@ -64,6 +64,12 @@ describe('a magyar felületen nincs lefordítatlan szöveg', { skip: REASON }, (
     process.env.WEB_ROOT = WEB_ROOT
     process.env.JWT_SECRET ??= 'e2e-secret-not-used-for-anything-real-0123456789'
     process.env.LOG_LEVEL ??= 'warn'
+    // Egy böngészős futás percek alatt több száz kérést küld egyetlen címről:
+    // minden oldalbetöltés lekéri a konfigurációt, a jogosultságokat és a
+    // képernyő adatait. A globális sebességkorlát (300/perc) ezt helyesen
+    // fojtja meg — és akkor a teszt egy 429-es hibalapot mér, nem a terméket.
+    // Ez már megtörtént egyszer; azóta nevesítve van a hamis pozitívok között.
+    process.env.RATE_LIMIT_MAX ??= '100000'
     const [{ buildApp }, db, { I18n }] = await Promise.all([
       import('../../apps/api/src/app.ts'),
       import('../../apps/api/src/infrastructure/database/index.ts'),

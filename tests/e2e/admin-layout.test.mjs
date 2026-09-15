@@ -60,6 +60,12 @@ describe('admin panel layout', { skip: REASON }, () => {
     process.env.WEB_ROOT = WEB_ROOT
     process.env.JWT_SECRET ??= 'e2e-secret-not-used-for-anything-real-0123456789'
     process.env.LOG_LEVEL ??= 'warn'
+    // Egy böngészős futás percek alatt több száz kérést küld egyetlen címről:
+    // minden oldalbetöltés lekéri a konfigurációt, a jogosultságokat és a
+    // képernyő adatait. A globális sebességkorlát (300/perc) ezt helyesen
+    // fojtja meg — és akkor a teszt egy 429-es hibalapot mér, nem a terméket.
+    // Ez már megtörtént egyszer; azóta nevesítve van a hamis pozitívok között.
+    process.env.RATE_LIMIT_MAX ??= '100000'
     const [{ buildApp }, db] = await Promise.all([
       import('../../apps/api/src/app.ts'),
       import('../../apps/api/src/infrastructure/database/index.ts')
@@ -118,7 +124,15 @@ describe('admin panel layout', { skip: REASON }, () => {
     await page.evaluate(tokens => localStorage.setItem('yume-auth', JSON.stringify(tokens)), account)
     await page.goto(base + '/' + route, { waitUntil: 'domcontentloaded' })
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await page.waitForSelector('.admin-nav', { timeout: 15000 })
+    // `state: 'attached'`, nem a láthatóság. Telefonszélességen a fiók
+    // szándékosan a képernyőn kívül ül, amíg valaki ki nem nyitja — ez a
+    // fiókok lényege, és a 4. eset épp ezt állítja. A Playwright viszont a
+    // viewporton kívüli elemet nem tekinti láthatónak, tehát a segédfüggvény
+    // a saját tárgyára várt volna, és időtúllépéssel halt volna el.
+    await page.waitForSelector('.admin-nav', { state: 'attached', timeout: 15000 })
+    // A panel akkor áll készen, amikor a sorai kirajzolódtak; a fiók puszta
+    // jelenléte ezt még nem jelenti.
+    await page.waitForSelector('.admin-nav-item', { state: 'attached', timeout: 15000 })
     return { page, errors }
   }
 
@@ -161,7 +175,8 @@ describe('admin panel layout', { skip: REASON }, () => {
 
     // A preference nobody has to set twice.
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await page.waitForSelector('.admin-nav')
+    await page.waitForSelector('.admin-nav', { state: 'attached' })
+    await page.waitForSelector('.admin-nav-item', { state: 'attached' })
     assert.ok(await width() < full / 2, 'the collapsed rail did not survive a reload')
     await page.close()
   })
