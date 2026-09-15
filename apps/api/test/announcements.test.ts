@@ -7,7 +7,7 @@
 
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
-import { after, before, describe, test } from 'node:test'
+import { after, before, describe, mock, test } from 'node:test'
 
 import type { FastifyInstance } from 'fastify'
 import type pg from 'pg'
@@ -113,6 +113,37 @@ describe('announcements', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
 
     const privileged = await idsFor({ authorization: `Bearer ${admin}` })
     assert.ok(privileged.includes(staff), 'somebody with the permission sees the staff message')
+  })
+
+  test('a member is still a member on a public instance', async t => {
+    /*
+     * Ez a teszt egy kapcsolóról szól, ami nem erről szólt.
+     *
+     * A fenti eset azért ment át, mert ez a példány privát volt: a
+     * `require_login` kapuja minden kérésen ellenőrizte a tokent, és ezzel
+     * mellékesen fel is ismerte a hívót. Amikor az üzemeltető nyilvánosra
+     * állította a példányt, a kapu kimaradt — és a bejelentkezett tag hirtelen
+     * névtelenné vált ezen az útvonalon, tehát eltűntek előle a tagoknak szóló
+     * üzenetek.
+     *
+     * Egy beállítás, ami a kijelentkezett látogatóról szól, nem dönthet arról,
+     * hogy kit ismerünk fel.
+     */
+    const { settings } = await import('../src/modules/settings/site-settings.ts')
+    const stub = mock.method(settings, 'requiresLogin', async () => false)
+    t.after(() => stub.mock.restore())
+
+    const members = await make('members', 'ann-public-' + randomBytes(3).toString('hex'))
+    const res = await app.inject({ url: '/v1/announcements', headers: { authorization: `Bearer ${plain}` } })
+    assert.equal(res.statusCode, 200, res.body)
+    const ids = (res.json() as { data: Array<{ id: string }> }).data.map(r => r.id)
+    assert.ok(ids.includes(members), 'a signed-in member must see members-only messages on a public instance too')
+
+    // A másik fele: token nélkül tényleg névtelen marad, kapu nélkül is.
+    const anon = await app.inject({ url: '/v1/announcements' })
+    assert.equal(anon.statusCode, 200, anon.body)
+    const anonIds = (anon.json() as { data: Array<{ id: string }> }).data.map(r => r.id)
+    assert.ok(!anonIds.includes(members), 'an anonymous caller must not see members-only messages')
   })
 
   test('dismissing is per profile and idempotent', async () => {

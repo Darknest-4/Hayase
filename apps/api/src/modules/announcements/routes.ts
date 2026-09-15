@@ -52,7 +52,7 @@ const routes: FastifyPluginAsync = async fastify => {
    * for them the client remembers locally, which is the most a browser with no
    * account can honestly do.
    */
-  fastify.get('/', async request => {
+  fastify.get('/', { onRequest: fastify.identify }, async request => {
     const profileId = (request.headers['x-profile-id'] as string | undefined) ?? null
     const signedIn = Boolean(request.user?.sub)
     const staff = signedIn && (await loadPermissions(request.user.sub)).has('announcement.manage')
