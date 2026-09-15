@@ -43,6 +43,7 @@ import catalogueRoutes from './modules/catalogue/admin-routes.ts'
 import { publicReadiness, adminMonitoring } from './modules/system/routes.ts'
 import reportRoutes from './modules/moderation/routes.ts'
 import securityRoutes from './modules/security/routes.ts'
+import backupRoutes from './modules/backups/routes.ts'
 import seoRoutes from './modules/seo/routes.ts'
 import libraryRoutes from './modules/library/routes.ts'
 import settingsRoutes from './modules/settings/routes.ts'
@@ -326,6 +327,12 @@ export async function buildApp (): Promise<FastifyInstance> {
    *   * /v1/admin/config — the switch itself. Without this the mode has no
    *     exit that is not a database console.
    *   * /v1/admin/security — the other emergency controls, for the same reason.
+   *   * /v1/admin/backups — and this one is not a convenience. A restore is
+   *     REFUSED unless the instance is in read-only mode, because a write
+   *     arriving mid-restore either vanishes or lands in a half-restored
+   *     database. Without this exemption the two rules met in the middle and
+   *     the restore button could never be pressed at all: read-only is its
+   *     precondition, and read-only is what blocked it.
    *
    * 503 with Retry-After, not 403: nothing is wrong with the caller or their
    * permissions, the instance is deliberately not accepting this right now,
@@ -336,7 +343,7 @@ export async function buildApp (): Promise<FastifyInstance> {
    * maintenance that keep the instance healthy while somebody works.
    */
   const WRITES = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
-  const readOnlyExempt = /^\/v1\/(auth|admin\/(config|security))\b/
+  const readOnlyExempt = /^\/v1\/(auth|admin\/(config|security|backups))\b/
   app.addHook('onRequest', async (request, reply) => {
     if (!WRITES.has(request.method)) return
     if (!/^\/(v1|graphql)\b/.test(request.url)) return
@@ -372,6 +379,7 @@ export async function buildApp (): Promise<FastifyInstance> {
   await app.register(roleRoutes, { prefix: '/v1/admin/roles' })
   await app.register(catalogueRoutes, { prefix: '/v1/admin/catalogue' })
   await app.register(securityRoutes, { prefix: '/v1/admin/security' })
+  await app.register(backupRoutes, { prefix: '/v1/admin/backups' })
   await app.register(publicReadiness, { prefix: '/v1/health' })
   await app.register(adminMonitoring, { prefix: '/v1/admin/monitoring' })
 

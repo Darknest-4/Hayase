@@ -106,13 +106,47 @@ if [ "$VERIFY" -eq 1 ]; then
   [ "$PERMISSIONS" -gt 0 ] || fail "the restored database has no permissions" 2
 
   log "verified: $MIGRATIONS migrations, $PERMISSIONS permissions, $USERS users"
+  VERIFIED=true
+  VERIFY_DETAIL="$MIGRATIONS migráció · $PERMISSIONS jogosultság · $USERS fiók"
 fi
+
+# ---------------------------------------------------------------- inventory
+# A panel nem látja ezt a kötetet, és nem is kell látnia. Amit lát, az ez a
+# sor: mi készült el, mekkora, és visszaállt-e.
+#
+# Az írás nem állíthatja meg a mentést. Egy elérhetetlen adatbázis a leltárt
+# elavulttá teszi; a mentés fájlja attól még ott van a lemezen, és az a fontos.
+record () {
+  psql "$DATABASE_URL" -qc "$1" >/dev/null 2>&1 || log "note: the inventory row could not be written"
+}
+
+record "INSERT INTO backups (filename, bytes, taken_at, verified, verify_detail)
+        VALUES ('$(basename "$DUMP")', $SIZE, now(), ${VERIFIED:-false}, $([ -n "${VERIFY_DETAIL:-}" ] && echo "'$VERIFY_DETAIL'" || echo NULL))
+        ON CONFLICT (filename) DO UPDATE SET
+          bytes = excluded.bytes, taken_at = excluded.taken_at,
+          verified = excluded.verified, verify_detail = excluded.verify_detail,
+          seen_at = now()" 
 
 # ---------------------------------------------------------------- prune
 # Pruning runs last and only after a verified backup exists, so a run that
 # failed can never be the reason older backups disappeared.
 PRUNED=$(find "$BACKUP_DIR" -maxdepth 1 -name 'yume-*.dump' -type f -mtime "+$KEEP_DAYS" -print -delete | wc -l | tr -d ' ')
 [ "$PRUNED" -gt 0 ] && log "pruned $PRUNED backup(s) older than $KEEP_DAYS days"
+
+# A leltár a lemezt tükrözi, nem a történelmet: ami nincs meg, azt a panel se
+# kínálja fel visszaállításra.
+EXISTING=$(find "$BACKUP_DIR" -maxdepth 1 -name 'yume-*.dump' -type f -exec basename {} \; | sed "s/^/'/;s/\$/'/" | paste -sd, -)
+[ -n "$EXISTING" ] && record "DELETE FROM backups WHERE filename NOT IN ($EXISTING)"
+
+# A lemezen lévő, de a leltárban még nem szereplő fájlok — a leltár bevezetése
+# előtt készültek. `verified = false` náluk nem azt jelenti, hogy rosszak,
+# hanem azt, hogy nem tudjuk: ez a sor a leltár tudását írja le, nem a fájlét.
+find "$BACKUP_DIR" -maxdepth 1 -name 'yume-*.dump' -type f | while read -r f; do
+  record "INSERT INTO backups (filename, bytes, taken_at, verified)
+          VALUES ('$(basename "$f")', $(stat -c %s "$f" 2>/dev/null || echo 0),
+                  to_timestamp($(stat -c %Y "$f" 2>/dev/null || echo 0)), false)
+          ON CONFLICT (filename) DO UPDATE SET bytes = excluded.bytes, seen_at = now()"
+done
 
 # ---------------------------------------------------------------- off-site
 # A backup on the same machine survives a bad deploy and a dropped table. It
