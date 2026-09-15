@@ -509,6 +509,9 @@ export const App = {
     const backdrop = document.getElementById('search-modal')
     const input = document.getElementById('search-modal-input')
     backdrop.classList.remove('hidden')
+    // A placeholder az index.html-ben angolul áll, és statikus markupot semmi
+    // nem fordít. Nyitáskor is beállítjuk, mert a nyelv közben változhatott.
+    input.placeholder = T('search.placeholder')
     input.value = ''
     document.getElementById('search-modal-results').replaceChildren(
       U.el('div', { class: 'search-modal-empty', text: T('search.prompt') })
@@ -524,6 +527,8 @@ export const App = {
     const backdrop = document.getElementById('search-modal')
     const input = document.getElementById('search-modal-input')
     const results = document.getElementById('search-modal-results')
+
+    input.placeholder = T('search.placeholder')
 
     backdrop.addEventListener('click', e => {
       if (e.target === backdrop) this.closeSearchModal()

@@ -59,8 +59,8 @@ export const PageSettings = {
 
   _card (title, desc, ...children) {
     const card = U.el('div', { class: 'setting-card' }, [
-      U.el('h2', { text: title }),
-      desc ? U.el('p', { text: desc }) : null,
+      U.el('h2', { text: T(title) }),
+      desc ? U.el('p', { text: T(desc) }) : null,
       ...children
     ])
     // The card's heading *is* the control's name — it sits two lines above it
@@ -69,7 +69,7 @@ export const PageSettings = {
     // as bare "edit text". Applied here rather than at each call site: every
     // card in this page gets it, and a new one cannot forget.
     for (const field of card.querySelectorAll('input, select, textarea')) {
-      if (!field.getAttribute('aria-label') && !field.closest('label')) field.setAttribute('aria-label', title)
+      if (!field.getAttribute('aria-label') && !field.closest('label')) field.setAttribute('aria-label', T(title))
     }
     return card
   },

@@ -136,6 +136,16 @@ I18n.register('hu', {
 
   // ---------------------------------------------------------------- keresés
   'Search anime...': 'Anime keresése…',
+  'titles tracked': 'cím követve',
+  Trending: 'Felkapott',
+  Score: 'Pontszám',
+  Newest: 'Legújabb',
+  Title: 'Cím',
+  unread: 'olvasatlan',
+  'See all →': 'Mind →',
+  'Achievements →': 'Eredmények →',
+  'Analytics →': 'Statisztika →',
+  'Schedule →': 'Menetrend →',
   Filters: 'Szűrők',
   'search, genre, season, year, format, status, sort':
     'keresés, műfaj, évad, év, formátum, állapot, rendezés',

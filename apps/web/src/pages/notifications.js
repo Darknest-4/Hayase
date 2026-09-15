@@ -70,7 +70,7 @@ export const PageNotifications = {
     const all = [...remote, ...local].sort((a, b) => b.at - a.at)
     const unread = all.filter(n => !n.read).length
 
-    root.append(C.spotlight(T('Notifications'), { subtitle: unread ? `${unread} unread` : 'All caught up' }))
+    root.append(C.spotlight(T('Notifications'), { subtitle: unread ? `${unread} ${T('unread')}` : T('All caught up') }))
 
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)

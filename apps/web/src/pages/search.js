@@ -152,7 +152,7 @@ export const PageSearch = {
       mkSelect('Year', 'year', years),
       mkSelect('Format', 'format', this.FORMATS, v => T(U.formatMap[v] ?? v)),
       mkSelect('Status', 'status', this.STATUSES, v => T(U.statusMap[v] ?? v)),
-      mkSelect('Sort', 'sort', this.SORTS.map(([v]) => v), v => this.SORTS.find(([value]) => value === v)?.[1] ?? v)
+      mkSelect('Sort', 'sort', this.SORTS.map(([v]) => v), v => T(this.SORTS.find(([value]) => value === v)?.[1] ?? v))
     ]))
 
     const results = U.el('div')

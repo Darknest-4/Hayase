@@ -15,7 +15,7 @@ const PAGE = 60
 export const PageList = {
   render (root, params) {
     const total = Object.keys(Store.list()).length
-    root.append(C.spotlight(T('Library'), { subtitle: total ? `${total} ${total === 1 ? 'title' : 'titles'} tracked` : 'Your anime, tracked' }))
+    root.append(C.spotlight(T('Library'), { subtitle: total ? `${total} ${T('titles tracked')}` : T('Your anime, tracked') }))
 
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
@@ -41,7 +41,7 @@ export const PageList = {
           class: 'tab' + (state.tab === value ? ' active' : ''),
           onclick: () => { state.shown = PAGE; state.tab = value; renderTabs(); renderContent() }
         }, [
-          document.createTextNode(label),
+          document.createTextNode(T(label)),
           U.el('span', { class: 'count', text: String(count) })
         ])
         tabsWrap.append(tab)

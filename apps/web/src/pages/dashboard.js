@@ -112,8 +112,8 @@ export const PageDashboard = {
 
   _section (title, body, opts = {}) {
     const head = U.el('div', { class: 'dash-widget-head' }, [
-      U.el('h2', { class: 'detail-section-title', style: 'margin:0;', text: title }),
-      opts.link ? U.el('a', { class: 'dash-widget-link', href: opts.link, text: opts.linkText ?? 'See all →' }) : null
+      U.el('h2', { class: 'detail-section-title', style: 'margin:0;', text: T(title) }),
+      opts.link ? U.el('a', { class: 'dash-widget-link', href: opts.link, text: T(opts.linkText ?? 'See all →') }) : null
     ])
     return U.el('section', { class: 'dash-widget' }, [head, body])
   },
