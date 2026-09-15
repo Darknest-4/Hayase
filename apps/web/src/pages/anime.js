@@ -303,7 +303,10 @@ export const PageAnime = {
       ]))
     }
 
-    const prettify = v => v ? String(v).replaceAll('_', ' ').toLowerCase().replace(/^\w/, c => c.toUpperCase()) : null
+    // ORIGINAL → „Eredeti". Az enum hat értéket vehet fel, tehát a fordítás
+    // egy kulcs, nem egy szótár: a T() a szépített alakot kapja, és ha nincs
+    // magyar sora, az angol marad — nem egy azonosító.
+    const prettify = v => v ? T(String(v).replaceAll('_', ' ').toLowerCase().replace(/^\w/, c => c.toUpperCase())) : null
     const start = media.startDate?.year
       ? [media.startDate.year, media.startDate.month, media.startDate.day].filter(Boolean).join('.')
       : null
@@ -580,7 +583,9 @@ export const PageAnime = {
     const episodes = await Catalogue.episodes(media)
 
     if (!episodes.length) {
-      wrap.replaceChildren(P.emptyState(media.status === 'NOT_YET_RELEASED' ? 'Not yet aired.' : 'No episode data available.'))
+      // T() nélkül ez a két mondat angolul jelent meg, pedig a fordítása
+      // ott volt a szótárban — a fenti ág (428. sor) fordítja, ez nem.
+      wrap.replaceChildren(P.emptyState(T(media.status === 'NOT_YET_RELEASED' ? 'Not yet aired.' : 'No episode data available.')))
       return
     }
 
