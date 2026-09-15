@@ -31,22 +31,22 @@ const CONTROLS = [
   {
     key: 'read_only',
     safe: false,
-    label: 'Read-only mode',
-    description: 'Refuse every request that writes. Reading, signing in and signing out keep working.',
+    label: 'Csak olvasható mód',
+    description: 'Minden író kérés elutasítva. Az olvasás, a belépés és a kilépés továbbra is működik.',
     enforcedBy: 'apps/api/src/app.ts — a global onRequest hook refuses POST/PUT/PATCH/DELETE with 503'
   },
   {
     key: 'external_sync_enabled',
     safe: true,
-    label: 'External metadata sync',
-    description: 'Allow metadata runs to start and to keep running. Turn off when an upstream is failing or rate-limiting us.',
+    label: 'Külső metaadat-szinkron',
+    description: 'A metaadat-futások elindulhatnak és futhatnak. Kapcsold ki, ha a forrás hibázik vagy korlátoz minket.',
     enforcedBy: 'apps/api/src/modules/metadata/worker.ts — startRun() refuses and handleMetadataJob() cancels'
   },
   {
     key: 'webhooks_enabled',
     safe: true,
-    label: 'Outbound webhooks',
-    description: 'Allow events to be queued and delivered to configured endpoints.',
+    label: 'Kimenő webhookok',
+    description: 'Az események sorba állhatnak és kimehetnek a beállított végpontokra.',
     enforcedBy: 'apps/api/src/modules/webhooks/delivery.ts — emitEvent() and deliver() both refuse'
   }
 ] as const

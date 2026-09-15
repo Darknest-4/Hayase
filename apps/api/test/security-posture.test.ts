@@ -145,7 +145,10 @@ describe('security posture', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () =>
       const { checks, summary } = await posture()
       const broken = checks.find(c => c.id === 'private-instance')
       assert.equal(broken?.verdict, 'unknown', 'a check that threw reported something other than unknown')
-      assert.match(String(broken?.found), /could not run/)
+      // A szöveg magyar, a vizsgált tulajdonság viszont nem a nyelv: az, hogy
+      // a hibaüzenet átjön, és a verdikt „unknown" marad.
+      assert.match(String(broken?.found), /nem tudott lefutni/)
+      assert.match(String(broken?.found), /the reader is broken/)
       assert.ok(summary.unknown >= 1)
       // And it costs points rather than being waved through.
       assert.ok(summary.score !== null && summary.score < 100)

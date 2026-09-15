@@ -73,12 +73,12 @@ const DEFINITIONS: Definition[] = [
       if (secret.length < 32) {
         return {
           verdict: 'warn',
-          found: `the signing secret is ${secret.length} characters`,
+          found: `az aláíró titok ${secret.length} karakter`,
           remedy: 'Legalább 32 karakter kell; az openssl rand -base64 48 hatvannégyet ad'
         }
       }
       // Never the value, never a prefix of it. The length is the finding.
-      return { verdict: 'pass', found: `a ${secret.length}-character secret, not the placeholder` }
+      return { verdict: 'pass', found: `${secret.length} karakteres titok, nem a helykitöltő` }
     }
   },
   {
@@ -122,7 +122,7 @@ const DEFINITIONS: Definition[] = [
         }
       }
       if (Array.isArray(origins) && origins.length) {
-        return { verdict: 'pass', found: `${origins.length} allowed origin${origins.length === 1 ? '' : 's'}` }
+        return { verdict: 'pass', found: `${origins.length} engedett forrás` }
       }
       return { verdict: 'pass', found: 'csak azonos forrás' }
     }
@@ -157,11 +157,11 @@ const DEFINITIONS: Definition[] = [
       if (!/^https:\/\//i.test(value)) {
         return {
           verdict: 'warn',
-          found: `set to a plain-http address (${value})`,
+          found: `sima http-címre van állítva (${value})`,
           remedy: 'A https címet használd, különben a keresők a nem biztonságosat indexelik'
         }
       }
-      return { verdict: 'pass', found: `set to ${value}` }
+      return { verdict: 'pass', found: `erre van állítva: ${value}` }
     }
   },
   {
@@ -186,11 +186,11 @@ const DEFINITIONS: Definition[] = [
       if (n > 5) {
         return {
           verdict: 'warn',
-          found: `${n} accounts hold the admin role`,
+          found: `${n} fióknak van admin szerepköre`,
           remedy: 'Bármelyikük átadhatja a példányt másnak. Nézd át őket a Felhasználók között.'
         }
       }
-      return { verdict: 'pass', found: `${n} administrator${n === 1 ? '' : 's'}` }
+      return { verdict: 'pass', found: `${n} adminisztrátor` }
     }
   },
   {
@@ -211,7 +211,7 @@ const DEFINITIONS: Definition[] = [
       if (!rows.length) return { verdict: 'pass', found: 'minden kiemelt fióknak van jelszava' }
       return {
         verdict: 'warn',
-        found: `${rows.length} privileged account${rows.length === 1 ? '' : 's'} cannot be signed in to (${rows.map(r => r.username).slice(0, 3).join(', ')})`,
+        found: `${rows.length} kiemelt fiókba nem lehet belépni (${rows.map(r => r.username).slice(0, 3).join(', ')})`,
         remedy: 'Általában teszt- vagy külső belépéses fiók. Ha egyik sem, vedd el tőle a szerepkört.'
       }
     }
@@ -233,11 +233,11 @@ const DEFINITIONS: Definition[] = [
       if (n > 5) {
         return {
           verdict: 'warn',
-          found: `${n} accounts can freeze the instance or hand out roles`,
+          found: `${n} fiók be tudja fagyasztani a példányt vagy szerepkört osztani`,
           remedy: 'Ez a két jogosultság az, amivel egy példány gazdát cserél. Tartsd szűken a kört.'
         }
       }
-      return { verdict: 'pass', found: `${n} account${n === 1 ? '' : 's'} can freeze the instance or hand out roles` }
+      return { verdict: 'pass', found: `${n} fiók tudja befagyasztani a példányt vagy szerepkört osztani` }
     }
   },
 
@@ -254,7 +254,7 @@ const DEFINITIONS: Definition[] = [
       if (!rows.length) return { verdict: 'pass', found: 'minden bekapcsolt általános webhookhoz tartozik aláíró titok' }
       return {
         verdict: 'warn',
-        found: `${rows.length} enabled webhook${rows.length === 1 ? '' : 's'} send unsigned (${rows.map(r => r.name).slice(0, 3).join(', ')})`,
+        found: `${rows.length} bekapcsolt webhook aláírás nélkül küld (${rows.map(r => r.name).slice(0, 3).join(', ')})`,
         remedy: 'Titok nélkül a fogadó nem tudja megkülönböztetni a mi kézbesítésünket bárki más POST-jától'
       }
     }
@@ -271,7 +271,7 @@ const DEFINITIONS: Definition[] = [
       if (!rows.length) return { verdict: 'pass', found: 'minden bekapcsolt webhook https-en küld' }
       return {
         verdict: 'fail',
-        found: `${rows.length} enabled webhook${rows.length === 1 ? '' : 's'} post over plain http (${rows.map(r => r.name).slice(0, 3).join(', ')})`,
+        found: `${rows.length} bekapcsolt webhook sima http-n küld (${rows.map(r => r.name).slice(0, 3).join(', ')})`,
         remedy: 'A csomag és az aláírása titkosítatlanul utazik. Válts https-re, vagy kapcsold ki a webhookot.'
       }
     }
@@ -301,7 +301,7 @@ const DEFINITIONS: Definition[] = [
       }
       return {
         verdict: 'pass',
-        found: `${requiresLogin ? 'private' : 'public'}, registration ${registrationOpen ? 'open' : 'closed'}`
+        found: `${requiresLogin ? 'privát' : 'nyilvános'}, a regisztráció ${registrationOpen ? 'nyitva' : 'zárva'}`
       }
     }
   },
@@ -325,7 +325,7 @@ const DEFINITIONS: Definition[] = [
       if (!engaged.length) return { verdict: 'pass', found: 'semmi nincs visszatartva' }
       return {
         verdict: 'warn',
-        found: `${engaged.join(', ')} — engaged deliberately, or left on after an incident?`,
+        found: `${engaged.join(', ')} — szándékosan van bekapcsolva, vagy egy incidens után maradt így?`,
         remedy: 'Oldd fel őket a Biztonság alatt, ha az ok elmúlt'
       }
     }
@@ -348,11 +348,11 @@ const DEFINITIONS: Definition[] = [
       if (n > 100) {
         return {
           verdict: 'warn',
-          found: `${n} failed sign-ins from ${ips} address${ips === 1 ? '' : 'es'} in the last hour`,
+          found: `${n} sikertelen belépés ${ips} címről az elmúlt órában`,
           remedy: 'A sebességkorlát már elutasítja őket; ha romlik, ott a csak olvasható mód'
         }
       }
-      return { verdict: 'pass', found: `${n} in the last hour` }
+      return { verdict: 'pass', found: `${n} az elmúlt órában` }
     }
   },
   {
@@ -366,9 +366,9 @@ const DEFINITIONS: Definition[] = [
         "SELECT count(*)::int AS n FROM error_groups WHERE status = 'open'")
       const n = Number(row?.n ?? 0)
       if (n > 20) {
-        return { verdict: 'warn', found: `${n} open groups`, remedy: 'Nézd át őket a Hibák alatt — egy hosszú listát senki nem olvas' }
+        return { verdict: 'warn', found: `${n} nyitott csoport`, remedy: 'Nézd át őket a Hibák alatt — egy hosszú listát senki nem olvas' }
       }
-      return { verdict: 'pass', found: `${n} open group${n === 1 ? '' : 's'}` }
+      return { verdict: 'pass', found: `${n} nyitott csoport` }
     }
   },
   {
@@ -382,9 +382,9 @@ const DEFINITIONS: Definition[] = [
         'SELECT count(*)::int AS n FROM jobs WHERE attempts >= max_attempts AND done_at IS NULL')
       const n = Number(row?.n ?? 0)
       if (n > 10) {
-        return { verdict: 'warn', found: `${n} jobs have exhausted their retries`, remedy: 'Nézd meg az Infrastruktúránál, melyik sorról van szó' }
+        return { verdict: 'warn', found: `${n} feladat elhasználta az újrapróbálkozásait`, remedy: 'Nézd meg az Infrastruktúránál, melyik sorról van szó' }
       }
-      return { verdict: 'pass', found: `${n} exhausted job${n === 1 ? '' : 's'}` }
+      return { verdict: 'pass', found: `${n} kimerült feladat` }
     }
   },
 
@@ -399,10 +399,10 @@ const DEFINITIONS: Definition[] = [
       const row = await queryOne<{ encoding: string, collate: string }>(
         `SELECT pg_encoding_to_char(encoding) AS encoding, datcollate AS collate
            FROM pg_database WHERE datname = current_database()`)
-      if (row?.encoding === 'UTF8') return { verdict: 'pass', found: `${row.encoding}, collation ${row.collate}` }
+      if (row?.encoding === 'UTF8') return { verdict: 'pass', found: `${row.encoding}, rendezés: ${row.collate}` }
       return {
         verdict: 'fail',
-        found: `encoding is ${row?.encoding ?? 'unknown'} — accented text is stored and compared wrongly`,
+        found: `a kódolás ${row?.encoding ?? 'ismeretlen'} — az ékezetes szöveg rosszul tárolódik és hasonlítódik`,
         remedy: 'Hozd létre újra az adatbázist ENCODING UTF8-cal, és állítsd vissza; lásd lib/db-encoding.ts'
       }
     }
@@ -442,7 +442,7 @@ export async function posture (): Promise<Posture> {
       // A check that throws is not a check that passed.
       result = {
         verdict: 'unknown',
-        found: `the check could not run: ${(err as Error).message.slice(0, 200)}`,
+        found: `az ellenőrzés nem tudott lefutni: ${(err as Error).message.slice(0, 200)}`,
         remedy: 'Ez önmagában is megnézendő — amit senki nem tud megmérni, azt senki nem is ismeri'
       }
     }

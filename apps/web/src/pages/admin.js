@@ -872,7 +872,7 @@ export const PageAdmin = {
             class: 'sec-state-sub',
             text: engaged.length
               ? engaged.map(k => controls.find(c => c.key === k)?.label ?? k).join(' · ')
-              : 'Nothing is being held back.'
+              : 'Semmi nincs visszatartva.'
           })
         ]))
 
@@ -921,12 +921,12 @@ export const PageAdmin = {
           summary.warn ? U.el('span', { class: 'tone-amber', text: `${summary.warn} warning` }) : null,
           summary.fail ? U.el('span', { class: 'tone-red', text: `${summary.fail} failing` }) : null,
           summary.unknown ? U.el('span', { class: 'tone-red', text: `${summary.unknown} unknown` }) : null,
-          summary.skipped ? U.el('span', { text: `${summary.skipped} not applicable` }) : null
+          summary.skipped ? U.el('span', { text: `${summary.skipped} nem alkalmazható` }) : null
         ]),
         // Said out loud, because the number is only worth what is behind it.
         U.el('p', {
           class: 'sec-score-note',
-          text: `Passing weight over applicable weight across ${checks.length} checks. Checks that cannot apply here are left out of the total.`
+          text: `A teljesített súly az alkalmazható súlyhoz mérve, ${checks.length} ellenőrzésen. Ami itt nem értelmezhető, az nem számít bele.`
         })
       ])
     ])
