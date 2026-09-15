@@ -33,6 +33,9 @@ import { YumeAPI } from '../shared/api/yume.js'
 
 export const App = {
   routes: {
+    // Saját útvonal, nem csak a kapu. Belépve is elérhető: aki már fiókkal
+    // jön, annak is joga van megnézni, mit ígér az oldal.
+    landing: (root, params) => Landing.render(root, App.config?.site, () => { App.afterAuth() }),
     home: (root, params) => PageHome.render(root, params),
     search: (root, params) => PageSearch.render(root, params),
     schedule: (root, params) => PageSchedule.render(root, params),
@@ -155,6 +158,12 @@ export const App = {
      * panel's own rail.
      */
     document.body.classList.toggle('admin-route', route === 'admin')
+    // A kezdőképernyőnek saját fejléce van, és telefonon nem kér alsó sávot:
+    // aki még nem lépett be, annak a lebegő pill öt olyan helyre mutat, ahová
+    // úgysem juthat el.
+    // A jelölést a `_renderGate` és a `landing` útvonal is átírhatja: a kapu a
+    // kezdőképernyőt rajzolja olyan útvonalon, amit még máshogy hívnak.
+    document.body.classList.toggle('landing-route', route === 'landing')
 
     document.querySelectorAll('.sidebar-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.route === route || ((route === 'anime' || route === 'watch') && btn.dataset.route === 'home'))
@@ -248,10 +257,10 @@ export const App = {
    * The immersive screens (the player, watch-together, the profile picker)
    * plus the admin panel, which brings its own frame entirely.
    */
-  CHROMELESS: ['watch', 'w2g', 'admin'],
+  CHROMELESS: ['watch', 'w2g', 'admin', 'landing'],
 
   // routes always reachable so users can configure the server / sign in
-  _gateExempt: ['settings'],
+  _gateExempt: ['settings', 'landing'],
 
   /**
    * Routes that must never be reachable by accident.
@@ -379,13 +388,13 @@ export const App = {
     const wrap = U.el('div', { class: 'gate' })
 
     if (gate.kind === 'site-login') {
-      // The whole-site gate is the landing page. A visitor who has never been
-      // here arrives at this branch, and a padlock with four words above a form
-      // told them nothing about what they were being asked to sign in to.
-      //
-      // Nothing is unlocked by this: `require_login` still decides what is
-      // reachable, and the landing page reads no catalogue data. It is the same
-      // gate with the reasons in front of the form instead of behind it.
+      // A kapu ugyanazt a kezdőképernyőt rajzolja, amit a #/landing útvonal:
+      // egy landing van, nem kettő. `require_login` továbbra is eldönti, mi
+      // érhető el — ez csak annyi, hogy a lakat helyett van mit nézni.
+      // A kapun át is a kezdőképernyő jön, tehát az alkalmazás krómja itt is
+      // lekerül — különben a lebegő pill öt olyan helyre mutatna, ahová egy
+      // kijelentkezett látogató nem juthat el.
+      document.body.classList.add('landing-route')
       Landing.render(page, this.config?.site, () => { this.afterAuth() })
       return
     } else if (gate.kind === 'auth') {

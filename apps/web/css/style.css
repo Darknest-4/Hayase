@@ -3996,6 +3996,13 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
 .adm-ann-form { display: flex; flex-direction: column; gap: var(--space-4); }
 .adm-ann-form .textarea { min-height: 8rem; }
 
+/* A kezdőképernyőnek saját fejléce van. Az alkalmazás krómja — az oldalsáv,
+   telefonon a lebegő pill — lekerül róla: kijelentkezve öt olyan helyre
+   mutatna, ahová úgysem lehet eljutni, belépve pedig két navigáció versenyezne
+   egymással ugyanazon a képernyőn. */
+body.landing-route .sidebar { display: none; }
+body.landing-route .page { padding-bottom: 0; }
+
 /* ===== responsive ===== */
 
 /* tablet: collapse the two-column detail/watch layouts */

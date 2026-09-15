@@ -607,9 +607,77 @@ a.badge:hover { color: var(--accent); border-color: var(--accent); }
 
 .landing { max-width: 62rem; margin: 0 auto; padding: 0 var(--space-4); }
 
+/* ---- fejléc ----
+   Átlátszó, amíg a lap tetején vagyunk, mert az első képernyőn a cím a
+   főszereplő és semmi nem takarhatja. Görgetés közben tömörödik be, hogy a
+   fölé csúszó tartalom ne olvadjon össze vele. */
+.lp-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+  background: transparent;
+  border-bottom: 1px solid transparent;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.lp-header-solid {
+  background: color-mix(in oklab, var(--bg) 88%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border-bottom-color: var(--border);
+}
+
+/* A márka tolja jobbra a többit. Testvér-szelektorral nem megy: a
+   link-sor telefonon `display:none`, de testvér marad, így a rá épülő
+   szabály akkor is érvényes, amikor a sor ott sincs — ettől ült a
+   profil-ikon a logó mellett. */
+.lp-brand { display: flex; align-items: center; gap: var(--space-2); text-decoration: none; color: var(--fg); margin-inline-end: auto; }
+.lp-brand-mark {
+  display: grid; place-items: center;
+  width: 1.75rem; height: 1.75rem;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: var(--weight-black);
+  text-transform: uppercase;
+}
+.lp-brand-name { font-weight: var(--weight-extrabold); letter-spacing: -.01em; }
+
+/* A középső link-sor eltűnik telefonon: a fejléc ott a márka és a fiók, más
+   semmi. A célok a lapon belül úgyis ott vannak. */
+.lp-header-nav { display: none; gap: var(--space-5); }
+.lp-header-nav a { color: var(--fg-muted); text-decoration: none; font: var(--type-caption); font-weight: var(--weight-bold); }
+.lp-header-nav a:hover { color: var(--fg); }
+@media (min-width: 720px) { .lp-header-nav { display: flex; } }
+
+/* Egyetlen gomb jobb felül. Belépve a kezdőbetű, kilépve egy ikon — ugyanaz a
+   doboz, így a fejléc nem ugrik meg belépéskor. */
+.lp-account {
+  display: grid; place-items: center;
+  width: 2.25rem; height: 2.25rem;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-raised);
+  color: var(--fg);
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.lp-account:hover { border-color: var(--accent); background: var(--accent-soft); }
+.lp-account-letter { font-weight: var(--weight-black); font-size: var(--text-sm); }
+
+/* ---- belépő ablak ---- */
+.auth-modal .dialog { width: min(24rem, calc(100vw - 2rem)); }
+.auth-body { display: flex; flex-direction: column; gap: var(--space-4); }
+.auth-fields { display: flex; flex-direction: column; gap: var(--space-3); }
+.auth-fields .input { width: 100%; }
+
 .lp-hero {
   position: relative;
-  min-height: min(82vh, 44rem);
+  min-height: min(78vh, 42rem);
   display: flex; flex-direction: column; justify-content: center;
   padding: var(--space-8) 0;
   isolation: isolate;
@@ -628,7 +696,9 @@ a.badge:hover { color: var(--accent); border-color: var(--accent); }
   letter-spacing: -0.04em;
   line-height: 1;
   color: transparent;
-  -webkit-text-stroke: 1px color-mix(in oklab, var(--fg) 7%, transparent);
+  /* 7% olvasható maradt az alcím mögött, és versenyzett vele. A vízjel
+     textúra, nem tartalom: annyira legyen ott, hogy hiányozzon, ha kiveszed. */
+  -webkit-text-stroke: 1px color-mix(in oklab, var(--fg) 4%, transparent);
   user-select: none;
   white-space: nowrap;
 }
@@ -702,8 +772,7 @@ a.badge:hover { color: var(--accent); border-color: var(--accent); }
 .lp-feature-title { font: var(--type-subtitle); margin: 0 0 var(--space-1); }
 .lp-feature-body { font: var(--type-caption); color: var(--fg-muted); margin: 0; }
 
-.lp-signin { scroll-margin-top: var(--space-5); }
-.lp-signin .setting-card { margin-inline: 0; max-width: 26rem; }
+.lp-close { scroll-margin-top: var(--space-5); }
 
 @media (prefers-reduced-motion: no-preference) {
   .landing { scroll-behavior: smooth; }
