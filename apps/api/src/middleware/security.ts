@@ -8,6 +8,7 @@ import rateLimit from '@fastify/rate-limit'
 import fp from 'fastify-plugin'
 
 import { config } from '../config.ts'
+import { isLoadTestRequest, loadTestConfigured } from './load-test.ts'
 import { settings as siteSettings, type RateLimits } from '../modules/settings/site-settings.ts'
 
 import type { FastifyRequest } from 'fastify'
@@ -86,7 +87,11 @@ export default fp(async fastify => {
     ...limit('global'),
     // Health checks must never be throttled — orchestrators poll them and a
     // 429 would be read as the service being down.
-    allowList: request => request.url.startsWith('/v1/health'),
+    //
+    // A második kivétel a terheléses mérésé, és három feltételhez kötött
+    // (kulcs + fejléc + forráscím); kulcs nélkül nem létezik. Enélkül egy
+    // mérés a korlátot méri, nem a terméket — lásd middleware/load-test.ts.
+    allowList: request => request.url.startsWith('/v1/health') || isLoadTestRequest(request),
     // trustProxy is on, so request.ip is the real client behind a reverse proxy
     keyGenerator: request => request.ip,
     // match the app's RFC 9457 error convention
@@ -97,6 +102,17 @@ export default fp(async fastify => {
       detail: `Rate limit exceeded — retry in ${context.after}.`
     })
   })
+
+  // Egy bekapcsolva felejtett mentesség csendben rossz: semmi nem hibázik,
+  // csak egy cím korlát nélkül jár. Induláskor kimondjuk, és a biztonsági
+  // állapotjelentés is jelzi.
+  if (loadTestConfigured()) {
+    fastify.log.warn(
+      { ips: config.loadTestIps },
+      'LOAD_TEST_KEY is set: the listed sources bypass rate limiting when they send the key. ' +
+      'Unset it when the measurement is over.'
+    )
+  }
 
   fastify.addHook('onSend', async (request, reply, payload) => {
     for (const [header, value] of Object.entries(HEADERS)) reply.header(header, value)

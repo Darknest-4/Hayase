@@ -22,6 +22,7 @@
 
 import { config } from '../../config.ts'
 import { query, queryOne } from '../../infrastructure/database/index.ts'
+import { loadTestConfigured } from '../../middleware/load-test.ts'
 import { settings } from '../settings/site-settings.ts'
 
 export type Verdict = 'pass' | 'warn' | 'fail' | 'skipped' | 'unknown'
@@ -302,6 +303,25 @@ const DEFINITIONS: Definition[] = [
       return {
         verdict: 'pass',
         found: `${requiresLogin ? 'privát' : 'nyilvános'}, a regisztráció ${registrationOpen ? 'nyitva' : 'zárva'}`
+      }
+    }
+  },
+  {
+    id: 'load-test-exemption',
+    group: 'Kitettség',
+    title: 'Nincs bekapcsolva felejtett terhelésmérő kivétel',
+    looksAt: 'LOAD_TEST_KEY, LOAD_TEST_IPS',
+    weight: 'normal',
+    run: async () => {
+      if (!loadTestConfigured()) {
+        return { verdict: 'pass', found: 'nincs beállítva — a sebességkorlát mindenkire érvényes' }
+      }
+      // Nem „fail": egy mérés közben ennek pontosan így kell kinéznie. De
+      // látszania kell, mert utána nem kell, és semmi nem hibázik tőle.
+      return {
+        verdict: 'warn',
+        found: `beállítva — ${config.loadTestIps.join(', ')} a kulccsal együtt mentesül a sebességkorlát alól`,
+        remedy: 'Ha a mérés lezárult, vedd ki a LOAD_TEST_KEY-t a környezetből és indítsd újra az appot'
       }
     }
   },
