@@ -52,7 +52,7 @@ export const PageSearch = {
         // The visible <label> beside this is a sibling with no `for`, so it
         // names the control for a sighted reader and for nobody else. Rather
         // than mint ids for six selects, the name is put on the control.
-        'aria-label': label,
+        'aria-label': T(label),
         onchange: e => { state[key] = e.target.value; reset() }
       }, [
         U.el('option', { value: '', text: T('Any') }),
@@ -62,7 +62,7 @@ export const PageSearch = {
           ...(String(value) === String(state[key]) ? { selected: '' } : {})
         }))
       ])
-      return U.el('div', { class: 'filter-group' }, [U.el('label', { text: label }), select])
+      return U.el('div', { class: 'filter-group' }, [U.el('label', { text: T(label) }), select])
     }
 
     const searchInput = U.el('input', {
@@ -147,10 +147,10 @@ export const PageSearch = {
       // what it is now.
       imageOn ? U.el('div', { class: 'filter-group' }, [U.el('label', { text: T('By image') }), imageBtn]) : null,
       imageOn ? filePick : null,
-      mkSelect('Genre', 'genre', this.GENRES),
-      mkSelect('Season', 'season', Object.keys(U.seasonMap), v => U.seasonMap[v]),
+      mkSelect('Genre', 'genre', this.GENRES, v => T(v)),
+      mkSelect('Season', 'season', Object.keys(U.seasonMap), v => T(U.seasonMap[v])),
       mkSelect('Year', 'year', years),
-      mkSelect('Format', 'format', this.FORMATS, v => U.formatMap[v]),
+      mkSelect('Format', 'format', this.FORMATS, v => T(U.formatMap[v] ?? v)),
       mkSelect('Status', 'status', this.STATUSES, v => T(U.statusMap[v] ?? v)),
       mkSelect('Sort', 'sort', this.SORTS.map(([v]) => v), v => this.SORTS.find(([value]) => value === v)?.[1] ?? v)
     ]))

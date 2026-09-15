@@ -64,8 +64,8 @@ export const PageAnime = {
     const entry = Store.entry(media.id)
     const count = media.episodes ?? (media.nextAiringEpisode ? media.nextAiringEpisode.episode - 1 : null)
     const ofChip = entry?.progress != null && count
-      ? `${entry.progress} of ${count}`
-      : count ? `${count} episodes` : media.duration ? `${media.duration} min` : 'N/A'
+      ? `${entry.progress} / ${count}`
+      : count ? `${count} ${T('episodes')}` : media.duration ? `${media.duration} ${T('min')}` : '—'
 
     const chips = U.el('div', { class: 'chip-row' }, [
       U.el('span', { class: 'chip', text: ofChip }),
@@ -149,10 +149,10 @@ export const PageAnime = {
     const resumeAt = resumeNextEp || resumeCurEp
     const estTotal = (media.duration || 24) * 60
 
-    const playLabel = progress || resumeAt ? 'Continue Watching' : 'Start Watching'
+    const playLabel = progress || resumeAt ? T('Continue Watching') : T('Start Watching')
     const playSub = resumeAt
-      ? `Episode ${targetEp} • ${U.fmtTime(resumeAt)} / ${U.fmtTime(estTotal)}`
-      : `Episode ${targetEp}`
+      ? `${T('Episode')} ${targetEp} • ${U.fmtTime(resumeAt)} / ${U.fmtTime(estTotal)}`
+      : `${T('Episode')} ${targetEp}`
 
     const actions = U.el('div', { class: 'detail-actions-row' })
     const playGroup = U.el('div', { class: 'play-group' }, [
@@ -241,7 +241,9 @@ export const PageAnime = {
     // ---- genre chips row (tags live in the sidebar card) ----
     const chipScroll = U.el('div', { class: 'chips-scroll' })
     for (const genre of media.genres ?? []) {
-      chipScroll.append(U.el('a', { class: 'genre-chip', href: `#/search?genre=${encodeURIComponent(genre)}`, text: genre }))
+      // A felirat fordul, a hivatkozás értéke nem: a keresés az angol nevet
+      // várja, mert a katalógus is azt tárolja.
+      chipScroll.append(U.el('a', { class: 'genre-chip', href: `#/search?genre=${encodeURIComponent(genre)}`, text: T(genre) }))
     }
     if (chipScroll.children.length) wrap.append(chipScroll)
 
@@ -253,7 +255,7 @@ export const PageAnime = {
       comments: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
       recommendations: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>'
     }
-    const tabDefs = [['episodes', 'Episodes'], ['relations', 'Relations'], ['characters', 'Characters'], ['comments', 'Comments'], ['recommendations', 'Recommendations']]
+    const tabDefs = [['episodes', T('Episodes')], ['relations', T('Relations')], ['characters', T('Characters')], ['comments', T('Comments')], ['recommendations', T('Recommendations')]]
     const tabBar = U.el('div', { class: 'dtabs' })
     const tabContent = U.el('div', { class: 'dtab-content' })
     const rendered = {}
@@ -313,14 +315,14 @@ export const PageAnime = {
     // the chips keep the facts you navigate by and this panel keeps the ones
     // they do not mention.
     const rows = [
-      ['Duration', media.duration ? `${media.duration} min` : null],
-      ['Start date', start],
-      ['Studio', media.studios?.nodes?.[0]?.name],
-      ['Source', prettify(media.source)],
-      ['Country', media.countryOfOrigin],
-      ['Mean score', media.meanScore ? media.meanScore + '%' : null],
-      ['Popularity', media.popularity ? media.popularity.toLocaleString(I18n.locale()) : null],
-      ['Favourites', media.favourites ? media.favourites.toLocaleString(I18n.locale()) : null]
+      [T('Duration'), media.duration ? `${media.duration} ${T('min')}` : null],
+      [T('Start date'), start],
+      [T('Studio'), media.studios?.nodes?.[0]?.name],
+      [T('Source'), prettify(media.source)],
+      [T('Country'), media.countryOfOrigin],
+      [T('Mean score'), media.meanScore ? media.meanScore + '%' : null],
+      [T('Popularity'), media.popularity ? media.popularity.toLocaleString(I18n.locale()) : null],
+      [T('Favourites'), media.favourites ? media.favourites.toLocaleString(I18n.locale()) : null]
     ].filter(([, v]) => v)
 
     side.append(U.el('div', { class: 'side-card' }, [

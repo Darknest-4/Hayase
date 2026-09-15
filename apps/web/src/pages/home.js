@@ -164,7 +164,7 @@ export const PageHome = {
         U.el('p', { class: 'hero-desc', text: U.plainDesc(media.description) }),
         (media.genres ?? []).length
           ? U.el('div', { class: 'badges', style: 'margin-bottom:var(--space-4);' }, media.genres.slice(0, 4).map(g =>
-            U.el('a', { class: 'badge', href: `#/search?genre=${encodeURIComponent(g)}`, text: g })))
+            U.el('a', { class: 'badge', href: `#/search?genre=${encodeURIComponent(g)}`, text: T(g) })))
           : null,
         U.el('div', { class: 'hero-buttons' }, [
           U.el('a', { class: 'btn btn-primary', href: `#/watch/${media.id}:${(Store.entry(media.id)?.progress ?? 0) + 1}` }, [U.svg(C.PLAY, 15), document.createTextNode(T('Watch now'))]),
