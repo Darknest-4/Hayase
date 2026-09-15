@@ -295,6 +295,30 @@ body::before {
 }
 .card-score svg { width: .62rem; height: .62rem; fill: var(--accent); stroke: var(--accent); }
 
+/* „Adásban" — ugyanaz a lebegő pirula, mint a pontszámé, az átellenes
+   sarokban. Csak a futó címeken jelenik meg, tehát nem zaj: ahol ott van, ott
+   tényleg mond valamit. */
+.card-cover .card-airing {
+  position: absolute;
+  top: .5rem; right: .5rem;
+  display: flex; align-items: center; gap: var(--space-1);
+  padding: .15rem var(--space-2);
+  background: color-mix(in oklab, var(--bg) 78%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--fg);
+  line-height: 1.4;
+}
+.card-airing-dot {
+  width: .35rem; height: .35rem;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
 .card-progress {
   position: absolute;
   bottom: 0; left: 0; right: 0;

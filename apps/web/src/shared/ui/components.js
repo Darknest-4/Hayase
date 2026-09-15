@@ -26,6 +26,18 @@ export const C = {
 
     if (entry) cover.append(U.el('div', { class: `card-status-dot dot-${entry.status}` }))
 
+    // Fut-e még. A borítóról ez nem derül ki, és a katalógusban ez az egyetlen
+    // olyan tény, ami magától változik: egy befejezett sorozat holnap is
+    // befejezett, egy futó holnap egy résszel hosszabb. A többi állapotot nem
+    // írjuk ki — a „Befejezett" minden második kártyán ott lenne, és nem
+    // mondana semmit.
+    if (media.status === 'RELEASING') {
+      cover.append(U.el('div', { class: 'card-airing' }, [
+        U.el('span', { class: 'card-airing-dot' }),
+        U.el('span', { text: T(U.statusMap.RELEASING) })
+      ]))
+    }
+
     if (media.averageScore) {
       cover.append(U.el('div', { class: 'card-score' }, [
         U.svg(this.HEART, 11),
