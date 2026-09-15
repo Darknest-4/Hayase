@@ -71,6 +71,8 @@ I18n.register('hu', {
   // ---------------------------------------------------------------- lejátszás
   'Watch now': 'Megnézem',
   'Read more': 'Tudj meg többet',
+  soon: 'hamarosan',
+  'just now': 'az imént',
   'Start Watching': 'Megnézem',
   Play: 'Lejátszás',
   'Play next': 'Következő',

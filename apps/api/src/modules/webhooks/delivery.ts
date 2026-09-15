@@ -298,6 +298,58 @@ interface Envelope {
   links?: Record<string, string> | undefined
 }
 
+/**
+ * Mennyit kért a fogadó, mielőtt újra hívnánk.
+ *
+ * A `Retry-After` másodpercben szabvány; a Discord emellett tizedmásodperc
+ * pontossággal küldi az `X-RateLimit-Reset-After`-t, ami pontosabb. A
+ * felső korlát azért van, mert egy elgépelt fejléc ne tudjon egy kézbesítést
+ * a jövő hétre tolni.
+ */
+function readRetryAfter (res: Response): number {
+  // `Number(null)` nulla, nem NaN — a hiányzó fejléc ezért „várj nulla
+  // ezredmásodpercet"-nek olvasódott, ami pont az a szoros újrapróbálkozás,
+  // ami ellen ez az egész készült. A hiányt külön kell nézni az értéktől.
+  const seconds = (name: string): number | null => {
+    const raw = res.headers.get(name)
+    if (raw === null || raw.trim() === '') return null
+    const value = Number(raw)
+    return Number.isFinite(value) && value >= 0 ? value : null
+  }
+
+  const discord = seconds('x-ratelimit-reset-after')
+  if (discord !== null) return Math.min(300_000, Math.round(discord * 1000))
+  const standard = seconds('retry-after')
+  if (standard !== null) return Math.min(300_000, Math.round(standard * 1000))
+  // Semmit nem mondott: egy másodperc bőven elég a Discord ablakához, és
+  // rövidebb, mint bármi, amit a sor magától várna.
+  return 1000
+}
+
+/**
+ * Távolságtartás egy végpont felé.
+ *
+ * Folyamaton belüli, mert a kézbesítést egyetlen worker végzi. Nem korlát,
+ * csak annyi, hogy két csomag ne ugyanabban az ezredmásodpercben érkezzen —
+ * a naplóban pontosan ez látszott: hat kézbesítés egy időbélyegen, öt közülük
+ * 429.
+ */
+const PACE_MS = 400
+const nextSlot = new Map<string, number>()
+
+async function pace (webhookId: string): Promise<void> {
+  const now = Date.now()
+  const earliest = nextSlot.get(webhookId) ?? 0
+  const wait = Math.max(0, earliest - now)
+  nextSlot.set(webhookId, Math.max(now, earliest) + PACE_MS)
+  // A térkép nem nőhet korlátlanul: a webhookok száma kicsi, de egy törölt
+  // sor kulcsa itt maradna örökre.
+  if (nextSlot.size > 100) {
+    for (const [key, at] of nextSlot) if (at < now) nextSlot.delete(key)
+  }
+  if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait))
+}
+
 export async function deliver (
   webhookId: string,
   event: WebhookEvent,
@@ -386,6 +438,13 @@ export async function deliver (
     throw new Error(`webhook ${hook.id} refused: ${verdict.reason}`)
   }
 
+  // Egy sorban a végpont felé: a Discord webhookonként nagyjából öt kérést
+  // enged két másodpercenként, és a katalógus egy importja ennél sokkal
+  // gyorsabban termel eseményt. A távolságtartás itt olcsóbb, mint 429-et
+  // gyűjteni és utána újrapróbálni.
+  await pace(hook.id)
+
+  let retryAfterMs: number | null = null
   try {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 10_000)
@@ -393,6 +452,7 @@ export async function deliver (
     clearTimeout(timer)
     statusCode = res.status
     if (!res.ok) error = `HTTP ${res.status}`
+    if (res.status === 429) retryAfterMs = readRetryAfter(res)
   } catch (err) {
     error = (err as Error).message.slice(0, 500)
   }
@@ -402,6 +462,25 @@ export async function deliver (
      VALUES ($1, $2, $3, $4, $5, $6)`,
     [hook.id, event, envelope, statusCode, error, Date.now() - started]
   )
+
+  /*
+   * A 429 nem a végpont hibája, hanem a miénk.
+   *
+   * Eddig ugyanúgy számított, mint egy halott URL: húsz egymás utáni után a
+   * webhook kikapcsolta magát. Egy importot vagy egy tesztfutást követő
+   * eseményroham tehát kikapcsolta a működő botot — és a napló ezt „hibaként"
+   * mutatta, miközben a Discord csak annyit mondott, hogy lassítsunk.
+   *
+   * Így: a sikertelenség-számláló nem nő, a kézbesítés viszont naplózódik, és
+   * a sor pontosan annyit vár, amennyit a Discord kért.
+   */
+  if (retryAfterMs !== null) {
+    await query('UPDATE webhooks SET last_error = $2 WHERE id = $1',
+      [hook.id, `rate limited, retrying in ${Math.ceil(retryAfterMs / 1000)}s`])
+    const throttled = new Error(`webhook ${hook.id}: rate limited`) as Error & { retryAfterMs: number }
+    throttled.retryAfterMs = retryAfterMs
+    throw throttled
+  }
 
   if (error) {
     // consecutive failures auto-disable at 20 so dead endpoints stop burning retries
