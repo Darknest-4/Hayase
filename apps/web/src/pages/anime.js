@@ -609,7 +609,9 @@ export const PageAnime = {
       const head = U.el('div', { class: 'eplist-head' }, [
         U.el('div', { class: 'eplist-title' }, [
           U.el('b', { text: T('Episodes') }),
-          U.el('span', { text: `${episodes.length} episodes${media.duration ? ` • ${media.duration} min each` : ''}` })
+          U.el('span', {
+            text: `${episodes.length} ${T('episodes')}${media.duration ? ` • ${T('each')} ${media.duration} ${T('min')}` : ''}`
+          })
         ])
       ])
       if (episodes.length > 30) {

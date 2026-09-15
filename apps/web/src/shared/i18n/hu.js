@@ -59,6 +59,7 @@ I18n.register('hu', {
   min: 'perc',
   episodes: 'epizód',
   ep: 'rész',
+  each: 'egyenként',
   Tags: 'Címkék',
   Status: 'Állapot',
   Content: 'Tartalom',
