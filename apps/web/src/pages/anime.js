@@ -70,7 +70,7 @@ export const PageAnime = {
     const chips = U.el('div', { class: 'chip-row' }, [
       U.el('span', { class: 'chip', text: ofChip }),
       U.el('a', { class: 'chip', href: `#/search?format=${media.format ?? ''}`, text: U.format(media) }),
-      U.el('a', { class: 'chip', href: `#/search?status=${media.status ?? ''}`, text: U.statusMap[media.status] ?? '' }),
+      U.el('a', { class: 'chip', href: `#/search?status=${media.status ?? ''}`, text: U.status(media) }),
       U.seasonYear(media) ? U.el('a', { class: 'chip', href: `#/search?season=${media.season ?? ''}&year=${media.seasonYear ?? ''}`, text: String(U.seasonYear(media)) }) : null,
       media.averageScore ? U.el('span', { class: 'chip', style: `background:${ratingColor(media.averageScore)};color:white;`, text: media.averageScore + '%' }) : null,
       media.nextAiringEpisode?.airingAt

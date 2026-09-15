@@ -130,6 +130,12 @@ body::before {
 }
 .sidebar-spacer { flex-grow: 1; }
 
+/* A feliratkapcsoló csak a mobil pirulán létezik — ott ő nyitja és csukja a
+   címkéket. Nagyobb kijelzőn soha nem volt rá szabály, így alapértelmezett
+   gombként rajzolódott ki: egy világosszürke sáv a menü alján, kérdőjeles
+   szereppel. Ott nincs mit kapcsolgatni, tehát nincs is ott. */
+.nav-collapse { display: none; }
+
 /* ===== main page area ===== */
 
 .page {

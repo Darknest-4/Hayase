@@ -36,6 +36,7 @@ I18n.register('hu', {
   Comments: 'Hozzászólások',
   Episodes: 'Epizódok',
   episodes: 'epizód',
+  ep: 'rész',
   Tags: 'Címkék',
   Status: 'Állapot',
   Content: 'Tartalom',
@@ -335,6 +336,20 @@ I18n.register('hu', {
   'Nothing to show yet — add anime to your library and your dashboard fills in automatically.':
     'Még nincs mit mutatni — tegyél animéket a könyvtáradba, és az áttekintő magától megtelik.',
   'Browse the catalogue': 'Böngészés a katalógusban',
+  // Formátumok és állapotok. A katalógus enumjai angolul jönnek, a felület
+  // ezeken keresztül fordítja őket (lásd U.format / U.status / U.seasonYear).
+  Movie: 'Film',
+  'TV Short': 'Rövid TV',
+  Special: 'Speciális',
+  Music: 'Zene',
+  Finished: 'Befejezett',
+  'Not yet aired': 'Még nem indult',
+  Cancelled: 'Törölve',
+  Hiatus: 'Szünetel',
+  Winter: 'Tél',
+  Spring: 'Tavasz',
+  Summer: 'Nyár',
+  Fall: 'Ősz',
   'No notifications yet. Add airing anime to your library and they show up here.':
     'Még nincs értesítés. Tegyél futó sorozatokat a könyvtáradba, és itt fognak megjelenni.',
   'Nothing in this filter.': 'Ebben a szűrőben nincs semmi.',

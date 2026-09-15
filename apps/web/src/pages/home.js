@@ -135,8 +135,8 @@ export const PageHome = {
     const meta = [
       U.format(media),
       U.seasonYear(media),
-      media.episodes ? `${media.episodes} Episodes` : null,
-      U.statusMap[media.status]
+      media.episodes ? `${media.episodes} ${T('episodes')}` : null,
+      U.status(media)
     ].filter(Boolean)
 
     const metaRow = U.el('div', { class: 'hero-meta' })

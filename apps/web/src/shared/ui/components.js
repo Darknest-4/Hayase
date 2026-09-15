@@ -55,7 +55,7 @@ export const C = {
     // play affordance revealed on hover
     cover.append(U.el('div', { class: 'card-play' }, [U.svg(this.PLAY, 18)]))
 
-    const sub = subline ?? [U.format(media), U.seasonYear(media), media.episodes ? `${media.episodes} ep` : null].filter(Boolean).join(' • ')
+    const sub = subline ?? [U.format(media), U.seasonYear(media), media.episodes ? `${media.episodes} ${T('ep')}` : null].filter(Boolean).join(' • ')
 
     const card = U.el('a', { class: 'card', href: `#/anime/${media.id}` }, [
       cover,
@@ -277,7 +277,7 @@ export const C = {
 
     // meta chips instead of a plain dot-row
     const metaChips = U.el('div', { class: 'preview-chips' },
-      [U.format(media), U.seasonYear(media), media.episodes ? media.episodes + ' ep' : null, U.statusMap[media.status]]
+      [U.format(media), U.seasonYear(media), media.episodes ? `${media.episodes} ${T('ep')}` : null, U.status(media)]
         .filter(Boolean).map(t => U.el('span', { class: 'preview-chip', text: t })))
 
     // actions: Play + add-to-list + favourite

@@ -151,7 +151,7 @@ export const PageSearch = {
       mkSelect('Season', 'season', Object.keys(U.seasonMap), v => U.seasonMap[v]),
       mkSelect('Year', 'year', years),
       mkSelect('Format', 'format', this.FORMATS, v => U.formatMap[v]),
-      mkSelect('Status', 'status', this.STATUSES, v => U.statusMap[v]),
+      mkSelect('Status', 'status', this.STATUSES, v => T(U.statusMap[v] ?? v)),
       mkSelect('Sort', 'sort', this.SORTS.map(([v]) => v), v => this.SORTS.find(([value]) => value === v)?.[1] ?? v)
     ]))
 

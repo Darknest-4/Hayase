@@ -110,13 +110,22 @@ export const U = {
 
   seasonMap: { WINTER: 'Winter', SPRING: 'Spring', SUMMER: 'Summer', FALL: 'Fall' },
 
+  // Ezek a térképek angolul tartják a kanonikus szöveget, a megjelenítés
+  // pedig lefordítja. Eddig nem fordították le sehol: a kártyák és a hero
+  // „Movie · Fall 2024 · Finished"-et írtak ki magyar felületen is.
   format (media) {
-    return this.formatMap[media?.format] ?? media?.format ?? ''
+    const label = this.formatMap[media?.format] ?? media?.format ?? ''
+    return label ? I18n.t(label) : ''
+  },
+
+  status (media) {
+    const label = this.statusMap[media?.status] ?? ''
+    return label ? I18n.t(label) : ''
   },
 
   seasonYear (media) {
     if (!media?.season || !media?.seasonYear) return media?.startDate?.year ?? ''
-    return `${this.seasonMap[media.season]} ${media.seasonYear}`
+    return `${I18n.t(this.seasonMap[media.season])} ${media.seasonYear}`
   },
 
   episodeCount (media) {

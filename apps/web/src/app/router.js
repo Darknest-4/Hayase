@@ -576,7 +576,7 @@ export const App = {
             U.el('img', { src: m.coverImage?.large ?? '', alt: '' }),
             U.el('div', {}, [
               U.el('div', { class: 'search-result-title', text: U.title(m) }),
-              U.el('div', { class: 'search-result-sub', text: [U.format(m), U.seasonYear(m), m.episodes ? `${m.episodes} ep` : null].filter(Boolean).join(' • ') })
+              U.el('div', { class: 'search-result-sub', text: [U.format(m), U.seasonYear(m), m.episodes ? `${m.episodes} ${T('ep')}` : null].filter(Boolean).join(' • ') })
             ])
           ]))
         }
@@ -826,8 +826,11 @@ export const App = {
   applyNavLabels () {
     document.querySelectorAll('.sidebar-btn').forEach(btn => {
       // Az első span nem mindig a felirat: a profilgombon az avatar áll elöl,
-      // és amíg ezt kerestük, a gomb tooltipje a rókaemodzsi lett.
-      const span = btn.querySelector('span:not(.sidebar-avatar):not(.notif-badge)')
+      // és amíg `querySelector('span')`-t kerestünk, a gomb tooltipje a
+      // rókaemodzsi lett. A `:scope >` sem díszítés — az avatar maga is egy
+      // spant tartalmaz (C.avatar rajzolja bele), ami fabejárásban előbb jön,
+      // mint a felirat, tehát egy mély keresés a *képbe* írná a szöveget.
+      const span = btn.querySelector(':scope > span:not(.sidebar-avatar):not(.notif-badge)')
       const key = btn.id === 'nav-more'
         ? 'more'
         : btn.id === 'profile-switcher' ? 'profile' : btn.dataset.route
