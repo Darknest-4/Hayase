@@ -7,6 +7,7 @@ import { recordError } from '../errors/reporting.ts'
 import { drain, enqueue, runWorker } from '../infrastructure/queue/index.ts'
 import { handleWebhookJob } from '../modules/webhooks/delivery.ts'
 import { announceDeadJobs } from '../modules/webhooks/subscriptions.ts'
+import { handleAnalyticsJob } from '../modules/analytics/worker.ts'
 import { handleFounderJob } from '../modules/library/founder.ts'
 import { handleImportJob } from '../integrations/anilist/importer.ts'
 import { handleMaintenanceJob } from '../infrastructure/maintenance.ts'
@@ -29,7 +30,10 @@ const handlers = {
   webhook: handleWebhookJob,
   // Fills the first account's library with the whole catalogue. Enqueued once,
   // when the bootstrap promotes that account; see modules/library/founder.ts.
-  founder: handleFounderJob
+  founder: handleFounderJob,
+  // Napi összesítők a látogatottsághoz. Külön sor, mert a teljes napra fut és
+  // percek lehet — a `stats` egy profilra fut és másodpercek.
+  analytics: handleAnalyticsJob
 } as const
 
 async function scheduleRecurring (): Promise<void> {
@@ -38,6 +42,14 @@ async function scheduleRecurring (): Promise<void> {
   const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
   await enqueue('stats', { rollupDay: yesterday, dedupe: `rollup:${yesterday}` })
   await enqueue('stats', { dailyDigest: true, dedupe: `digest:${yesterday}` })
+
+  // A látogatottság mai összesítője óránként frissül, hogy a panel ne legyen
+  // egy napot késésben; a tegnapi egyszer, véglegesítve. Mindkettő
+  // idempotens, tehát egy kétszer lefutott óra nem duplázza a számokat.
+  const today = new Date().toISOString().slice(0, 10)
+  await enqueue('analytics', { day: today, dedupe: `analytics:${today}` })
+  await enqueue('analytics', { day: yesterday, dedupe: `analytics:${yesterday}` })
+  await enqueue('analytics', { prune: true, dedupe: `analytics-prune:${today}` })
 }
 
 /**

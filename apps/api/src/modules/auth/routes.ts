@@ -10,6 +10,8 @@
 // and what that decision touches in the database has a name.
 
 import { createHash, randomBytes } from 'node:crypto'
+import { fromRequest, recordAccountEvent } from '../analytics/account-events.ts'
+import { shapeOf } from '../analytics/visitor.ts'
 
 import { config } from '../../config.ts'
 import { AUTH_LIMIT, REFRESH_LIMIT } from '../../middleware/security.ts'
@@ -102,6 +104,16 @@ const routes: FastifyPluginAsync = async fastify => {
     maxAge: config.refreshTokenTtlDays * 86_400
   }
 
+  /**
+   * A `devices.platform` oszlop hét értéket enged meg (CHECK), és a
+   * böngészőazonosítóból kiolvasott oprendszernevek nem ezek. A leképezés
+   * itt áll, egy helyen — a 'web' az, ami mindig igaz, ha nem tudunk jobbat.
+   */
+  const DEVICE_PLATFORMS: Record<string, string> = {
+    Windows: 'windows', macOS: 'macos', Linux: 'linux', ChromeOS: 'linux',
+    Android: 'android', iOS: 'ios', iPadOS: 'ios'
+  }
+
   async function issueTokens (
     user: { id: string, username: string, token_version?: number },
     reply: FastifyReply,
@@ -111,12 +123,37 @@ const routes: FastifyPluginAsync = async fastify => {
     const refreshToken = randomBytes(32).toString('base64url')
     const expiresAt = new Date(Date.now() + config.refreshTokenTtlDays * 86_400_000)
 
+    /*
+     * Melyik eszközről.
+     *
+     * A `devices` tábla és a `sessions.device_id` idegen kulcs az első
+     * migráció óta megvan, és soha nem írt bele senki — ezért a „milyen
+     * eszközeim vannak bejelentkezve" kérdésre a felület sem tudott
+     * válaszolni, pedig a séma előkészítette.
+     *
+     * A böngészőazonosítóból két dolgot veszünk ki: a platformot és egy
+     * emberi nevet („Chrome Windowson"). Se többet, se pontosabbat: egy valódi
+     * eszköz-ujjlenyomat követésre alkalmas, és ehhez a kérdéshez nem kell.
+     *
+     * Legjobb szándék szerint: ha ez elhasal, a belépés attól még megtörténik.
+     */
+    let deviceId: string | undefined
+    try {
+      const shape = shapeOf(userAgent)
+      const platform = DEVICE_PLATFORMS[shape.os] ?? 'web'
+      deviceId = await accounts.rememberDevice(
+        user.id, platform, shape.browser === 'ismeretlen' ? null : `${shape.browser} · ${shape.os}`)
+    } catch (error) {
+      fastify.log.warn({ err: error }, 'device fingerprint failed; the session is created without one')
+    }
+
     const session = await accounts.openSession({
       userId: user.id,
       refreshHash: sha256(refreshToken),
       ip: ip ?? null,
       userAgent: userAgent ?? null,
-      expiresAt
+      expiresAt,
+      deviceId
     })
     // An INSERT … RETURNING that comes back empty means the write did not
     // happen. Minting a token for a session that does not exist would produce
@@ -216,6 +253,15 @@ const routes: FastifyPluginAsync = async fastify => {
       promotedToAdmin: user.promoted,
       registeredAt: new Date().toISOString()
     })
+    // A fiók saját előzménye. A `security_logs` sora már megvan (a
+    // tárolóban, IP-vel); ez a másik oldal: az, amit a fióknak magának is meg
+    // lehet mutatni, és aminek hivatkozási száma van — REG_000001.
+    await recordAccountEvent('REG', {
+      userId: user.id,
+      ...fromRequest(request),
+      metadata: { username: user.username, promotedToAdmin: user.promoted }
+    })
+
     const tokens = await issueTokens(user, reply, request.ip, request.headers['user-agent'])
     return reply.code(201).send(tokens)
   })
@@ -238,14 +284,27 @@ const routes: FastifyPluginAsync = async fastify => {
 
     if (!user || !valid) {
       await accounts.log(user?.id ?? null, 'login_failed', request.ip)
+      // A megadott azonosítót NEM írjuk bele: egy nem létező fióknál az
+      // nem a fiók előzménye, hanem egy idegen által begépelt szöveg —
+      // adhat e-mail-címet, jelszót elgépelve, bármit.
+      await recordAccountEvent('LOGIN_FAILED', {
+        userId: user?.id ?? null,
+        result: 'failed',
+        ...fromRequest(request),
+        metadata: { reason: user ? 'bad_password' : 'no_such_account' }
+      })
       return reply.code(401).send({ type: 'about:blank', title: 'Unauthorized', status: 401, detail: 'Invalid credentials' })
     }
     if (user.status !== 'active') {
+      await recordAccountEvent('LOGIN', {
+        userId: user.id, result: 'blocked', ...fromRequest(request), metadata: { status: user.status }
+      })
       return reply.code(403).send({ type: 'about:blank', title: 'Forbidden', status: 403, detail: `Account ${user.status}` })
     }
 
     await accounts.markLoggedIn(user.id)
     await accounts.log(user.id, 'login', request.ip, request.headers['user-agent'] ?? null)
+    await recordAccountEvent('LOGIN', { userId: user.id, ...fromRequest(request) })
 
     return issueTokens(user, reply, request.ip, request.headers['user-agent'])
   })
@@ -334,6 +393,9 @@ const routes: FastifyPluginAsync = async fastify => {
     // Signing out has to take the credential away, not only the row it points
     // at: a cookie left behind is a thirty-day token in the browser of
     // somebody who just asked to be signed out.
+    await recordAccountEvent('LOGOUT', {
+      userId: request.user.sub, sessionId: sid ?? null, ...fromRequest(request)
+    })
     reply.clearCookie(REFRESH_COOKIE, { path: refreshCookieOptions.path })
     return reply.code(204).send()
   })
@@ -355,6 +417,7 @@ const routes: FastifyPluginAsync = async fastify => {
     await accounts.revokeAllSessions(request.user.sub)
     await revokeTokens(request.user.sub)
     await accounts.log(request.user.sub, 'logout_all', request.ip, request.headers['user-agent'] ?? null)
+    await recordAccountEvent('SESSIONS_REVOKED_ALL', { userId: request.user.sub, ...fromRequest(request) })
     reply.clearCookie(REFRESH_COOKIE, { path: refreshCookieOptions.path })
     return reply.code(204).send()
   })
@@ -418,6 +481,9 @@ const routes: FastifyPluginAsync = async fastify => {
     // outstanding access token stop working immediately.
     await revokeTokens(userId)
     await accounts.log(userId, 'account_deleted', request.ip, request.headers['user-agent'] ?? null)
+    // A törlés puha: a fiók sora marad, tehát az előzménye is maradhat — és
+    // pont ez az az esemény, amit utólag a leggyakrabban keresnek.
+    await recordAccountEvent('ACCOUNT_DELETE', { userId, ...fromRequest(request) })
     await emitEvent('user.deleted', { username: user.username })
 
     return reply.code(204).send()
@@ -452,6 +518,10 @@ const routes: FastifyPluginAsync = async fastify => {
     const user = await accounts.activeCredentialsOf(request.user.sub)
     if (!user?.password_hash || !await verifyPassword(currentPassword, user.password_hash)) {
       await accounts.log(request.user.sub, 'password_change_failed', request.ip)
+      await recordAccountEvent('PASSWORD_CHANGE', {
+        userId: request.user.sub, result: 'failed', ...fromRequest(request),
+        metadata: { reason: 'wrong_current_password' }
+      })
       return reply.code(403).send({
         type: 'about:blank', title: 'Forbidden', status: 403, detail: 'Current password is incorrect'
       })
@@ -463,6 +533,7 @@ const routes: FastifyPluginAsync = async fastify => {
     }
 
     await applyNewPassword(request.user.sub, newPassword, request.ip, 'password_changed')
+    await recordAccountEvent('PASSWORD_CHANGE', { userId: request.user.sub, ...fromRequest(request) })
 
     // The caller keeps working: they just proved they own the account, and
     // signing them out of the device they are typing on is hostile.
@@ -506,6 +577,10 @@ const routes: FastifyPluginAsync = async fastify => {
       // Supersede any outstanding request: a second click must not leave the
       // first token usable, or a stolen older email still opens the account.
       await accounts.supersedeResets(user.id)
+      // Csak akkor, ha a fiók létezik. A válasz a hívónak így is ugyanaz
+      // (nem áruljuk el, van-e ilyen fiók), de nem létező fióknak nincs
+      // előzménye, amibe írni lehetne.
+      await recordAccountEvent('PASSWORD_RESET_REQUEST', { userId: user.id, ...fromRequest(request) })
 
       const token = randomBytes(32).toString('base64url')
       const expiresAt = new Date(Date.now() + RESET_TTL_MS)
@@ -559,6 +634,7 @@ const routes: FastifyPluginAsync = async fastify => {
     }
 
     await applyNewPassword(claimed.user_id, newPassword, request.ip, 'password_reset')
+    await recordAccountEvent('PASSWORD_RESET', { userId: claimed.user_id, ...fromRequest(request) })
     return reply.code(204).send()
   })
 

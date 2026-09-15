@@ -44,6 +44,8 @@ import { publicReadiness, adminMonitoring } from './modules/system/routes.ts'
 import reportRoutes from './modules/moderation/routes.ts'
 import securityRoutes from './modules/security/routes.ts'
 import backupRoutes from './modules/backups/routes.ts'
+import analyticsAdmin from './modules/analytics/admin-routes.ts'
+import analyticsCollect from './modules/analytics/collect-routes.ts'
 import seoRoutes from './modules/seo/routes.ts'
 import libraryRoutes from './modules/library/routes.ts'
 import settingsRoutes from './modules/settings/routes.ts'
@@ -380,6 +382,11 @@ export async function buildApp (): Promise<FastifyInstance> {
   await app.register(catalogueRoutes, { prefix: '/v1/admin/catalogue' })
   await app.register(securityRoutes, { prefix: '/v1/admin/security' })
   await app.register(backupRoutes, { prefix: '/v1/admin/backups' })
+  await app.register(analyticsAdmin, { prefix: '/v1/admin/analytics' })
+  // Látogatottság: egyetlen, hitelesítés nélkül is hívható végpont, ami
+  // pontosan egy dolgot fogad el a klienstől (melyik oldalra lépett). Minden
+  // más a kiszolgálóé — lásd modules/analytics/collect-routes.ts.
+  await app.register(analyticsCollect, { prefix: '/v1/analytics' })
   await app.register(publicReadiness, { prefix: '/v1/health' })
   await app.register(adminMonitoring, { prefix: '/v1/admin/monitoring' })
 
