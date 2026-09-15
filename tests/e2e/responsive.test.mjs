@@ -114,14 +114,19 @@ describe('responsive layout', { skip: REASON }, () => {
     page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
     page.on('pageerror', e => errors.push(String(e.message)))
     await page.route('https://**', r => r.abort())
-    await page.addInitScript(() => {
+    // The token goes in before the app's first line runs, not after the first
+    // load. It used to be written with page.evaluate() after goto('/'), and
+    // every later goto differs only in the hash — which does not reload the
+    // page. The app therefore booted once, signed out, and stayed that way:
+    // applyNavVisibility() hid every nav entry behind requireLogin and the
+    // sweep measured a navigation rail that a real viewer never sees.
+    await page.addInitScript(tokens => {
+      localStorage.setItem('yume-auth', JSON.stringify(tokens))
       const getItem = Storage.prototype.getItem
       Storage.prototype.getItem = function (key) {
         return String(key).includes('-onboarded::') ? '1' : getItem.call(this, key)
       }
-    })
-    await page.goto(base + '/', { waitUntil: 'domcontentloaded' })
-    await page.evaluate(tokens => localStorage.setItem('yume-auth', JSON.stringify(tokens)), account)
+    }, account)
   })
 
   after(async () => {
