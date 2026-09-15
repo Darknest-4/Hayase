@@ -801,7 +801,7 @@ export const App = {
         C.avatar({ name: account?.display_name ?? p?.name, avatar_key: account?.avatar_key ?? p?.avatar }, { size: 'md' })
       ]),
       U.el('div', { style: 'min-width:0;' }, [
-        U.el('div', { class: 'more-profile-name', text: account?.display_name ?? p?.name ?? 'Dreamer' }),
+        U.el('div', { class: 'more-profile-name', text: account?.display_name ?? p?.name ?? T('Dreamer') }),
         U.el('div', { class: 'more-profile-sub', text: T('Your account') })
       ]),
       // Where the "Switch" button used to sit. The row is the viewer's own

@@ -14,6 +14,7 @@
 // settings in one release — the data is under the namespaced keys, and nothing
 // would have gone looking for it.
 
+import { I18n } from '../i18n/i18n.js'
 import { U } from '../lib/dom.js'
 
 /**
@@ -95,7 +96,10 @@ export const Store = {
     const settings = this.settings()
     return {
       id: this._viewerId(),
-      name: settings.profileName ?? 'Dreamer',
+      // Az alapértelmezett profilnév a felületen jelenik meg („Szép napot,
+      // …"), tehát a felület nyelvén mondja magát. Csak új profilnál számít:
+      // aki már elnevezte a sajátját, annak a neve marad.
+      name: settings.profileName ?? I18n.t('Dreamer'),
       avatar: settings.profileAvatar ?? null,
       nsfw: settings.nsfw === true
     }
@@ -367,7 +371,11 @@ export const Store = {
         type: 'airing',
         icon: '📺',
         title: U.title(media),
-        body: future ? `Episode ${air.episode} airs ${U.relTime(new Date(at))}` : `Episode ${air.episode} just aired`,
+        // A szöveg a néző nyelvén: az értesítés fele a mikor, és az „in 3
+        // days" egy magyar listán se nem pontos, se nem olvasható.
+        body: future
+          ? `${I18n.t('Episode')} ${air.episode} — ${U.relTime(new Date(at))}`
+          : `${I18n.t('Episode')} ${air.episode} — ${I18n.t('just aired')}`,
         mediaId: media.id,
         href: `#/anime/${media.id}`,
         at

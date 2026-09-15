@@ -34,13 +34,13 @@ export const PageDashboard = {
     const profile = Store.profile()
     const layout = this._layout()
 
-    root.append(C.spotlight(`${this._greeting()}, ${profile?.name ?? 'Dreamer'}`, {
+    root.append(C.spotlight(`${this._greeting()}, ${profile?.name ?? T('Dreamer')}`, {
       subtitle: T('Your dashboard'),
       actions: U.el('a', {
         class: 'btn btn-secondary btn-sm',
         style: 'margin-top:var(--space-3);',
         href: editing ? '#/dashboard' : '#/dashboard?edit=1'
-      }, [document.createTextNode(editing ? '✓ Done' : '⚙ Edit layout')])
+      }, [document.createTextNode(editing ? T('✓ Done') : T('⚙ Edit layout'))])
     }))
 
     const pad = U.el('div', { class: 'page-pad' })
@@ -126,7 +126,7 @@ export const PageDashboard = {
     const row = U.el('div', { class: 'hscroll', style: 'padding-left:0;padding-right:0;' })
     for (const m of media) {
       const entry = list[m.id]
-      row.append(C.card(m, { progress: entry ? { current: entry.progress, total: m.episodes } : null, subline: entry?.progress ? `Ep ${entry.progress}` : null }))
+      row.append(C.card(m, { progress: entry ? { current: entry.progress, total: m.episodes } : null, subline: entry?.progress ? `${T('Ep')} ${entry.progress}` : null }))
     }
     return this._section('Continue watching', row, { link: '#/list', linkText: 'Library →' })
   },
@@ -239,9 +239,9 @@ export const PageDashboard = {
 
   _greeting () {
     const h = new Date().getHours()
-    if (h < 5) return 'Late night'
-    if (h < 12) return 'Good morning'
-    if (h < 18) return 'Good afternoon'
-    return 'Good evening'
+    if (h < 5) return T('Late night')
+    if (h < 12) return T('Good morning')
+    if (h < 18) return T('Good afternoon')
+    return T('Good evening')
   }
 }
