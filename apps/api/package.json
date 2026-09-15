@@ -16,11 +16,11 @@
     "seed:founder": "node --experimental-strip-types scripts/seed-founder.ts",
     "seed:community": "node --experimental-strip-types scripts/seed-community.ts",
     "import:anilist": "node --experimental-strip-types scripts/import-anilist.ts",
-    "test": "node --experimental-strip-types --test test/*.test.ts",
-    "test:integration": "node --experimental-strip-types --test test/integration.test.ts",
-    "test:adversarial": "node --experimental-strip-types --test test/adversarial.test.ts test/ssrf.test.ts test/db-errors.test.ts test/client-queries.test.ts",
-    "test:exclusive": "node --experimental-strip-types --test-concurrency=1 --test test/*.exclusive.ts",
-    "test:e2e": "node --experimental-strip-types --test ../../tests/e2e/*.test.mjs"
+    "test": "YUME_SUPPRESS_WEBHOOKS=1 node --experimental-strip-types --test test/*.test.ts",
+    "test:integration": "YUME_SUPPRESS_WEBHOOKS=1 node --experimental-strip-types --test test/integration.test.ts",
+    "test:adversarial": "YUME_SUPPRESS_WEBHOOKS=1 node --experimental-strip-types --test test/adversarial.test.ts test/ssrf.test.ts test/db-errors.test.ts test/client-queries.test.ts",
+    "test:exclusive": "YUME_SUPPRESS_WEBHOOKS=1 node --experimental-strip-types --test-concurrency=1 --test test/*.exclusive.ts",
+    "test:e2e": "YUME_SUPPRESS_WEBHOOKS=1 node --experimental-strip-types --test ../../tests/e2e/*.test.mjs"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

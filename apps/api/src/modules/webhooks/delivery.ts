@@ -41,6 +41,19 @@ export type WebhookEvent = typeof WEBHOOK_EVENTS[number]
 
 /** Fan out an event to every enabled webhook subscribed to it. */
 export async function emitEvent (event: WebhookEvent, data: Record<string, unknown>): Promise<void> {
+  /*
+   * Egy tesztfutás nem üzenhet az üzemeltető Discordjára.
+   *
+   * A suite egy igazi adatbázis ellen fut, és minden próbafiók regisztrációja
+   * `user.registered`-et vált ki — ami egy bekapcsolt webhookon át valódi
+   * üzenet egy valódi csatornában, tucatjával, percek alatt. A napló pontosan
+   * ezt mutatta: sorozatnyi `user.registered` egyetlen időbélyegen.
+   *
+   * Nem a kézbesítést (`deliver`) némítja, csak a szórást: a webhookok saját
+   * tesztjei közvetlenül a kézbesítést hívják, és azoknak működniük kell.
+   */
+  if (process.env.YUME_SUPPRESS_WEBHOOKS === '1') return
+
   // The emergency stop, checked before anything is queued rather than at
   // delivery: a receiver that has started paging somebody every thirty seconds
   // should stop being sent to immediately, and jobs already in the queue for
