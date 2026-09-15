@@ -14,6 +14,7 @@ import { randomBytes, createHmac } from 'node:crypto'
 import { test, describe, before, after } from 'node:test'
 
 import type { FastifyInstance } from 'fastify'
+import { publicInstance } from './support/instance.ts'
 
 const HAS_DB = Boolean(process.env.DATABASE_URL)
 process.env.JWT_SECRET ??= 'adversarial-test-secret-long-enough-0123456789'
@@ -50,6 +51,9 @@ async function register (): Promise<Account> {
 }
 
 describe('adversarial', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
+  // Ez a suite nem a bejelentkezési kapuról szól.
+  publicInstance()
+
   let victim: Account
   let attacker: Account
 

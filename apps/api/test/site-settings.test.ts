@@ -23,12 +23,16 @@ import { settings } from '../src/modules/settings/site-settings.ts'
 
 import type { FastifyInstance } from 'fastify'
 import type pg from 'pg'
+import { publicInstance } from './support/instance.ts'
 
 const HAS_DB = Boolean(process.env.DATABASE_URL)
 process.env.JWT_SECRET ??= 'site-settings-secret-long-enough-0123456789'
 process.env.AUTH_RATE_LIMIT_MAX ??= '200'
 
 describe('site settings actually govern the server', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
+  // Ez a suite nem a bejelentkezési kapuról szól.
+  publicInstance()
+
   let app: FastifyInstance
   let pool: pg.Pool
   const usernames: string[] = []

@@ -2491,14 +2491,23 @@ export const PageAdmin = {
     // than MyAnimeList does, so two AniList ids sharing one MAL id is the
     // normal shape of a multi-season show. They are shown because the same
     // pairs are where real duplicates in our own catalogue surface.
-    content.append(U.el('h3', { class: 'detail-section-title', text: `Unresolved id collisions (${conflicts.length})` }))
-    if (!conflicts.length) {
+    // A lista százban maximálva jön; a darabszám a teljes hátralék. A kettő
+    // összekeverése azt írta ki, hogy 100 ütközés vár, amikor 679.
+    const rows = conflicts?.data ?? []
+    const waiting = conflicts?.total ?? rows.length
+    content.append(U.el('h3', {
+      class: 'detail-section-title',
+      text: waiting > rows.length
+        ? `Unresolved id collisions (${rows.length} shown of ${waiting})`
+        : `Unresolved id collisions (${waiting})`
+    }))
+    if (!rows.length) {
       content.append(P.emptyState('Nothing waiting to be looked at.'))
       return
     }
     content.append(U.el('p', { class: 'meta-note', text: 'An importer could not attach one of these ids because another anime already held it. Most are legitimate season splits; the rest are duplicates worth merging.' }))
     const list = U.el('div', { class: 'meta-rows' })
-    for (const c of conflicts) {
+    for (const c of rows) {
       list.append(U.el('div', { class: 'meta-row' }, [
         U.el('div', { class: 'meta-row-main' }, [
           U.el('div', { class: 'meta-row-title', text: `${c.provider}:${c.external_id}` }),

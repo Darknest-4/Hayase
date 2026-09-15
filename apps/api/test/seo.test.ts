@@ -19,6 +19,7 @@ import { after, before, describe, mock, test } from 'node:test'
 
 import type { FastifyInstance } from 'fastify'
 import type pg from 'pg'
+import { publicInstance } from './support/instance.ts'
 
 const HAS_DB = Boolean(process.env.DATABASE_URL)
 process.env.JWT_SECRET ??= 'seo-secret-long-enough-0123456789'
@@ -27,6 +28,9 @@ process.env.JWT_SECRET ??= 'seo-secret-long-enough-0123456789'
 const HOSTILE = '</script><img src=x onerror=alert(1)>"\'&<b>'
 
 describe('SEO', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
+  // Ez a suite nem a bejelentkezési kapuról szól.
+  publicInstance()
+
   let app: FastifyInstance
   let pool: pg.Pool
   const animeIds: string[] = []

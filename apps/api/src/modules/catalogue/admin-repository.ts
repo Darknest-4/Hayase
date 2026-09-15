@@ -320,18 +320,32 @@ export class CatalogueAdminRepository extends Repository {
    * but the pairs are also where real duplicates surface — and nobody goes
    * looking in a table they were never shown.
    */
-  mappingConflicts (): Promise<Array<Record<string, unknown>>> {
-    return this.query(
-      `SELECT c.id, c.provider, c.external_id, c.source, c.seen_count, c.first_seen, c.last_seen,
-              c.anime_id, a.canonical_title AS anime_title,
-              c.held_by, h.canonical_title AS holder_title
-         FROM mapping_conflicts c
-         JOIN anime a ON a.id = c.anime_id
-         LEFT JOIN anime h ON h.id = c.held_by
-        WHERE c.resolved_at IS NULL
-        ORDER BY c.seen_count DESC, c.last_seen DESC
-        LIMIT 100`
-    )
+  /**
+   * The unresolved collisions, most-seen first — and how many there are.
+   *
+   * The count is not decoration. The list is capped at a hundred, and the
+   * panel drew its own heading from the array it got: with 679 collisions
+   * waiting it said „Unresolved id collisions (100)", which is not a
+   * truncated answer but a wrong one. An operator reading it would think the
+   * backlog was a sixth of its real size.
+   */
+  async mappingConflicts (): Promise<{ data: Array<Record<string, unknown>>, total: number }> {
+    const [data, count] = await Promise.all([
+      this.query(
+        `SELECT c.id, c.provider, c.external_id, c.source, c.seen_count, c.first_seen, c.last_seen,
+                c.anime_id, a.canonical_title AS anime_title,
+                c.held_by, h.canonical_title AS holder_title
+           FROM mapping_conflicts c
+           JOIN anime a ON a.id = c.anime_id
+           LEFT JOIN anime h ON h.id = c.held_by
+          WHERE c.resolved_at IS NULL
+          ORDER BY c.seen_count DESC, c.last_seen DESC
+          LIMIT 100`
+      ),
+      this.queryOne<{ total: number }>(
+        'SELECT count(*)::int AS total FROM mapping_conflicts WHERE resolved_at IS NULL')
+    ])
+    return { data, total: count?.total ?? data.length }
   }
 
   /** `resolved_at IS NULL` in the WHERE so resolving twice is a 404, not a silent overwrite. */

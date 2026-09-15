@@ -15,6 +15,7 @@ import { randomBytes } from 'node:crypto'
 import { test, describe, before, after } from 'node:test'
 
 import type { FastifyInstance } from 'fastify'
+import { publicInstance } from './support/instance.ts'
 
 const HAS_DB = Boolean(process.env.DATABASE_URL)
 process.env.JWT_SECRET ??= 'integration-test-secret-long-enough-0123456789'
@@ -28,6 +29,9 @@ let pool: { end: () => Promise<void>, query: (sql: string, params?: unknown[]) =
 const unique = (): string => randomBytes(6).toString('hex')
 
 describe('API integration', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
+  // Ez a suite nem a bejelentkezési kapuról szól.
+  publicInstance()
+
   before(async () => {
     const [{ buildApp }, db] = await Promise.all([import('../src/app.ts'), import('../src/infrastructure/database/index.ts')])
     app = await buildApp()

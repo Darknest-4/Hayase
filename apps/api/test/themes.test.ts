@@ -19,6 +19,7 @@ import { validColour, badToken } from '../src/modules/themes/colour.ts'
 
 import type { FastifyInstance } from 'fastify'
 import type pg from 'pg'
+import { publicInstance } from './support/instance.ts'
 
 const HAS_DB = Boolean(process.env.DATABASE_URL)
 process.env.JWT_SECRET ??= 'themes-secret-long-enough-0123456789'
@@ -77,6 +78,9 @@ describe('colour validation', () => {
 })
 
 describe('theme API', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
+  // Ez a suite nem a bejelentkezési kapuról szól.
+  publicInstance()
+
   let app: FastifyInstance
   let pool: pg.Pool
   const usernames: string[] = []
@@ -128,14 +132,26 @@ describe('theme API', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
     return { status: res.statusCode, id: (res.json() as { id?: string })?.id, body: res.body }
   }
 
-  test('the theme list is public', async () => {
+  test('the theme list is public, and is exactly the enabled themes', async () => {
     // A signed-out visitor must get the site's colours. Requiring a token
     // would mean the page repaints when they sign in, which is worse than
     // serving a list of hex values to anybody who asks.
     const res = await app.inject({ url: '/v1/themes' })
     assert.equal(res.statusCode, 200, res.body)
     const themes = (res.json() as { data: Array<{ slug: string, is_default: boolean }> }).data
-    assert.ok(themes.length >= 14, `only ${themes.length} themes seeded`)
+
+    // A korábbi állítás („legalább 14 téma") a telepítés vetőadatáról szólt,
+    // nem a kódról: ezen a példányon az üzemeltető 21 témát kikapcsolt, és a
+    // teszt ettől lett piros — miközben a végpont pontosan azt tette, amit
+    // ígér. A valódi szerződés az, hogy a lista az engedélyezett témák
+    // halmaza, se több, se kevesebb.
+    const enabled = (await pool.query<{ slug: string }>('SELECT slug FROM themes WHERE enabled')).rows
+    assert.deepEqual(
+      themes.map(t => t.slug).sort(),
+      enabled.map(row => row.slug).sort(),
+      'the public list must be the enabled themes'
+    )
+    assert.ok(themes.length > 0, 'an instance with no enabled theme has no colours to serve')
     assert.equal(themes.filter(t => t.is_default).length, 1, 'there must be exactly one default')
   })
 

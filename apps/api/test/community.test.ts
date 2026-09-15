@@ -10,6 +10,7 @@ import { randomBytes } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 
 import type { FastifyInstance } from 'fastify'
+import { publicInstance } from './support/instance.ts'
 
 const HAS_DB = Boolean(process.env.DATABASE_URL)
 process.env.JWT_SECRET ??= 'community-test-secret-long-enough-0123456789'
@@ -23,6 +24,9 @@ let pool: { end: () => Promise<void>, query: (sql: string, params?: unknown[]) =
 interface Account { username: string, token: string, id: string }
 
 describe('community', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
+  // Ez a suite nem a bejelentkezési kapuról szól.
+  publicInstance()
+
   const made: string[] = []
   let member: Account
   let moderator: Account

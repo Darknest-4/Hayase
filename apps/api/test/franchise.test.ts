@@ -18,11 +18,15 @@ import { after, before, describe, test } from 'node:test'
 
 import type { FastifyInstance } from 'fastify'
 import type pg from 'pg'
+import { publicInstance } from './support/instance.ts'
 
 const HAS_DB = Boolean(process.env.DATABASE_URL)
 process.env.JWT_SECRET ??= 'franchise-secret-long-enough-0123456789'
 
 describe('franchise / watch order', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
+  // Ez a suite nem a bejelentkezési kapuról szól.
+  publicInstance()
+
   let app: FastifyInstance
   let pool: pg.Pool
   const tag = 'fr_' + randomBytes(4).toString('hex')
