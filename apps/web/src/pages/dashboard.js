@@ -63,7 +63,12 @@ export const PageDashboard = {
       if (node) { pad.append(node); rendered++ }
     }
     if (!rendered) {
-      pad.append(P.emptyState(T('Nothing to show yet — add anime to your library and your dashboard fills in automatically.')))
+      pad.append(P.emptyState(
+        T('Nothing to show yet — add anime to your library and your dashboard fills in automatically.'),
+        {
+          action: U.el('a', { class: 'btn btn-primary btn-sm', href: '#/search', text: T('Browse the catalogue') })
+        }
+      ))
     }
   },
 
@@ -149,6 +154,13 @@ export const PageDashboard = {
 
   _widget_stats () {
     const entries = Object.values(Store.list())
+    // Négy nulla nem adat. Üres könyvtárnál ez a csempesor azt üzente, hogy
+    // „itt ez van, és ennyi" — pedig csak még nincs miből számolni. A widget
+    // ilyenkor nem rajzol semmit, és az oldal saját üres állapota veszi át,
+    // ami legalább megmondja, mit kezdjen vele az ember. A könyvtár
+    // szinkronja után a router újrarajzolja az oldalt (library-synced), tehát
+    // a friss eszközön sem marad üresen.
+    if (!entries.length) return null
     const episodes = entries.reduce((s, e) => s + (e.progress ?? 0), 0)
     // Measured, not estimated. This used to be `progress * nominal runtime`,
     // which credited a flat 24 minutes the instant an episode was marked —

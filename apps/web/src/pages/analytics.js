@@ -33,7 +33,7 @@ export const PageAnalytics = {
     const history = Store.history()
 
     if (!entries.length && !history.length) {
-      pad.append(P.emptyState(T('No data yet on this profile. Add anime to your library and watch a few episodes — your analytics build up here automatically.')))
+      pad.append(P.emptyState(T('No data yet on this profile. Add anime to your library and watch a few episodes — your analytics build up here automatically.'), { action: U.el('a', { class: 'btn btn-primary btn-sm', href: '#/search', text: T('Browse the catalogue') }) }))
       return
     }
 

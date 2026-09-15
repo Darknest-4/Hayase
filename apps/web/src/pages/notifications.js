@@ -111,7 +111,11 @@ export const PageNotifications = {
     // ---- list ----
     const shown = all.filter(n => active === 'all' || (active === 'unread' ? !n.read : n.type === active))
     if (!shown.length) {
-      pad.append(P.emptyState(active === 'all' ? 'No notifications yet. Add airing anime to your library and they show up here.' : 'Nothing in this filter.'))
+      // A szöveg eddig fordítatlanul ment át: T() nélkül a magyar felületen is
+      // angolul állt itt.
+      pad.append(active === 'all'
+        ? P.emptyState(T('No notifications yet. Add airing anime to your library and they show up here.'), { action: U.el('a', { class: 'btn btn-primary btn-sm', href: '#/search', text: T('Browse the catalogue') }) })
+        : P.emptyState(T('Nothing in this filter.')))
       return
     }
 

@@ -33,7 +33,7 @@ export const PageHistory = {
 
     const history = Store.history()
     if (!history.length) {
-      pad.append(P.emptyState(T('Nothing watched yet on this profile. Play an episode and it shows up here.')))
+      pad.append(P.emptyState(T('Nothing watched yet on this profile. Play an episode and it shows up here.'), { action: U.el('a', { class: 'btn btn-primary btn-sm', href: '#/search', text: T('Browse the catalogue') }) }))
       return
     }
 

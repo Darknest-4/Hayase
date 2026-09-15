@@ -334,6 +334,10 @@ I18n.register('hu', {
     'Ezen a profilon még nincs adat. Tegyél animéket a könyvtáradba és nézz meg pár részt — a statisztika magától felépül.',
   'Nothing to show yet — add anime to your library and your dashboard fills in automatically.':
     'Még nincs mit mutatni — tegyél animéket a könyvtáradba, és az áttekintő magától megtelik.',
+  'Browse the catalogue': 'Böngészés a katalógusban',
+  'No notifications yet. Add airing anime to your library and they show up here.':
+    'Még nincs értesítés. Tegyél futó sorozatokat a könyvtáradba, és itt fognak megjelenni.',
+  'Nothing in this filter.': 'Ebben a szűrőben nincs semmi.',
   'Nothing watched yet on this profile. Play an episode and it shows up here.':
     'Ezen a profilon még nem néztél semmit. Indíts el egy részt, és itt megjelenik.',
   'History cleared': 'Előzmények törölve',

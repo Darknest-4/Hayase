@@ -54,7 +54,7 @@ export const PageList = {
       if (state.tab === 'FAVOURITES') {
         const favs = Store.favourites()
         if (!favs.length) {
-          content.append(P.emptyState(T('No favourites yet.')))
+          content.append(P.emptyState(T('No favourites yet.'), { action: U.el('a', { class: 'btn btn-primary btn-sm', href: '#/search', text: T('Browse the catalogue') }) }))
           return
         }
         content.append(P.spinner())
@@ -72,7 +72,7 @@ export const PageList = {
         .sort((a, b) => b.updatedAt - a.updatedAt)
 
       if (!entries.length) {
-        content.append(P.emptyState(T('Nothing here yet. Add anime from their detail page.')))
+        content.append(P.emptyState(T('Nothing here yet. Add anime from their detail page.'), { action: U.el('a', { class: 'btn btn-primary btn-sm', href: '#/search', text: T('Browse the catalogue') }) }))
         return
       }
 
