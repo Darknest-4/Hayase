@@ -444,6 +444,23 @@ export const App = {
     page.append(wrap)
   },
 
+  /**
+   * A varázsló, de nem a kezdőképernyő fölött.
+   *
+   * Az első látogató eddig nem a landingot látta, hanem egy beállítás-ablakot
+   * a tetején — ami ráadásul lefedte a jobb felső profilikont, vagyis az
+   * egyetlen utat a belépéshez. A kérdései (címek nyelve, felnőtt tartalom)
+   * egy profil beállításai; a marketingoldalon még nincs profil, amire
+   * vonatkoznának.
+   *
+   * Nem elveszik, csak eltolódik: belépés után az afterAuth() újra megpróbálja,
+   * és akkor már az alkalmazáson belül vagyunk.
+   */
+  maybeOnboard () {
+    if (document.body.classList.contains('landing-route')) return
+    Onboarding?.maybeOpen()
+  },
+
   // re-load config + permissions after a login/logout, then re-render
   async afterAuth () {
     await this.loadConfig()
@@ -456,6 +473,10 @@ export const App = {
 
     if (YumeAPI.user()) LibrarySync?.init() // pull the account library + start mirroring
     else LibrarySync?.reset() // signed out → stop mirroring
+
+    // Belépés után már nem a kezdőképernyőn vagyunk: ha a varázsló eddig
+    // kimaradt, most jön el az ideje.
+    if (YumeAPI.user()) Prefs?.pull().then(() => this.maybeOnboard())
   },
 
   /**
@@ -889,9 +910,9 @@ export const App = {
     // never answered. Both are off the critical path: the page is already
     // rendered by now, so neither can delay the first paint.
     if (YumeAPI.user()) {
-      Prefs?.pull().then(() => Onboarding?.maybeOpen())
+      Prefs?.pull().then(() => this.maybeOnboard())
     } else {
-      Onboarding?.maybeOpen()
+      this.maybeOnboard()
     }
     window.addEventListener('library-synced', () => {
       if (['home', 'list', 'dashboard'].includes(this.parseHash().route)) this.navigate()
