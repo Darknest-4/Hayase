@@ -145,7 +145,7 @@ export const PageDashboard = {
         U.el('img', { src: m.coverImage?.large ?? '', alt: '', loading: 'lazy' }),
         U.el('div', { class: 'list-row-grow' }, [
           U.el('div', { class: 'list-row-title', text: U.title(m) }),
-          U.el('div', { class: 'list-row-sub', text: `Episode ${m.nextAiringEpisode.episode} · ${U.relTime(new Date(m.nextAiringEpisode.airingAt * 1000))}` })
+          U.el('div', { class: 'list-row-sub', text: `${T('Episode')} ${m.nextAiringEpisode.episode} · ${U.relTime(new Date(m.nextAiringEpisode.airingAt * 1000))}` })
         ])
       ]))
     }

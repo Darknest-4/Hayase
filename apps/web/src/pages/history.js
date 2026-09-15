@@ -64,7 +64,7 @@ export const PageHistory = {
           U.el('img', { src: media.coverImage?.large ?? '', alt: U.title(media), loading: 'lazy' }),
           U.el('div', { class: 'list-row-grow' }, [
             U.el('div', { class: 'list-row-title', text: U.title(media) }),
-            U.el('div', { class: 'list-row-sub', text: `Episode ${item.episode} • ${new Date(item.at).toLocaleTimeString(I18n.locale(), { hour: '2-digit', minute: '2-digit' })}` })
+            U.el('div', { class: 'list-row-sub', text: `${T('Episode')} ${item.episode} • ${new Date(item.at).toLocaleTimeString(I18n.locale(), { hour: '2-digit', minute: '2-digit' })}` })
           ]),
           U.svg(C.PLAY, 16)
         ]))

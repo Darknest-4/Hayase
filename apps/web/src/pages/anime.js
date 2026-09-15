@@ -74,7 +74,7 @@ export const PageAnime = {
       U.seasonYear(media) ? U.el('a', { class: 'chip', href: `#/search?season=${media.season ?? ''}&year=${media.seasonYear ?? ''}`, text: String(U.seasonYear(media)) }) : null,
       media.averageScore ? U.el('span', { class: 'chip', style: `background:${ratingColor(media.averageScore)};color:white;`, text: media.averageScore + '%' }) : null,
       media.nextAiringEpisode?.airingAt
-        ? U.el('span', { class: 'chip chip-airing', text: `Ep ${media.nextAiringEpisode.episode} ${U.relTime(new Date(media.nextAiringEpisode.airingAt * 1000))}` })
+        ? U.el('span', { class: 'chip chip-airing', text: `${T('Ep')} ${media.nextAiringEpisode.episode} ${U.relTime(new Date(media.nextAiringEpisode.airingAt * 1000))}` })
         : null
     ])
 
@@ -298,7 +298,7 @@ export const PageAnime = {
     if (air?.airingAt) {
       side.append(U.el('div', { class: 'side-card side-airing' }, [
         U.el('div', { class: 'side-airing-label', text: T('Next episode') }),
-        U.el('div', { class: 'side-airing-ep', text: `Episode ${air.episode}` }),
+        U.el('div', { class: 'side-airing-ep', text: `${T('Episode')} ${air.episode}` }),
         U.el('div', { class: 'side-airing-time', text: U.relTime(new Date(air.airingAt * 1000)) })
       ]))
     }

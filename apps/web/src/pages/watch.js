@@ -896,7 +896,7 @@ export const PageWatch = {
     const card = U.el('div', { class: 'player-upnext' }, [
       U.el('div', { class: 'player-upnext-inner' }, [
         U.el('div', { class: 'player-upnext-label', text: T('Up next') }),
-        U.el('div', { class: 'player-upnext-title', text: `Episode ${episode + 1}` }),
+        U.el('div', { class: 'player-upnext-title', text: `${T('Episode')} ${episode + 1}` }),
         U.el('div', { style: 'display:flex;gap:var(--space-2);justify-content:center;margin-top:var(--space-4);flex-wrap:wrap;' }, [
           U.el('button', { class: 'btn btn-primary', onclick: go }, [U.svg(C.PLAY, 14), document.createTextNode(T(' Play next'))]),
           U.el('button', { class: 'btn btn-ghost', onclick: () => card.remove() }, [document.createTextNode(T('Dismiss'))])
