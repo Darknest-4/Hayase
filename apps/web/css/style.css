@@ -4876,7 +4876,13 @@ body.landing-route .page { padding-bottom: 0; }
   font-weight: var(--weight-black); font-size: var(--text-lg);
   font-variant-numeric: tabular-nums;
 }
-.release-titles { flex-grow: 1; min-width: 12rem; }
+/* `flex: 1 1 12rem` és `min-width: 0`, nem `flex-grow` + `min-width: 12rem`.
+   A különbség a kiindulási szélesség: `auto` bázissal a blokk a leghosszabb
+   sora szerint kér helyet, tehát egy két mondatos összefoglaló kitolta az
+   állapotjelzőt a sor végéről, és az a cím alá csúszott — más elrendezéssel,
+   mint a rövidebb összefoglalójú kiadásoké. A rögzített bázis mellett a szöveg
+   tördel, a jelzés pedig marad a helyén. */
+.release-titles { flex: 1 1 12rem; min-width: 0; }
 .release-title { margin: 0; font-size: var(--text-base); font-weight: var(--weight-bold); }
 .release-summary { margin: var(--space-1) 0 0; font-size: var(--text-sm); color: var(--fg-muted); }
 .release-meta { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-1); flex-shrink: 0; }
