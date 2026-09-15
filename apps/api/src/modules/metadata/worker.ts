@@ -198,6 +198,7 @@ export async function handleMetadataJob (job: Job): Promise<void> {
       await finish(runId, {
         mapped: result.mapped,
         images: result.images,
+        episodes: result.episodes,
         titles: result.titles,
         missed: result.missed
       }, result.examined)

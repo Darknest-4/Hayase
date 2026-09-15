@@ -23,10 +23,26 @@ export interface AniZipMappings {
   anilist_id?: number | null
 }
 
+/** Egy epizód, ahogy ani.zip küldi. A kulcs a lekérdezésben az epizódszám. */
+export interface AniZipEpisode {
+  title?: Record<string, string>
+  overview?: string | null
+  summary?: string | null
+  image?: string | null
+  runtime?: number | null
+  length?: number | null
+  airDate?: string | null
+  tvdbId?: number | null
+  anidbEid?: number | null
+  episodeNumber?: number | null
+  absoluteEpisodeNumber?: number | null
+}
+
 export interface AniZipRecord {
   titles?: Record<string, string>
   images?: AniZipImage[]
   mappings?: AniZipMappings
+  episodes?: Record<string, AniZipEpisode>
   episodeCount?: number
 }
 

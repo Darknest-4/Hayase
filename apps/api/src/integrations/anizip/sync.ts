@@ -22,6 +22,7 @@ export interface ArtworkCounts {
   mapped: number
   images: number
   titles: number
+  episodes: number
   missed: number
 }
 
@@ -41,11 +42,15 @@ export async function syncArtwork (opts: {
   onProgress?: (done: number, total: number, counts: ArtworkCounts) => void | Promise<void>
   shouldStop?: () => boolean | Promise<boolean>
 } = {}): Promise<ArtworkCounts> {
-  const counts: ArtworkCounts = { examined: 0, mapped: 0, images: 0, titles: 0, missed: 0 }
+  const counts: ArtworkCounts = { examined: 0, mapped: 0, images: 0, titles: 0, episodes: 0, missed: 0 }
 
+  // „Ami még hiányzik" két dolgot jelent, mert a passz kettőt tölt: artworköt
+  // és epizódtartalmat. Egy cím, ami már kapott logót, de az epizódjai
+  // címtelenek, még nem készült el — a korábbi feltétel kihagyta volna.
   const where = opts.onlyMissing === false
     ? ''
-    : 'AND NOT EXISTS (SELECT 1 FROM anime_images i WHERE i.anime_id = m.anime_id AND i.kind = \'logo\')'
+    : `AND (NOT EXISTS (SELECT 1 FROM anime_images i WHERE i.anime_id = m.anime_id AND i.kind = 'logo')
+           OR EXISTS (SELECT 1 FROM episodes e WHERE e.anime_id = m.anime_id AND e.title IS NULL))`
 
   const candidates = await query<Candidate>(
     `SELECT m.anime_id, m.anilist_id
@@ -133,6 +138,37 @@ async function writeOne (c: Candidate, rec: Awaited<ReturnType<typeof fetchMappi
         [c.anime_id, kind, url]
       )
       if (rowCount) counts.images++
+    }
+
+    // ---- epizódtartalom ----
+    //
+    // A váz megvan: 364 064 epizódsor, 341 407 dátummal és 359 947 hosszal —
+    // de **nulla** címmel, leírással és bélyegképpel. Az epizódlista ezért
+    // néz ki üresnek, nem azért, mert nincs epizód.
+    //
+    // Ugyanez a válasz hozza őket, amit az artwork miatt amúgy is lekérünk.
+    // Csak NULL mezőket tölt: ami már ott van, az valakié, és nem ezé a
+    // passzé felülírni.
+    for (const [key, ep] of Object.entries(rec.episodes ?? {})) {
+      const number = Number(ep.episodeNumber ?? key)
+      if (!Number.isFinite(number)) continue
+      const title = ep.title?.hu?.trim() || ep.title?.en?.trim() || null
+      const synopsis = (ep.overview ?? ep.summary ?? '').trim() || null
+      const thumb = usableUrl(ep.image)
+      if (!title && !synopsis && !thumb) continue
+      const { rowCount } = await client.query(
+        `UPDATE episodes
+            SET title         = COALESCE(title, $3),
+                synopsis      = COALESCE(synopsis, $4),
+                thumbnail_key = COALESCE(thumbnail_key, $5),
+                tvdb_eid      = COALESCE(tvdb_eid, $6),
+                anidb_eid     = COALESCE(anidb_eid, $7),
+                updated_at    = now()
+          WHERE anime_id = $1 AND number = $2
+            AND (title IS NULL OR synopsis IS NULL OR thumbnail_key IS NULL)`,
+        [c.anime_id, number, title, synopsis, thumb, asId(ep.tvdbId), asId(ep.anidbEid)]
+      )
+      if (rowCount) counts.episodes++
     }
 
     // ---- a Hungarian title, where a person has written one ----
