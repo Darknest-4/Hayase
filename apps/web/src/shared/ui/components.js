@@ -166,13 +166,22 @@ export const C = {
 
   // ---- site footer ----
   footer () {
+    // h3, under a hidden h2 for the landmark itself. The columns were h4 while
+    // pages end at h1 or h2, so every page skipped a level — twelve routes,
+    // one cause. The hidden h2 is what makes h3 correct on a page that ends at
+    // h1 as well as on one that ends at h2.
     const col = (title, links) => U.el('div', { class: 'footer-col' }, [
-      U.el('h4', { text: title }),
+      U.el('h3', { text: title }),
       ...links.map(([label, href]) => U.el('a', { href, text: label }))
     ])
 
     const year = new Date().getFullYear()
     return U.el('footer', { class: 'site-footer' }, [
+      // The landmark's own heading, for screen readers only. Without it a page
+      // that ends at h1 would jump straight to the columns' h3; with it the
+      // sequence is h1 -> h2 -> h3 on every page, whatever the page above it
+      // did.
+      U.el('h2', { class: 'sr-only', text: T('Oldaltérkép') }),
       U.el('div', { class: 'footer-main' }, [
         U.el('div', { class: 'footer-brand' }, [
           U.el('div', { class: 'footer-logo' }, [
@@ -580,7 +589,10 @@ export const C = {
 
     const form = (parentId, done, root = false) => {
       const textarea = U.el('textarea', { class: 'input comment-input', rows: '3', placeholder: parentId ? 'Write a reply…' : 'Share your thoughts… (no spoilers unmarked!)' })
-      const spoiler = U.el('input', { type: 'checkbox' })
+      // A raw 13x13 checkbox with no name: the word "Spoiler" sits in a
+      // sibling span outside the label, so the control announced as nothing
+      // and was under the 24px target floor.
+      const spoiler = U.el('input', { type: 'checkbox', class: 'comment-spoiler', 'aria-label': T('Spoiler') })
       const submit = U.el('button', { class: 'btn btn-primary btn-sm', text: T('Post') })
       submit.addEventListener('click', async () => {
         const body = textarea.value.trim()

@@ -1095,6 +1095,7 @@ export const PageAdmin = {
       U.el('input', {
         class: 'input',
         style: 'min-width:20rem;',
+        'aria-label': title,
         value: settings[key] ?? '',
         onchange: async e => {
           try { await YumeAPI.admin.setSetting(key, e.target.value); U.toast('Saved'); await applyLive() } catch (err) { U.toast(err.message, 'error') }
@@ -1122,10 +1123,15 @@ export const PageAdmin = {
   flagRow (f, applyLive) {
     const state = { access: f.access, permission: f.required_permission }
 
+    // Every control in this row is *about a named flag*, and the name is on
+    // the row rather than on the control — so a screen reader announced
+    // "edit text" twenty-three times on this page with nothing to tell them
+    // apart. The label goes on each control.
     const permInput = U.el('input', {
       class: 'input flag-perm' + (state.access === 'permission' ? '' : ' hidden'),
       style: 'min-width:11rem;',
       placeholder: 'permission slug',
+      'aria-label': `${f.label}: required permission`,
       value: state.permission ?? ''
     })
 
@@ -1152,6 +1158,7 @@ export const PageAdmin = {
 
     const accessSel = U.el('select', {
       class: 'select flag-access',
+      'aria-label': `${f.label}: access`,
       onchange: async e => {
         const was = state.access
         state.access = e.target.value
@@ -1177,6 +1184,7 @@ export const PageAdmin = {
 
     const box = U.el('input', {
       type: 'checkbox',
+      'aria-label': `${f.label}: enabled`,
       ...(f.enabled ? { checked: '' } : {}),
       onchange: e => save({ enabled: e.target.checked }, () => { e.target.checked = !e.target.checked })
     })
@@ -1400,7 +1408,7 @@ export const PageAdmin = {
     const listBox = U.el('div', { class: 'cat-list' })
     const toolbar = U.el('div', { class: 'cat-toolbar' }, [
       U.el('input', { class: 'input', placeholder: 'Search catalogue…', oninput: U.debounce(e => { state.q = e.target.value.trim(); loadList() }) }),
-      U.el('select', { class: 'select', onchange: e => { state.visibility = e.target.value; loadList() } },
+      U.el('select', { class: 'select', 'aria-label': 'Szűrés láthatóság szerint', onchange: e => { state.visibility = e.target.value; loadList() } },
         [['', 'All visibility'], ['public', 'Public'], ['unlisted', 'Unlisted'], ['hidden', 'Hidden']].map(([v, l]) =>
           U.el('option', { value: v, text: l }))),
       can('anime.create') ? U.el('button', { class: 'btn btn-primary btn-sm', onclick: () => openEditor(null) }, [document.createTextNode('+ New anime')]) : null,
@@ -3683,8 +3691,11 @@ export const PageAdmin = {
       oninput: U.debounce(e => this.renderUsers(content, { ...q, query: e.target.value.trim(), offset: 0 }))
     })
 
-    const pick = (value, options, onchange) => U.el('select', {
+    // `label` is not optional in practice: a filter select with no name
+    // announces as "combo box" and there are three of them side by side.
+    const pick = (value, options, onchange, label) => U.el('select', {
       class: 'select',
+      ...(label ? { 'aria-label': label } : {}),
       onchange: e => onchange(e.target.value)
     }, options.map(([v, l]) => U.el('option', { value: v, text: l, selected: v === value })))
 
@@ -3699,10 +3710,10 @@ export const PageAdmin = {
       const bar = U.el('div', { class: 'admin-toolbar user-toolbar' }, [
         input,
         pick(q.status, [['', 'Any status'], ['active', 'Active'], ['suspended', 'Suspended'], ['banned', 'Banned']],
-          v => this.renderUsers(content, { ...q, status: v, offset: 0 })),
+          v => this.renderUsers(content, { ...q, status: v, offset: 0 }), 'Szűrés állapot szerint'),
         pick(q.role, [['', 'Any role'], ...roleList.map(r => [r.slug, r.name ?? r.slug])],
-          v => this.renderUsers(content, { ...q, role: v, offset: 0 })),
-        pick(q.sort, this.USER_SORTS, v => this.renderUsers(content, { ...q, sort: v, offset: 0 }))
+          v => this.renderUsers(content, { ...q, role: v, offset: 0 }), 'Szűrés szerepkör szerint'),
+        pick(q.sort, this.USER_SORTS, v => this.renderUsers(content, { ...q, sort: v, offset: 0 }), 'Rendezés')
       ])
 
       // The counts are of the filtered set, not the whole table, so they say

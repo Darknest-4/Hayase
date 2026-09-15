@@ -202,7 +202,7 @@ export const PageWatch = {
   mountEpisodeList (side, media, episode, total, keepSrc) {
     const panel = U.el('div', { class: 'wep-panel' }, [
       U.el('div', { class: 'wep-head' }, [
-        U.el('h3', { text: T('Episodes') }),
+        U.el('h2', { text: T('Episodes') }),
         U.el('span', { class: 'wep-count', text: `${total}` })
       ])
     ])
@@ -589,7 +589,7 @@ export const PageWatch = {
 
     box.append(U.el('div', { class: 'player-pick' }, [
       U.el('div', { class: 'player-pick-inner' }, [
-        U.el('h3', { style: 'margin:0 0 var(--space-1);font-weight:800;', text: T('Pick a source') }),
+        U.el('h2', { style: 'margin:0 0 var(--space-1);font-weight:800;', text: T('Pick a source') }),
         U.el('p', { style: 'margin:0 0 var(--space-4);color:var(--fg-faint);font-size:var(--text-sm);', text: T('Paste a direct stream URL. Add more on separate lines and the player falls back automatically if one fails.') }),
         U.el('div', { style: 'display:flex;gap:var(--space-2);' }, [input, U.el('button', { class: 'btn btn-primary', onclick: play }, [document.createTextNode(T('Play'))])]),
         streams.length
@@ -962,7 +962,7 @@ export const PageWatch = {
 
     const close = () => backdrop.remove()
     const head = U.el('div', { class: 'w2g-panel-head' }, [
-      U.el('h3', { text: T('Watch Together') }),
+      U.el('h2', { text: T('Watch Together') }),
       U.el('button', { class: 'w2g-close', text: '×', onclick: close })
     ])
     const bodyEl = U.el('div', { class: 'w2g-panel-body' })
@@ -1080,8 +1080,11 @@ export const PageWatch = {
     const autoSkip = Store.settings().autoSkip ?? false
     menu.append(U.el('div', { class: 'player-menu-row' }, [
       U.el('span', { text: T('Auto-skip intro / outro') }),
+      // The label wraps the input and a slider span, neither of which is text,
+      // so it gave the control no name — the wording sits in a sibling span
+      // outside it.
       U.el('label', { class: 'switch' }, [
-        U.el('input', { type: 'checkbox', ...(autoSkip ? { checked: '' } : {}), onchange: e => Store.saveSettings({ autoSkip: e.target.checked }) }),
+        U.el('input', { type: 'checkbox', 'aria-label': T('Auto-skip intro / outro'), ...(autoSkip ? { checked: '' } : {}), onchange: e => Store.saveSettings({ autoSkip: e.target.checked }) }),
         U.el('span', { class: 'slider' })
       ])
     ]))

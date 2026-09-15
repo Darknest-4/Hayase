@@ -134,6 +134,7 @@ export const PageThemes = {
     const picker = U.el('input', {
       type: 'color',
       class: 'theme-color-input',
+      'aria-label': 'Kiemelőszín',
       value: this._toHex(currentAccent) ?? '#f43f6e',
       oninput: e => { Store.setTheme({ accent: e.target.value }) },
       onchange: () => navigate()
@@ -155,6 +156,7 @@ export const PageThemes = {
     const tint = U.el('label', { class: 'switch' }, [
       U.el('input', {
         type: 'checkbox',
+        'aria-label': 'Színezett felületek',
         ...(settings.themeTint ? { checked: '' } : {}),
         onchange: e => Store.setTheme({ tint: e.target.checked })
       }),
