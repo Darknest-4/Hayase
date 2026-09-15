@@ -116,7 +116,7 @@ export const adminThemes: FastifyPluginAsync = async fastify => {
     }
 
     if (body.isDefault) await makeDefault(row?.id ?? '')
-    await audit(request.user.sub, 'theme.create', 'theme', row?.id ?? null, null, { slug: body.slug, name: body.name })
+    await audit(request.user.sub, 'theme.create', 'theme', row?.id ?? 'unknown', null, { slug: body.slug, name: body.name })
     return reply.code(201).send({ id: row?.id, slug: body.slug })
   })
 

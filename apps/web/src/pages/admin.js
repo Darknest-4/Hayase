@@ -1440,8 +1440,41 @@ export const PageAdmin = {
         [['', 'All visibility'], ['public', 'Public'], ['unlisted', 'Unlisted'], ['hidden', 'Hidden']].map(([v, l]) =>
           U.el('option', { value: v, text: l }))),
       can('anime.create') ? U.el('button', { class: 'btn btn-primary btn-sm', onclick: () => openEditor(null) }, [document.createTextNode('+ New anime')]) : null,
-      can('anime.merge') ? U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => { state.selected = null; this.renderCatDuplicates(editCol, can, () => { loadList(); this.renderCatDuplicates(editCol, can, loadList) }) } }, [document.createTextNode('Duplicates')]) : null
+      can('anime.merge') ? U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => { state.selected = null; this.renderCatDuplicates(editCol, can, () => { loadList(); this.renderCatDuplicates(editCol, can, loadList) }) } }, [document.createTextNode('Duplicates')]) : null,
+      // Az importált katalógus minden epizódja rejtett — ez az oszlop
+      // alapértelmezése, nem döntés. 32 000 címet senki nem publikál kézzel,
+      // és addig minden részletoldalon az áll, hogy nincs epizódadat.
+      can('episode.edit')
+        ? U.el('button', {
+          class: 'btn btn-ghost btn-sm',
+          title: 'Shifttel megnyomva visszarejti őket',
+          onclick: e => publishAll(e.shiftKey ? 'hidden' : 'public')
+        }, [document.createTextNode('Epizódok publikálása…')])
+        : null
     ])
+
+    /**
+     * Az egész katalógus epizódjainak publikálása.
+     *
+     * Nem kérdez rá kétszer, de megmondja előre, hány sort érint, és a
+     * visszavonás ugyanitt van egy gombnyomásra ('hidden'), mert ez egy
+     * kapcsoló, nem egy törlés.
+     */
+    const publishAll = async (visibility) => {
+      const ok = window.confirm(visibility === 'public'
+        ? 'Az összes publikus cím epizódja láthatóvá válik a látogatók számára.\n\n' +
+          'Ez csak az epizódsorokat érinti (cím, leírás, kép, dátum) — videóforrást ' +
+          'nem tesz elérhetővé, azokat külön kapcsoló engedi.\n\n' +
+          'Visszavonható: ugyanez a gomb Shifttel megnyomva visszarejti őket.'
+        : 'Az összes epizód visszakerül rejtettbe. A részletoldalakon ismét az ' +
+          'fog állni, hogy nincs epizódadat.')
+      if (!ok) return
+      try {
+        const res = await YumeAPI.admin.catalogue.episodeVisibilityAll({ visibility })
+        const verb = visibility === 'public' ? 'publikálva' : 'elrejtve'
+        U.toast(res.changed ? `${res.changed.toLocaleString(I18n.locale())} epizód ${verb}` : 'Nem volt mit változtatni')
+      } catch (e) { U.toast(e.message, 'error') }
+    }
     listCol.append(toolbar, listBox)
 
     const loadList = async () => {

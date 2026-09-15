@@ -32,7 +32,7 @@ export type AuditAction =
   | 'episode.source.add' | 'episode.source.edit' | 'episode.source.remove'
   // Publishing is its own act, separate from editing an episode's text: it is
   // the one that decides whether viewers can reach the thing at all.
-  | 'episode.visibility' | 'anime.visibility'
+  | 'episode.visibility' | 'episode.visibility.all' | 'anime.visibility'
   // Catalogue text a viewer reads, written by hand. Recorded because
   // "who changed this description and to what" is asked afterwards.
   | 'anime.translation.create' | 'anime.translation.update' | 'anime.translation.delete'
@@ -47,6 +47,11 @@ export type AuditAction =
   | 'theme.create' | 'theme.update' | 'theme.delete'
 
 export type SubjectType = 'user' | 'role' | 'anime' | 'episode' | 'config' | 'webhook' | 'metadata_run' | 'theme'
+  // An act with no single subject — a sweep over the whole catalogue. It still
+  // has a subject, and pretending otherwise is how the entry gets lost: the
+  // column is NOT NULL, and a failed audit write is logged, not thrown, so a
+  // null subject means the action happens and nothing records it.
+  | 'catalogue'
 
 /**
  * Record one administrative action.
@@ -59,7 +64,11 @@ export async function audit (
   actorId: string,
   action: AuditAction,
   subjectType: SubjectType,
-  subjectId: string | null,
+  // Not nullable: the column is NOT NULL, and an audit write that fails is
+  // logged rather than thrown — so `null` here means the administrative act
+  // goes through and leaves no trace. An act without one subject names its
+  // scope instead ('catalogue', 'all').
+  subjectId: string,
   before: Record<string, unknown> | null,
   after: Record<string, unknown> | null
 ): Promise<void> {

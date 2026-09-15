@@ -164,6 +164,34 @@ export class CatalogueAdminRepository extends Repository {
     )
   }
 
+  /**
+   * Publish (or unpublish) every episode of every visible title at once.
+   *
+   * The per-anime call above is the editorial workflow: a batch of subtitles
+   * lands and a season goes live. This one is the migration that workflow
+   * assumes has already happened — a catalogue imported from AniList arrives
+   * with `visibility = 'hidden'` on all of it, because that is the column
+   * default, and nobody publishes 32 000 titles by hand. Until someone does,
+   * every detail page in the catalogue says it has no episode data while the
+   * rows sit there in full.
+   *
+   * Hidden titles are left alone: an anime that an operator took down does not
+   * get its episodes published by a catalogue-wide sweep.
+   */
+  bulkEpisodeVisibility (visibility: string): Promise<{ changed: number }> {
+    return this.queryOne<{ changed: number }>(
+      `WITH updated AS (
+         UPDATE episodes e SET visibility = $1, updated_at = now()
+           FROM anime a
+          WHERE a.id = e.anime_id
+            AND a.visibility = 'public'
+            AND e.visibility IS DISTINCT FROM $1
+        RETURNING e.id)
+       SELECT count(*)::int AS changed FROM updated`,
+      [visibility]
+    ) as Promise<{ changed: number }>
+  }
+
   removeEpisode (episodeId: string): Promise<Record<string, unknown> | undefined> {
     return this.queryOne('DELETE FROM episodes WHERE id = $1 RETURNING number', [episodeId])
   }
