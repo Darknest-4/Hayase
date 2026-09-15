@@ -895,6 +895,9 @@ export const YumeAPI = {
     security: () => YumeAPI._request('/v1/admin/security', { auth: true }),
     // The posture: every entry inspects something and says what it found.
     posture: () => YumeAPI._request('/v1/admin/security/posture', { auth: true }),
+    // A sebességkorlátok átírása. Ugyanaz a jogosultság, ami a
+    // vészkapcsolókat is nyitja, és ugyanúgy auditált.
+    setRateLimits: body => YumeAPI._request('/v1/admin/security/limits', { method: 'PATCH', auth: true, body }),
     setControl: (key, value, reason) =>
       YumeAPI._request(`/v1/admin/security/${encodeURIComponent(key)}`, {
         method: 'POST', auth: true, body: { value, reason }

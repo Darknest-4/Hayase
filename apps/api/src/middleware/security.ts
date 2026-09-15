@@ -8,6 +8,9 @@ import rateLimit from '@fastify/rate-limit'
 import fp from 'fastify-plugin'
 
 import { config } from '../config.ts'
+import { settings as siteSettings, type RateLimits } from '../modules/settings/site-settings.ts'
+
+import type { FastifyRequest } from 'fastify'
 
 /**
  * Content-Security-Policy for the served web client.
@@ -49,34 +52,38 @@ const HEADERS: Record<string, string> = {
 /** Strict limit for credential endpoints: password hashing is deliberately
  *  expensive (scrypt N=2^17), so unbounded attempts are both a brute-force and
  *  a CPU-exhaustion vector. Tunable for operators running behind a shared NAT. */
-export const AUTH_LIMIT = {
-  rateLimit: {
-    max: Number(process.env.AUTH_RATE_LIMIT_MAX ?? 10),
-    timeWindow: process.env.AUTH_RATE_LIMIT_WINDOW ?? '15 minutes'
-  }
-}
+/*
+ * A korlátok futásidőben olvasódnak, nem induláskor.
+ *
+ * Eddig környezeti változók voltak, tehát az átállításuk újraindítást
+ * jelentett — és az az egyetlen pillanat, amikor egy korlátot állítani kell,
+ * az az, amikor épp folyik valami. Egy védelem, amihez telepítés kell, nem
+ * védelem, hanem terv.
+ *
+ * A @fastify/rate-limit `max` és `timeWindow` mezője elfogad függvényt, és a
+ * beállítás-olvasó gyorsítótárazott: kérésenként egy map-keresés, nem egy
+ * lekérdezés. A környezeti változó marad az alapérték.
+ */
+const limit = (name: keyof RateLimits): {
+  max: (req: FastifyRequest) => Promise<number>
+  timeWindow: (req: FastifyRequest) => Promise<number>
+} => ({
+  max: async () => (await siteSettings.rateLimits())[name].max,
+  timeWindow: async () => (await siteSettings.rateLimits())[name].windowSeconds * 1000
+})
+
+export const AUTH_LIMIT = { rateLimit: limit('auth') }
 
 /** Refresh is called legitimately far more often than login. */
-export const REFRESH_LIMIT = {
-  rateLimit: {
-    max: Number(process.env.REFRESH_RATE_LIMIT_MAX ?? 60),
-    timeWindow: process.env.REFRESH_RATE_LIMIT_WINDOW ?? '15 minutes'
-  }
-}
+export const REFRESH_LIMIT = { rateLimit: limit('refresh') }
 
 /** User-generated content: enough for real use, low enough to stop flooding. */
-export const WRITE_LIMIT = {
-  rateLimit: {
-    max: Number(process.env.WRITE_RATE_LIMIT_MAX ?? 30),
-    timeWindow: process.env.WRITE_RATE_LIMIT_WINDOW ?? '5 minutes'
-  }
-}
+export const WRITE_LIMIT = { rateLimit: limit('write') }
 
 export default fp(async fastify => {
   await fastify.register(rateLimit, {
     global: true,
-    max: Number(process.env.RATE_LIMIT_MAX ?? 300),
-    timeWindow: process.env.RATE_LIMIT_WINDOW ?? '1 minute',
+    ...limit('global'),
     // Health checks must never be throttled — orchestrators poll them and a
     // 429 would be read as the service being down.
     allowList: request => request.url.startsWith('/v1/health'),

@@ -883,7 +883,7 @@ export const PageAdmin = {
         // The posture is a separate request and must not be able to take the
         // controls down with it: an operator reaching this page mid-incident
         // needs the levers whether or not a check can run.
-        const [{ controls, context, engaged }, posture] = await Promise.all([
+        const [{ controls, context, engaged, rateLimits }, posture] = await Promise.all([
           YumeAPI.admin.security(),
           YumeAPI.admin.posture().catch(e => ({ error: e }))
         ])
@@ -893,7 +893,7 @@ export const PageAdmin = {
         // this screen mid-incident needs to know what is already engaged
         // before they consider engaging anything else.
         content.append(U.el('div', { class: 'sec-state ' + (engaged.length ? 'engaged' : 'normal') }, [
-          U.el('div', { class: 'sec-state-title', text: engaged.length ? 'Controls engaged' : 'Operating normally' }),
+          U.el('div', { class: 'sec-state-title', text: engaged.length ? 'Vezérlő bekapcsolva' : 'Normál működés' }),
           U.el('div', {
             class: 'sec-state-sub',
             text: engaged.length
@@ -903,9 +903,9 @@ export const PageAdmin = {
         ]))
 
         content.append(U.el('div', { class: 'sec-context' }, [
-          U.el('span', { text: `${context?.sessions ?? 0} active sessions` }),
-          U.el('span', { text: `${context?.hooks ?? 0} enabled webhooks` }),
-          U.el('span', { text: `${context?.runs ?? 0} metadata runs in flight` })
+          U.el('span', { text: `${context?.sessions ?? 0} élő munkamenet` }),
+          U.el('span', { text: `${context?.hooks ?? 0} bekapcsolt webhook` }),
+          U.el('span', { text: `${context?.runs ?? 0} futó metaadat-passz` })
         ]))
 
         content.append(this.postureBlock(posture))
@@ -913,12 +913,88 @@ export const PageAdmin = {
         content.append(U.el('h3', { class: 'sec-heading', text: 'Vezérlők' }))
         for (const c of controls) content.append(this.securityControl(c, load))
 
+        content.append(this.rateLimitCard(rateLimits ?? [], load))
         content.append(this.revokeAllCard(load))
       } catch (e) {
         content.replaceChildren(P.errorState(e.message))
       }
     }
     await load()
+  },
+
+  /**
+   * A sebességkorlátok, szerkeszthetően.
+   *
+   * Eddig környezeti változók voltak: az átállításuk újraindítást jelentett —
+   * és az az egyetlen pillanat, amikor egy korlátot állítani kell, az az,
+   * amikor épp folyik valami. Egy roham közepén, vagy épp fordítva: amikor
+   * egy közös cím mögül érkező csoportot zártunk ki.
+   *
+   * A mentés azonnal hat, nem a gyorsítótár lejártakor. Az indoklás kötelező,
+   * mint a vészkapcsolóknál — egy szám, aminek nincs története, egy hónap
+   * múlva megmagyarázhatatlan.
+   */
+  rateLimitCard (rows, reload) {
+    const inputs = new Map()
+    const box = U.el('div', { class: 'setting-card', style: 'max-width:none;' }, [
+      U.el('h3', { style: 'margin:0;', text: 'Sebességkorlátok' }),
+      U.el('p', {
+        class: 'list-row-sub',
+        style: 'margin:var(--space-1) 0 var(--space-3);max-width:44rem;',
+        text: 'Hány kérést enged egy cím az adott időablakban. A mentés azonnal érvényes, újraindítás nélkül. Az alapérték a telepítésé; ami attól eltér, azt „egyedi" jelöli.'
+      })
+    ])
+
+    for (const row of rows) {
+      const max = U.el('input', { class: 'input', type: 'number', min: '1', step: '1', style: 'width:7rem;', value: String(row.max) })
+      const win = U.el('input', { class: 'input', type: 'number', min: '1', step: '1', style: 'width:7rem;', value: String(row.windowSeconds) })
+      inputs.set(row.key, { max, win })
+      box.append(U.el('div', { class: 'meta-row' }, [
+        U.el('div', { class: 'meta-row-main' }, [
+          U.el('div', { class: 'meta-row-title', text: row.label ?? row.key }),
+          U.el('div', {
+            class: 'meta-row-sub',
+            text: row.custom
+              ? `egyedi · alapérték ${row.defaultMax} / ${row.defaultWindowSeconds} mp`
+              : `alapérték (${row.defaultMax} / ${row.defaultWindowSeconds} mp)`
+          })
+        ]),
+        U.el('div', { style: 'display:flex;align-items:center;gap:var(--space-2);' }, [
+          max, U.el('span', { class: 'list-row-sub', text: 'kérés /' }), win, U.el('span', { class: 'list-row-sub', text: 'mp' })
+        ])
+      ]))
+    }
+
+    const reason = U.el('input', { class: 'input', style: 'flex-grow:1;min-width:14rem;', placeholder: 'Miért változik? (kötelező)' })
+    box.append(U.el('div', { style: 'display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;margin-top:var(--space-3);' }, [
+      reason,
+      U.el('button', {
+        class: 'btn btn-primary btn-sm',
+        onclick: async e => {
+          const limits = {}
+          for (const [key, { max, win }] of inputs) {
+            const m = Number(max.value)
+            const w = Number(win.value)
+            if (!Number.isInteger(m) || m < 1 || !Number.isInteger(w) || w < 1) {
+              return U.toast('Minden mező egész szám legyen, legalább 1', 'error')
+            }
+            limits[key] = { max: m, windowSeconds: w }
+          }
+          if (!reason.value.trim()) return U.toast('Az indoklás kötelező', 'error')
+          e.target.disabled = true
+          try {
+            await YumeAPI.admin.setRateLimits({ limits, reason: reason.value.trim() })
+            U.toast('Sebességkorlátok mentve')
+            reload()
+          } catch (err) {
+            U.toast(err.message, 'error')
+          } finally {
+            e.target.disabled = false
+          }
+        }
+      }, [document.createTextNode('Mentés')])
+    ]))
+    return box
   },
 
   /**
@@ -943,10 +1019,10 @@ export const PageAdmin = {
       U.el('div', { class: 'sec-score-value', text: summary.score === null ? '—' : `${summary.score}%` }),
       U.el('div', { class: 'sec-score-side' }, [
         U.el('div', { class: 'sec-score-counts' }, [
-          U.el('span', { class: 'tone-green', text: `${summary.pass ?? 0} passing` }),
-          summary.warn ? U.el('span', { class: 'tone-amber', text: `${summary.warn} warning` }) : null,
-          summary.fail ? U.el('span', { class: 'tone-red', text: `${summary.fail} failing` }) : null,
-          summary.unknown ? U.el('span', { class: 'tone-red', text: `${summary.unknown} unknown` }) : null,
+          U.el('span', { class: 'tone-green', text: `${summary.pass ?? 0} rendben` }),
+          summary.warn ? U.el('span', { class: 'tone-amber', text: `${summary.warn} figyelmeztetés` }) : null,
+          summary.fail ? U.el('span', { class: 'tone-red', text: `${summary.fail} hibás` }) : null,
+          summary.unknown ? U.el('span', { class: 'tone-red', text: `${summary.unknown} ismeretlen` }) : null,
           summary.skipped ? U.el('span', { text: `${summary.skipped} nem alkalmazható` }) : null
         ]),
         // Said out loud, because the number is only worth what is behind it.
