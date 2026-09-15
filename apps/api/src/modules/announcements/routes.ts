@@ -25,6 +25,7 @@
 // Writing is behind `announcement.manage`.
 
 import { loadPermissions } from '../../middleware/auth.ts'
+import { profileOf, requireProfile } from '../../middleware/profile.ts'
 import { query, queryOne } from '../../infrastructure/database/index.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
@@ -53,7 +54,10 @@ const routes: FastifyPluginAsync = async fastify => {
    * account can honestly do.
    */
   fastify.get('/', { onRequest: fastify.identify }, async request => {
-    const profileId = (request.headers['x-profile-id'] as string | undefined) ?? null
+    // A profil a fiókból jön, nem a fejlécből. Fejlécként bármelyik ismert
+    // azonosítót meg lehetett adni, és a válasz elárulta, hogy az a profil
+    // elvetette-e a hírt.
+    const profileId = (await profileOf(request)) ?? null
     const signedIn = Boolean(request.user?.sub)
     const staff = signedIn && (await loadPermissions(request.user.sub)).has('announcement.manage')
 
@@ -80,8 +84,10 @@ const routes: FastifyPluginAsync = async fastify => {
     schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const profileId = request.headers['x-profile-id'] as string | undefined
-    if (!profileId) return await reply.code(400).send({ code: 'YUME-ANN-400', title: 'Missing X-Profile-Id header' })
+    // Ugyanaz, de itt írás: a korábbi változat a fejlécben kapott profil
+    // nevében szúrt be sort, tulajdonosi ellenőrzés nélkül.
+    const profileId = await requireProfile(request, reply)
+    if (!profileId) return undefined
 
     await query(
       `INSERT INTO announcement_dismissals (announcement_id, profile_id) VALUES ($1, $2)

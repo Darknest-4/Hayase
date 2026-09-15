@@ -7,23 +7,12 @@ import { WRITE_LIMIT } from '../../middleware/security.ts'
 import { recomputeProfileStats } from '../system/stats-worker.ts'
 import { evaluate, grantNew, measure } from './achievements.ts'
 
-import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
+import { requireProfile } from '../../middleware/profile.ts'
+
+import type { FastifyPluginAsync } from 'fastify'
 
 const LIBRARY_STATUSES = ['WATCHING', 'PLANNING', 'COMPLETED', 'PAUSED', 'DROPPED', 'REWATCHING'] as const
 
-async function resolveProfile (request: FastifyRequest, reply: FastifyReply): Promise<string | undefined> {
-  const profileId = request.headers['x-profile-id']
-  if (typeof profileId !== 'string') {
-    await reply.code(400).send({ type: 'about:blank', title: 'Bad Request', status: 400, detail: 'Missing X-Profile-Id header' })
-    return
-  }
-  const owned = await queryOne('SELECT 1 FROM user_profiles WHERE id = $1 AND user_id = $2', [profileId, request.user.sub])
-  if (!owned) {
-    await reply.code(403).send({ type: 'about:blank', title: 'Forbidden', status: 403, detail: 'Profile does not belong to this account' })
-    return
-  }
-  return profileId
-}
 
 const routes: FastifyPluginAsync = async fastify => {
   fastify.addHook('preHandler', fastify.authenticate)
@@ -58,7 +47,7 @@ const routes: FastifyPluginAsync = async fastify => {
       }
     }
   }, async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
 
     const { status, limit = 500, cursor } = request.query as { status?: string, limit?: number, cursor?: string }
@@ -126,7 +115,7 @@ const routes: FastifyPluginAsync = async fastify => {
       }
     }
   }, async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
 
     const { animeId } = request.params as { animeId: string }
@@ -156,7 +145,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.delete('/library/:animeId', { config: WRITE_LIMIT }, async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
     const { animeId } = request.params as { animeId: string }
     await query('DELETE FROM library_entries WHERE profile_id = $1 AND anime_id = $2', [profileId, animeId])
@@ -164,7 +153,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.get('/continue-watching', async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
 
     const data = await query(
@@ -205,7 +194,7 @@ const routes: FastifyPluginAsync = async fastify => {
    * deliberate, and this note is here so it does not read as a typo.
    */
   fastify.get('/favorites', async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
 
     const data = await query(
@@ -224,7 +213,7 @@ const routes: FastifyPluginAsync = async fastify => {
     config: WRITE_LIMIT,
     schema: { params: { type: 'object', properties: { animeId: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
     const { animeId } = request.params as { animeId: string }
 
@@ -245,7 +234,7 @@ const routes: FastifyPluginAsync = async fastify => {
     config: WRITE_LIMIT,
     schema: { params: { type: 'object', properties: { animeId: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
     const { animeId } = request.params as { animeId: string }
     await query(
@@ -269,7 +258,7 @@ const routes: FastifyPluginAsync = async fastify => {
    * profile expects the episode they finished a minute ago to be in there.
    */
   fastify.get('/stats', async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
 
     const stale = await queryOne<{ fresh: boolean }>(
@@ -313,7 +302,7 @@ const routes: FastifyPluginAsync = async fastify => {
    * so checking twice grants once.
    */
   fastify.get('/achievements', async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
 
     // Before measuring, so a freshly earned one comes back already granted
@@ -425,7 +414,7 @@ const routes: FastifyPluginAsync = async fastify => {
       }
     }
   }, async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
 
     const { episodeId } = request.params as { episodeId: string }
