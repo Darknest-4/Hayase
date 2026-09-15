@@ -5000,3 +5000,44 @@ body.landing-route .page { padding-bottom: 0; }
   .badge { min-height: 32px; display: inline-flex; align-items: center; }
   a.spotlight-credit { min-height: 32px; display: inline-flex; align-items: center; }
 }
+
+/* Az ikonsáv feliratokat kap, ahol elfér.
+   Az auditban ez volt a legrégebbi megoldatlan tétel: tizenkét ikon, felirat
+   nélkül, és a jelentésük csak hover után derül ki — egérrel lassan, érintéssel
+   soha. A tooltipek eddig is ott voltak (applyNavLabels írja őket), csak nem
+   pótolják a feliratot.
+   1280px fölött a tartalomnak 13rem elvétele nem fáj: a rácsok úgyis a
+   --content-max-ig nőnek, és a leszűkült oldalon is kifér ugyanannyi kártya.
+   Ez alatt marad a sáv, amilyen volt. */
+@media (min-width: 1280px) {
+  .sidebar {
+    width: var(--sidebar-w-expanded);
+    align-items: stretch;
+    padding: var(--space-3) var(--space-2);
+  }
+  .sidebar-logo {
+    width: auto;
+    justify-content: flex-start;
+    gap: var(--space-3);
+    padding: 0 var(--space-2);
+  }
+  .sidebar-logo-text {
+    display: block;
+    font: var(--type-heading);
+    letter-spacing: -0.01em;
+  }
+  .sidebar-btn {
+    width: auto;
+    justify-content: flex-start;
+    gap: var(--space-3);
+    padding: 0 var(--space-2);
+  }
+  .sidebar-btn span { display: block; font: var(--type-body); }
+  /* A jelvény eddig az ikon sarkában ült, mert nem volt mellette semmi. Most
+     a sor végére kerül, ahol nem takarja a feliratot. */
+  .sidebar-btn .notif-badge {
+    position: static;
+    margin-inline-start: auto;
+  }
+  .sidebar-profile { justify-content: flex-start; }
+}

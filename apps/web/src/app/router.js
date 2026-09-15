@@ -825,8 +825,12 @@ export const App = {
    */
   applyNavLabels () {
     document.querySelectorAll('.sidebar-btn').forEach(btn => {
-      const span = btn.querySelector('span')
-      const key = btn.id === 'nav-more' ? 'more' : btn.dataset.route
+      // Az első span nem mindig a felirat: a profilgombon az avatar áll elöl,
+      // és amíg ezt kerestük, a gomb tooltipje a rókaemodzsi lett.
+      const span = btn.querySelector('span:not(.sidebar-avatar):not(.notif-badge)')
+      const key = btn.id === 'nav-more'
+        ? 'more'
+        : btn.id === 'profile-switcher' ? 'profile' : btn.dataset.route
       if (span && key && Copy?.nav?.[key]) span.textContent = T('nav.' + key)
       const label = span?.textContent
       if (label) btn.title = label
