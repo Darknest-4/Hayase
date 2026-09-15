@@ -245,7 +245,12 @@ services:
     image: redis:7-alpine
     profiles: ['infra']
     command: redis-server --appendonly yes
-    ports: ['6379:6379']
+    # Loopbackra kötve, nem minden interfészre. A szolgáltatás profil mögött
+    # alszik, de a definíció egy `--profile infra up`-nyira van attól, hogy egy
+    # jelszó nélküli Redis a nyílt interneten hallgasson. Az alkalmazás a
+    # compose-hálózaton belülről éri el `redis:6379`-ként; a publikálás csak
+    # annak kell, aki a gépről nézegeti.
+    ports: ['127.0.0.1:6379:6379']
     volumes: ['redisdata:/data']
 
 
