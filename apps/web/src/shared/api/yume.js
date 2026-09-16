@@ -153,22 +153,55 @@ export const YumeAPI = {
    * code cannot read. `credentials: 'include'` is what makes it do so on a
    * cross-origin deployment — same-origin, which is what the container serves,
    * would send it anyway.
+   *
+   * EGYSZERRE EGY FRISSÍTÉS.
+   *
+   * A frissítő token FOROG: a kiszolgáló a felhasznált munkamenetet
+   * visszavonja, és újat ad. Ez helyes — egy ellopott token így legfeljebb
+   * egyszer használható.
+   *
+   * Csakhogy egy oldalbetöltés több hitelesített kérést indít EGYSZERRE
+   * (értesítések, jogosultságok, könyvtár, statisztika). Ha közben lejárt a
+   * hozzáférési token, mind a négy 401-et kap, és — dedukplikálás nélkül —
+   * mind a négy elindít egy frissítést ugyanazzal a sütivel. Az első sikerül
+   * és forgatja a tokent; a többi egy már visszavont munkamenetet mutat fel,
+   * 401-et kap, és a `catch` ág KIJELENTKEZTETI a felhasználót — ráadásul a
+   * kiszolgáló a sütit is törli.
+   *
+   * Mérve, négy párhuzamos kéréssel: négy frissítés indult, kettő 200, kettő
+   * 401, és két felhasználói kérés hibára futott. Hogy a munkamenet túléli-e,
+   * azon múlt, melyik frissítés ért célba utoljára — vagyis pénzfeldobás volt.
+   *
+   * Ezért egyszerre egy frissítés fut, és a többi hívó ugyanarra a
+   * művelet-ígéretre vár. Nem gyorsítótár: az ígéret a futás végén eltűnik,
+   * tehát a következő lejáratkor újra lesz frissítés.
    */
   async _refresh () {
-    try {
-      const fresh = await this._request('/v1/auth/refresh', {
-        method: 'POST',
-        body: {},
-        anonymous: true,
-        credentials: 'include',
-        retry: false
-      })
-      this._saveTokens(fresh)
-    } catch (e) {
-      this._saveTokens(null) // refresh refused → signed out
-      throw e
-    }
+    if (this._refreshing) return this._refreshing
+
+    this._refreshing = (async () => {
+      try {
+        const fresh = await this._request('/v1/auth/refresh', {
+          method: 'POST',
+          body: {},
+          anonymous: true,
+          credentials: 'include',
+          retry: false
+        })
+        this._saveTokens(fresh)
+      } catch (e) {
+        this._saveTokens(null) // refresh refused → signed out
+        throw e
+      } finally {
+        this._refreshing = null
+      }
+    })()
+
+    return this._refreshing
   },
+
+  /** A futó frissítés ígérete, ha van. Lásd `_refresh`. */
+  _refreshing: null,
 
   async available () {
     try {
