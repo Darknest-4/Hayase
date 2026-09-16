@@ -10,13 +10,13 @@ termékkel — **ennek a kódnak az ára, ezen a VPS-en**.
 |---|---|
 | felépítés (12 kör mediánja) | **1,20 ms** |
 | felépítés, legrosszabb | 1,70 ms |
-| állapotfrissítés | **70,3 µs** |
-| állapotfrissítés, ha semmi nem változott | **1,2 µs** |
+| állapotfrissítés | **76,8 µs** |
+| állapotfrissítés, ha semmi nem változott | **0,6 µs** |
 | 25 felépítés + szétbontás után maradék elem | **0** |
 | 25 kör után el nem bontott erőforrás | **0** |
 | képkockaköz lejátszás közben, medián | **16,7 ms** |
-| képkockaköz, p95 | 28,0 ms |
-| képkockaköz, legrosszabb | 51,3 ms |
+| képkockaköz, p95 | 36,9 ms |
+| képkockaköz, legrosszabb | 43,1 ms |
 
 ## Mit jelentenek
 
@@ -56,6 +56,39 @@ asztali gép 60 Hz-éhez — amit megfog, az a blokkolás.
 - **A közös nézés helyzetjelentése négy másodpercenként megy**, nem
   `timeupdate`-re. Az utóbbi egy részen negyvenezer üzenet lenne, semmi
   haszonnal.
+
+## Egy funkció, amit a mérés írt át
+
+A környezeti fény első változata a **videó képkockáit** mintázta egy 32×18-as
+vászonra, fél másodpercenként. Papíron elhanyagolható. Böngészőben mérve, 150
+képkocka mediánja, kétszer megismételve:
+
+| mit csinált | képkockaköz mediánja |
+|---|---|
+| nincs fény | **16,7 ms** |
+| **csak a másolás**, vászon megjelenítése nélkül | **76,0 ms** |
+| másolás + kicsi elmosás, felnagyítva | 74,8 ms |
+| másolás + nagy elmosás a teljes felületen | 79,3 ms |
+
+A **második sor** a döntő. A költség nem az elmosás és nem a megjelenítés,
+hanem maga a `drawImage(video, …)`: egy videó képkockájának vászonra másolása
+visszaolvasást kényszerít a GPU-ról, és a dekódoló utána lassabb úton marad.
+Nem a másolás pillanata drágul — **az egész lejátszás**.
+
+Először az elmosást próbáltam olcsóbbá tenni (kicsiben elmosni, utána
+nagyítani). Nem segített: 79 ms maradt. Csak a szétbontott mérés mutatta meg,
+hogy rossz helyen kerestem.
+
+A 20. pont a „videó/**poster** színeiből" kér hátteret. A poszter ugyanolyan
+jó forrás, és egy képet **egyszer** lemásolni ingyen van: nincs dekódoló,
+amit elronthatnánk, és nincs ismétlődő munka. A modul azóta a borítót
+mintázza, egyszer, és a mért érték visszatért 16,7 ms-ra.
+
+Ami elveszett: a háttér nem követi a jelenetek színét. Ami megmaradt: a cím
+saját színvilága a lejátszó mögött — és egy lejátszás, ami nem akad.
+
+A böngészős készlet azóta **a mediánra is** állít határt (40 ms), pont ezért
+a hibaosztályért.
 
 ## Mit nem mértünk
 

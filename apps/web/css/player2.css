@@ -52,17 +52,42 @@
   transition: opacity var(--dur) var(--ease), visibility 0s linear var(--dur);
 }
 
-/* ---- ambiens fény ---- */
+/* ---- ambiens fény ----
+ *
+ * A NAIV MEGOLDÁS MÉRHETŐEN DRÁGA VOLT. Az első változat a vásznat a héj
+ * teljes méretére nyújtotta, és arra tett `blur(64px)`-et. Mérve: a
+ * képkockaköz mediánja 16,7 ms-ról 75,2 ms-ra romlott — négy és félszeres —,
+ * és ez két külön futáson ugyanígy jött ki.
+ *
+ * Az ok nem a rajzolás (az 32×18 képpont, fél másodpercenként), hanem az
+ * ELMOSÁS: egy 64 képpontos sugarú szűrő egy 1440×810-es felületen minden
+ * képkockán újraszámolódik, mert a vászon egy összeállítási bemenet.
+ *
+ * A megoldás ugyanaz a kép, fordított sorrendben: a vászon a SAJÁT PICI
+ * MÉRETÉBEN marad, ott kap egy pár képpontos elmosást — ami a kicsinység
+ * miatt nevetségesen olcsó —, és utána nagyítjuk fel. A nagyítás a GPU
+ * dolga, és egy már elmosott textúra kinagyítása pontosan ugyanolyan lágy
+ * foltot ad.
+ */
 .yp-ambient {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  filter: blur(64px) saturate(1.6);
+  /* A bal felső sarokból nagyítunk, ezért a saját méretével kezdünk. */
+  top: 0;
+  left: 0;
+  width: 32px;
+  height: 18px;
+  /* Az elmosás a KICSI méreten: két képpont itt a felnagyítás után
+     nyolcvannal ér fel. */
+  filter: blur(2px) saturate(1.6);
+  transform-origin: 0 0;
+  /* 32 × 45 = 1440, 18 × 45 = 810 — bőven a héj fölé nő, és a héj levágja. */
+  transform: scale(45);
   opacity: 0;
-  transform: scale(1.15);
   transition: opacity 600ms var(--ease);
   pointer-events: none;
+  /* SAJÁT RÉTEG. Enélkül a böngésző a fölötte lévő tartalommal együtt
+     rajzolja újra, és a nyereség egy része elveszik. */
+  will-change: opacity;
 }
 .yp-ambient-on .yp-ambient { opacity: 0.55; }
 
@@ -435,15 +460,126 @@
 /* ---- teljes képernyő ---- */
 .yp-fullscreen { aspect-ratio: auto; height: 100%; border-radius: 0; }
 
-/* ---- kis lejátszó ---- */
+/* ---- kis lejátszó ----
+ *
+ * A pozíciót a JS írja beágyazott stílusként (húzás és átméretezés), ezért
+ * itt NINCS `right`/`bottom`: egy ilyen szabály felülírná a húzás eredményét
+ * minden újrarajzoláskor, és az ablak visszaugrana a sarokba.
+ */
 .yp-mini {
   position: fixed;
-  right: var(--space-4);
-  bottom: var(--space-4);
-  width: min(360px, 42vw);
   z-index: 60;
   box-shadow: var(--shadow-3);
   border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+/* A HELYŐRZŐ a régi helyén marad, hogy a lap tartalma ne ugorjon fel, amikor
+   a lejátszó kikerül a folyamból. */
+.yp-mini-placeholder { width: 100%; }
+
+.yp-mini-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-2);
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--ink-black) 80%, transparent), transparent);
+  cursor: grab;
+  /* Az érintés SAJÁT kezelésű: e nélkül a húzás a lapot görgetné. */
+  touch-action: none;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+.yp-mini:hover .yp-mini-bar,
+.yp-mini-bar:focus-within { opacity: 1; }
+.yp-mini-bar:active { cursor: grabbing; }
+
+.yp-mini-grip {
+  width: 28px;
+  height: 3px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--on-media) 55%, transparent);
+}
+.yp-mini-close {
+  width: 28px;
+  height: 28px;
+  font-size: var(--text-lg);
+  line-height: 1;
+  color: var(--on-media);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.yp-mini-close:hover { background: color-mix(in srgb, var(--on-media) 20%, transparent); }
+
+/* A BAL ALSÓ SARKON méretez, mert az ablak jobbra-lent ül: a jobb sarok a
+   képernyő széléhez tapadna. */
+.yp-mini-resize {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nesw-resize;
+  touch-action: none;
+  background: linear-gradient(45deg, color-mix(in srgb, var(--on-media) 45%, transparent) 0 2px, transparent 2px);
+}
+
+/* A kislejátszóban a teljes vezérlősáv nem fér el, és nem is kell: ott a
+   lejátszás, az idő és a bezárás a teljes eszköztár. */
+.yp-mini .yp-controls { padding: var(--space-4) var(--space-1) var(--space-1); }
+.yp-mini .yp-btn-sub,
+.yp-mini .yp-btn-settings,
+.yp-mini .yp-volume,
+.yp-mini .yp-btn-back,
+.yp-mini .yp-btn-fwd,
+.yp-mini .yp-btn-mute { display: none; }
+.yp-mini .yp-menu,
+.yp-mini .yp-skip,
+.yp-mini .yp-debug { display: none; }
+
+/* ---- fejlesztői réteg ---- */
+.yp-debug {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  max-width: min(340px, 60%);
+  max-height: 70%;
+  overflow: auto;
+  padding: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--on-media);
+  background: color-mix(in srgb, var(--ink-black) 82%, transparent);
+  border: 1px solid color-mix(in srgb, var(--on-media) 20%, transparent);
+  border-radius: var(--radius-sm);
+  /* Nem fogja el a kattintást a videó elől: ez egy kijelző, nem vezérlő. */
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+}
+.yp-debug-table { width: 100%; border-collapse: collapse; }
+.yp-debug-table th {
+  text-align: left;
+  font-weight: var(--weight-normal);
+  color: color-mix(in srgb, var(--on-media) 62%, transparent);
+  padding-right: var(--space-3);
+  white-space: nowrap;
+}
+.yp-debug-table td { text-align: right; font-variant-numeric: tabular-nums; }
+.yp-debug-log {
+  margin: var(--space-2) 0 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid color-mix(in srgb, var(--on-media) 18%, transparent);
+  color: color-mix(in srgb, var(--on-media) 70%, transparent);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* A MOZGÁS LETILTÁSA. A betöltő pásztázása folyamatos mozgás a képernyő

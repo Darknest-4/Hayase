@@ -17,6 +17,11 @@ import { createProgressTracker } from '../playback/progress.js'
 import { createResume } from '../playback/resume.js'
 import { createSkipManager } from '../skip/skip-manager.js'
 import { createWatchParty } from '../party/watch-party.js'
+import { createAmbientLight } from '../ambient/ambient-light.js'
+import { createMediaSession } from '../integration/media-session.js'
+import { createMiniPlayer } from '../mini/mini-player.js'
+import { createDebugOverlay } from '../debug/debug-overlay.js'
+import { createTelemetry } from '../telemetry/player-telemetry.js'
 import { createSourceManager } from '../engine/source-manager.js'
 import { chooseQuality, availableQualities } from '../quality/quality-manager.js'
 import { selectTrack } from '../subtitles/subtitle-manager.js'
@@ -249,6 +254,43 @@ export function createEpisodePlayer (options = {}) {
     onEpisode: number => options.onEpisodeChange?.(number)
   })
 
+  // ---- környezeti fény ----
+  // Csak ha a kapcsoló és a néző is engedi. Kikapcsolva egyetlen képkockát
+  // sem másolunk — a modul létrejön, de nem indul el.
+  const ambient = createAmbientLight(player, ui.ambient, {
+    prefs,
+    enabled: flags.isOn('player.ambient'),
+    // A borító, a bannerkép vagy a logó — ebben a sorrendben. Ami van.
+    imageSrc: options.media?.coverImage ?? options.media?.bannerImage ?? options.media?.logoImage ?? null
+  })
+
+  // ---- kislejátszó ----
+  const mini = createMiniPlayer(player, ui.node, { prefs })
+  actions.toggleMini = () => (flags.isOn('player.mini_player') ? mini.toggle() : false)
+
+  // ---- zárolt képernyő ----
+  const mediaSession = flags.isOn('player.media_session')
+    ? createMediaSession(player, {
+      title: options.media?.title ?? null,
+      artwork: options.media?.coverImage ? [{ src: options.media.coverImage }] : [],
+      onNext: options.onNextEpisode ? () => options.onNextEpisode() : undefined,
+      onPrevious: options.onPreviousEpisode ? () => options.onPreviousEpisode() : undefined
+    })
+    : { supported: false, update () {} }
+
+  // ---- fejlesztői réteg ----
+  // A kapcsoló nélkül LÉTRE SEM JÖN: egy rejtett, de fél másodpercenként
+  // frissülő táblázat ugyanúgy dolgozik, mint egy látható.
+  const debug = flags.isOn('player.debug') ? createDebugOverlay(player) : null
+  if (debug) {
+    ui.node.append(debug.node)
+    actions.toggleDebug = () => debug.toggle()
+  }
+
+  // ---- telemetria ----
+  // Küldőfüggvény nélkül NÉMA: összegyűjt, de nem küld sehova.
+  const telemetry = createTelemetry(player, { send: options.onTelemetry })
+
   sources.start()
 
   return {
@@ -256,6 +298,11 @@ export function createEpisodePlayer (options = {}) {
     player,
     party,
     loading,
+    ambient,
+    mini,
+    mediaSession,
+    debug,
+    telemetry,
     ui,
     prefs,
     flags,

@@ -115,7 +115,28 @@ class MiniNode {
     }
   }
 
-  prepend (...kids) { this.children.unshift(...kids.filter(Boolean)) }
+  prepend (...kids) {
+    const real = kids.filter(Boolean)
+    for (const kid of real) kid.parentNode = this
+    this.children.unshift(...real)
+  }
+
+  /**
+   * A valódi DOM-ban a `parentNode` és a `parentElement` külön tulajdonság,
+   * és a kód hol egyiket, hol másikat használja. Csak az egyiket megadni
+   * olyan csonk, ami CSENDBEN mást csinál, mint a böngésző — a kislejátszó
+   * helyőrzője pont ezért nem került be sehova.
+   */
+  get parentElement () { return this.parentNode ?? null }
+
+  insertBefore (node, reference) {
+    if (!node) return node
+    node.parentNode = this
+    const at = this.children.indexOf(reference)
+    if (at === -1) this.children.push(node)
+    else this.children.splice(at, 0, node)
+    return node
+  }
   replaceChildren (...kids) {
     this.children = []
     this._text = ''

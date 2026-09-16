@@ -98,6 +98,7 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
    * fájlt futtatjuk, ami élesben is kimenne.
    */
   const mount = (options = {}) => page.evaluate(async ({ src, opts }) => {
+    window.__ypPrefs = opts.prefs ?? {}
     document.querySelector('#yp-harness')?.remove()
     const host = document.createElement('div')
     host.id = 'yp-harness'
@@ -556,6 +557,20 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
     // Fejetlen böngészőben nincs valódi képernyőfrissítés, ezért a szám nem
     // hasonlítható egy asztali 60 Hz-hez. Amit megfog: a főszál BEFAGYÁSÁT.
     assert.ok(measured.p95 < 200, `a képkockaköz p95 ${measured.p95.toFixed(1)} ms — valami blokkolja a főszálat`)
+
+    /*
+     * A MEDIÁNRA SZŰKEBB HATÁR, mert ezen bukott meg egyszer már valami.
+     *
+     * A környezeti fény első változata a videó képkockáit másolta vászonra
+     * fél másodpercenként. Ettől a medián 16,7 ms-ról 75,2 ms-ra romlott — a
+     * visszaolvasás a GPU-ról a dekódolót lassabb úton hagyja, és nem a
+     * másolás pillanata drágul, hanem az egész lejátszás.
+     *
+     * A 40 ms bőven a mért 16,7 fölött van (nem szorít egy terhelt gépen),
+     * és bőven a 75 alatt (megfogja ezt a hibaosztályt).
+     */
+    assert.ok(measured.median < 40,
+      `a képkockaköz mediánja ${measured.median.toFixed(1)} ms — valami folyamatos munkát végez lejátszás közben`)
     await teardown()
   })
 

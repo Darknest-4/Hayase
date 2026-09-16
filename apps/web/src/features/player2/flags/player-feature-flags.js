@@ -43,7 +43,15 @@ export const PLAYER_FLAGS = Object.freeze({
   'player.watch_time': { core: false, desc: 'Mért nézési idő.' },
   'player.watch_party': { core: false, desc: 'Közös nézés.' },
   'player.media_session': { core: false, desc: 'Zárolt képernyős vezérlés.' },
-  'player.debug': { core: false, desc: 'Fejlesztői réteg.' }
+  /*
+   * A FEJLESZTŐI RÉTEG AZ EGYETLEN, AMI ALAPBÓL KI VAN KAPCSOLVA.
+   *
+   * A többi flag alapértelmezése IGEN, és ez szándékos: egy funkció, amiről a
+   * kapcsolótábla még nem tud, inkább működjön. Egy videó fölé írt húsz
+   * sornyi belső szám viszont pont fordítva van — azt kimondottan kérni kell,
+   * különben minden néző látná az első telepítéskor.
+   */
+  'player.debug': { core: false, defaultOff: true, desc: 'Fejlesztői réteg.' }
 })
 
 /** Amit a kiértékelő tudni akar a környezetről. */
@@ -95,6 +103,16 @@ export function createFlagEvaluator ({ featureOn, prefs, capabilities = {}, plat
     const spec = PLAYER_FLAGS[name]
     if (!spec) return false            // ismeretlen név: nincs ilyen funkció
     if (spec.core) return true         // mag: nem kapcsolható ki
+
+    // A KIFEJEZETTEN KÉRENDŐ funkciók: itt a hallgatás NEM beleegyezés. Csak
+    // az kapcsolja be, aki tényleg mondta — se a hiányzó kapcsolótábla, se a
+    // hiányzó beállítás.
+    if (spec.defaultOff) {
+      const key = OVERRIDE_KEY[name]
+      const asked = key && prefs ? prefs.get(key) === true : false
+      const allowed = typeof featureOn === 'function' ? featureOn(name) === true : false
+      return asked || allowed
+    }
 
     // 1. a néző szava
     const overrideKey = OVERRIDE_KEY[name]
