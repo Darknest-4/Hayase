@@ -14,12 +14,32 @@
 //    80  a synonym is exactly the query
 //    70  a title starts with the query        ("attack on" → Attack on Titan)
 //    60  a title contains the query
+//    55  a title contains it once the accents are folded away ("tamadas" →
+//        "Támadás", and the other direction too)
 //    40  full-text match (websearch_to_tsquery over the stored tsvector)
 //    20  trigram similarity only — the typo-tolerant tail
 //
 // Ties inside a tier break on similarity, then popularity. That ordering is
 // what makes "one piece" return One Piece rather than One Piece Film: Red,
 // which the old single-score ranking could not guarantee.
+//
+// AZ 55-ÖS SZINT — az ékezetek.
+//
+// A 0022-es migráció ezért készült: „nobody types »támadás« on a phone — they
+// type »tamadas«". Létrehozta a `yume_unaccent` függvényt és három GIN
+// trigram-indexet rá, a teszt pedig őrzi, hogy a függvény immutable és tényleg
+// hajtogat. Egyetlen lekérdezés nem hívta meg egyiket sem: a három index
+// hatvankét megabájtot foglalt és NULLA olvasást szolgált ki, az ékezetsemleges
+// keresés pedig egyszerűen nem létezett.
+//
+// Élesben mérve, javítás előtt: „Őrült" → 0 találat, „Orult" → 1. Aki helyesen
+// írja a magyart, kevesebbet talál, mint aki nem — pont fordítva, mint ahogy
+// egy magyar oldalnak működnie kell.
+//
+// A hajtogatott egyezés a 60-as „tartalmazza" ALATT és a 40-es teljes szöveges
+// keresés FÖLÖTT ül: gyengébb, mint egy pontos betűzés, de erősebb, mint egy
+// szótári találat. Az ASCII-kérdésekre semmi nem változik — azoknál a
+// hajtogatott alak önmagával egyenlő, tehát a régi ágak előbb tüzelnek.
 //
 // This runs entirely in Postgres. The docker-compose file carries an
 // OpenSearch service, but at 25k catalogue rows pg_trgm + tsvector answer in
@@ -149,12 +169,14 @@ export function buildSearchSql (filters: SearchFilters, options: SearchSqlOption
              CASE WHEN lower(a.canonical_title) = lower($1) THEN 100
                   WHEN lower(a.canonical_title) LIKE lower($1) || '%' THEN 70
                   WHEN a.canonical_title ILIKE '%' || $1 || '%' THEN 60
+                  WHEN yume_unaccent(a.canonical_title) ILIKE '%' || yume_unaccent($1) || '%' THEN 55
                   WHEN a.search @@ websearch_to_tsquery('simple', $1) THEN 40
                   ELSE 20 END AS tier,
              similarity(a.canonical_title, $1) AS sim,
              a.canonical_title AS matched_title
         FROM anime a
        WHERE ${fuzzy ? 'a.canonical_title % $1 OR ' : ''}a.canonical_title ILIKE '%' || $1 || '%'
+          OR yume_unaccent(a.canonical_title) ILIKE '%' || yume_unaccent($1) || '%'
           OR a.search @@ websearch_to_tsquery('simple', $1)
 
       UNION ALL
@@ -163,10 +185,12 @@ export function buildSearchSql (filters: SearchFilters, options: SearchSqlOption
              CASE WHEN lower(t.title) = lower($1) THEN 90
                   WHEN lower(t.title) LIKE lower($1) || '%' THEN 70
                   WHEN t.title ILIKE '%' || $1 || '%' THEN 60
+                  WHEN yume_unaccent(t.title) ILIKE '%' || yume_unaccent($1) || '%' THEN 55
                   ELSE 20 END,
              similarity(t.title, $1), t.title
         FROM anime_titles t
        WHERE ${fuzzy ? 't.title % $1 OR ' : ''}t.title ILIKE '%' || $1 || '%'
+          OR yume_unaccent(t.title) ILIKE '%' || yume_unaccent($1) || '%'
 
       UNION ALL
 
@@ -174,10 +198,12 @@ export function buildSearchSql (filters: SearchFilters, options: SearchSqlOption
              CASE WHEN lower(s.synonym) = lower($1) THEN 80
                   WHEN lower(s.synonym) LIKE lower($1) || '%' THEN 70
                   WHEN s.synonym ILIKE '%' || $1 || '%' THEN 60
+                  WHEN yume_unaccent(s.synonym) ILIKE '%' || yume_unaccent($1) || '%' THEN 55
                   ELSE 20 END,
              similarity(s.synonym, $1), s.synonym
         FROM anime_synonyms s
        WHERE ${fuzzy ? 's.synonym % $1 OR ' : ''}s.synonym ILIKE '%' || $1 || '%'
+          OR yume_unaccent(s.synonym) ILIKE '%' || yume_unaccent($1) || '%'
     ),
     best AS (
       SELECT DISTINCT ON (id) id, tier, sim, matched_title

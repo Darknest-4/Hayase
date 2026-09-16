@@ -213,6 +213,12 @@ services:
 
   postgres:
     image: postgres:16-alpine
+    # `unless-stopped`, mint minden másnak. A hiánya nem elméleti hiba volt:
+    # app, worker, caddy és backup mind újraindul magától, a Postgres viszont
+    # nem — egy újraindítás vagy egy Docker-daemon-frissítés után a YUME
+    # adatbázis nélkül jött volna vissza, a többi szolgáltatás pedig egy nem
+    # létező kiszolgálóra indult volna újra körbe-körbe.
+    restart: unless-stopped
     environment:
       POSTGRES_USER: yume
       # No default: a database password that falls back to a value published
