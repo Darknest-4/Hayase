@@ -100,7 +100,7 @@ export function createPlayerUI (player, actions = {}, options = {}) {
       visibility.activity('touch')
     },
     longPressStart: () => actions.setRate?.(2),
-    longPressEnd: () => actions.setRate?.(options.prefs?.get('player.playback.rate') ?? 1)
+    longPressEnd: () => actions.setRate?.(options.prefs?.get('player.rate') ?? 1)
   })
 
   // Egérrel a felület kattintása lejátszás/szünet — érintésen a koppintás a

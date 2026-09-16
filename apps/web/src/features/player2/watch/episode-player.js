@@ -179,7 +179,7 @@ export function createEpisodePlayer (options = {}) {
       const match = (options.sources ?? []).find(candidate => Number(candidate.quality) === chosen.quality)
       if (match) sources.switchTo(match.id)
     },
-    selectRate: value => { playback.setRate(value); prefs.set('player.playback.rate', value) },
+    selectRate: value => { playback.setRate(value); prefs.set('player.rate', value) },
     selectAudio: track => {
       player.state.patch({ audio: { current: track } })
       for (const audio of video.audioTracks ?? []) audio.enabled = audio.id === track?.id
@@ -227,7 +227,7 @@ export function createEpisodePlayer (options = {}) {
   // kikapcsolva ne történjen semmi — a videó maradjon a végén.
   player.own(player.bus.on(EV.ENDED, () => {
     loading.set(LOADING_PHASE.READY)
-    if (prefs.get('player.episode.autoNext') === true) options.onNextEpisode?.()
+    if (prefs.get('player.autoplayNext') === true) options.onNextEpisode?.()
   }))
 
   // A forrás kimerülése a lejátszó legvégső hibája: itt már nincs mit

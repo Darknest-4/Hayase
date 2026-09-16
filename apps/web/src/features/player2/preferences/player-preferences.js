@@ -32,6 +32,14 @@ export const PLAYER_PREFERENCE_SCHEMA = Object.freeze({
   'player.quality.dataSaver': { default: false, type: 'boolean' },
 
   // --- felirat ---
+  /*
+   * A FELIRAT NYELVE.
+   *
+   * Magyar alapértelmezéssel, mert ez egy magyar oldal — és mert az
+   * „alapértelmezés szerint semmi" azt jelentené, hogy a magyar felirattal
+   * rendelkező részeknél is az angol indul el, ha az van elöl a listában.
+   */
+  'player.subtitle.language': { type: 'string', default: 'hu' },
   'player.subtitle.enabled': { default: true, type: 'boolean' },
   'player.subtitle.size': { default: 100, type: 'number', min: 50, max: 200 },
   'player.subtitle.weight': { default: 600, type: 'number', values: [400, 600, 800] },

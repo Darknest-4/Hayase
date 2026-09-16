@@ -5,6 +5,9 @@
 // séma-érvényesítés, migráció, és a négy döntési forrás sorrendje.
 
 import assert from 'node:assert/strict'
+import { readFileSync, readdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, it } from 'node:test'
 
 import {
@@ -14,6 +17,51 @@ import {
 import {
   PLAYER_FLAGS, createFlagEvaluator, detectCapabilities, detectPlatform
 } from '../src/features/player2/flags/player-feature-flags.js'
+
+
+const here = dirname(fileURLToPath(import.meta.url))
+
+describe('a kód nem kérhet nem létező beállítást', () => {
+  it('minden használt kulcs szerepel a sémában', () => {
+    /*
+     * EZ EGY EGÉSZ HIBAOSZTÁLY, nem egy hiba.
+     *
+     * A `get` és a `set` ISMERETLEN KULCSRA `undefined`-ot ad vissza, és nem
+     * csinál semmit. Ez a helyes viselkedés — egy régi telepítés
+     * beállításfájljában lehetnek olyan kulcsok, amiket már nem ismerünk —,
+     * de azt is jelenti, hogy egy ELÍRT kulcs NÉMÁN nem működik.
+     *
+     * Négy ilyen volt a lejátszóban egyszerre, és mind a négy egy-egy néma
+     * funkciót jelentett:
+     *
+     *   player.episode.autoNext  → az automatikus továbblépés SOHA nem sült el
+     *   player.playback.rate     → a sebesség megjegyzése nem mentett
+     *   player.subtitle.language → a nyelvi választás nem létezett
+     *
+     * Egyik sem dobott hibát, egyik sem hiányzott a naplóból.
+     */
+    const root = join(here, '../src/features/player2')
+    const used = new Map()
+    const walk = (dir) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name)
+        if (entry.isDirectory()) { walk(path); continue }
+        if (!entry.name.endsWith('.js')) continue
+        const source = readFileSync(path, 'utf8')
+        for (const match of source.matchAll(/prefs\??\.?(?:get|set)\s*\(\s*'(player\.[a-zA-Z0-9.]+)'/g)) {
+          if (!used.has(match[1])) used.set(match[1], entry.name)
+        }
+      }
+    }
+    walk(root)
+
+    assert.ok(used.size >= 6, `csak ${used.size} kulcshasználatot találtam — a keresés romlott el`)
+    const unknown = [...used]
+      .filter(([key]) => !(key in PLAYER_PREFERENCE_SCHEMA))
+      .map(([key, file]) => `${key} (${file})`)
+    assert.deepEqual(unknown, [], 'ezek a kulcsok nincsenek a sémában, tehát némán nem csinálnak semmit')
+  })
+})
 
 describe('preference schema', () => {
   it('every key declares a default and a type', () => {

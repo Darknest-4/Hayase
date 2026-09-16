@@ -132,6 +132,20 @@ I18n.register('hu', {
   'No episode data available.': 'Nincs elérhető epizódadat.',
   'Invalid watch link.': 'Érvénytelen nézési hivatkozás.',
 
+  // A Player 2.0 hibataxonómiája (`core/player-errors.js`). Fordítás nélkül a
+  // lejátszó pont azt csinálná, amit a saját fejléce kifogásol: angol
+  // fejlesztői mondatot tenne a képernyőre egy magyar oldalon.
+  'There is no source for this episode yet.': 'Ehhez a részhez még nincs forrás.',
+  'The source did not respond.': 'A forrás nem válaszolt.',
+  'Your browser cannot play this format.': 'A böngésződ nem tudja lejátszani ezt a formátumot.',
+  'The connection was lost.': 'Megszakadt a kapcsolat.',
+  'The video is damaged or unreadable.': 'A videó sérült vagy olvashatatlan.',
+  'This source does not allow playback from here.': 'Ez a forrás nem engedi innen a lejátszást.',
+  'This content is protected.': 'Ez a tartalom másolásvédett.',
+  'The subtitles could not be loaded.': 'A feliratot nem sikerült betölteni.',
+  'That quality is not available.': 'Ez a minőség nem érhető el.',
+  'Could not play this.': 'Ezt nem sikerült lejátszani.',
+
   // ---------------------------------------------------------------- könyvtár
   'Add to list': 'Listára teszem',
   '+ Add to list': '+ Listára teszem',
