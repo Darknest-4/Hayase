@@ -67,7 +67,9 @@ const routes: FastifyPluginAsync = async fastify => {
       // „Top támadó IP-k". A cím mellé odatesszük, amit tudunk róla — egy
       // puszta cím nem elég ahhoz, hogy valaki tiltson.
       query(
-        `SELECT d.ip::text, count(*)::int AS hits,
+        // `host(ip)` és nem `ip::text`: az utóbbi a maszkot is kiírja
+        // (`127.0.0.1/32`), és egy operátor egy címet vár, nem egy hálózatot.
+        `SELECT host(d.ip) AS ip, count(*)::int AS hits,
                 count(*) FILTER (WHERE d.action = 'block')::int AS blocks,
                 max(d.score)::int AS worst_score,
                 max(d.at) AS last_seen,
@@ -85,7 +87,7 @@ const routes: FastifyPluginAsync = async fastify => {
           GROUP BY rule ORDER BY hits DESC LIMIT 20`,
         [days]),
       query(
-        `SELECT at, ip::text, route, method, action, score, signals, rule
+        `SELECT at, host(ip) AS ip, route, method, action, score, signals, rule
            FROM edge_decisions
           WHERE at > now() - ($1 || ' days')::interval
           ORDER BY at DESC LIMIT 50`,

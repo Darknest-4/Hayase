@@ -781,6 +781,23 @@ export const YumeAPI = {
      * Minden tartományos hívás a napi összesítőkből olvas, nem nyers
      * eseménytáblából; a `realtime` az egyetlen kivétel, és az öt percet néz.
      */
+    /*
+     * Az él: kockázati réteg, WAF, tiltások.
+     *
+     * Három jogosultság mögött — olvasás, tiltás, szabálymódosítás —, mert
+     * három különböző döntés. Lásd modules/edge/admin-routes.ts.
+     */
+    edge: {
+      overview: (range = '24h') => YumeAPI._request(`/v1/admin/edge?range=${range}`, { auth: true }),
+      rules: () => YumeAPI._request('/v1/admin/edge/rules', { auth: true }),
+      defaults: () => YumeAPI._request('/v1/admin/edge/defaults', { auth: true }),
+      ip: address => YumeAPI._request(`/v1/admin/edge/ip/${encodeURIComponent(address)}`, { auth: true }),
+      ban: body => YumeAPI._request('/v1/admin/edge/bans', { method: 'POST', auth: true, body }),
+      unban: (id, reason) =>
+        YumeAPI._request(`/v1/admin/edge/bans/${id}`, { method: 'DELETE', auth: true, body: { reason } }),
+      config: body => YumeAPI._request('/v1/admin/edge/config', { method: 'PATCH', auth: true, body })
+    },
+
     analytics: {
       visitors: range => YumeAPI._request(`/v1/admin/analytics/visitors?range=${range}`, { auth: true }),
       breakdown: (dimension, range, limit = 20) =>
