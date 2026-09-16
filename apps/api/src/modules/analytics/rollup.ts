@@ -24,6 +24,26 @@ const RETENTION = {
   // A normalizált marad, a nyers eltűnik.
   searchRaw: Number(process.env.ANALYTICS_SEARCH_RAW_DAYS ?? 30),
   accountEvents: Number(process.env.ACCOUNT_EVENT_RETENTION_DAYS ?? 365),
+  /*
+   * A biztonsági napló — a rendszer egyetlen helye, ahol nyers IP-cím van.
+   *
+   * Két lépcső, mert két különböző kérdést szolgál ki:
+   *
+   *   * „honnan próbálkoztak" — ez napokban érdekes. Egy incidens felderítése
+   *     a friss sorokból megy, és harminc nap után a cím már nem nyom,
+   *     hanem teher: a szolgáltatók újraosztják a címeket, és ami ma egy
+   *     támadóhoz vezetne, holnap valaki máshoz;
+   *   * „mi történt ezzel a fiókkal" — ez hónapokban. Az esemény maga (belépés,
+   *     sikertelen belépés, kijelentkeztetés) cím nélkül is teljes válasz, és
+   *     egy évvel később is fel szokták tenni.
+   *
+   * Ezért harminc nap után a CÍM tűnik el, a sor marad; egy év után a sor is.
+   * Az eddigi állapot az volt, hogy egyik sem — a dokumentáció ezt ki is
+   * mondta nyitott kérdésként, ahelyett hogy úgy tett volna, mintha volna
+   * megőrzési szabály.
+   */
+  securityIp: Number(process.env.SECURITY_LOG_IP_DAYS ?? 30),
+  securityLogs: Number(process.env.SECURITY_LOG_RETENTION_DAYS ?? 365),
   salt: 2
 }
 
@@ -293,6 +313,17 @@ export async function pruneAnalytics (): Promise<Record<string, number>> {
    * tünet nem hiányzó törlés volt, hanem egy elhasalt háttérfeladat, amiről
    * semmi nem szólt.
    */
+  await del('security_ip_anonymised',
+    `WITH d AS (
+       UPDATE security_logs SET ip = NULL
+        WHERE ip IS NOT NULL AND created_at < now() - ($1 || ' days')::interval
+        RETURNING 1)
+     SELECT count(*)::int AS n FROM d`,
+    RETENTION.securityIp)
+  await del('security_logs',
+    "WITH d AS (DELETE FROM security_logs WHERE created_at < now() - ($1 || ' days')::interval RETURNING 1) SELECT count(*)::int AS n FROM d",
+    RETENTION.securityLogs)
+
   await del('analytics_salt',
     "WITH d AS (DELETE FROM analytics_salt WHERE day < current_date - $1::int RETURNING 1) SELECT count(*)::int AS n FROM d",
     RETENTION.salt)

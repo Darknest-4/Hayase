@@ -36,6 +36,8 @@ process.env.JWT_SECRET ??= 'retention-secret-long-enough-0123456789'
 process.env.ANALYTICS_RAW_RETENTION_DAYS = '2'
 process.env.ANALYTICS_SESSION_RETENTION_DAYS = '2'
 process.env.ANALYTICS_SEARCH_RAW_DAYS = '2'
+process.env.SECURITY_LOG_IP_DAYS = '2'
+process.env.SECURITY_LOG_RETENTION_DAYS = '9999'
 
 describe('retention actually removes things', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
   let pool: pg.Pool
@@ -133,6 +135,45 @@ describe('retention actually removes things', { skip: HAS_DB ? false : 'no DATAB
     assert.equal(views.rowCount, 1, 'a takarítás a mai sort is elvitte')
     await pool.query('DELETE FROM page_views WHERE session_key = $1', [fresh])
     await pool.query('DELETE FROM analytics_sessions WHERE session_key = $1', [fresh])
+  })
+
+  test('an old security entry keeps the event and loses the address', async () => {
+    /*
+     * A biztonsági napló az egyetlen hely, ahol nyers IP van, és két
+     * különböző kérdést szolgál ki. „Honnan próbálkoztak" napokban érdekes —
+     * a szolgáltatók újraosztják a címeket, és ami ma egy támadóhoz vezetne,
+     * holnap valaki máshoz. „Mi történt ezzel a fiókkal" hónapokban, és arra
+     * az esemény cím nélkül is teljes válasz.
+     */
+    const { rows: user } = await pool.query<{ id: string }>('SELECT id FROM users LIMIT 1')
+    const marker = 'teszt_' + key.slice(0, 8)
+    await pool.query(
+      `INSERT INTO security_logs (user_id, event, ip, created_at)
+       VALUES ($1, $2, '203.0.113.9'::inet, now() - interval '5 days')`,
+      [user[0]?.id ?? null, marker])
+
+    await rollup.pruneAnalytics()
+
+    const { rows } = await pool.query<{ ip: string | null }>(
+      'SELECT ip FROM security_logs WHERE event = $1', [marker])
+    assert.equal(rows.length, 1, 'a sor eltűnt — pedig csak a címnek kellett volna')
+    assert.equal(rows[0]!.ip, null, 'az öt napos cím megmaradt')
+    await pool.query('DELETE FROM security_logs WHERE event = $1', [marker])
+  })
+
+  test('a recent security entry keeps its address', async () => {
+    const { rows: user } = await pool.query<{ id: string }>('SELECT id FROM users LIMIT 1')
+    const marker = 'teszt_uj_' + key.slice(0, 8)
+    await pool.query(
+      `INSERT INTO security_logs (user_id, event, ip) VALUES ($1, $2, '203.0.113.9'::inet)`,
+      [user[0]?.id ?? null, marker])
+
+    await rollup.pruneAnalytics()
+
+    const { rows } = await pool.query<{ ip: string | null }>(
+      'SELECT ip FROM security_logs WHERE event = $1', [marker])
+    assert.equal(rows[0]?.ip, '203.0.113.9', 'a friss címet is elvitte — egy incidens felderítése ezzel elvész')
+    await pool.query('DELETE FROM security_logs WHERE event = $1', [marker])
   })
 
   test('yesterday’s salt is gone, so yesterday’s key cannot be recomputed', async () => {

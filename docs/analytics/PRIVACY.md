@@ -41,7 +41,9 @@ is írja. Ezt az árat szándékosan fizetjük meg.
 | biztonsági napló (`security_logs`) | **igen** |
 
 A biztonsági naplóban azért van, mert ott más a kérdés: nem az, hogy „hányan
-jártak itt", hanem hogy „ki próbálkozott". Ehhez a cím maga kell.
+jártak itt", hanem hogy „ki próbálkozott". Ehhez a cím maga kell — de csak
+harminc napig. Utána a cím kiürül, az esemény marad, egy év után pedig a sor
+is elmegy. Lásd [DATA_RETENTION.md](DATA_RETENTION.md).
 
 Az IP **soha nem bizonyíték személyazonosságra**. Megosztott hálózat, NAT,
 mobilszolgáltató, VPN — mindegyik mögött sok ember van ugyanazon a címen, és

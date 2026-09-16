@@ -20,7 +20,8 @@ bárkiről tárolnánk bármit egy éve.
 | nyers rendszermetrika | `system_metrics` | 7 nap | törlés | `METRICS_RETENTION_DAYS` |
 | órás rendszermetrika | `system_metrics_hourly` | 365 nap | törlés | `METRICS_HOURLY_RETENTION_DAYS` |
 | hibanapló | `error_logs` | havi partíció | a karbantartó ejti | |
-| biztonsági napló | `security_logs` | — | lásd lent | |
+| **nyers IP** a biztonsági naplóban | `security_logs.ip` | 30 nap | **kiürül**, a sor marad | `SECURITY_LOG_IP_DAYS` |
+| biztonsági napló (a sor maga) | `security_logs` | 365 nap | törlés | `SECURITY_LOG_RETENTION_DAYS` |
 | adminisztrátori napló | `audit_logs` | havi partíció, megtartva | — | |
 | **napi összesítők** | `analytics_daily`, `analytics_breakdown`, `anime_stats_daily`, `episode_stats_daily` | **korlátlan** | — | |
 
@@ -34,18 +35,26 @@ megtartanánk, a kulcs újraszámolható lenne egy adott IP-re — és ezzel a
 pszeudonimizálás megszűnne. Két nap azért kell, mert az éjfél körül kezdődő
 munkamenetek átnyúlnak, és az összesítés a következő nap fut rájuk.
 
-## Az adminisztrátori és biztonsági napló
+## Az adminisztrátori napló
 
-Ezeket **nem** ejtjük automatikusan:
+Ezt **nem** ejtjük automatikusan:
 
 * `audit_logs` — „ki adott ennek a fióknak adminisztrátori jogot, és mikor" egy
   olyan kérdés, ami évekkel később is felmerülhet, és nincs benne más, mint
   hogy egy operátor mit csinált a saját rendszerén;
-* `security_logs` — IP-t tartalmaz, tehát elvileg a legérzékenyebb. Ma nincs
-  automatikus ejtés rá. **Ez nyitott kérdés**: ha a példány olyan
-  joghatóság alá kerül, ahol ez határidős, egy sor a megőrzési feladatban
-  megoldja. Addig a dokumentum inkább mondja ki, hogy nincs, mint hogy
-  úgy tegyen, mintha lenne.
+A `security_logs` **már nem** kivétel. Két lépcsőben takarítódik, mert két
+különböző kérdést szolgál ki:
+
+* **„honnan próbálkoztak"** — ez napokban érdekes. Egy incidens felderítése a
+  friss sorokból megy, és harminc nap után a cím már nem nyom, hanem teher: a
+  szolgáltatók újraosztják a címeket, és ami ma egy támadóhoz vezetne, holnap
+  valaki máshoz. Harminc nap után a **cím** eltűnik, a sor marad.
+* **„mi történt ezzel a fiókkal"** — ez hónapokban. Az esemény maga (belépés,
+  sikertelen belépés, kijelentkeztetés) cím nélkül is teljes válasz, és egy
+  évvel később is fel szokták tenni. Egy év után a sor is elmegy.
+
+Mindkét határidő környezeti változóval állítható, és mindkettőt teszt őrzi: a
+régi sor elveszti a címét de megmarad, a friss sor megtartja.
 
 ## Hol fut
 
