@@ -45,6 +45,10 @@ export type AuditAction =
   // semmilyen jogosultság nem véd rajta — az „ki vitte ki, mikor, mennyit"
   // kérdés ezért nem utólagos, hanem az első.
   | 'analytics.export'
+  // Az él döntései. A tiltás azért van itt, mert egy kitiltott hálózat mögött
+  // emberek vannak, akik közül a legtöbb nem csinált semmit — és „ki tiltotta
+  // ki, mikor, miért" nem utólagos kérdés.
+  | 'edge.ban' | 'edge.unban' | 'edge.config'
   | 'webhook.create' | 'webhook.update' | 'webhook.delete'
   // Starting a catalogue-wide metadata pull. Recorded because it rewrites
   // fields across the whole catalogue and the question afterwards is who
