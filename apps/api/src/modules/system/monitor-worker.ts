@@ -33,7 +33,12 @@ const HOURLY_RETENTION_DAYS = Number(process.env.METRICS_HOURLY_RETENTION_DAYS ?
 export interface Sample { metric: string, value: number, unit: string }
 
 /** Flatten a host reading plus probe results into storable samples. */
-export function toSamples (host: Awaited<ReturnType<typeof collectHost>>, probes: ProbeResult[], queue: { pending: number, dead: number }): Sample[] {
+export function toSamples (
+  host: Awaited<ReturnType<typeof collectHost>>,
+  probes: ProbeResult[],
+  queue: { pending: number, dead: number },
+  backupAge: number | null = null
+): Sample[] {
   const samples: Sample[] = []
   const add = (metric: string, value: number | null | undefined, unit: string): void => {
     if (value === null || value === undefined || !Number.isFinite(value)) return
@@ -77,6 +82,7 @@ export function toSamples (host: Awaited<ReturnType<typeof collectHost>>, probes
 
   add('queue.pending', queue.pending, 'count')
   add('queue.dead', queue.dead, 'count')
+  add('backup.age_hours', backupAge, 'hours')
   return samples
 }
 
@@ -87,6 +93,33 @@ async function queueDepth (): Promise<{ pending: number, dead: number }> {
      FROM jobs`
   )
   return { pending: Number(row?.pending ?? 0), dead: Number(row?.dead ?? 0) }
+}
+
+/**
+ * Hány órája készült a legutóbbi ELLENŐRZÖTT mentés.
+ *
+ * A mentés volt az egyetlen rendszer, aminek a leállását semmi nem vette
+ * észre: éjszakánként futott, ellenőrizte magát, és ha egy éjjel kimaradt,
+ * arról pontosan addig nem szerzett tudomást senki, amíg vissza nem kellett
+ * állítani valamit.
+ *
+ * `null`, ha egyetlen ellenőrzött mentés sincs — az nem nulla óra, hanem
+ * hiányzó mérés, és a `toSamples` a hiányzó mérést kihagyja ahelyett, hogy
+ * nullát mondana. Egy friss telepítés ne riasszon azért, mert még nem futott
+ * le az első éjszakája.
+ */
+async function backupAgeHours (): Promise<number | null> {
+  try {
+    const row = await queryOne<{ hours: number | null }>(
+      `SELECT extract(epoch FROM now() - max(taken_at)) / 3600 AS hours
+         FROM backups WHERE verified`
+    )
+    const hours = row?.hours
+    return hours === null || hours === undefined ? null : Number(hours)
+  } catch {
+    // A tábla hiányozhat egy régebbi telepítésen. Az nem riasztás.
+    return null
+  }
 }
 
 async function storeSamples (samples: Sample[]): Promise<void> {
@@ -176,8 +209,10 @@ export async function toReadings (samples: Sample[], probes: ProbeResult[]): Pro
 
 /** One collection cycle. Returns the samples written (useful in tests). */
 export async function collectOnce (): Promise<Sample[]> {
-  const [host, probes, queue] = await Promise.all([collectHost(), probeAll(), queueDepth()])
-  const samples = toSamples(host, probes, queue)
+  const [host, probes, queue, backupAge] = await Promise.all([
+    collectHost(), probeAll(), queueDepth(), backupAgeHours()
+  ])
+  const samples = toSamples(host, probes, queue, backupAge)
 
   await storeSamples(samples)
   await storeServiceStatus(probes)

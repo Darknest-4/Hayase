@@ -3473,6 +3473,26 @@ export const PageAdmin = {
         label: 'Üzemidő',
         value: this.fmtUptime(value('host.uptime_sec')),
         meta: 'az utolsó újraindítás óta'
+      }),
+      /*
+       * A legutóbbi ELLENŐRZÖTT mentés kora.
+       *
+       * A mentés volt az egyetlen rendszer, aminek a leállását semmi nem
+       * vette észre. Itt van, a többi mérőszám mellett, ugyanazzal a
+       * küszöbbel és ugyanazzal a riasztással — mert egy mentés, amiről nem
+       * tudjuk, hogy elkészült-e, nem mentés.
+       */
+      AP.stat({
+        label: 'Utolsó mentés',
+        value: value('backup.age_hours') === null
+          ? '—'
+          : value('backup.age_hours') < 48
+            ? Math.round(value('backup.age_hours')) + ' órája'
+            : Math.round(value('backup.age_hours') / 24) + ' napja',
+        meta: value('backup.age_hours') === null
+          ? 'még nincs ellenőrzött mentés'
+          : 'ellenőrizve, visszaállítható',
+        tone: tone(level('backup.age_hours'))
       })
     ], { col: '13.5rem', stats: true }))
 
@@ -3973,7 +3993,8 @@ export const PageAdmin = {
     ['mem.used_pct', 'Memória', 'a MemAvailable alapján', '<rect x="3" y="8" width="18" height="10" rx="2"/><path d="M7 8V6M12 8V6M17 8V6"/>'],
     ['disk.used_pct', 'Lemez', 'a fájlrendszerből használt', '<path d="M22 12H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11"/><path d="M6 16h.01"/>'],
     ['queue.pending', 'Feladatsor', 'futtatható feladatok', '<line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/>'],
-    ['queue.dead', 'Elhasalt feladatok', 'elfogytak a próbálkozásaik', '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>']
+    ['queue.dead', 'Elhasalt feladatok', 'elfogytak a próbálkozásaik', '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>'],
+    ['backup.age_hours', 'Utolsó mentés', 'ellenőrizve, visszaállítható', '<path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/>']
   ],
 
   /** The icon for a probed service, by what it is. */
@@ -4059,7 +4080,10 @@ export const PageAdmin = {
     if (metric.unit === 'pct') return Math.round(value) + '%'
     if (metric.unit === 'ms') return Math.round(value) + 'ms'
     if (metric.unit === 'ratio') return value.toFixed(2)
-    return value.toLocaleString()
+    // Óra helyett nap, ha már napokban mérhető: „73ó" senkinek nem mond
+    // semmit, „3 napja" igen.
+    if (metric.unit === 'hours') return value < 48 ? Math.round(value) + 'ó' : Math.round(value / 24) + ' nap'
+    return value.toLocaleString(I18n.locale())
   },
 
   // ---- error groups ----
