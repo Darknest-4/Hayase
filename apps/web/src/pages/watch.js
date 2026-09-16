@@ -1148,8 +1148,31 @@ export const PageWatch = {
     if (!video || this._wiredRoom === code) return
     this._wiredRoom = code
 
-    let applying = false
     const channel = 'w2g:' + code
+
+    /*
+     * A PLAYER 2.0 SAJÁT SZINKRONJA, ha az megy.
+     *
+     * Nem stílus kérdése. Az alábbi régi huzalozás egy LOGIKAI ÉRTÉKKEL és egy
+     * 250 ezredmásodperces időzítővel némítja a visszhangot — két egymásba érő
+     * alkalmazás (egy `seek` közben érkező `pause`) az elsőt befejezve hamisra
+     * állítja, és a második már kiküldi magát. Az új modul számlálót használ,
+     * és az elsodródást is kezeli, nem csak a három eseményt.
+     */
+    if (this._player2?.party) {
+      const party = this._player2.party
+      // A küldés a szobacsatornára megy. Hogy a küldő vezetheti-e a
+      // lejátszást, azt a SZERVER dönti el, és a vendég üzenetét
+      // visszautasítja — ugyanúgy, ahogy a régi lejátszónál is. A kliens nem
+      // tudja biztosan, ki a házigazda (a szoba csak megjelenített nevet ad
+      // vissza), és egy találgatásból eredő hamis „nem vagy házigazda" azt
+      // némítaná el, akinek vezetnie kellene.
+      party.connect({ send: payload => PageW2G.send({ ...payload, channel }) })
+      PageW2G.onMessage(message => party.receive(message))
+      return
+    }
+
+    let applying = false
     const send = (action, position) => { if (!applying) PageW2G.send({ type: 'w2g', channel, action, position }) }
     video.addEventListener('play', () => send('play', video.currentTime))
     video.addEventListener('pause', () => send('pause', video.currentTime))

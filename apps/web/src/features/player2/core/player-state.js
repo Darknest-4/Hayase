@@ -31,7 +31,9 @@ export function initialState () {
       // nem csak akkor kell léteznie, amikor van mit ajánlani: egy
       // `undefined` mezőre feliratkozó felület nem tudja megkülönböztetni a
       // „nincs átugrás"-t attól, hogy „még nem kérdeztük meg".
-      skipSegment: null
+      skipSegment: null,
+      /** Közös nézés szobájában vagyunk-e. A felület ebből tudja a jelvényt. */
+      party: false
     },
     network: { online: true },
     error: null

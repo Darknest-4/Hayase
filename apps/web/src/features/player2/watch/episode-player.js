@@ -15,6 +15,7 @@ import { createPlayerUI } from '../ui/player-ui.js'
 import { createProgressTracker } from '../playback/progress.js'
 import { createResume } from '../playback/resume.js'
 import { createSkipManager } from '../skip/skip-manager.js'
+import { createWatchParty } from '../party/watch-party.js'
 import { createSourceManager } from '../engine/source-manager.js'
 import { chooseQuality, availableQualities } from '../quality/quality-manager.js'
 import { selectTrack } from '../subtitles/subtitle-manager.js'
@@ -231,11 +232,23 @@ export function createEpisodePlayer (options = {}) {
     })
   }))
 
+  // ---- közös nézés ----
+  // Mindig létrejön, de CSATLAKOZÁS NÉLKÜL néma: se nem küld, se nem fogad.
+  // Így a nézőoldalnak nem kell két útvonalat vezetnie aszerint, hogy van-e
+  // szoba — csak `join()`-ol, amikor lesz.
+  const partyOptions = options.party ?? {}
+  const party = createWatchParty(player, {
+    send: partyOptions.send ?? (() => {}),
+    canBroadcast: partyOptions.canBroadcast,
+    onEpisode: number => options.onEpisodeChange?.(number)
+  })
+
   sources.start()
 
   return {
     node: ui.node,
     player,
+    party,
     ui,
     prefs,
     flags,
