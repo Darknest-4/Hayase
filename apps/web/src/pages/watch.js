@@ -105,8 +105,25 @@ export const PageWatch = {
     const playerBox = U.el('div', { class: 'player-box' })
     col.append(playerBox)
 
-    if (src) {
-      this.mountPlayer(playerBox, media, episode, total, decodeURIComponent(src), w2gCode)
+    /*
+     * A KATALÓGUS SAJÁT FORRÁSAI IS INDÍTJÁK A LEJÁTSZÓT.
+     *
+     * Eddig a feltétel csak `src` volt, vagyis a lejátszó KIZÁRÓLAG akkor épült
+     * fel, ha a látogató kézzel beillesztett egy URL-t. A `registeredSources`
+     * a lejátszón BELÜL kérdezi le a katalógust — tehát amíg a lejátszó nem
+     * indult el, a regisztrált forrásokat soha senki nem kérte le.
+     *
+     * Ez akkor derült ki, amikor mind a 364 064 epizódhoz került forrás: az
+     * epizódlista `source_count: 1`-et adott, a `hasSomethingToPlay` átengedte
+     * az oldalt, és a látogató mégis a kézi beviteli űrlapot kapta. A
+     * `/v1/anime/episodes/:id/sources` végpontot a lap egyszer sem hívta meg.
+     *
+     * A `hasRegisteredSources` szándékosan szigorúbb a `canPlayEpisode`-nál:
+     * csak akkor indítunk lejátszót, ha TUDJUK, hogy van mit lejátszani.
+     * „Talán van" alapján indítva üres lejátszót kapna a néző.
+     */
+    if (src || this.hasRegisteredSources(episode)) {
+      this.mountPlayer(playerBox, media, episode, total, src ? decodeURIComponent(src) : '', w2gCode)
     } else {
       this._video = null
       this.mountSourcePicker(playerBox, media, episode)
@@ -537,6 +554,24 @@ export const PageWatch = {
     return row.sourceCount > 0
   },
 
+  /**
+   * HATÁROZOTTAN tudjuk-e, hogy van regisztrált forrás.
+   *
+   * A `canPlayEpisode` a „nem tudjuk" esetet szándékosan átengedi: egy sosem
+   * importált AniList-címnél nincs epizódsor, amire forrást lehetne akasztani,
+   * és ott a tiltás rossz válasz lenne. Ez a függvény az ELLENKEZŐ irányba
+   * szigorú — csak akkor mond igent, ha a katalógus sora ténylegesen legalább
+   * egy forrást jelent.
+   *
+   * A kettő különbsége az, ami a lejátszó automatikus indítását eldönti:
+   * „talán van" alapján elindítani a lejátszót éppen azt az üres képernyőt
+   * adná vissza, amit a `hasSomethingToPlay` megszüntetett.
+   */
+  hasRegisteredSources (number) {
+    const row = this._episodeRows?.find(e => e.episode === number)
+    return Boolean(row && Number(row.sourceCount) > 0)
+  },
+
   async _episodeId (media, episode) {
     if (!media?.yumeId) return null
     try {
@@ -676,7 +711,16 @@ export const PageWatch = {
   // ---- the embedded player ----
 
   mountPlayer (box, media, episode, total, src, w2gCode = null) {
-    const video = U.el('video', { class: 'player-video', autoplay: '', playsinline: '' })
+    /*
+     * `preload="metadata"` KIÍRVA, nem a böngészőre bízva.
+     *
+     * Enélkül az alapértelmezés böngészőnként más: asztali Chrome a teljes
+     * fájlt kezdi tölteni, mobilon viszont az automatikus lejátszás tiltása
+     * miatt akár semmi nem történik. A motor a `loadedmetadata`-t is elfogadja
+     * bizonyítéknak (lásd READY_EVENTS), és ez az attribútum garantálja, hogy
+     * a metaadat tényleg megérkezzen — minden eszközön ugyanúgy.
+     */
+    const video = U.el('video', { class: 'player-video', autoplay: '', playsinline: '', preload: 'metadata' })
     this._video = video
 
     const PLAY_ICON = '<polygon points="6 3 20 12 6 21 6 3" fill="currentColor" stroke="none"/>'

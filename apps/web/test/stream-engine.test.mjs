@@ -122,3 +122,98 @@ describe('rank', () => {
     assert.equal(engine.rank(results).length, 2, 'rank sorts, it must never filter')
   })
 })
+
+/*
+ * AZONOS EREDETŰ ÚT — a saját kiszolgálású videók.
+ *
+ * A `classify` korábban csak a `http(s):`-sel kezdődő hivatkozást fogadta el
+ * `direct`-ként, tehát egy YUME által kiszolgált fájl (`/assets/videos/x.mp4`)
+ * „unknown" lett, és a lejátszó „unrecognised stream URL"-lel utasította el.
+ *
+ * A kézenfekvő kerülőút a teljes URL lett volna a katalógusban — csakhogy az a
+ * TARTOMÁNYNEVET égeti bele minden sorba, és egy költözés (duckdns → saját
+ * domain) egyszerre tenné tönkre az összeset. Az azonos eredetű út ezért nem
+ * kivétel, hanem a helyes alak: a böngésző a `<video src>`-ben az oldal
+ * eredetéhez képest oldja fel.
+ */
+describe('same-origin sources', () => {
+  it('treats a root-relative path as directly playable', () => {
+    assert.equal(engine.classify('/assets/videos/amv-counting-stars.mp4'), 'direct')
+  })
+
+  it('still recognises absolute URLs', () => {
+    assert.equal(engine.classify('https://pelda.hu/video.mp4'), 'direct')
+  })
+
+  /*
+   * A `//pelda.hu/x.mp4` MÁS kiszolgálóra mutat. Ha azonos eredetűnek vennénk,
+   * egy idegen host címe csúszna át azon az ágon, ami a sajátunknak készült.
+   */
+  it('does not treat a protocol-relative URL as same-origin', () => {
+    assert.notEqual(engine.classify('//pelda.hu/video.mp4'), 'direct')
+  })
+
+  it('keeps stream formats distinct on a relative path', () => {
+    assert.equal(engine.classify('/assets/videos/x.m3u8'), 'hls')
+    assert.equal(engine.classify('/assets/videos/x.mpd'), 'dash')
+    assert.equal(engine.classify('/assets/videos/x.m3u8?token=abc'), 'hls')
+  })
+
+  it('leaves a bare string unrecognised', () => {
+    assert.equal(engine.classify('csak-egy-szoveg'), 'unknown')
+    assert.equal(engine.classify(''), 'unknown')
+  })
+})
+
+/*
+ * MOBIL: a metaadat is bizonyíték.
+ *
+ * A HIBA, AMIT EZ MEGFOG: telefonon minden forrás „the stream did not start in
+ * time"-mal bukott el, miközben asztali böngészőben ugyanaz a fájl azonnal
+ * elindult. Az ok nem a hálózat és nem a fájl volt.
+ *
+ * A mobil böngészők nem indítanak automatikus lejátszást hangos videónál, és
+ * ilyenkor MEGÁLLNAK A METAADATNÁL — képkocka-adatot csak felhasználói
+ * gesztusra töltenek. A `canplay` és a `loadeddata` viszont mindkettő
+ * `readyState >= 2`-t kíván, vagyis tényleges képkockát. Egyik sem következett
+ * be, és a tizenkét másodperces határidő minden jelöltet megbuktatott.
+ */
+describe('ready events', () => {
+  it('accepts loadedmetadata as proof a source works', async () => {
+    const listeners = new Map()
+    const video = {
+      addEventListener: (type, fn) => listeners.set(type, fn),
+      removeEventListener: type => listeners.delete(type),
+      querySelectorAll: () => [],
+      error: null,
+      set src (value) { this._src = value },
+      get src () { return this._src },
+      load () {}
+    }
+    const candidate = { kind: 'direct', url: '/assets/videos/x.mp4', subtitles: [] }
+
+    const attaching = engine._attach(video, candidate)
+    // Csak metaadat érkezik — pontosan az a mobil eset, ami elbukott.
+    assert.ok(listeners.has('loadedmetadata'),
+      'a motor nem is figyel a loadedmetadata eseményre')
+    listeners.get('loadedmetadata')()
+
+    await attaching // feloldódik, nem jár le a határidő
+  })
+
+  it('still fails a candidate that errors', async () => {
+    const listeners = new Map()
+    const video = {
+      addEventListener: (type, fn) => listeners.set(type, fn),
+      removeEventListener: type => listeners.delete(type),
+      querySelectorAll: () => [],
+      error: { message: 'decode failed' },
+      set src (value) { this._src = value },
+      get src () { return this._src },
+      load () {}
+    }
+    const attaching = engine._attach(video, { kind: 'direct', url: '/x.mp4', subtitles: [] })
+    listeners.get('error')()
+    await assert.rejects(attaching, /decode failed/)
+  })
+})

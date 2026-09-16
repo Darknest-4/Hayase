@@ -57,6 +57,13 @@ services:
     # running without the proxy and know the request is already on a trusted
     # network.
     expose: ['4000']
+    volumes:
+      # A VIDEÓK CSATOLVA, nem a képbe építve.
+      #
+      # Egy feltöltött epizód nem indokolhat képépítést és újratelepítést, és
+      # egy 35 MB-os fájl minden rétegbe belekerülne. Csak olvasható: az
+      # alkalmazásnak kiszolgálnia kell őket, nem írnia.
+      - ./apps/web/assets/videos:/app/apps/web/assets/videos:ro
     healthcheck:
       test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:4000/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
