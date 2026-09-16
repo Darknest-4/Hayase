@@ -26,7 +26,12 @@ export function initialState () {
     ui: {
       controlsVisible: true, fullscreen: false, pip: false,
       cinema: false, ambient: false, miniPlayer: false,
-      loadingPhase: 'INITIALIZING'
+      loadingPhase: 'INITIALIZING',
+      // Az éppen felajánlható átugrás, vagy `null`. A mezőnek ITT a helye, és
+      // nem csak akkor kell léteznie, amikor van mit ajánlani: egy
+      // `undefined` mezőre feliratkozó felület nem tudja megkülönböztetni a
+      // „nincs átugrás"-t attól, hogy „még nem kérdeztük meg".
+      skipSegment: null
     },
     network: { online: true },
     error: null
