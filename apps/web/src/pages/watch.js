@@ -771,12 +771,37 @@ export const PageWatch = {
     back10.addEventListener('click', e => { e.stopPropagation(); video.currentTime = Math.max(0, video.currentTime - 10) })
     fwd10.addEventListener('click', e => { e.stopPropagation(); video.currentTime += 10 })
 
-    // ---- Yume loader (Netflix-style intro + buffering spinner) ----
+    /*
+     * ---- A betöltőképernyő ----
+     *
+     * A cím SAJÁT LOGÓJA áll a közepén, szürkén, és egy színsáv fut át rajta
+     * balról jobbra, újra meg újra, amíg a videó be nem töltődik. Ez nem
+     * díszítés: egy üres fekete négyzet alatt a néző nem tudja, hogy az oldal
+     * dolgozik-e vagy megállt, és pont a lejátszás indulása az a pillanat,
+     * amikor a leghosszabb a várakozás.
+     *
+     * A KATALÓGUS 32 536 CÍMÉBŐL 4 810-NEK VAN LOGÓJA — tehát a tartalék nem
+     * ritka kivétel, hanem a gyakoribb eset. Ilyenkor a YUME szóvédjegy áll
+     * ott, ugyanazzal a mozgással: a betöltőnek egységesnek kell lennie, nem
+     * „van logó / nincs logó" alapján kétféle élménynek.
+     *
+     * A szürkeárnyalat a `filter`-től jön, a színcsík egy maszkolt MÁSODIK
+     * példánytól ugyanarról a képről. Két réteg, egy kép, nulla plusz letöltés.
+     */
+    const logoSrc = media.logoImage ?? null
+    const brandLayer = () => (logoSrc
+      ? U.el('img', { class: 'player-loader-art', src: logoSrc, alt: '', decoding: 'async' })
+      : U.el('div', { class: 'player-loader-art player-loader-wordmark', text: 'YUME' }))
+
     const loader = U.el('div', { class: 'player-loader' }, [
-      U.el('div', { class: 'player-loader-ring' }),
-      U.svg('<path d="M23.5 4.5A13 13 0 1 0 27.5 21 10.5 10.5 0 0 1 23.5 4.5Z" fill="currentColor" stroke="none"/>', 34)
+      U.el('div', { class: 'player-loader-brand' }, [
+        // Az alsó réteg a szürke alap, a felső a színes — ez utóbbit egy
+        // mozgó maszk vágja csíkra, és a csík fut végig a logón.
+        brandLayer(),
+        U.el('div', { class: 'player-loader-sweep' }, [brandLayer()])
+      ]),
+      U.el('div', { class: 'player-loader-ring' })
     ])
-    loader.querySelector('svg').setAttribute('viewBox', '0 0 32 32')
     const mountedAt = Date.now()
     const MIN_LOADER = 1100 // always show the branded loader at start, like Netflix
     const hideLoader = () => {

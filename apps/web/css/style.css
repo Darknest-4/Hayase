@@ -2252,20 +2252,104 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
 /* ---- Yume branded loader (start + buffering), Netflix-style ---- */
 .player-loader {
   position: absolute; inset: 0; z-index: 6;
-  display: grid; place-items: center;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
   background: var(--scrim);
   transition: opacity var(--dur-reveal) var(--ease);
 }
 .player-loader.hidden { display: grid !important; opacity: 0; pointer-events: none; }
 .player-loader svg { color: var(--on-media); position: absolute; }
+
+/* ---- a betöltő védjegye: szürke logó, végigfutó színcsíkkal ----
+ *
+ * Két réteg ugyanarról a képről. Az alsó szürke, a felső színes, és a felsőt
+ * egy mozgó maszk vágja keskeny csíkra — így a szín úgy halad át a logón, mint
+ * egy fénypászma. Egy kép, két réteg, nulla plusz letöltés.
+ *
+ * A méret `clamp`-pel skálázódik: ugyanez a betöltő jelenik meg egy 320 pixeles
+ * telefonon és egy teljes képernyős asztali lejátszóban.                       */
+.player-loader-brand {
+  position: relative;
+  width: clamp(9rem, 34%, 22rem);
+  display: grid;
+  place-items: center;
+  margin-bottom: var(--space-6);
+}
+.player-loader-art {
+  width: 100%;
+  height: auto;
+  max-height: 7rem;
+  object-fit: contain;
+  /* Teljes szürkeárnyalat, LESÖTÉTÍTVE: a logónak jelen kell lennie, de nem
+     versenyeznie a mozgó csíkkal.                                             */
+  filter: grayscale(1) brightness(.55) contrast(1.1);
+  opacity: .32;
+}
+.player-loader-wordmark {
+  font-weight: 900;
+  font-size: clamp(2rem, 7vw, 3.4rem);
+  letter-spacing: .18em;
+  line-height: 1;
+  color: var(--on-media);
+  text-align: center;
+}
+.player-loader-sweep {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  /* A CSÍK MAGA. A maszk kétszer olyan széles, mint az elem, és átlátszó a két
+     szélén — ezt húzzuk végig balról jobbra. A `-webkit-` párja nélkül a
+     Safarin egyszerűen nem látszana semmi.                                    */
+  -webkit-mask-image: linear-gradient(100deg, transparent 30%, #000 44%, #000 56%, transparent 70%);
+  mask-image: linear-gradient(100deg, transparent 30%, #000 44%, #000 56%, transparent 70%);
+  -webkit-mask-size: 300% 100%;
+  mask-size: 300% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  animation: yume-sweep 2.4s var(--ease, ease-in-out) infinite;
+}
+.player-loader-sweep .player-loader-art {
+  /*
+   * A felső réteg az EREDETI színeivel — ezt fedi fel a csík.
+   *
+   * A `drop-shadow` NEM díszítés. A katalógus logóinak jó része eleve
+   * fehér-szürke (az „Attack on Titan" például), és azokon egy tisztán SZÍNBELI
+   * átmenet gyakorlatilag láthatatlan: szürkéből szürkébe. Mérve, két
+   * képkockával a csík két állásában: alig különböztek.
+   *
+   * A cím saját színében derengő fény viszont minden logón látszik, akkor is,
+   * ha az maga egyszínű — a pászma így FÉNYNEK olvasódik, ami végigfut rajta,
+   * nem csak színnek.
+   */
+  filter: none
+    drop-shadow(0 0 .35rem color-mix(in srgb, var(--custom, var(--accent)) 70%, transparent))
+    drop-shadow(0 0 1.2rem color-mix(in srgb, var(--custom, var(--accent)) 35%, transparent));
+  opacity: 1;
+}
+.player-loader-sweep .player-loader-wordmark {
+  color: var(--custom, var(--accent));
+  text-shadow: 0 0 1.4rem color-mix(in srgb, var(--custom, var(--accent)) 55%, transparent);
+}
+@keyframes yume-sweep {
+  from { -webkit-mask-position: 130% 0; mask-position: 130% 0; }
+  to   { -webkit-mask-position: -30% 0; mask-position: -30% 0; }
+}
+
 .player-loader-ring {
-  width: 4.6rem; height: 4.6rem;
+  width: 2.6rem; height: 2.6rem;
   border-radius: var(--radius-full);
   border: 3px solid color-mix(in srgb, var(--custom, var(--accent)) 18%, transparent);
   border-top-color: var(--custom, var(--accent));
   animation: yume-spin .9s linear infinite;
 }
 @keyframes yume-spin { to { transform: rotate(360deg); } }
+
+/* Aki kikapcsolta a mozgást, annál a csík megáll a logó közepén: a márka
+   látszik, a villogás nem. A `prefers-reduced-motion` nem javaslat.           */
+@media (prefers-reduced-motion: reduce) {
+  .player-loader-sweep { animation: none; -webkit-mask-position: 50% 0; mask-position: 50% 0; }
+  .player-loader-ring { animation-duration: 2.4s; }
+}
 
 /* ---- gear menu ---- */
 .player-menu {

@@ -67,8 +67,22 @@ export class AnimeRepository extends Repository {
              FROM anime_tags at JOIN tags tg ON tg.id = at.tag_id WHERE at.anime_id = a.id) AS tags,
           (SELECT coalesce(jsonb_agg(jsonb_build_object('name', c.name, 'role', ac.role, 'isMain', ac.is_main)), '[]')
              FROM anime_companies ac JOIN companies c ON c.id = ac.company_id WHERE ac.anime_id = a.id) AS companies,
+          /*
+           * FAJTÁNKÉNT EGY KÉP, az elsődlegest előnyben részesítve.
+           *
+           * Korábban a WHERE i.is_primary feltétel állt itt, és ez csendben elnyelte a
+           * logókat: a 7 019 logó közül EGYET SEM jelöl semmi elsődlegesnek
+           * (ahogy a 9 644 háttérképet sem), tehát soha nem jutottak ki az
+           * API-ból. A borítók és a bannerek igen — ezért a hiány nem tűnt fel.
+           *
+           * A DISTINCT ON (kind) ugyanazt adja, amit az is_primary szánt:
+           * fajtánként egy képet. Ahol van elsődleges, az nyer; ahol nincs, ott
+           * a legrégebbi sor, ami stabil és ismételhető választás.
+           */
           (SELECT coalesce(jsonb_agg(jsonb_build_object('kind', i.kind, 'key', i.object_key, 'blurhash', i.blurhash, 'color', i.dominant_color)), '[]')
-             FROM anime_images i WHERE i.anime_id = a.id AND i.is_primary) AS images,
+             FROM (SELECT DISTINCT ON (x.kind) x.kind, x.object_key, x.blurhash, x.dominant_color
+                     FROM anime_images x WHERE x.anime_id = a.id
+                    ORDER BY x.kind, x.is_primary DESC, x.id) i) AS images,
           (SELECT to_jsonb(m) - 'anime_id' FROM anime_mappings m WHERE m.anime_id = a.id) AS mappings
          FROM anime a
          LEFT JOIN anime_translations tr
