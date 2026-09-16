@@ -12,6 +12,7 @@ import { handleEdgeJob } from '../modules/edge/worker.ts'
 import { handleFounderJob } from '../modules/library/founder.ts'
 import { handleImportJob } from '../integrations/anilist/importer.ts'
 import { handleMaintenanceJob } from '../infrastructure/maintenance.ts'
+import { handleMediaJob } from '../modules/media/mirror.ts'
 import { handleMetadataJob } from '../modules/metadata/worker.ts'
 import { handleMonitorJob } from '../modules/system/monitor-worker.ts'
 import { handleNotifyJob } from '../modules/notifications/worker.ts'
@@ -38,7 +39,11 @@ const handlers = {
   // Az él háttérmunkája: IP-adatok frissítése, viselkedéselemzés, összesítés,
   // takarítás. Külön sor, mert a DNS-feloldás lassú, és nem tarthatja fel a
   // többi feladatot.
-  edge: handleEdgeJob
+  edge: handleEdgeJob,
+  // A katalógusképek tükrözése saját tárhelyre. Külön sor, mert kötegenként
+  // több száz idegen CDN-kérés, és nem tarthatja fel sem a webhookokat, sem a
+  // mérőszámokat. Magát ütemezi újra, amíg van hátra — lásd `handleMediaJob`.
+  media: handleMediaJob
 } as const
 
 async function scheduleRecurring (): Promise<void> {

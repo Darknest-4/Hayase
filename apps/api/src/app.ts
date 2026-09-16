@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import cookie from '@fastify/cookie'
 import cors from '@fastify/cors'
 import fastifyStatic from '@fastify/static'
+import mediaRoutes from './modules/media/routes.ts'
 import mercurius from 'mercurius'
 import Fastify from 'fastify'
 
@@ -522,6 +523,13 @@ export async function buildApp (): Promise<FastifyInstance> {
      * route exists alongside the client's own #/anime/:id.
      */
     await app.register(seoRoutes, { webRoot })
+
+    /*
+     * A letükrözött katalógusképek. Ugyanazért kerül ide, amiért a `seoRoutes`:
+     * a `find-my-way` a literális szegmenst elébe helyezi a statikus `*`-nak,
+     * tehát a `/media/...` ide fut be, nem a fájlkiszolgálóhoz.
+     */
+    await app.register(mediaRoutes)
 
     /**
      * SPA fallback: any non-API GET that isn't a real file returns index.html.
