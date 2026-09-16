@@ -135,6 +135,22 @@ export function createPlaybackController (player, options = {}) {
       return rate
     },
 
+    /**
+     * Lépés a sebességfokozatok között.
+     *
+     * A `<` és a `>` billentyű ezt hívja. A fokozatok listáján lép, nem
+     * szorzással: egy `rate * 1.25` előbb-utóbb olyan értéket adna, ami nincs
+     * a menüben, és a beállítás soha többé nem lenne visszaállítható kézzel.
+     */
+    stepRate (direction) {
+      const step = Number(direction) > 0 ? 1 : -1
+      const index = RATES.indexOf(video.playbackRate)
+      // Ismeretlen aktuális érték: az egyszeresről indulunk, mert az a
+      // biztosan létező fokozat.
+      const from = index === -1 ? RATES.indexOf(1) : index
+      return api.setRate(RATES[clamp(from + step, 0, RATES.length - 1)])
+    },
+
     sync,
     get bufferedAhead () { return bufferedAhead() }
   }

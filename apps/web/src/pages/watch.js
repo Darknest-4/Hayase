@@ -15,6 +15,7 @@ import { LibrarySync } from '../features/library-sync/library-sync.js'
 import { Prefs } from '../shared/state/preferences.js'
 import { Store } from '../shared/state/store.js'
 import { StreamEngine } from '../features/player/stream-engine.js'
+import { createEpisodePlayer } from '../features/player2/watch/episode-player.js'
 import { P } from '../shared/ui/primitives.js'
 import { titleTheme } from '../shared/lib/title-theme.js'
 import { U } from '../shared/lib/dom.js'
@@ -710,7 +711,73 @@ export const PageWatch = {
 
   // ---- the embedded player ----
 
+  /**
+   * A Player 2.0 felállítása egy részhez.
+   *
+   * Ami itt történik, az ADATGYŰJTÉS, nem lejátszás: a lap tudja, melyik
+   * részt nézzük, honnan jönnek a források, mi a néző beállítása — az új
+   * lejátszó ezekből áll össze, és a huzalozás a saját összeszerelő
+   * moduljában van, nem itt.
+   */
+  async mountPlayer2 (box, media, episode, total, src) {
+    const video = U.el('video', { class: 'player-video', playsinline: '', preload: 'metadata' })
+    this._video = video
+
+    const manual = String(src ?? '')
+      .split('\n').map(url => url.trim()).filter(Boolean)
+      .map((url, index) => ({ id: `manual-${index}`, url, label: T('Manual source'), quality: null }))
+
+    const registered = (await this.registeredSources(media, episode)).map((source, index) => ({
+      id: source.id ?? `registered-${index}`,
+      url: source.url,
+      quality: Number(source.quality) || null,
+      label: source.source?.name ?? source.title ?? null,
+      subtitles: source.subtitles ?? []
+    }))
+
+    const rows = await this.loadEpisodeRows(media).catch(() => [])
+    const has = number => Array.isArray(rows) && rows.some(row => Number(row.number) === number)
+
+    const mounted = createEpisodePlayer({
+      video,
+      sources: [...registered, ...manual],
+      media: { title: U.title(media), logoImage: media.logoImage ?? null },
+      episode: { number: episode },
+      nextEpisode: episode < total && has(episode + 1) ? { number: episode + 1 } : null,
+      previousEpisode: episode > 1 && has(episode - 1) ? { number: episode - 1 } : null,
+      // Az első forrás feliratai: a sávok a RÉSZHEZ tartoznak, nem ahhoz a
+      // tükörhöz, amit a néző éppen kapott.
+      subtitles: registered.find(source => source.subtitles?.length)?.subtitles ?? [],
+      skipSegments: [],
+      prefs: Prefs,
+      featureOn,
+      onNextEpisode: () => navigate(`/watch/${media.id}/${episode + 1}`),
+      onPreviousEpisode: () => navigate(`/watch/${media.id}/${episode - 1}`),
+      onProgress: (seconds, ratio) => WatchTime?.record?.(media, episode, seconds, ratio),
+      onCompleted: () => LibrarySync?.markWatched?.(media, episode)
+    })
+
+    box.append(mounted.node)
+    this._player2 = mounted
+    this._shell = mounted.node
+    return mounted
+  },
+
   mountPlayer (box, media, episode, total, src, w2gCode = null) {
+    /*
+     * A PLAYER 2.0 kapcsoló mögött.
+     *
+     * Amíg a `player2` kapcsoló ki van kapcsolva — és alapból az —, ez a
+     * sor nem csinál semmit, és a lap pontosan úgy viselkedik, ahogy eddig.
+     * Bekapcsolva a teljes új lejátszó veszi át a helyét: saját felülettel,
+     * saját forráskezeléssel, saját állapotfával.
+     *
+     * A KETTŐ EGYÜTT ÉL, amíg az új be nem bizonyítja magát éles forgalmon.
+     * Egy nagy csere, ami visszafordíthatatlan, azt jelentené, hogy az első
+     * meglepetésnél nincs hova visszalépni.
+     */
+    if (featureOn('player2')) return this.mountPlayer2(box, media, episode, total, src)
+
     /*
      * `preload="metadata"` KIÍRVA, nem a böngészőre bízva.
      *
