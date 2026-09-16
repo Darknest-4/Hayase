@@ -7,6 +7,21 @@ services:
   app:
     build: .
     restart: unless-stopped
+    # LEGKISEBB JOGOSULTSÁG.
+    #
+    # `no-new-privileges`: a konténerben futó folyamat nem szerezhet több jogot,
+    # mint amennyivel indult — setuid binárison keresztül sem. A YUME egyik
+    # szolgáltatásának sincs szüksége jogosultság-emelésre.
+    #
+    # `cap_drop: ALL`: a Docker alapból tizennégy képességet ad minden
+    # konténernek (nyers socket, chown, mknod, …). Egy Node-folyamatnak, ami egy
+    # magas portra köt és `node` felhasználóként fut, egyik sem kell.
+    #
+    # A folyamatkorlát a `deploy.resources.limits.pids` alatt ül, a memória
+    # mellett: egy elszabadult folyamat ne tudja elfogyasztani a gazdagép
+    # folyamattábláját. A mért csúcs 22 folyamat volt; a 256 bőséges tartalék.
+    security_opt: ['no-new-privileges:true']
+    cap_drop: ['ALL']
     depends_on:
       postgres:
         condition: service_healthy
@@ -43,7 +58,7 @@ services:
       start_period: 20s
     deploy:
       resources:
-        limits: { memory: 768M }
+        limits: { memory: 768M, pids: 256 }
 
   # Background worker — REQUIRED in production. It creates next month's
   # partitions and enforces retention (without it, inserts into the
@@ -52,6 +67,9 @@ services:
   worker:
     build: .
     restart: unless-stopped
+    # Ugyanaz a szűkítés, mint az `app`-nál — lásd az ottani indoklást.
+    security_opt: ['no-new-privileges:true']
+    cap_drop: ['ALL']
     depends_on:
       postgres:
         condition: service_healthy
@@ -84,7 +102,7 @@ services:
       start_period: 30s
     deploy:
       resources:
-        limits: { memory: 512M }
+        limits: { memory: 512M, pids: 256 }
 
   # one-shot catalogue seed (25k anime + episodes) into the persistent volume.
   # Run once: docker compose --profile seed run --rm --build seed
