@@ -186,6 +186,7 @@ export function buildSearchSql (filters: SearchFilters, options: SearchSqlOption
     )
     SELECT a.id, a.canonical_title, a.format::text, a.status::text, a.season::text,
            a.season_year, a.episode_count, a.average_score, a.popularity, a.is_adult,
+           a.next_airing_at, a.next_airing_ep,
            img.object_key AS cover_key, map.anilist_id,
            m.tier, round(m.sim::numeric, 4) AS sim, m.matched_title
       FROM best m

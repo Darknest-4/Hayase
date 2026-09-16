@@ -37,6 +37,14 @@ export type AuditAction =
   // "who changed this description and to what" is asked afterwards.
   | 'anime.translation.create' | 'anime.translation.update' | 'anime.translation.delete'
   | 'config.flag' | 'config.setting'
+  // Mentés indítása, ellenőrzése, visszaállítása. A visszaállítás az egyetlen
+  // művelet ezen a platformon, ami minden mást felülír — „ki kérte" itt nem
+  // utólagos kérdés, hanem az első.
+  | 'backup.request'
+  // Adatkivitel. Egy exportált fájl elhagyja a rendszert, és onnantól
+  // semmilyen jogosultság nem véd rajta — az „ki vitte ki, mikor, mennyit"
+  // kérdés ezért nem utólagos, hanem az első.
+  | 'analytics.export'
   | 'webhook.create' | 'webhook.update' | 'webhook.delete'
   // Starting a catalogue-wide metadata pull. Recorded because it rewrites
   // fields across the whole catalogue and the question afterwards is who

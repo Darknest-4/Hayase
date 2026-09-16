@@ -1,0 +1,13 @@
+{
+  "id": "20260915T232416Z",
+  "scenario": "websocket",
+  "build": "e0433697-dirty",
+  "base": "http://127.0.0.1:4100",
+  "duration": "90s",
+  "ramp": "20s",
+  "stages": "100,250,500",
+  "startedAt": "2026-09-15T23:24:16Z",
+  "host": "Linux 6.8.0-124-generic",
+  "cores": 4,
+  "memTotalMb": 9969
+}

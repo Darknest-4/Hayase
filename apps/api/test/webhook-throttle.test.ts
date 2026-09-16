@@ -141,6 +141,35 @@ describe('a rate-limited webhook is not a broken one', { skip: HAS_DB ? false : 
     assert.ok(elapsed >= 700, `three deliveries took ${elapsed}ms — they were not spaced`)
   })
 
+  test('a test run cannot fan out to the operator\'s Discord', async () => {
+    /*
+     * A suite egy igazi adatbázis ellen fut, és minden próbafiók
+     * regisztrációja `user.registered`-et vált ki. Egy bekapcsolt webhookon át
+     * ez valódi üzenet egy valódi csatornában, tucatjával — a napló pontosan
+     * ezt mutatta, sorozatnyi `user.registered` egyetlen időbélyegen.
+     *
+     * A némítás csak a szórásra vonatkozik: a fenti tesztek közvetlenül a
+     * kézbesítést hívják, és futnak tovább.
+     */
+    const id = await hook()
+    reply = { status: 200, headers: {} }
+    hits = 0
+
+    const before = process.env.YUME_SUPPRESS_WEBHOOKS
+    process.env.YUME_SUPPRESS_WEBHOOKS = '1'
+    try {
+      const { emitEvent } = await import('../src/modules/webhooks/delivery.ts')
+      await emitEvent('user.registered', { username: 'nobody' })
+      const { rows } = await pool.query(
+        'SELECT count(*)::int AS n FROM webhook_deliveries WHERE webhook_id = $1', [id])
+      assert.equal(rows[0].n, 0, 'a suppressed run must queue nothing')
+      assert.equal(hits, 0)
+    } finally {
+      if (before === undefined) delete process.env.YUME_SUPPRESS_WEBHOOKS
+      else process.env.YUME_SUPPRESS_WEBHOOKS = before
+    }
+  })
+
   test('a receiver that says nothing still gets a sensible wait', async () => {
     const id = await hook()
     reply = { status: 429, headers: {} }

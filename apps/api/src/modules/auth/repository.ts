@@ -253,12 +253,45 @@ export class AuthRepository extends Repository {
   /** Returns undefined when the insert did not happen — the caller must refuse to mint a token. */
   openSession (session: {
     userId: string, refreshHash: string, ip: string | null, userAgent: string | null, expiresAt: Date
+    /** Melyik eszközről. Lásd `rememberDevice` — a `devices` sor azonosítója. */
+    deviceId?: string | null | undefined
   }): Promise<{ id: string } | undefined> {
     return this.queryOne<{ id: string }>(
-      `INSERT INTO sessions (user_id, refresh_hash, ip, user_agent, expires_at)
-       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-      [session.userId, session.refreshHash, session.ip, session.userAgent, session.expiresAt]
+      `INSERT INTO sessions (user_id, refresh_hash, ip, user_agent, expires_at, device_id)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [session.userId, session.refreshHash, session.ip, session.userAgent, session.expiresAt, session.deviceId ?? null]
     )
+  }
+
+  /**
+   * Az eszköz, amiről ez a munkamenet indult.
+   *
+   * A `devices` tábla a legelső migráció óta létezik, a `sessions.device_id`
+   * idegen kulccsal hivatkozik rá — és soha nem írt bele senki. Emiatt a
+   * „milyen eszközeim vannak bejelentkezve" kérdésre a felület sem tudott
+   * válaszolni, pedig a séma előkészítette.
+   *
+   * Amit eszköznek tekintünk: PLATFORM + NÉV, nem ujjlenyomat. Ugyanarról a
+   * gépről ugyanabból a böngészőből egy sor lesz, két különböző böngészőből
+   * kettő — és ennél pontosabbat szándékosan nem akarunk tudni. Egy valódi
+   * eszköz-ujjlenyomat követésre alkalmas, és ehhez a kérdéshez
+   * („ismerős-e ez a gép") nem kell.
+   */
+  async rememberDevice (userId: string, platform: string, name: string | null): Promise<string | undefined> {
+    const row = await this.queryOne<{ id: string }>(
+      `WITH existing AS (
+         UPDATE devices SET last_seen_at = now()
+          WHERE user_id = $1 AND platform = $2 AND name IS NOT DISTINCT FROM $3
+          RETURNING id
+       ), created AS (
+         INSERT INTO devices (user_id, platform, name)
+         SELECT $1, $2, $3 WHERE NOT EXISTS (SELECT 1 FROM existing)
+         RETURNING id
+       )
+       SELECT id FROM existing UNION ALL SELECT id FROM created LIMIT 1`,
+      [userId, platform, name]
+    )
+    return row?.id
   }
 
   /** The session behind a refresh token, if it is live and the account is active. */

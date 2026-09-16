@@ -25,3 +25,7 @@ vite.config.ts.timestamp-*
 *.webm
 *src/routes/test/**
 dist/
+
+# Host-specific compose overlay: which external network this machine puts the
+# app on, and which services it runs. Not the same on two installs.
+docker-compose.override.yml

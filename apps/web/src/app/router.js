@@ -30,6 +30,7 @@ import { Store } from '../shared/state/store.js'
 import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 import { YumeAPI } from '../shared/api/yume.js'
+import { pageView } from '../shared/lib/analytics.js'
 
 export const App = {
   routes: {
@@ -164,6 +165,19 @@ export const App = {
     // A jelölést a `_renderGate` és a `landing` útvonal is átírhatja: a kapu a
     // kezdőképernyőt rajzolja olyan útvonalon, amit még máshogy hívnak.
     document.body.classList.toggle('landing-route', route === 'landing')
+
+    /*
+     * Jelezzük, hogy megnyílt egy oldal.
+     *
+     * Itt, és nem a lapmodulokban: egy útvonal sok modulon keresztül érhető
+     * el, és ha mindegyik maga jelentené, akkor pont az maradna ki, amit
+     * legutóbb írtunk. Ez az egy hely tudja, hogy navigáció történt.
+     *
+     * Az azonosító külön megy, nem az útvonalba ágyazva: `/anime/:id` egy
+     * OLDAL, `/anime/<uuid>` harmincezer, egyenként egy látogatóval.
+     */
+    const ENTITY_ROUTES = ['anime', 'watch']
+    pageView('/' + route, ENTITY_ROUTES.includes(route) ? arg : undefined)
 
     document.querySelectorAll('.sidebar-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.route === route || ((route === 'anime' || route === 'watch') && btn.dataset.route === 'home'))
@@ -801,7 +815,7 @@ export const App = {
         C.avatar({ name: account?.display_name ?? p?.name, avatar_key: account?.avatar_key ?? p?.avatar }, { size: 'md' })
       ]),
       U.el('div', { style: 'min-width:0;' }, [
-        U.el('div', { class: 'more-profile-name', text: account?.display_name ?? p?.name ?? 'Dreamer' }),
+        U.el('div', { class: 'more-profile-name', text: account?.display_name ?? p?.name ?? T('Dreamer') }),
         U.el('div', { class: 'more-profile-sub', text: T('Your account') })
       ]),
       // Where the "Switch" button used to sit. The row is the viewer's own

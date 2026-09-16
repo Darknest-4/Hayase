@@ -22,6 +22,29 @@
 
 import { query } from '../../infrastructure/database/index.ts'
 
+export interface RateLimit { max: number, windowSeconds: number }
+export interface RateLimits { global: RateLimit, auth: RateLimit, write: RateLimit, refresh: RateLimit }
+
+/**
+ * Az alapértékek, ugyanazok a környezeti változók, amik eddig is voltak.
+ *
+ * Nem seed és nem migráció: a beállítás hiánya azt jelenti, hogy „maradjon,
+ * ahogy a telepítés mondja". Így egy panelen soha nem járt példány pontosan
+ * úgy viselkedik, mint eddig.
+ */
+export function rateLimitDefaults (): RateLimits {
+  // Függvény, nem konstans: a környezetet hívásonként olvassuk. Konstansként
+  // az importáláskor rögzült volna, és egy teszt, ami a saját korlátját
+  // állítja be a `buildApp()` előtt, a régi értéket kapta volna. A gyártásban
+  // ez ugyanaz az érték; a különbség az, hogy mikor kérdezzük meg.
+  return {
+    global: { max: Number(process.env.RATE_LIMIT_MAX ?? 300), windowSeconds: 60 },
+    auth: { max: Number(process.env.AUTH_RATE_LIMIT_MAX ?? 10), windowSeconds: 15 * 60 },
+    write: { max: Number(process.env.WRITE_RATE_LIMIT_MAX ?? 30), windowSeconds: 5 * 60 },
+    refresh: { max: Number(process.env.REFRESH_RATE_LIMIT_MAX ?? 60), windowSeconds: 15 * 60 }
+  }
+}
+
 const TTL_MS = 30_000
 
 let cache: Record<string, unknown> | null = null
@@ -97,5 +120,40 @@ export const settings = {
   async siteName (): Promise<string> {
     const value = (await settings.load()).site_name
     return typeof value === 'string' && value.trim() ? value.trim() : 'Yume'
+  },
+
+  /**
+   * A sebességkorlátok, ahogy most érvényesek.
+   *
+   * Eddig kizárólag környezeti változók voltak, tehát az átállításuk
+   * újraindítást jelentett — és az az egyetlen pillanat, amikor egy korlátot
+   * állítani kell, az az, amikor épp folyik valami. Egy védelem, amihez
+   * telepítés kell, nem védelem, hanem terv.
+   *
+   * A környezeti változó marad az alapérték: ha a beállítás hiányzik vagy
+   * hibás, azt kapjuk, amit eddig. A panelen írt érték felülírja.
+   *
+   * Az ablak másodpercben tárolódik, nem „1 minute" alakban: egy számot lehet
+   * ellenőrizni, egy szabad szöveget nem.
+   */
+  async rateLimits (): Promise<RateLimits> {
+    const defaults = rateLimitDefaults()
+    const stored = (await settings.load()).rate_limits
+    const table = typeof stored === 'object' && stored !== null ? stored as Record<string, unknown> : {}
+
+    const read = (name: keyof RateLimits): RateLimit => {
+      const fallback = defaults[name]
+      const row = table[name]
+      if (typeof row !== 'object' || row === null) return fallback
+      const { max, windowSeconds } = row as { max?: unknown, windowSeconds?: unknown }
+      return {
+        max: Number.isInteger(max) && (max as number) > 0 ? max as number : fallback.max,
+        windowSeconds: Number.isInteger(windowSeconds) && (windowSeconds as number) > 0
+          ? windowSeconds as number
+          : fallback.windowSeconds
+      }
+    }
+
+    return { global: read('global'), auth: read('auth'), write: read('write'), refresh: read('refresh') }
   }
 }

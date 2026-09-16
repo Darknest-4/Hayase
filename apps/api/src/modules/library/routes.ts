@@ -7,23 +7,12 @@ import { WRITE_LIMIT } from '../../middleware/security.ts'
 import { recomputeProfileStats } from '../system/stats-worker.ts'
 import { evaluate, grantNew, measure } from './achievements.ts'
 
-import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
+import { requireProfile } from '../../middleware/profile.ts'
+
+import type { FastifyPluginAsync } from 'fastify'
 
 const LIBRARY_STATUSES = ['WATCHING', 'PLANNING', 'COMPLETED', 'PAUSED', 'DROPPED', 'REWATCHING'] as const
 
-async function resolveProfile (request: FastifyRequest, reply: FastifyReply): Promise<string | undefined> {
-  const profileId = request.headers['x-profile-id']
-  if (typeof profileId !== 'string') {
-    await reply.code(400).send({ type: 'about:blank', title: 'Bad Request', status: 400, detail: 'Missing X-Profile-Id header' })
-    return
-  }
-  const owned = await queryOne('SELECT 1 FROM user_profiles WHERE id = $1 AND user_id = $2', [profileId, request.user.sub])
-  if (!owned) {
-    await reply.code(403).send({ type: 'about:blank', title: 'Forbidden', status: 403, detail: 'Profile does not belong to this account' })
-    return
-  }
-  return profileId
-}
 
 const routes: FastifyPluginAsync = async fastify => {
   fastify.addHook('preHandler', fastify.authenticate)
@@ -58,7 +47,7 @@ const routes: FastifyPluginAsync = async fastify => {
       }
     }
   }, async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
 
     const { status, limit = 500, cursor } = request.query as { status?: string, limit?: number, cursor?: string }
@@ -126,7 +115,7 @@ const routes: FastifyPluginAsync = async fastify => {
       }
     }
   }, async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
 
     const { animeId } = request.params as { animeId: string }
@@ -156,7 +145,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.delete('/library/:animeId', { config: WRITE_LIMIT }, async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
     const { animeId } = request.params as { animeId: string }
     await query('DELETE FROM library_entries WHERE profile_id = $1 AND anime_id = $2', [profileId, animeId])
@@ -164,7 +153,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.get('/continue-watching', async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
 
     const data = await query(
@@ -205,7 +194,7 @@ const routes: FastifyPluginAsync = async fastify => {
    * deliberate, and this note is here so it does not read as a typo.
    */
   fastify.get('/favorites', async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
 
     const data = await query(
@@ -224,7 +213,7 @@ const routes: FastifyPluginAsync = async fastify => {
     config: WRITE_LIMIT,
     schema: { params: { type: 'object', properties: { animeId: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
     const { animeId } = request.params as { animeId: string }
 
@@ -245,7 +234,7 @@ const routes: FastifyPluginAsync = async fastify => {
     config: WRITE_LIMIT,
     schema: { params: { type: 'object', properties: { animeId: { type: 'string', format: 'uuid' } } } }
   }, async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
     const { animeId } = request.params as { animeId: string }
     await query(
@@ -269,7 +258,7 @@ const routes: FastifyPluginAsync = async fastify => {
    * profile expects the episode they finished a minute ago to be in there.
    */
   fastify.get('/stats', async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
 
     const stale = await queryOne<{ fresh: boolean }>(
@@ -313,7 +302,7 @@ const routes: FastifyPluginAsync = async fastify => {
    * so checking twice grants once.
    */
   fastify.get('/achievements', async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
 
     // Before measuring, so a freshly earned one comes back already granted
@@ -425,7 +414,7 @@ const routes: FastifyPluginAsync = async fastify => {
       }
     }
   }, async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
 
     const { episodeId } = request.params as { episodeId: string }
@@ -474,27 +463,66 @@ const routes: FastifyPluginAsync = async fastify => {
       [profileId, episodeId, episode.anime_id, positionSec, durationSec ?? null, completed]
     )
 
-    // first completion of this episode → history entry, XP, stats refresh
-    if (completed && row?.completed) {
-      const fresh = await queryOne<{ exists: boolean }>(
-        `SELECT EXISTS (
-           SELECT 1 FROM watch_history
-           WHERE profile_id = $1 AND episode_id = $2 AND finished AND started_at > now() - interval '6 hours'
-         ) AS exists`,
+    /*
+     * A nézés előzménye — az indítástól, nem csak a befejezéstől.
+     *
+     * Eddig kizárólag a befejezés írt ide sort. A tábla viszont `started_at`,
+     * `ended_at` és `finished` hármassal van megtervezve, és ennek a háromnak
+     * csak akkor van értelme, ha van indítás is. Enélkül két kérdésre nem
+     * lehetett válaszolni, és mindkettő pont az érdekes:
+     *
+     *   * hányan INDÍTOTTÁK el ezt az epizódot (nem hányan fejezték be);
+     *   * hol hagyják abba — a befejezési arány a kettő hányadosa, és
+     *     befejezésekből önmagában nem számolható.
+     *
+     * Nem új kliensesemény: a lejátszó úgyis küld haladást, és egy olyan
+     * esemény, aminek van adatbázisbeli következménye (a saját haladásod),
+     * drágábban hamisítható, mint egy, ami csak a statisztikát mozdítja.
+     *
+     * Egy menet = egy sor. A hat órás ablak ugyanaz, ami eddig a duplikált
+     * befejezést fogta: ugyanannak az epizódnak az újranézése holnap új sor,
+     * a szünet utáni folytatás ma nem.
+     */
+    const session = await queryOne<{ id: string, finished: boolean, started_at: string }>(
+      `SELECT id, finished, started_at FROM watch_history
+        WHERE profile_id = $1 AND episode_id = $2 AND started_at > now() - interval '6 hours'
+        ORDER BY started_at DESC LIMIT 1`,
+      [profileId, episodeId]
+    )
+
+    const watched = Math.round(positionSec)
+    if (!session) {
+      // Ez az indítás.
+      await query(
+        `INSERT INTO watch_history (profile_id, episode_id, anime_id, watched_sec, finished, started_at, ended_at)
+         VALUES ($1, $2, $3, $4, $5, now(), CASE WHEN $5 THEN now() END)`,
+        [profileId, episodeId, episode.anime_id, watched, completed && row?.completed === true]
+      )
+    } else {
+      // A menet halad. A `watched_sec` nem csökkenhet: a visszatekerés nem
+      // veszi vissza a már megnézett időt.
+      //
+      // A `started_at` is szerepel a feltételben, pedig az `id` egyedi: a
+      // tábla particionált, és enélkül a tervező minden partíciót megnézne
+      // egyetlen sorért.
+      await query(
+        `UPDATE watch_history
+            SET watched_sec = GREATEST(watched_sec, $3),
+                finished = finished OR $4,
+                ended_at = CASE WHEN finished OR $4 THEN now() ELSE ended_at END
+          WHERE id = $1 AND started_at = $2`,
+        [session.id, session.started_at, watched, completed && row?.completed === true]
+      )
+    }
+
+    // Az első befejezés jár XP-vel és statisztikafrissítéssel — ez nem
+    // változott, csak most már a menet sorát nézi, nem egy külön beszúrást.
+    if (completed && row?.completed && !session?.finished) {
+      await query(
+        `INSERT INTO xp_events (profile_id, amount, reason, ref_id) VALUES ($1, 10, 'episode_watched', $2)`,
         [profileId, episodeId]
       )
-      if (!fresh?.exists) {
-        await query(
-          `INSERT INTO watch_history (profile_id, episode_id, anime_id, watched_sec, finished, started_at, ended_at)
-           VALUES ($1, $2, $3, $4, true, now(), now())`,
-          [profileId, episodeId, episode.anime_id, Math.round(positionSec)]
-        )
-        await query(
-          `INSERT INTO xp_events (profile_id, amount, reason, ref_id) VALUES ($1, 10, 'episode_watched', $2)`,
-          [profileId, episodeId]
-        )
-        await enqueue('stats', { profileId, dedupe: `profile:${profileId}` })
-      }
+      await enqueue('stats', { profileId, dedupe: `profile:${profileId}` })
     }
 
     return { position_sec: row?.position_sec, completed: row?.completed, updated_at: row?.updated_at }

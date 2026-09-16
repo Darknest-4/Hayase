@@ -29,7 +29,7 @@ export const PageNotifications = {
     { key: 'airing', label: 'Airing' },
     { key: 'resume', label: 'Continue' },
     { key: 'achievement', label: 'Achievements' },
-    { key: 'system', label: 'System' }
+    { key: 'system', label: 'Rendszer' }
   ],
 
   /**

@@ -17,25 +17,14 @@ import { query, queryOne } from '../../infrastructure/database/index.ts'
 import { PREFERENCES, coerce, isPreferenceKey, resolve } from '../profiles/preferences.ts'
 import { WRITE_LIMIT } from '../../middleware/security.ts'
 
-import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
+import { requireProfile } from '../../middleware/profile.ts'
+
+import type { FastifyPluginAsync } from 'fastify'
 
 /** Onboarding state lives beside the preferences but is not one of them:
  *  it records an event, not a choice, so it is never offered in a settings UI. */
 const ONBOARDING_KEY = 'onboarding.state'
 
-async function resolveProfile (request: FastifyRequest, reply: FastifyReply): Promise<string | undefined> {
-  const profileId = request.headers['x-profile-id']
-  if (typeof profileId !== 'string') {
-    await reply.code(400).send({ type: 'about:blank', title: 'Bad Request', status: 400, detail: 'Missing X-Profile-Id header' })
-    return
-  }
-  const owned = await queryOne('SELECT 1 FROM user_profiles WHERE id = $1 AND user_id = $2', [profileId, request.user.sub])
-  if (!owned) {
-    await reply.code(403).send({ type: 'about:blank', title: 'Forbidden', status: 403, detail: 'Profile does not belong to this account' })
-    return
-  }
-  return profileId
-}
 
 async function readAll (profileId: string): Promise<{
   settings: Record<string, unknown>
@@ -58,7 +47,7 @@ const routes: FastifyPluginAsync = async fastify => {
 
   // ---- read ----
   fastify.get('/settings', async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
     const { settings, onboarding } = await readAll(profileId)
     return {
@@ -87,7 +76,7 @@ const routes: FastifyPluginAsync = async fastify => {
       }
     }
   }, async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
 
     const body = request.body as {
@@ -146,7 +135,7 @@ const routes: FastifyPluginAsync = async fastify => {
   // Deletes rather than writing defaults, so a later change to a default
   // reaches viewers who never expressed an opinion.
   fastify.delete('/settings', { config: WRITE_LIMIT }, async (request, reply) => {
-    const profileId = await resolveProfile(request, reply)
+    const profileId = await requireProfile(request, reply)
     if (!profileId) return
     await query('DELETE FROM user_settings WHERE profile_id = $1 AND key <> $2', [profileId, ONBOARDING_KEY])
     const { settings, onboarding } = await readAll(profileId)

@@ -46,6 +46,8 @@ declare module '@fastify/jwt' {
 declare module 'fastify' {
   interface FastifyInstance {
     authenticate: preHandlerHookHandler
+    /** Felismeri a hívót, ha van tokenje; nem utasít el senkit. */
+    identify: preHandlerHookHandler
     requirePermission: (slug: string, options?: { hide?: boolean }) => preHandlerHookHandler
     requireFeature: (key: string) => preHandlerHookHandler
   }
@@ -218,6 +220,37 @@ export default fp(async fastify => {
 
   fastify.decorate('authenticate', async function (request: FastifyRequest, reply: FastifyReply) {
     await verify(request, reply)
+  })
+
+  /**
+   * „Ki vagy, ha egyáltalán vagy valaki."
+   *
+   * Nem utasít el semmit: aki token nélkül jön, az továbbmegy névtelenül. Egy
+   * útvonalra való, ami mindenkinek válaszol, de többet mond annak, akit
+   * felismer.
+   *
+   * Azért kell külön, mert eddig az ilyen útvonalak a privát példány
+   * belépési kapujára támaszkodtak — az viszont csak akkor fut le, ha a
+   * `require_login` be van kapcsolva. Amikor az üzemeltető nyilvánosra
+   * állította a példányt, a bejelentkezett tag hirtelen névtelennek látszott
+   * a hírek útvonalán, és eltűntek előle a tagoknak szóló üzenetek. Egy
+   * beállítás, ami a kijelentkezett látogatóról szól, nem dönthet arról,
+   * hogy kit ismerünk fel.
+   *
+   * A visszavont munkamenetet itt is ellenőrizzük: egy kitiltott fiók legyen
+   * névtelen, ne pedig önmaga.
+   */
+  fastify.decorate('identify', async function (request: FastifyRequest) {
+    if (request.user?.sub) return
+    try {
+      await request.jwtVerify()
+    } catch {
+      return // nincs token, vagy rossz — a hívó névtelen marad
+    }
+    if (!await tokenIsCurrent(request.user)) {
+      // @ts-expect-error a `user` a kérésre van dekorálva; itt szándékosan törlünk
+      request.user = undefined
+    }
   })
 
   /**

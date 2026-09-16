@@ -67,7 +67,31 @@ export const DEFAULTS = {
   'queue.pending': { warn: 100, crit: 1000, unit: 'count', rationale: 'Runnable job backlog. Sustained growth means the worker is down or under-provisioned.' },
 
   // Jobs that exhausted their retries — each one is lost work.
-  'queue.dead': { warn: 1, crit: 25, unit: 'count', rationale: 'Jobs past max_attempts. Each represents lost work and needs operator attention.' }
+  'queue.dead': { warn: 1, crit: 25, unit: 'count', rationale: 'Jobs past max_attempts. Each represents lost work and needs operator attention.' },
+
+  /*
+   * A legutóbbi ELLENŐRZÖTT mentés kora, órában.
+   *
+   * A mentés eddig az egyetlen olyan rendszer volt, aminek a leállását semmi
+   * nem vette észre. Éjszakánként futott, ellenőrizte magát, és ha egy éjjel
+   * nem futott le, arról pontosan addig nem szerzett tudomást senki, amíg
+   * vissza nem kellett állítani valamit. Egy mentés, amiről nem tudjuk, hogy
+   * elkészült-e, nem mentés.
+   *
+   * 30 óra a figyelmeztetés: a napi futás ideje ±6 óra, tehát egy kihagyott
+   * éjszaka ennél biztosan később derül ki, egy késve induló futás viszont
+   * nem riaszt hamisan. 48 óra a kritikus: két kihagyott éjszaka már nem
+   * késés, hanem leállás.
+   *
+   * Az ELLENŐRZÖTT a kulcsszó: egy sor a leltárban, amiről nem tudjuk, hogy
+   * visszaállítható-e, ugyanaz, mintha nem lenne.
+   */
+  'backup.age_hours': {
+    warn: 30,
+    crit: 48,
+    unit: 'hours',
+    rationale: 'A legutóbbi ellenőrzött mentés kora. 30 óra = egy kimaradt éjszaka, 48 = kettő.'
+  }
 } as const satisfies Record<string, Threshold>
 
 export type MetricKey = keyof typeof DEFAULTS

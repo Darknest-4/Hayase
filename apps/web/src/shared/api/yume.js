@@ -624,6 +624,9 @@ export const YumeAPI = {
     _api: null,
 
     list (status) { return this._api._request('/v1/changelog' + (status ? `?status=${status}` : '')) },
+    // A szerkesztő nézete: a nem publikus kiadásokat is tartalmazza, és ezért
+    // jogosultsághoz kötött (changelog.manage).
+    all () { return this._api._request('/v1/changelog/all', { auth: true }) },
     get (version) { return this._api._request(`/v1/changelog/${encodeURIComponent(version)}`) },
     create (release) { return this._api._request('/v1/changelog', { method: 'POST', auth: true, body: release }) },
     update (id, patch) { return this._api._request(`/v1/changelog/${id}`, { method: 'PATCH', auth: true, body: patch }) },
@@ -722,6 +725,16 @@ export const YumeAPI = {
     })
   },
 
+  analytics: {
+    /**
+     * Egy oldalletöltés jelzése.
+     *
+     * 204-et ad vissza mindenre, ami nem szabálysértés — a kliens számára ez
+     * egy jelzés, nem művelet. A hívó nem is várja meg.
+     */
+    view: body => YumeAPI._request('/v1/analytics/view', { method: 'POST', body, anonymous: false })
+  },
+
   admin: {
     // ---- announcements ----
     // Authoring lives under /v1/announcements rather than /v1/admin, because
@@ -760,6 +773,32 @@ export const YumeAPI = {
       YumeAPI._request(`/v1/admin/reports/${id}/resolve`, { method: 'POST', auth: true, body: { action, reason } }),
     overview: () =>
       YumeAPI._request('/v1/admin/analytics/overview', { auth: true }),
+
+    /*
+     * Látogatottság. Külön a fenti `overview`-tól, ami a platform egészéről
+     * szól (felhasználók, hibák, sorok) — ez arról, hogy kik jártak itt.
+     *
+     * Minden tartományos hívás a napi összesítőkből olvas, nem nyers
+     * eseménytáblából; a `realtime` az egyetlen kivétel, és az öt percet néz.
+     */
+    analytics: {
+      visitors: range => YumeAPI._request(`/v1/admin/analytics/visitors?range=${range}`, { auth: true }),
+      breakdown: (dimension, range, limit = 20) =>
+        YumeAPI._request(`/v1/admin/analytics/breakdown?dimension=${dimension}&range=${range}&limit=${limit}`, { auth: true }),
+      realtime: () => YumeAPI._request('/v1/admin/analytics/realtime', { auth: true }),
+      anime: (range, limit = 50) =>
+        YumeAPI._request(`/v1/admin/analytics/anime?range=${range}&limit=${limit}`, { auth: true }),
+      animeDetail: (id, range) =>
+        YumeAPI._request(`/v1/admin/analytics/anime/${id}?range=${range}`, { auth: true }),
+      search: range => YumeAPI._request(`/v1/admin/analytics/search?range=${range}`, { auth: true }),
+      performance: range => YumeAPI._request(`/v1/admin/analytics/performance?range=${range}`, { auth: true }),
+      users: range => YumeAPI._request(`/v1/admin/analytics/users?range=${range}`, { auth: true }),
+      account: (userId, params = {}) => {
+        const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null))
+        const tail = q.toString() ? '?' + q.toString() : ''
+        return YumeAPI._request(`/v1/admin/analytics/accounts/${userId}${tail}`, { auth: true })
+      }
+    },
 
     // The counts the section rail puts on its own items. Each figure is null
     // when this account holds no permission over it.
@@ -892,6 +931,16 @@ export const YumeAPI = {
     security: () => YumeAPI._request('/v1/admin/security', { auth: true }),
     // The posture: every entry inspects something and says what it found.
     posture: () => YumeAPI._request('/v1/admin/security/posture', { auth: true }),
+    // A sebességkorlátok átírása. Ugyanaz a jogosultság, ami a
+    // vészkapcsolókat is nyitja, és ugyanúgy auditált.
+    setRateLimits: body => YumeAPI._request('/v1/admin/security/limits', { method: 'PATCH', auth: true, body }),
+    // Mentések. Az API nem látja a kötetet — ezek a hívások kérést írnak egy
+    // táblába, amit a mentőkonténer ciklusa vesz fel.
+    backups: () => YumeAPI._request('/v1/admin/backups', { auth: true }),
+    backupNow: reason => YumeAPI._request('/v1/admin/backups', { method: 'POST', auth: true, body: { reason } }),
+    backupSchedule: body => YumeAPI._request('/v1/admin/backups/schedule', { method: 'PATCH', auth: true, body }),
+    backupVerify: body => YumeAPI._request('/v1/admin/backups/verify', { method: 'POST', auth: true, body }),
+    backupRestore: body => YumeAPI._request('/v1/admin/backups/restore', { method: 'POST', auth: true, body }),
     setControl: (key, value, reason) =>
       YumeAPI._request(`/v1/admin/security/${encodeURIComponent(key)}`, {
         method: 'POST', auth: true, body: { value, reason }

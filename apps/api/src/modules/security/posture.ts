@@ -22,6 +22,7 @@
 
 import { config } from '../../config.ts'
 import { query, queryOne } from '../../infrastructure/database/index.ts'
+import { loadTestConfigured } from '../../middleware/load-test.ts'
 import { settings } from '../settings/site-settings.ts'
 
 export type Verdict = 'pass' | 'warn' | 'fail' | 'skipped' | 'unknown'
@@ -57,8 +58,8 @@ const DEFINITIONS: Definition[] = [
   // ---- secrets and transport ----
   {
     id: 'jwt-secret',
-    group: 'Secrets & transport',
-    title: 'Signing secret is not the development placeholder',
+    group: 'Titkok és átvitel',
+    title: 'Az aláíró titok nem a fejlesztői helykitöltő',
     looksAt: 'JWT_SECRET',
     weight: 'critical',
     run: async () => {
@@ -66,43 +67,43 @@ const DEFINITIONS: Definition[] = [
       if (secret === DEV_JWT_SECRET) {
         return {
           verdict: 'fail',
-          found: 'the signing secret is the shipped development placeholder — anybody can mint a token for any account',
-          remedy: 'Generate one: openssl rand -base64 48, then restart'
+          found: 'az aláíró titok a szállított fejlesztői helykitöltő — bárki tud tokent gyártani bármelyik fiókhoz',
+          remedy: 'Generálj egyet: openssl rand -base64 48, aztán indítsd újra'
         }
       }
       if (secret.length < 32) {
         return {
           verdict: 'warn',
-          found: `the signing secret is ${secret.length} characters`,
-          remedy: 'Use at least 32; openssl rand -base64 48 gives 64'
+          found: `az aláíró titok ${secret.length} karakter`,
+          remedy: 'Legalább 32 karakter kell; az openssl rand -base64 48 hatvannégyet ad'
         }
       }
       // Never the value, never a prefix of it. The length is the finding.
-      return { verdict: 'pass', found: `a ${secret.length}-character secret, not the placeholder` }
+      return { verdict: 'pass', found: `${secret.length} karakteres titok, nem a helykitöltő` }
     }
   },
   {
     id: 'hsts',
-    group: 'Secrets & transport',
-    title: 'HSTS is sent',
+    group: 'Titkok és átvitel',
+    title: 'HSTS-fejléc megy ki',
     looksAt: 'ENABLE_HSTS, NODE_ENV',
     weight: 'high',
     run: async () => {
       if (!config.isProd) {
-        return { verdict: 'skipped', found: 'not a production instance — HSTS over plain http would lock the browser out of it' }
+        return { verdict: 'skipped', found: 'nem éles példány — sima http-n a HSTS kizárná belőle a böngészőt' }
       }
       if (process.env.ENABLE_HSTS === 'true') return { verdict: 'pass', found: 'ENABLE_HSTS=true' }
       return {
         verdict: 'warn',
-        found: 'ENABLE_HSTS is not set',
-        remedy: 'Set it once HTTPS terminates in front of the app, so a downgrade cannot be forced'
+        found: 'az ENABLE_HSTS nincs beállítva',
+        remedy: 'Kapcsold be, amint HTTPS végződik az alkalmazás előtt — így nem lehet visszaléptetni http-re'
       }
     }
   },
   {
     id: 'cors',
-    group: 'Secrets & transport',
-    title: 'CORS is not open to every origin',
+    group: 'Titkok és átvitel',
+    title: 'A CORS nem enged minden forrást',
     looksAt: 'CORS_ORIGINS',
     weight: 'high',
     run: async () => {
@@ -113,26 +114,26 @@ const DEFINITIONS: Definition[] = [
         // development instance. Reporting that as a failure would be a false
         // alarm, and a security page that cries wolf is worse than none.
         if (!config.isProd) {
-          return { verdict: 'skipped', found: 'development instance: every origin is allowed here and refused in production' }
+          return { verdict: 'skipped', found: 'fejlesztői példány: itt minden forrás engedett, élesben el lesz utasítva' }
         }
         return {
           verdict: 'fail',
-          found: 'every origin is allowed — any site can make credentialed calls on a visitor’s behalf',
-          remedy: 'Set CORS_ORIGINS to the origins that need it, or leave it unset for same-origin only'
+          found: 'minden forrás engedett — bármelyik oldal hívhat a látogató nevében, a sütijeivel',
+          remedy: 'Állítsd a CORS_ORIGINS-t azokra a forrásokra, amiknek kell, vagy hagyd üresen az azonos forráshoz'
         }
       }
       if (Array.isArray(origins) && origins.length) {
-        return { verdict: 'pass', found: `${origins.length} allowed origin${origins.length === 1 ? '' : 's'}` }
+        return { verdict: 'pass', found: `${origins.length} engedett forrás` }
       }
-      return { verdict: 'pass', found: 'same-origin only' }
+      return { verdict: 'pass', found: 'csak azonos forrás' }
     }
   },
 
   // ---- who holds power ----
   {
     id: 'public-url',
-    group: 'Secrets & transport',
-    title: 'The public address is configured, not taken from the request',
+    group: 'Titkok és átvitel',
+    title: 'A nyilvános cím be van állítva, nem a kérésből jön',
     looksAt: 'PUBLIC_URL',
     weight: 'normal',
     run: async () => {
@@ -144,30 +145,30 @@ const DEFINITIONS: Definition[] = [
       // Only checked in production: in development the host is whatever the
       // developer typed, and flagging that would be noise.
       if (!config.isProd) {
-        return { verdict: 'skipped', found: 'development instance: nothing here is crawled' }
+        return { verdict: 'skipped', found: 'fejlesztői példány: ezt semmi nem indexeli' }
       }
       const value = process.env.PUBLIC_URL?.trim()
       if (!value) {
         return {
           verdict: 'warn',
-          found: 'unset — canonical and sitemap URLs are built from the Host header the caller sent',
-          remedy: 'Set PUBLIC_URL to this site’s address, e.g. https://yume.example.com'
+          found: 'nincs beállítva — a kanonikus és sitemap-címek a hívó Host fejlécéből épülnek',
+          remedy: 'Állítsd a PUBLIC_URL-t az oldal címére, például https://yume.example.com'
         }
       }
       if (!/^https:\/\//i.test(value)) {
         return {
           verdict: 'warn',
-          found: `set to a plain-http address (${value})`,
-          remedy: 'Use the https address, or search engines will index the insecure one'
+          found: `sima http-címre van állítva (${value})`,
+          remedy: 'A https címet használd, különben a keresők a nem biztonságosat indexelik'
         }
       }
-      return { verdict: 'pass', found: `set to ${value}` }
+      return { verdict: 'pass', found: `erre van állítva: ${value}` }
     }
   },
   {
     id: 'administrators',
-    group: 'Accounts',
-    title: 'Exactly the administrators you expect',
+    group: 'Fiókok',
+    title: 'Pontosan azok az adminisztrátorok, akikre számítasz',
     looksAt: 'user_roles joined to roles',
     weight: 'high',
     run: async () => {
@@ -179,24 +180,24 @@ const DEFINITIONS: Definition[] = [
       if (n === 0) {
         return {
           verdict: 'fail',
-          found: 'no account holds the admin role — nobody can administer this instance',
-          remedy: 'The first account to register is promoted; see routes/auth.ts'
+          found: 'egyetlen fióknak sincs admin szerepköre — senki nem tudja üzemeltetni ezt a példányt',
+          remedy: 'Az elsőként regisztrált fiók kapja meg; lásd routes/auth.ts'
         }
       }
       if (n > 5) {
         return {
           verdict: 'warn',
-          found: `${n} accounts hold the admin role`,
-          remedy: 'Every one of them can hand the instance to somebody else. Review them in Users.'
+          found: `${n} fióknak van admin szerepköre`,
+          remedy: 'Bármelyikük átadhatja a példányt másnak. Nézd át őket a Felhasználók között.'
         }
       }
-      return { verdict: 'pass', found: `${n} administrator${n === 1 ? '' : 's'}` }
+      return { verdict: 'pass', found: `${n} adminisztrátor` }
     }
   },
   {
     id: 'privileged-without-password',
-    group: 'Accounts',
-    title: 'No privileged account without a password',
+    group: 'Fiókok',
+    title: 'Nincs jelszó nélküli kiemelt fiók',
     looksAt: 'users.password_hash for holders of admin or security.manage',
     weight: 'high',
     run: async () => {
@@ -208,18 +209,18 @@ const DEFINITIONS: Definition[] = [
           WHERE u.password_hash IS NULL
             AND u.deleted_at IS NULL
             AND r.slug IN ('admin', 'moderator')`)
-      if (!rows.length) return { verdict: 'pass', found: 'every privileged account has a password set' }
+      if (!rows.length) return { verdict: 'pass', found: 'minden kiemelt fióknak van jelszava' }
       return {
         verdict: 'warn',
-        found: `${rows.length} privileged account${rows.length === 1 ? '' : 's'} cannot be signed in to (${rows.map(r => r.username).slice(0, 3).join(', ')})`,
-        remedy: 'Usually a fixture or an external-sign-in account. Remove the role if it is neither.'
+        found: `${rows.length} kiemelt fiókba nem lehet belépni (${rows.map(r => r.username).slice(0, 3).join(', ')})`,
+        remedy: 'Általában teszt- vagy külső belépéses fiók. Ha egyik sem, vedd el tőle a szerepkört.'
       }
     }
   },
   {
     id: 'privileged-sprawl',
-    group: 'Accounts',
-    title: 'The emergency controls are held by few',
+    group: 'Fiókok',
+    title: 'A vészkapcsolók kevesek kezében vannak',
     looksAt: 'holders of security.manage and role.assign',
     weight: 'normal',
     run: async () => {
@@ -233,46 +234,46 @@ const DEFINITIONS: Definition[] = [
       if (n > 5) {
         return {
           verdict: 'warn',
-          found: `${n} accounts can freeze the instance or hand out roles`,
-          remedy: 'These two permissions are how an instance changes hands. Keep the set small.'
+          found: `${n} fiók be tudja fagyasztani a példányt vagy szerepkört osztani`,
+          remedy: 'Ez a két jogosultság az, amivel egy példány gazdát cserél. Tartsd szűken a kört.'
         }
       }
-      return { verdict: 'pass', found: `${n} account${n === 1 ? '' : 's'} can freeze the instance or hand out roles` }
+      return { verdict: 'pass', found: `${n} fiók tudja befagyasztani a példányt vagy szerepkört osztani` }
     }
   },
 
   // ---- outbound ----
   {
     id: 'webhook-signing',
-    group: 'Outbound',
-    title: 'Every webhook delivery is signed',
+    group: 'Kimenő',
+    title: 'Minden webhook-kézbesítés alá van írva',
     looksAt: 'webhooks.secret',
     weight: 'high',
     run: async () => {
       const rows = await query<{ name: string }>(
         "SELECT name FROM webhooks WHERE enabled AND format <> 'discord' AND (secret IS NULL OR secret = '')")
-      if (!rows.length) return { verdict: 'pass', found: 'every enabled generic webhook has a signing secret' }
+      if (!rows.length) return { verdict: 'pass', found: 'minden bekapcsolt általános webhookhoz tartozik aláíró titok' }
       return {
         verdict: 'warn',
-        found: `${rows.length} enabled webhook${rows.length === 1 ? '' : 's'} send unsigned (${rows.map(r => r.name).slice(0, 3).join(', ')})`,
-        remedy: 'Without a secret the receiver cannot tell our delivery from anybody else’s POST'
+        found: `${rows.length} bekapcsolt webhook aláírás nélkül küld (${rows.map(r => r.name).slice(0, 3).join(', ')})`,
+        remedy: 'Titok nélkül a fogadó nem tudja megkülönböztetni a mi kézbesítésünket bárki más POST-jától'
       }
     }
   },
   {
     id: 'webhook-transport',
-    group: 'Outbound',
-    title: 'No webhook posts over plain http',
+    group: 'Kimenő',
+    title: 'Egy webhook sem küld sima http-n',
     looksAt: 'webhooks.url',
     weight: 'high',
     run: async () => {
       const rows = await query<{ name: string }>(
         "SELECT name FROM webhooks WHERE enabled AND url LIKE 'http://%'")
-      if (!rows.length) return { verdict: 'pass', found: 'every enabled webhook posts over https' }
+      if (!rows.length) return { verdict: 'pass', found: 'minden bekapcsolt webhook https-en küld' }
       return {
         verdict: 'fail',
-        found: `${rows.length} enabled webhook${rows.length === 1 ? '' : 's'} post over plain http (${rows.map(r => r.name).slice(0, 3).join(', ')})`,
-        remedy: 'The payload and its signature travel in the clear. Use https or disable the hook.'
+        found: `${rows.length} bekapcsolt webhook sima http-n küld (${rows.map(r => r.name).slice(0, 3).join(', ')})`,
+        remedy: 'A csomag és az aláírása titkosítatlanul utazik. Válts https-re, vagy kapcsold ki a webhookot.'
       }
     }
   },
@@ -280,8 +281,8 @@ const DEFINITIONS: Definition[] = [
   // ---- the instance ----
   {
     id: 'private-instance',
-    group: 'Exposure',
-    title: 'Registration and access match intent',
+    group: 'Kitettség',
+    title: 'A regisztráció és a hozzáférés a szándékot követi',
     looksAt: 'site_settings.require_login and registration_open',
     weight: 'normal',
     run: async () => {
@@ -295,20 +296,39 @@ const DEFINITIONS: Definition[] = [
       if (requiresLogin && registrationOpen) {
         return {
           verdict: 'warn',
-          found: 'the instance is private but registration is open — anybody can still create an account and get in',
-          remedy: 'Close registration too, or make the site public'
+          found: 'a példány privát, de a regisztráció nyitva — bárki csinálhat fiókot, és bejuthat',
+          remedy: 'Zárd be a regisztrációt is, vagy tedd nyilvánossá az oldalt'
         }
       }
       return {
         verdict: 'pass',
-        found: `${requiresLogin ? 'private' : 'public'}, registration ${registrationOpen ? 'open' : 'closed'}`
+        found: `${requiresLogin ? 'privát' : 'nyilvános'}, a regisztráció ${registrationOpen ? 'nyitva' : 'zárva'}`
+      }
+    }
+  },
+  {
+    id: 'load-test-exemption',
+    group: 'Kitettség',
+    title: 'Nincs bekapcsolva felejtett terhelésmérő kivétel',
+    looksAt: 'LOAD_TEST_KEY, LOAD_TEST_IPS',
+    weight: 'normal',
+    run: async () => {
+      if (!loadTestConfigured()) {
+        return { verdict: 'pass', found: 'nincs beállítva — a sebességkorlát mindenkire érvényes' }
+      }
+      // Nem „fail": egy mérés közben ennek pontosan így kell kinéznie. De
+      // látszania kell, mert utána nem kell, és semmi nem hibázik tőle.
+      return {
+        verdict: 'warn',
+        found: `beállítva — ${config.loadTestIps.join(', ')} a kulccsal együtt mentesül a sebességkorlát alól`,
+        remedy: 'Ha a mérés lezárult, vedd ki a LOAD_TEST_KEY-t a környezetből és indítsd újra az appot'
       }
     }
   },
   {
     id: 'emergency-controls',
-    group: 'Exposure',
-    title: 'No emergency control left engaged',
+    group: 'Kitettség',
+    title: 'Nincs bekapcsolva felejtett vészkapcsoló',
     looksAt: 'site_settings.read_only, external_sync_enabled, webhooks_enabled',
     weight: 'normal',
     run: async () => {
@@ -322,11 +342,11 @@ const DEFINITIONS: Definition[] = [
         sync ? null : 'external sync off',
         hooks ? null : 'outbound webhooks off'
       ].filter(Boolean)
-      if (!engaged.length) return { verdict: 'pass', found: 'nothing is being held back' }
+      if (!engaged.length) return { verdict: 'pass', found: 'semmi nincs visszatartva' }
       return {
         verdict: 'warn',
-        found: `${engaged.join(', ')} — engaged deliberately, or left on after an incident?`,
-        remedy: 'Release them in Security when the reason has passed'
+        found: `${engaged.join(', ')} — szándékosan van bekapcsolva, vagy egy incidens után maradt így?`,
+        remedy: 'Oldd fel őket a Biztonság alatt, ha az ok elmúlt'
       }
     }
   },
@@ -334,8 +354,8 @@ const DEFINITIONS: Definition[] = [
   // ---- signals ----
   {
     id: 'failed-logins',
-    group: 'Signals',
-    title: 'Failed sign-ins are at a normal rate',
+    group: 'Jelzések',
+    title: 'A sikertelen belépések száma normális',
     looksAt: "security_logs where event = 'login_failed', last hour",
     weight: 'normal',
     run: async () => {
@@ -348,17 +368,17 @@ const DEFINITIONS: Definition[] = [
       if (n > 100) {
         return {
           verdict: 'warn',
-          found: `${n} failed sign-ins from ${ips} address${ips === 1 ? '' : 'es'} in the last hour`,
-          remedy: 'Rate limiting is already refusing them; read-only mode is available if it becomes worse'
+          found: `${n} sikertelen belépés ${ips} címről az elmúlt órában`,
+          remedy: 'A sebességkorlát már elutasítja őket; ha romlik, ott a csak olvasható mód'
         }
       }
-      return { verdict: 'pass', found: `${n} in the last hour` }
+      return { verdict: 'pass', found: `${n} az elmúlt órában` }
     }
   },
   {
     id: 'open-errors',
-    group: 'Signals',
-    title: 'No unreviewed failure groups piling up',
+    group: 'Jelzések',
+    title: 'Nem gyűlnek átnézetlen hibacsoportok',
     looksAt: 'error_groups where status = open',
     weight: 'normal',
     run: async () => {
@@ -366,15 +386,15 @@ const DEFINITIONS: Definition[] = [
         "SELECT count(*)::int AS n FROM error_groups WHERE status = 'open'")
       const n = Number(row?.n ?? 0)
       if (n > 20) {
-        return { verdict: 'warn', found: `${n} open groups`, remedy: 'Triage them in Errors — a long list stops being read' }
+        return { verdict: 'warn', found: `${n} nyitott csoport`, remedy: 'Nézd át őket a Hibák alatt — egy hosszú listát senki nem olvas' }
       }
-      return { verdict: 'pass', found: `${n} open group${n === 1 ? '' : 's'}` }
+      return { verdict: 'pass', found: `${n} nyitott csoport` }
     }
   },
   {
     id: 'dead-jobs',
-    group: 'Signals',
-    title: 'Background work is not silently dying',
+    group: 'Jelzések',
+    title: 'A háttérmunka nem hal el némán',
     looksAt: 'jobs where attempts >= max_attempts',
     weight: 'normal',
     run: async () => {
@@ -382,28 +402,28 @@ const DEFINITIONS: Definition[] = [
         'SELECT count(*)::int AS n FROM jobs WHERE attempts >= max_attempts AND done_at IS NULL')
       const n = Number(row?.n ?? 0)
       if (n > 10) {
-        return { verdict: 'warn', found: `${n} jobs have exhausted their retries`, remedy: 'Check Infrastructure for which queue' }
+        return { verdict: 'warn', found: `${n} feladat elhasználta az újrapróbálkozásait`, remedy: 'Nézd meg az Infrastruktúránál, melyik sorról van szó' }
       }
-      return { verdict: 'pass', found: `${n} exhausted job${n === 1 ? '' : 's'}` }
+      return { verdict: 'pass', found: `${n} kimerült feladat` }
     }
   },
 
   // ---- data ----
   {
     id: 'db-encoding',
-    group: 'Data',
-    title: 'The database can store the text it is given',
+    group: 'Adat',
+    title: 'Az adatbázis el tudja tárolni a kapott szöveget',
     looksAt: 'pg_database encoding and collation',
     weight: 'normal',
     run: async () => {
       const row = await queryOne<{ encoding: string, collate: string }>(
         `SELECT pg_encoding_to_char(encoding) AS encoding, datcollate AS collate
            FROM pg_database WHERE datname = current_database()`)
-      if (row?.encoding === 'UTF8') return { verdict: 'pass', found: `${row.encoding}, collation ${row.collate}` }
+      if (row?.encoding === 'UTF8') return { verdict: 'pass', found: `${row.encoding}, rendezés: ${row.collate}` }
       return {
         verdict: 'fail',
-        found: `encoding is ${row?.encoding ?? 'unknown'} — accented text is stored and compared wrongly`,
-        remedy: 'Recreate the database with ENCODING UTF8 and restore; see lib/db-encoding.ts'
+        found: `a kódolás ${row?.encoding ?? 'ismeretlen'} — az ékezetes szöveg rosszul tárolódik és hasonlítódik`,
+        remedy: 'Hozd létre újra az adatbázist ENCODING UTF8-cal, és állítsd vissza; lásd lib/db-encoding.ts'
       }
     }
   }
@@ -442,8 +462,8 @@ export async function posture (): Promise<Posture> {
       // A check that throws is not a check that passed.
       result = {
         verdict: 'unknown',
-        found: `the check could not run: ${(err as Error).message.slice(0, 200)}`,
-        remedy: 'This is itself worth looking at — a posture nobody can measure is a posture nobody knows'
+        found: `az ellenőrzés nem tudott lefutni: ${(err as Error).message.slice(0, 200)}`,
+        remedy: 'Ez önmagában is megnézendő — amit senki nem tud megmérni, azt senki nem is ismeri'
       }
     }
     checks.push({ id: def.id, group: def.group, title: def.title, looksAt: def.looksAt, ...result })

@@ -261,7 +261,24 @@ describe('emergency controls', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () 
 
   // ---- webhooks ----
 
-  test('switching webhooks off queues nothing', async () => {
+  test('switching webhooks off queues nothing', async t => {
+    /*
+     * Ez a teszt magáról a szórásról szól, tehát kikapcsolja a tesztfutás
+     * némítását a maga idejére.
+     *
+     * A némítás (YUME_SUPPRESS_WEBHOOKS) azért van, hogy egy suite ne üzenjen
+     * az üzemeltető Discordjára minden próbafiók regisztrációjakor. Itt viszont
+     * pont az a kérdés, hogy a *kapcsoló* némít-e — és egy második némítás
+     * mögül ezt nem lehet megkülönböztetni. A webhook ennél a tesztnél
+     * `example.invalid`-ra mutat, tehát semmi nem hagyja el a gépet: csak a
+     * sor mélysége számít.
+     */
+    const suppression = process.env.YUME_SUPPRESS_WEBHOOKS
+    delete process.env.YUME_SUPPRESS_WEBHOOKS
+    t.after(() => {
+      if (suppression !== undefined) process.env.YUME_SUPPRESS_WEBHOOKS = suppression
+    })
+
     const name = 'em_' + randomBytes(4).toString('hex')
     const { rows: hook } = await pool.query(
       `INSERT INTO webhooks (name, url, format, events, enabled)

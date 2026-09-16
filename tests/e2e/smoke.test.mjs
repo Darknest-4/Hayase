@@ -69,6 +69,12 @@ describe('browser smoke', { skip: REASON }, () => {
     // Each page load pulls ~40 static files; at debug level the request log
     // buries the test output completely.
     process.env.LOG_LEVEL ??= 'warn'
+    // Egy böngészős futás percek alatt több száz kérést küld egyetlen címről:
+    // minden oldalbetöltés lekéri a konfigurációt, a jogosultságokat és a
+    // képernyő adatait. A globális sebességkorlát (300/perc) ezt helyesen
+    // fojtja meg — és akkor a teszt egy 429-es hibalapot mér, nem a terméket.
+    // Ez már megtörtént egyszer; azóta nevesítve van a hamis pozitívok között.
+    process.env.RATE_LIMIT_MAX ??= '100000'
     const { buildApp } = await import('../../apps/api/src/app.ts')
     server = await buildApp()
     await server.listen({ port: 0, host: '127.0.0.1' })
@@ -177,11 +183,21 @@ describe('browser smoke', { skip: REASON }, () => {
     // behind: opening the player throws nothing, and the router is on the
     // watch route. The blank interval itself is recorded as a finding in
     // status.html rather than papered over here.
+    //
+    // 2026-09-15 óta ez a képernyő kaput kapott: ha az epizódhoz nincs
+    // engedélyezett forrás, a lejátszó fel sem épül, és a néző a cím oldalára
+    // kerül. Ezen a példányon nulla videóforrás van, tehát a helyes válasz ma
+    // az átirányítás — nem az, hogy a lejátszó megnyílik és üresen áll.
+    //
+    // A teszt tárgya nem változott: a lejátszó útvonala nem dobhat. Az
+    // állítás igen, mert a szerződés változott.
     const { page, errors } = await open('#/watch/1?ep=1')
-    await page.waitForTimeout(1500)
+    await page.waitForTimeout(1800)
     assert.deepEqual(errors, [], 'the player threw')
-    assert.match(page.url(), /#\/watch\/1/)
-    assert.ok(await page.locator('#page').count(), 'the router did not reach the watch route')
+    assert.ok(await page.locator('#page').count(), 'the router did not render anything')
+    // Vagy a lejátszón vagyunk (van forrás), vagy a címoldalán (nincs) — de
+    // sosem egy félbemaradt lejátszón.
+    assert.match(page.url(), /#\/(watch\/1|anime\/1)/, 'the router went somewhere else entirely')
     await page.close()
   })
 

@@ -15,7 +15,7 @@
 
 import { query, queryOne, transaction } from '../../infrastructure/database/index.ts'
 import { posture } from './posture.ts'
-import { settings as siteSettings } from '../settings/site-settings.ts'
+import { rateLimitDefaults, settings as siteSettings } from '../settings/site-settings.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
 
@@ -31,28 +31,38 @@ const CONTROLS = [
   {
     key: 'read_only',
     safe: false,
-    label: 'Read-only mode',
-    description: 'Refuse every request that writes. Reading, signing in and signing out keep working.',
+    label: 'Csak olvasható mód',
+    description: 'Minden író kérés elutasítva. Az olvasás, a belépés és a kilépés továbbra is működik.',
     enforcedBy: 'apps/api/src/app.ts — a global onRequest hook refuses POST/PUT/PATCH/DELETE with 503'
   },
   {
     key: 'external_sync_enabled',
     safe: true,
-    label: 'External metadata sync',
-    description: 'Allow metadata runs to start and to keep running. Turn off when an upstream is failing or rate-limiting us.',
+    label: 'Külső metaadat-szinkron',
+    description: 'A metaadat-futások elindulhatnak és futhatnak. Kapcsold ki, ha a forrás hibázik vagy korlátoz minket.',
     enforcedBy: 'apps/api/src/modules/metadata/worker.ts — startRun() refuses and handleMetadataJob() cancels'
   },
   {
     key: 'webhooks_enabled',
     safe: true,
-    label: 'Outbound webhooks',
-    description: 'Allow events to be queued and delivered to configured endpoints.',
+    label: 'Kimenő webhookok',
+    description: 'Az események sorba állhatnak és kimehetnek a beállított végpontokra.',
     enforcedBy: 'apps/api/src/modules/webhooks/delivery.ts — emitEvent() and deliver() both refuse'
   }
 ] as const
 
 type ControlKey = typeof CONTROLS[number]['key']
 const KEYS = CONTROLS.map(c => c.key)
+
+const LIMIT_KEYS = ['global', 'auth', 'write', 'refresh'] as const
+type LimitKey = typeof LIMIT_KEYS[number]
+
+const LIMIT_LABELS: Record<LimitKey, string> = {
+  global: 'Minden kérés',
+  auth: 'Belépés és regisztráció',
+  write: 'Írás (hozzászólás, könyvtár)',
+  refresh: 'Munkamenet-frissítés'
+}
 
 const routes: FastifyPluginAsync = async fastify => {
   fastify.addHook('onRequest', fastify.requirePermission('security.manage', { hide: true }))
@@ -73,7 +83,92 @@ const routes: FastifyPluginAsync = async fastify => {
          (SELECT count(*)::int FROM webhooks WHERE enabled) AS hooks,
          (SELECT count(*)::int FROM metadata_runs WHERE status IN ('queued', 'running')) AS runs`)
 
-    return { controls, context, engaged: controls.filter(c => c.engaged).map(c => c.key) }
+    // A sebességkorlátok: mi van érvényben, mi az alapérték, és ami ezekből
+    // következik — hogy a mostani érték a telepítésé-e vagy valakié.
+    const limits = await siteSettings.rateLimits()
+    const defaults = rateLimitDefaults()
+    const rateLimits = LIMIT_KEYS.map(key => ({
+      key,
+      label: LIMIT_LABELS[key],
+      max: limits[key].max,
+      windowSeconds: limits[key].windowSeconds,
+      defaultMax: defaults[key].max,
+      defaultWindowSeconds: defaults[key].windowSeconds,
+      custom: limits[key].max !== defaults[key].max ||
+        limits[key].windowSeconds !== defaults[key].windowSeconds
+    }))
+
+    return { controls, context, rateLimits, engaged: controls.filter(c => c.engaged).map(c => c.key) }
+  })
+
+  /**
+   * A sebességkorlátok átírása.
+   *
+   * Ugyanaz a jogosultság, ami a vészkapcsolókat is nyitja (`security.manage`),
+   * és ugyanúgy auditált — ez a beállítás eldöntheti, hogy egy roham átmegy-e
+   * vagy elakad, és „ki engedte fel" utólag kérdés lesz.
+   *
+   * Az indoklás kötelező, mint a vészkapcsolóknál. Egy szám, aminek nincs
+   * története, egy hónap múlva megmagyarázhatatlan.
+   *
+   * Nincs felső korlát a `max`-on: egy üzemeltető feloldhatja a korlátot, ha
+   * tudja, mit csinál. Alsó korlát van, mert a nulla nem korlát, hanem
+   * kizárás — és az a `read_only` kapcsoló dolga, nem ezé.
+   */
+  fastify.patch('/limits', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['limits', 'reason'],
+        additionalProperties: false,
+        properties: {
+          reason: { type: 'string', minLength: 3, maxLength: 500 },
+          limits: {
+            type: 'object',
+            additionalProperties: false,
+            properties: Object.fromEntries(LIMIT_KEYS.map(key => [key, {
+              type: 'object',
+              required: ['max', 'windowSeconds'],
+              additionalProperties: false,
+              properties: {
+                max: { type: 'integer', minimum: 1, maximum: 1_000_000 },
+                windowSeconds: { type: 'integer', minimum: 1, maximum: 86_400 }
+              }
+            }]))
+          }
+        }
+      }
+    }
+  }, async request => {
+    const { limits, reason } = request.body as {
+      limits: Partial<Record<LimitKey, { max: number, windowSeconds: number }>>
+      reason: string
+    }
+
+    const before = await siteSettings.rateLimits()
+    // Az egész táblát írjuk, a részleges összefésülés után: a panel a teljes
+    // képet küldi vissza, és egy fél mentés itt azt jelentené, hogy két korlát
+    // közül az egyik a régi marad, némán.
+    const merged = { ...before, ...limits }
+
+    await transaction(async client => {
+      await client.query(
+        `INSERT INTO site_settings (key, value, updated_by) VALUES ('rate_limits', $1::jsonb, $2)
+         ON CONFLICT (key) DO UPDATE SET value = $1::jsonb, updated_at = now(), updated_by = $2`,
+        [JSON.stringify(merged), request.user.sub]
+      )
+      await client.query(
+        `INSERT INTO audit_logs (actor_id, action, subject_type, subject_id, before, after)
+         VALUES ($1, 'config.setting', 'config', 'rate_limits', $2, $3)`,
+        [request.user.sub, before, { ...merged, reason }]
+      )
+    })
+    // A korlátok kérésenként olvassák a gyorsítótárat, tehát ez azonnal hat —
+    // enélkül a TTL lejártáig a régi érték élne, ami egy incidens közepén
+    // harminc másodperc várakozás a semmiért.
+    siteSettings.invalidate()
+
+    return { limits: merged }
   })
 
   /**

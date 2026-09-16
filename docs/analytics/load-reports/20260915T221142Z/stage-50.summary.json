@@ -1,0 +1,623 @@
+{
+ "metrics": {
+  "checks": {
+   "type": "rate",
+   "contains": "default",
+   "values": {
+    "rate": 1,
+    "passes": 2922,
+    "fails": 0
+   }
+  },
+  "yume_failed": {
+   "type": "rate",
+   "contains": "default",
+   "values": {
+    "passes": 0,
+    "fails": 2922,
+    "rate": 0
+   },
+   "thresholds": {
+    "rate<0.01": {
+     "ok": true
+    }
+   }
+  },
+  "http_req_duration": {
+   "type": "trend",
+   "contains": "time",
+   "values": {
+    "min": 0.846589,
+    "med": 2.6064795,
+    "p(90)": 19.356904100000055,
+    "p(95)": 44.472109450000005,
+    "p(99)": 225.20461198000004,
+    "max": 589.763817,
+    "count": 2928,
+    "avg": 11.172967415642068
+   },
+   "thresholds": {
+    "p(95)<1000": {
+     "ok": true
+    },
+    "p(99)<2500": {
+     "ok": true
+    }
+   }
+  },
+  "data_sent": {
+   "type": "counter",
+   "contains": "data",
+   "values": {
+    "count": 715770,
+    "rate": 2806.8481230270772
+   }
+  },
+  "http_req_waiting": {
+   "type": "trend",
+   "contains": "time",
+   "values": {
+    "p(95)": 44.30078455,
+    "p(99)": 225.05452611000004,
+    "max": 589.583957,
+    "count": 2928,
+    "avg": 11.070917716188537,
+    "min": 0.792545,
+    "med": 2.499905,
+    "p(90)": 19.246082400000052
+   }
+  },
+  "step_browse": {
+   "type": "trend",
+   "contains": "time",
+   "values": {
+    "max": 150.537677,
+    "count": 105,
+    "avg": 8.70917397142857,
+    "min": 3.167727,
+    "med": 4.332783,
+    "p(90)": 7.1059566000000025,
+    "p(95)": 9.3077146,
+    "p(99)": 136.64842299999995
+   }
+  },
+  "http_req_duration{expected_response:true}": {
+   "type": "trend",
+   "contains": "time",
+   "values": {
+    "p(90)": 19.446213199999974,
+    "p(95)": 44.47930839999999,
+    "p(99)": 225.27523575999945,
+    "max": 589.763817,
+    "count": 2925,
+    "avg": 11.18278593811965,
+    "min": 0.846589,
+    "med": 2.610182
+   }
+  },
+  "yume_journeys": {
+   "type": "counter",
+   "contains": "default",
+   "values": {
+    "count": 168,
+    "rate": 0.6588016886270017
+   }
+  },
+  "yume_2xx": {
+   "type": "counter",
+   "contains": "default",
+   "values": {
+    "count": 2922,
+    "rate": 11.458443655762494
+   }
+  },
+  "step_details": {
+   "type": "trend",
+   "contains": "time",
+   "values": {
+    "count": 912,
+    "avg": 2.8341057039473676,
+    "min": 1.234668,
+    "med": 2.398306,
+    "p(90)": 4.4029426,
+    "p(95)": 4.834846749999999,
+    "p(99)": 7.005031029999998,
+    "max": 12.132677
+   },
+   "thresholds": {
+    "p(95)<800": {
+     "ok": true
+    }
+   }
+  },
+  "data_received": {
+   "type": "counter",
+   "contains": "data",
+   "values": {
+    "count": 19100898,
+    "rate": 74902.9991469769
+   }
+  },
+  "step_suggest": {
+   "type": "trend",
+   "contains": "time",
+   "values": {
+    "med": 16.268917,
+    "p(90)": 79.65776380000025,
+    "p(95)": 223.06452960000001,
+    "p(99)": 315.41753751999954,
+    "max": 589.763817,
+    "count": 417,
+    "avg": 39.79472553477221,
+    "min": 4.092807
+   }
+  },
+  "step_favorites": {
+   "type": "trend",
+   "contains": "time",
+   "values": {
+    "med": 2.5924685,
+    "p(90)": 3.4245645,
+    "p(95)": 3.79592925,
+    "p(99)": 4.037072499999999,
+    "max": 4.183579,
+    "count": 46,
+    "avg": 2.5225783913043482,
+    "min": 1.06073
+   }
+  },
+  "http_req_sending": {
+   "type": "trend",
+   "contains": "time",
+   "values": {
+    "p(95)": 0.0357489,
+    "p(99)": 0.06993628000000002,
+    "max": 0.121717,
+    "count": 2928,
+    "avg": 0.01893806147540987,
+    "min": 0.003984,
+    "med": 0.0162205,
+    "p(90)": 0.030525500000000004
+   }
+  },
+  "vus": {
+   "type": "gauge",
+   "contains": "default",
+   "values": {
+    "value": 1,
+    "min": 1,
+    "max": 50
+   }
+  },
+  "http_req_receiving": {
+   "type": "trend",
+   "contains": "time",
+   "values": {
+    "p(95)": 0.14963385,
+    "p(99)": 0.21844361,
+    "max": 1.858256,
+    "count": 2928,
+    "avg": 0.08311163797814212,
+    "min": 0.024597,
+    "med": 0.07312750000000001,
+    "p(90)": 0.12191010000000001
+   }
+  },
+  "yume_5xx": {
+   "type": "counter",
+   "contains": "default",
+   "values": {
+    "rate": 0,
+    "count": 0
+   },
+   "thresholds": {
+    "count<1": {
+     "ok": true
+    }
+   }
+  },
+  "http_req_failed": {
+   "type": "rate",
+   "contains": "default",
+   "values": {
+    "rate": 0.0010245901639344263,
+    "passes": 3,
+    "fails": 2925
+   }
+  },
+  "step_config": {
+   "type": "trend",
+   "contains": "time",
+   "values": {
+    "p(99)": 3.2740256999999997,
+    "max": 11.924823,
+    "count": 200,
+    "avg": 1.5604298150000004,
+    "min": 0.846589,
+    "med": 1.390955,
+    "p(90)": 2.1322502,
+    "p(95)": 2.3539900499999997
+   }
+  },
+  "step_progress": {
+   "type": "trend",
+   "contains": "time",
+   "values": {
+    "p(99)": 5.494193800000008,
+    "max": 8.08681,
+    "count": 265,
+    "avg": 3.2189701094339638,
+    "min": 1.651531,
+    "med": 3.227214,
+    "p(90)": 4.1487796,
+    "p(95)": 4.5176384
+   }
+  },
+  "step_sources": {
+   "type": "trend",
+   "contains": "time",
+   "values": {
+    "avg": 2.392980802259887,
+    "min": 1.254734,
+    "med": 2.386696,
+    "p(90)": 2.9638944,
+    "p(95)": 3.2295865999999998,
+    "p(99)": 4.088763880000003,
+    "max": 4.517558,
+    "count": 177
+   }
+  },
+  "iterations": {
+   "type": "counter",
+   "contains": "default",
+   "values": {
+    "count": 168,
+    "rate": 0.6588016886270017
+   }
+  },
+  "http_req_tls_handshaking": {
+   "type": "trend",
+   "contains": "time",
+   "values": {
+    "med": 0,
+    "p(90)": 0,
+    "p(95)": 0,
+    "p(99)": 0,
+    "max": 0,
+    "count": 2928,
+    "avg": 0,
+    "min": 0
+   }
+  },
+  "step_episodes": {
+   "type": "trend",
+   "contains": "time",
+   "values": {
+    "p(99)": 5.127293839999993,
+    "max": 15.24082,
+    "count": 228,
+    "avg": 2.3505476491228077,
+    "min": 1.57302,
+    "med": 2.0865855,
+    "p(90)": 2.9602041000000003,
+    "p(95)": 3.6979400999999985
+   }
+  },
+  "step_home": {
+   "type": "trend",
+   "contains": "time",
+   "values": {
+    "p(90)": 2.4457593,
+    "p(95)": 2.6807488500000005,
+    "p(99)": 4.094630179999906,
+    "max": 18.479145,
+    "count": 280,
+    "avg": 2.2737577642857154,
+    "min": 1.675292,
+    "med": 2.1133224999999998
+   },
+   "thresholds": {
+    "p(95)<1000": {
+     "ok": true
+    }
+   }
+  },
+  "http_reqs": {
+   "type": "counter",
+   "contains": "default",
+   "values": {
+    "count": 2928,
+    "rate": 11.481972287499172
+   }
+  },
+  "vus_max": {
+   "type": "gauge",
+   "contains": "default",
+   "values": {
+    "value": 50,
+    "min": 50,
+    "max": 50
+   }
+  },
+  "step_schedule": {
+   "type": "trend",
+   "contains": "time",
+   "values": {
+    "avg": 3.9274134782608696,
+    "min": 3.372681,
+    "med": 3.869102,
+    "p(90)": 4.3994789999999995,
+    "p(95)": 4.4387505,
+    "p(99)": 4.79921192,
+    "max": 4.900437,
+    "count": 23
+   }
+  },
+  "http_req_blocked": {
+   "type": "trend",
+   "contains": "time",
+   "values": {
+    "p(99)": 0.26312476,
+    "max": 0.823669,
+    "count": 2928,
+    "avg": 0.010679991461748636,
+    "min": 0.001358,
+    "med": 0.004007,
+    "p(90)": 0.009310800000000001,
+    "p(95)": 0.011414150000000001
+   }
+  },
+  "step_search": {
+   "type": "trend",
+   "contains": "time",
+   "values": {
+    "med": 36.925951,
+    "p(90)": 220.6572266,
+    "p(95)": 231.56240609999998,
+    "p(99)": 259.53783672000003,
+    "max": 263.177604,
+    "count": 139,
+    "avg": 66.500424676259,
+    "min": 5.985248
+   },
+   "thresholds": {
+    "p(95)<1200": {
+     "ok": true
+    }
+   }
+  },
+  "step_library": {
+   "type": "trend",
+   "contains": "time",
+   "values": {
+    "count": 63,
+    "avg": 3.1751913333333337,
+    "min": 1.924512,
+    "med": 2.967719,
+    "p(90)": 4.3080916,
+    "p(95)": 4.4021855,
+    "p(99)": 4.63901396,
+    "max": 4.66229
+   }
+  },
+  "http_req_connecting": {
+   "type": "trend",
+   "contains": "time",
+   "values": {
+    "med": 0,
+    "p(90)": 0,
+    "p(95)": 0,
+    "p(99)": 0.19611961,
+    "max": 0.772643,
+    "count": 2928,
+    "avg": 0.0040393183060109285,
+    "min": 0
+   }
+  },
+  "yume_rate_limited": {
+   "type": "counter",
+   "contains": "default",
+   "values": {
+    "count": 0,
+    "rate": 0
+   },
+   "thresholds": {
+    "count<1": {
+     "ok": true
+    }
+   }
+  },
+  "step_continue": {
+   "type": "trend",
+   "contains": "time",
+   "values": {
+    "med": 2.483214,
+    "p(90)": 3.839378999999999,
+    "p(95)": 6.133690499999994,
+    "p(99)": 7.1509115800000025,
+    "max": 7.732231,
+    "count": 67,
+    "avg": 2.8860015074626864,
+    "min": 1.7938
+   }
+  },
+  "iteration_duration": {
+   "type": "trend",
+   "contains": "time",
+   "values": {
+    "p(99)": 184262.16768066,
+    "max": 184447.69008,
+    "count": 168,
+    "avg": 52355.78110901191,
+    "min": 4109.463253,
+    "med": 28825.500751,
+    "p(90)": 132245.7751955,
+    "p(95)": 183437.6186704
+   }
+  }
+ },
+ "setup_data": {
+  "anime": 300,
+  "accounts": 250
+ },
+ "root_group": {
+  "name": "",
+  "path": "",
+  "id": "d41d8cd98f00b204e9800998ecf8427e",
+  "groups": [],
+  "checks": [
+    {
+     "name": "GET /v1/config rendben",
+     "path": "::GET /v1/config rendben",
+     "id": "f51fbcc1d34d3bd9763c9570c188d816",
+     "passes": 200,
+     "fails": 0
+    },
+    {
+     "name": "GET /v1/anime (trending) rendben",
+     "path": "::GET /v1/anime (trending) rendben",
+     "id": "5e0f6c28072abcbf414f4f3fff85a6d8",
+     "passes": 140,
+     "fails": 0
+    },
+    {
+     "name": "GET /v1/anime (popular) rendben",
+     "path": "::GET /v1/anime (popular) rendben",
+     "id": "7cf9c51901a8c3b02bcce26230a06048",
+     "passes": 140,
+     "fails": 0
+    },
+    {
+     "name": "GET /v1/anime/suggest rendben",
+     "path": "::GET /v1/anime/suggest rendben",
+     "id": "246d8b792f5fe478846936ea9a45e460",
+     "passes": 417,
+     "fails": 0
+    },
+    {
+     "id": "7661e6dc4eaf26b39b4fc0ae7b09d13e",
+     "passes": 67,
+     "fails": 0,
+     "name": "GET /v1/me/continue-watching rendben",
+     "path": "::GET /v1/me/continue-watching rendben"
+    },
+    {
+     "name": "GET /v1/anime/:id rendben",
+     "path": "::GET /v1/anime/:id rendben",
+     "id": "158a048e081540e017da4e0bafc0ad50",
+     "passes": 228,
+     "fails": 0
+    },
+    {
+     "passes": 228,
+     "fails": 0,
+     "name": "GET /v1/anime/:id/episodes rendben",
+     "path": "::GET /v1/anime/:id/episodes rendben",
+     "id": "d8b17ab7bae946fe41310f39cfc5b15b"
+    },
+    {
+     "name": "GET /v1/anime/:id/relations rendben",
+     "path": "::GET /v1/anime/:id/relations rendben",
+     "id": "fefb9ca803171b2a6f064dfd4017408e",
+     "passes": 228,
+     "fails": 0
+    },
+    {
+     "name": "GET /v1/anime/:id/characters rendben",
+     "path": "::GET /v1/anime/:id/characters rendben",
+     "id": "6dbbf20d861a8194fcd32d697b71458c",
+     "passes": 228,
+     "fails": 0
+    },
+    {
+     "name": "GET /v1/anime/:id/recommendations rendben",
+     "path": "::GET /v1/anime/:id/recommendations rendben",
+     "id": "49bb6085dd5d3d5d63d17f9231a307a5",
+     "passes": 228,
+     "fails": 0
+    },
+    {
+     "name": "GET /v1/anime/episodes/:id/sources rendben",
+     "path": "::GET /v1/anime/episodes/:id/sources rendben",
+     "id": "b80b56b8891ab07308c902a00b2835ed",
+     "passes": 177,
+     "fails": 0
+    },
+    {
+     "passes": 265,
+     "fails": 0,
+     "name": "PATCH /v1/me/progress/:id rendben",
+     "path": "::PATCH /v1/me/progress/:id rendben",
+     "id": "072154f17f5ecbad4a11463f1dacb579"
+    },
+    {
+     "passes": 139,
+     "fails": 0,
+     "name": "GET /v1/anime/search rendben",
+     "path": "::GET /v1/anime/search rendben",
+     "id": "75ef30558fdcaf55e701ccb1fb39b807"
+    },
+    {
+     "name": "GET /v1/anime (filtered) rendben",
+     "path": "::GET /v1/anime (filtered) rendben",
+     "id": "10a055acd15a5227f7d57b36c3a4dbf1",
+     "passes": 105,
+     "fails": 0
+    },
+    {
+     "passes": 35,
+     "fails": 0,
+     "name": "PUT /v1/me/library/:id rendben",
+     "path": "::PUT /v1/me/library/:id rendben",
+     "id": "350aea86ea0904186e9f2638d75f0392"
+    },
+    {
+     "path": "::GET /v1/me/library rendben",
+     "id": "0cbc5f2212196945742f3e943c320c16",
+     "passes": 28,
+     "fails": 0,
+     "name": "GET /v1/me/library rendben"
+    },
+    {
+     "name": "GET /v1/me/favorites rendben",
+     "path": "::GET /v1/me/favorites rendben",
+     "id": "e447338f127eb61c7fc973b893a9386f",
+     "passes": 35,
+     "fails": 0
+    },
+    {
+     "name": "GET /v1/anime/schedule rendben",
+     "path": "::GET /v1/anime/schedule rendben",
+     "id": "fb8936d7fb94239af4efe94377e6e63c",
+     "passes": 23,
+     "fails": 0
+    },
+    {
+     "fails": 0,
+     "name": "PUT /v1/me/favorites/:id rendben",
+     "path": "::PUT /v1/me/favorites/:id rendben",
+     "id": "82c74b226ae5ea8925157a699f9c1cb3",
+     "passes": 11
+    }
+   ]
+ },
+ "options": {
+  "summaryTimeUnit": "",
+  "noColor": false,
+  "summaryTrendStats": [
+   "count",
+   "avg",
+   "min",
+   "med",
+   "p(90)",
+   "p(95)",
+   "p(99)",
+   "max"
+  ]
+ },
+ "state": {
+  "isStdOutTTY": false,
+  "isStdErrTTY": false,
+  "testRunDurationMs": 255008.453834
+ }
+}

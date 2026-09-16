@@ -8,7 +8,7 @@ import { pool, transaction } from '../../infrastructure/database/index.ts'
 import { catalogueAdminRepository as catalogue } from './admin-repository.ts'
 import { audit } from '../audit/audit.ts'
 import { enqueue } from '../../infrastructure/queue/index.ts'
-import { activeRun, coverage, requestCancel, startRun, RunInProgress } from '../metadata/worker.ts'
+import { activeRun, coverage, requestCancel, startRun, ExternalSyncDisabled, RunInProgress } from '../metadata/worker.ts'
 import { MANAGED_FIELDS } from './metadata.ts'
 import { findDuplicates, lockFields, mergeAnime, unlockFields } from './metadata-repository.ts'
 
@@ -757,6 +757,28 @@ const routes: FastifyPluginAsync = async fastify => {
       if (err instanceof RunInProgress) {
         return reply.code(409).send({
           type: 'about:blank', title: 'Conflict', status: 409, detail: err.message
+        })
+      }
+      /*
+       * A külső szinkron ki van kapcsolva.
+       *
+       * A worker szándékosan a futás ELEJÉN utasítja vissza, és a kommentje
+       * ki is mondja, miért: „az operátornak ne kelljen rájönnie, hogy ő maga
+       * kapcsolta ki". Ez a szándék azonban idáig nem ért el — a kivétel
+       * továbbdobódott, a hibakezelő 500-at csinált belőle, és az operátor egy
+       * névtelen „Request … failed" üzenetet kapott, miközben a saját
+       * vészkapcsolója állt útban.
+       *
+       * Ötven ilyen sor gyűlt össze a hibanaplóban, nyitott hibacsoportként —
+       * egy konfigurációs állapot, ami hibaként triázsra várt.
+       */
+      if (err instanceof ExternalSyncDisabled) {
+        return reply.code(409).send({
+          type: 'about:blank',
+          title: 'Conflict',
+          status: 409,
+          detail: 'A külső metaadat-szinkron ki van kapcsolva. A Biztonság képernyőn kapcsold vissza, ' +
+            'aztán indítsd újra a futást.'
         })
       }
       throw err

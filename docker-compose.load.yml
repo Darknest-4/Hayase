@@ -1,0 +1,106 @@
+# A terhelésmérő verem.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.load.yml --profile load up -d --build
+#
+# Miért külön verem, és nem egyszerűen az éles ellen mérünk:
+#
+#   * egy 1000 VU-s futás fiókokat regisztrál, haladást ír és kedvenceket
+#     rak be. Ez éles adatbázisban szemét, amit utána takarítani kell — és a
+#     takarítás az a lépés, ami egyszer elmarad;
+#   * egy mérés attól mérés, hogy meg lehet ismételni. Ugyanarról az
+#     adatállományról indulva lehet, nem egy olyanról, amit az előző futás
+#     már megváltoztatott;
+#   * az éles példány a mérés alatt használhatatlanná válna, és azt épp azok
+#     vennék észre, akiknek a méréssel jót akarunk.
+#
+# Amit viszont ki kell mondani: ez a verem UGYANAZON A GÉPEN fut, mint az
+# éles. Egy nagy futás elveszi a processzort az éles elől is. A mért számok az
+# alkalmazásra érvényesek, de a futás ideje alatt az éles oldal lassabb lesz.
+# Ha ez nem vállalható, a verem külön gépre is felhúzható: ugyanez a fájl, más
+# hoszt.
+#
+# Az adatállomány az éles legfrissebb ELLENŐRZÖTT mentése (scripts/load/seed.sh),
+# tehát a katalógus mérete és alakja valódi — 32 ezer cím, 364 ezer epizód.
+# Egy üres adatbázison mért késleltetés semmit nem mond.
+services:
+  load-postgres:
+    image: postgres:16-alpine
+    profiles: ['load']
+    restart: 'no'
+    environment:
+      POSTGRES_USER: yume
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: yume
+    # Csak a hurokcímen: a mérés vetőszkriptjének és a jelentésnek kell,
+    # kívülről semminek.
+    ports: ['127.0.0.1:15433:5432']
+    volumes:
+      - loaddb:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U yume -d yume']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  load-app:
+    build: .
+    profiles: ['load']
+    restart: 'no'
+    depends_on:
+      load-postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@load-postgres:5432/yume
+      # Nem az éles titok. Ez a verem eldobható, és a két példány tokenjei ne
+      # legyenek felcserélhetők.
+      JWT_SECRET: ${LOAD_JWT_SECRET:-load-test-only-secret-not-used-anywhere-else-01234567890}
+      PORT: '4000'
+      HOST: 0.0.0.0
+      NODE_ENV: production
+      TRUST_PROXY: ${TRUST_PROXY:-172.16.0.0/12}
+      # A sebességkorlát alóli kivétel — CSAK ezen a vermen. Az éles app
+      # környezetében ez nincs beállítva, tehát ott nem is létezik.
+      LOAD_TEST_KEY: ${LOAD_TEST_KEY:?set LOAD_TEST_KEY in .env — openssl rand -base64 32}
+      # A k6 a hoszton fut, a konténerhez a docker híd címéről érkezik. A
+      # scripts/load/run.sh ezt kiszámolja és átadja.
+      LOAD_TEST_IPS: ${LOAD_TEST_IPS:-127.0.0.1,::1,172.17.0.1,172.18.0.1,172.19.0.1,172.20.0.1}
+    ports: ['127.0.0.1:4100:4000']
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:4000/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    # Pontosan annyi, amennyi az élesnek. Egy bővebb kerettel mért szám nem
+    # erről a telepítésről szólna.
+    deploy:
+      resources:
+        limits: { memory: 768M }
+
+  load-worker:
+    build: .
+    profiles: ['load']
+    restart: 'no'
+    depends_on:
+      load-postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@load-postgres:5432/yume
+      JWT_SECRET: ${LOAD_JWT_SECRET:-load-test-only-secret-not-used-anywhere-else-01234567890}
+      SELF_URL: http://load-app:4000
+      DISK_PATH: /host
+      # A mérés alatt sűrűbben mintázzon: percenkénti mintából egy hatperces
+      # futásnak hat pontja van, és abból nem látszik, hol fordult meg.
+      MONITOR_INTERVAL_MS: ${LOAD_MONITOR_INTERVAL_MS:-10000}
+      # A mérés nem üzenhet ki. Egy futás sok hibát termel; nem kell mind a
+      # tulajdonos Discordjára.
+      YUME_SUPPRESS_WEBHOOKS: '1'
+    volumes:
+      - /:/host:ro
+    command: ['npm', 'run', 'worker']
+    deploy:
+      resources:
+        limits: { memory: 512M }
+
+volumes:
+  loaddb:

@@ -104,6 +104,25 @@ function trustProxy (): boolean | string[] {
  * same-origin only (which is what the single-container deployment needs).
  * Set CORS_ORIGINS explicitly to allow a separately hosted frontend.
  */
+/**
+ * A terheléses mérés kulcsa — lásd middleware/load-test.ts.
+ *
+ * Éles telepítésen rövid kulcsot nem fogadunk el: ez a sebességkorlát alóli
+ * kivétel kapuja, és egy kitalálható kulcs pont azt a védelmet nyitja ki,
+ * amit a korlát ad.
+ */
+function loadTestKey (): string | undefined {
+  const raw = process.env.LOAD_TEST_KEY?.trim()
+  if (!raw) return undefined
+  if (raw.length < 32) {
+    throw new Error(
+      'LOAD_TEST_KEY is too short (need at least 32 characters). It exempts a source from rate limiting. ' +
+      'Generate one with: openssl rand -base64 32'
+    )
+  }
+  return raw
+}
+
 function corsOrigins (): string[] | boolean {
   const raw = process.env.CORS_ORIGINS
   if (!raw) return isProd ? false : true
@@ -154,6 +173,16 @@ export const config = {
 
   /** See trustProxy() — defaults to trusting nobody. */
   trustProxy: trustProxy(),
+
+  /*
+   * Terheléses mérés. Alapból nincs: kulcs nélkül a mentesség nem létezik, és
+   * az IP-lista is csak a hurokcím. Mindkettőre szükség van egyszerre — lásd
+   * middleware/load-test.ts, és docs/analytics/LOAD_TESTING.md arról, hogy
+   * miért nem a korlát átírása a helyes válasz.
+   */
+  loadTestKey: loadTestKey(),
+  loadTestIps: (process.env.LOAD_TEST_IPS ?? '127.0.0.1,::1')
+    .split(',').map(s => s.trim()).filter(Boolean),
 
   // Optional infrastructure. Monitoring is capability-aware: a service is
   // probed only when its URL is configured here, otherwise it reports

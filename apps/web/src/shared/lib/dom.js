@@ -1,4 +1,4 @@
-/* global document, getComputedStyle */
+/* global document, getComputedStyle, DOMParser */
 // Small DOM + formatting helpers shared by every page.
 
 // T() — the single text lookup — is defined in apps/web/js/i18n.js, which loads
@@ -74,11 +74,40 @@ export const U = {
     return media?.title?.userPreferred ?? media?.title?.english ?? media?.title?.romaji ?? media?.title?.native ?? 'Unknown'
   },
 
-  // strip html from AniList descriptions
+  /**
+   * A leírás szövege, HTML nélkül.
+   *
+   * Ez egy `div.innerHTML = leiras` volt, aztán `textContent`. Leváló elem,
+   * tehát ártalmatlannak látszott — nem az. Egy leváló elembe illesztett
+   * `<img src=x onerror=…>` mindhárom motorban lefut (Chromium, WebKit,
+   * Firefox egyaránt: megmértem), mert a kép betöltése nem a dokumentumhoz
+   * kötődik, hanem az elem létrejöttéhez.
+   *
+   * A leírás pedig nem a miénk: az importból jön, és az adminfelületen
+   * szerkeszthető. Vagyis egy katalógusmező tartalma minden látogató
+   * böngészőjében futott volna — a főoldali kiemelésen, az adatlapon és a
+   * gyorsnézeten.
+   *
+   * A `DOMParser` inert dokumentumot ad: nincs böngészési kontextusa, tehát
+   * nem tölt be képet és nem futtat semmit. A `<br>` sortörésre cserélése
+   * előbb történik, mert a szövegben az a jelentése.
+   */
   plainDesc (html) {
-    const div = document.createElement('div')
-    div.innerHTML = (html ?? '').replaceAll('<br>', '\n')
-    return div.textContent ?? ''
+    const source = String(html ?? '').replaceAll('<br>', '\n').replaceAll('<br/>', '\n').replaceAll('<br />', '\n')
+    try {
+      const doc = new DOMParser().parseFromString(source, 'text/html')
+      // A script és a style *tartalma* is szöveg a textContent szemében. Nem
+      // veszélyes — a dokumentum inert —, de egy leírásban a forráskódja
+      // ugyanúgy nem olvasmány, mint a címkéi.
+      for (const node of doc.body.querySelectorAll('script, style, noscript, template')) node.remove()
+      return doc.body.textContent ?? ''
+    } catch (error) {
+      // Nincs DOMParser (teszt-DOM): a nyers szöveg jobb, mint egy kivétel —
+      // és mindenképp jobb, mint az innerHTML.
+      return source
+        .replace(/<(script|style|noscript|template)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+        .replace(/<[^>]*>/g, '')
+    }
   },
 
   formatMap: {

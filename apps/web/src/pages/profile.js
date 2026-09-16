@@ -29,7 +29,7 @@ export const PageProfile = {
 
   render (root, params) {
     const profile = Store.profile()
-    const name = profile?.name ?? Store.settings().profileName ?? 'Dreamer'
+    const name = profile?.name ?? Store.settings().profileName ?? T('Dreamer')
 
     // level for the header subtitle
     const entries = Object.values(Store.list())

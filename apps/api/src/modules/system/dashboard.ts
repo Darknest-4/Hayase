@@ -163,8 +163,8 @@ export async function overview (days = 7): Promise<{
     compare: string | null, unit: Kpi['unit'] = 'count'
   ): Kpi => ({ key, label, value, unit, previous, delta: delta(value, previous), compare })
 
-  const period = `previous ${days} days`
-  const since = `${days} days ago`
+  const period = `előző ${days} nap`
+  const since = `${days} napja`
 
   return {
     range: {
@@ -173,20 +173,20 @@ export async function overview (days = 7): Promise<{
       to: new Date().toISOString()
     },
     kpis: [
-      kpi('users', 'Users', num(users, 'total'), num(users, 'total_before'), since),
-      kpi('users_new', `New (${days}d)`, num(users, 'new_window'), num(users, 'new_previous'), period),
-      kpi('active', 'Active (24h)', num(users, 'active_1d'), num(users, 'active_1d_previous'), 'previous 24h'),
+      kpi('users', 'Felhasználók', num(users, 'total'), num(users, 'total_before'), since),
+      kpi('users_new', `Új (${days} nap)`, num(users, 'new_window'), num(users, 'new_previous'), period),
+      kpi('active', 'Aktív (24 óra)', num(users, 'active_1d'), num(users, 'active_1d_previous'), 'előző 24 óra'),
       kpi('anime', 'Anime', num(content, 'anime'), num(content, 'anime_before'), since),
-      kpi('episodes', 'Episodes', num(content, 'episodes'), null, null),
-      kpi('playable', 'Playable', num(content, 'episodes_playable'), null, null),
-      kpi('comments', 'Comments', num(content, 'comments'), num(content, 'comments_before'), since),
-      kpi('reports', 'Open reports', num(content, 'open_reports'), null, null),
-      kpi('watched', `Watched (${days}d)`, Math.round(num(watch, 'minutes') / 60), Math.round(num(watch, 'minutes_previous') / 60), period, 'hours'),
-      kpi('finished', `Episodes finished (${days}d)`, num(watch, 'completions'), num(watch, 'completions_previous'), period),
+      kpi('episodes', 'Epizódok', num(content, 'episodes'), null, null),
+      kpi('playable', 'Lejátszható', num(content, 'episodes_playable'), null, null),
+      kpi('comments', 'Hozzászólások', num(content, 'comments'), num(content, 'comments_before'), since),
+      kpi('reports', 'Nyitott bejelentések', num(content, 'open_reports'), null, null),
+      kpi('watched', `Megnézve (${days} nap)`, Math.round(num(watch, 'minutes') / 60), Math.round(num(watch, 'minutes_previous') / 60), period, 'hours'),
+      kpi('finished', `Befejezett epizódok (${days} nap)`, num(watch, 'completions'), num(watch, 'completions_previous'), period),
       // Gauges. No comparison: the earlier value was never recorded, and
       // producing one would mean making it up.
-      kpi('jobs_pending', 'Pending jobs', num(jobs, 'pending'), null, null),
-      kpi('jobs_dead', 'Dead jobs', num(jobs, 'dead'), null, null)
+      kpi('jobs_pending', 'Várakozó feladatok', num(jobs, 'pending'), null, null),
+      kpi('jobs_dead', 'Halott feladatok', num(jobs, 'dead'), null, null)
     ],
     series: { users: series, content: contentSeries },
     jobs: { ...(jobs ?? {}), recent: recentJobs },

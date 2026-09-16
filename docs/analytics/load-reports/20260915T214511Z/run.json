@@ -1,0 +1,13 @@
+{
+  "id": "20260915T214511Z",
+  "scenario": "main",
+  "build": "e0433697-dirty",
+  "base": "http://127.0.0.1:4100",
+  "duration": "3m",
+  "ramp": "30s",
+  "stages": "10,25,50,100,250,500,750,1000",
+  "startedAt": "2026-09-15T21:45:11Z",
+  "host": "Linux 6.8.0-124-generic",
+  "cores": 4,
+  "memTotalMb": 9969
+}

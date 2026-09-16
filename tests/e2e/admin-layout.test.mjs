@@ -60,6 +60,12 @@ describe('admin panel layout', { skip: REASON }, () => {
     process.env.WEB_ROOT = WEB_ROOT
     process.env.JWT_SECRET ??= 'e2e-secret-not-used-for-anything-real-0123456789'
     process.env.LOG_LEVEL ??= 'warn'
+    // Egy böngészős futás percek alatt több száz kérést küld egyetlen címről:
+    // minden oldalbetöltés lekéri a konfigurációt, a jogosultságokat és a
+    // képernyő adatait. A globális sebességkorlát (300/perc) ezt helyesen
+    // fojtja meg — és akkor a teszt egy 429-es hibalapot mér, nem a terméket.
+    // Ez már megtörtént egyszer; azóta nevesítve van a hamis pozitívok között.
+    process.env.RATE_LIMIT_MAX ??= '100000'
     const [{ buildApp }, db] = await Promise.all([
       import('../../apps/api/src/app.ts'),
       import('../../apps/api/src/infrastructure/database/index.ts')
@@ -118,7 +124,15 @@ describe('admin panel layout', { skip: REASON }, () => {
     await page.evaluate(tokens => localStorage.setItem('yume-auth', JSON.stringify(tokens)), account)
     await page.goto(base + '/' + route, { waitUntil: 'domcontentloaded' })
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await page.waitForSelector('.admin-nav', { timeout: 15000 })
+    // `state: 'attached'`, nem a láthatóság. Telefonszélességen a fiók
+    // szándékosan a képernyőn kívül ül, amíg valaki ki nem nyitja — ez a
+    // fiókok lényege, és a 4. eset épp ezt állítja. A Playwright viszont a
+    // viewporton kívüli elemet nem tekinti láthatónak, tehát a segédfüggvény
+    // a saját tárgyára várt volna, és időtúllépéssel halt volna el.
+    await page.waitForSelector('.admin-nav', { state: 'attached', timeout: 15000 })
+    // A panel akkor áll készen, amikor a sorai kirajzolódtak; a fiók puszta
+    // jelenléte ezt még nem jelenti.
+    await page.waitForSelector('.admin-nav-item', { state: 'attached', timeout: 15000 })
     return { page, errors }
   }
 
@@ -161,7 +175,8 @@ describe('admin panel layout', { skip: REASON }, () => {
 
     // A preference nobody has to set twice.
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await page.waitForSelector('.admin-nav')
+    await page.waitForSelector('.admin-nav', { state: 'attached' })
+    await page.waitForSelector('.admin-nav-item', { state: 'attached' })
     assert.ok(await width() < full / 2, 'the collapsed rail did not survive a reload')
     await page.close()
   })
@@ -195,21 +210,55 @@ describe('admin panel layout', { skip: REASON }, () => {
     await page.close()
   })
 
-  // The section name belongs on the screen exactly once. It used to live in
-  // the top bar, with the heading block hidden below a phone's width; now the
-  // heading block carries it at every width and the top bar carries none, so
-  // the same rule is checked from the other side.
-  it('does not print the section name twice on a phone', async () => {
+  /*
+   * A szakasz neve pontosan egyszer szerepeljen — és görgetés közben is
+   * látszódjon.
+   *
+   * Ez a teszt korábban a HELYÉT rögzítette (a fejlécblokkban legyen, a felső
+   * sávban ne). A hely azóta megfordult, és jó okkal: a fejlécblokk
+   * elgörgetődik, és egy hosszú operátori lapon a képernyő közepén már semmi
+   * nem mondja meg, melyik szakaszban vagy. A felső sáv tapad.
+   *
+   * Amit ki KELL kötni, az nem a hely, hanem a két tulajdonság: egyszer
+   * szerepel, és görgetés után is ott van.
+   */
+  it('names the section exactly once on a phone', async () => {
     const { page } = await open({ width: 390, height: 780 })
-    assert.equal(await shown(page, '.admin-content-head'), true, 'the heading block is hidden')
-    const title = (await page.locator('.admin-content-title').innerText()).trim()
-    assert.ok(title.length, 'the heading lost the title')
-    const echoes = await page.evaluate(name => {
-      const bar = document.querySelector('.admin-topbar')
-      if (!bar) return 0
-      return [...bar.querySelectorAll('*')].filter(el => el.textContent.trim() === name).length
-    }, title)
-    assert.equal(echoes, 0, `the top bar repeats "${title}"`)
+
+    const visibleTexts = async () => page.evaluate(() => {
+      const seen = []
+      for (const sel of ['.admin-topbar-title', '.admin-content-title']) {
+        for (const el of document.querySelectorAll(sel)) {
+          const style = getComputedStyle(el)
+          if (style.display === 'none' || style.visibility === 'hidden') continue
+          const text = el.textContent.trim()
+          if (text) seen.push(text)
+        }
+      }
+      return seen
+    })
+
+    const names = await visibleTexts()
+    assert.equal(names.length, 1, `a szakasz neve ${names.length}-szer látszik: ${names.join(' / ')}`)
+    assert.ok(names[0].length, 'a szakasznak nincs neve sehol')
+    await page.close()
+  })
+
+  it('keeps the section name on screen after scrolling', async () => {
+    const { page } = await open({ width: 390, height: 780 })
+    await page.evaluate(() => window.scrollTo(0, 1200))
+    await page.waitForTimeout(250)
+
+    const stillThere = await page.evaluate(() => {
+      for (const el of document.querySelectorAll('.admin-topbar-title, .admin-content-title')) {
+        const style = getComputedStyle(el)
+        if (style.display === 'none' || !el.textContent.trim()) continue
+        const box = el.getBoundingClientRect()
+        if (box.top >= 0 && box.bottom <= window.innerHeight) return el.textContent.trim()
+      }
+      return null
+    })
+    assert.ok(stillThere, 'lefelé görgetve semmi nem mondja meg, melyik szakaszban vagy')
     await page.close()
   })
 })

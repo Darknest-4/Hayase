@@ -16,6 +16,7 @@ import { WRITE_LIMIT } from '../../middleware/security.ts'
 import type { SearchFilters } from '../search/search.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
+import { profileOf } from '../../middleware/profile.ts'
 
 /**
  * Browse orderings, as keyset components rather than raw ORDER BY strings.
@@ -255,7 +256,10 @@ const routes: FastifyPluginAsync = async fastify => {
     const data = rows.slice(0, limit)
     // telemetry is fire-and-forget: a zero-result query is a catalogue gap
     // worth reporting, but recording it must never delay the response
-    void recordSearch(pool, q, data.length, request.headers['x-profile-id'] as string | undefined)
+    // A keresés annak a profilnak a nevében rögzül, akié a fiók — nem annak,
+    // amit a fejléc mond. Ellenőrizetlenül bárki bármelyik profil keresési
+    // előzményébe írhatott volna.
+    void profileOf(request).then(profileId => recordSearch(pool, q, data.length, profileId))
     return { data, query: q, hasMore }
   })
 

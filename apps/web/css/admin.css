@@ -1,0 +1,739 @@
+/* ==========================================================================
+   Az adminfelület — saját tervezési rendszer.
+   ==========================================================================
+   A negyedik réteg, a tokens/components/style után betöltve. Az adminfelület
+   külön termékfelület: a `navigate()` `admin-route` osztályt tesz a body-ra,
+   ami elveszi az oldal ikonsávját, a mobil fülsávot és a láblécet.
+
+   MIÉRT ÍRTUK ÚJRA
+   ----------------
+   A panel tizenkilenc képernyője tizenkilenc saját komponenscsaládot hozott
+   magával: `dash-`, `mon-`, `cat-`, `aud-`, `sec-`, `perm-`, `tr-`, `comp-`,
+   `src-`, `user-`, `flag-`, `report-`, `dup-`, `prov-`, `role-`, `ep-`,
+   `err-`, `setting-`, `meta-`. Ötszáz szabály a style.css-ben, mindegyik a
+   maga belső margójával, sarkával és betűméretével.
+
+   Ez a „zsúfolt" érzés forrása. Nem a sok adat: az operátori felület dolga,
+   hogy sok adatot mutasson. Hanem az, hogy semmi nem ismétlődik — minden
+   képernyőn újra kell tanulni, mi a cím, mi a mérőszám és mi a kísérőszöveg.
+   Mérve: az Infrastruktúra lapon tizenegy különböző betűméret–vastagság
+   páros volt, a Biztonságon kilenc.
+
+   AMI EBBEN A FÁJLBAN VAN
+   -----------------------
+   Tizenkét primitív, `ap-` előtaggal (admin panel). Minden képernyő ezekből
+   épül. Ha egy képernyőnek új komponens kell, az azt jelenti, hogy vagy a
+   primitív hiányos, vagy a képernyő akar valamit, amit nem kellene.
+
+   NÉGY SZABÁLY
+   ------------
+   1. ÖT SZÖVEGSZEREP, nem tizenegy: laptím, szakaszcím, szöveg, kísérő,
+      mérőszám. Mindegyiknek egy mérete és egy vastagsága van.
+   2. EGY RITMUS: 8 képpontos rács. A belső margó, a rés és a szakaszköz
+      három érték, nem tizenöt.
+   3. A SOR VÉGES: 1240 képpont fölött a tartalom nem nyúlik tovább.
+   4. TELEFONON MINDEN ÉRINTHETŐ: 44 képpont a padló, kivétel nélkül.
+   ========================================================================== */
+
+/* ------------------------------------------------------------------ értékek */
+
+.admin-route {
+  /* Térköz — 8 képpontos rács. A globális --space-* skálát nem írjuk át:
+     ott a nyilvános oldal él, és annak más a sűrűsége. */
+  --ap-1: 0.25rem;
+  --ap-2: 0.5rem;
+  --ap-3: 0.75rem;
+  --ap-4: 1rem;
+  --ap-5: 1.5rem;
+  --ap-6: 2rem;
+  --ap-7: 3rem;
+
+  --ap-gutter: 2rem;
+  --ap-max: 78rem;          /* ~1248px */
+  --ap-rail: 16.5rem;
+  --ap-topbar: 3.5rem;
+
+  --ap-radius: 14px;
+  --ap-radius-sm: 10px;
+
+  /* Felületek. Három szint, nem több: a lap, a kártya, és amit a kártyán
+     belül még el kell különíteni. */
+  --ap-surface: var(--bg-raised);
+  --ap-surface-2: color-mix(in oklab, var(--fg) 4%, var(--bg-raised));
+  --ap-line: var(--border);
+
+  /* Öt szövegszerep. */
+  --ap-t-page: 800 1.5rem/1.2 var(--font-sans);
+  --ap-t-section: 700 1rem/1.35 var(--font-sans);
+  --ap-t-body: 400 0.875rem/1.5 var(--font-sans);
+  --ap-t-meta: 500 0.75rem/1.45 var(--font-sans);
+  --ap-t-metric: 800 1.75rem/1.1 var(--font-sans);
+  --ap-t-label: 700 0.6875rem/1.3 var(--font-sans);
+}
+
+/* A panel elveszi az oldal kereteit. */
+.admin-route .sidebar { display: none; }
+.admin-route .page { padding: 0; }
+/*
+ * A lapbelépő animáció `fill-mode: both`-tal transzformot hagy maga után, és
+ * egy transzformált ős lesz a benne lévő fixed elemek tartalmazó blokkja. Ez
+ * szögezte a telefonos fiókot a panel közepéhez az ablak helyett: 615 képpont
+ * magas volt egy 780-as nézetben, a sötétítő réteg pedig a tartalommal együtt
+ * görgött. A panelnek nem kell a díszítés.
+ */
+.admin-route .page > * { animation: none; }
+
+/* ======================================================================== */
+/* A keret: rál, felső sáv, tartalom.                                       */
+/* ======================================================================== */
+
+.admin-shell {
+  display: grid;
+  grid-template-columns: var(--ap-rail) minmax(0, 1fr);
+  min-height: 100dvh;
+  position: relative;
+}
+.admin-shell.nav-collapsed { --ap-rail: 4rem; }
+
+/* ---- rál ---- */
+
+.admin-nav {
+  border-right: 1px solid var(--ap-line);
+  background: var(--ap-surface);
+  padding: var(--ap-4) var(--ap-3) var(--ap-3);
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  overflow-y: auto;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  scrollbar-width: thin;
+}
+
+.admin-nav-head {
+  display: flex; align-items: center; gap: var(--ap-2);
+  padding: 0 var(--ap-2) var(--ap-4);
+  margin-bottom: var(--ap-2);
+  border-bottom: 1px solid var(--ap-line);
+}
+.admin-nav-mark {
+  display: flex; align-items: center; justify-content: center;
+  width: 1.85rem; height: 1.85rem; border-radius: var(--ap-radius-sm); flex-shrink: 0;
+  background: var(--accent-soft); color: var(--accent);
+}
+.admin-nav-brand { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; flex-grow: 1; }
+.admin-nav-brand-name { font-weight: var(--weight-black); font-size: var(--text-base); letter-spacing: -.02em; }
+.admin-nav-brand-sub { font: var(--ap-t-label); letter-spacing: .1em; text-transform: uppercase; color: var(--fg-faint); }
+
+.admin-nav-collapse {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 26px; min-height: 26px;
+  border: none; background: none; cursor: pointer; color: var(--fg-faint);
+  border-radius: var(--radius-sm);
+  transition: color var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.admin-nav-collapse:hover { color: var(--fg); }
+.admin-nav-collapse:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.nav-collapsed .admin-nav-collapse { transform: rotate(180deg); }
+
+.admin-nav-group {
+  font: var(--ap-t-label);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  opacity: .6;
+  padding: var(--ap-5) var(--ap-2) var(--ap-1);
+}
+.admin-nav-group:first-of-type { padding-top: 0; }
+
+.admin-nav-item {
+  display: flex; align-items: center; gap: var(--ap-3);
+  min-height: 2.5rem;
+  padding: 0 var(--ap-2);
+  border-radius: var(--ap-radius-sm);
+  color: var(--fg-muted);
+  text-decoration: none;
+  border: none; background: none; cursor: pointer;
+  font: inherit; text-align: left; width: 100%;
+  position: relative;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.admin-nav-item:hover { background: var(--ap-surface-2); color: var(--fg); }
+.admin-nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.admin-nav-item.active { background: var(--accent-soft); color: var(--accent); font-weight: var(--weight-bold); }
+/* Az aktív jelölés kitöltés ÉS csík: tizenkilenc bejegyzésnél a puszta
+   színváltás elvész, főleg ha a szomszéd épp hover alatt van. */
+.admin-nav-item.active::before {
+  content: '';
+  position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 3px; height: 1.25rem; border-radius: 0 3px 3px 0; background: var(--accent);
+}
+.admin-nav-item svg { flex-shrink: 0; opacity: .75; }
+.admin-nav-item.active svg { opacity: 1; }
+.admin-nav-label { font-size: var(--text-sm); font-weight: inherit; flex-grow: 1; min-width: 0; }
+.admin-nav-badge {
+  min-width: 1.15rem; height: 1.15rem; padding: 0 var(--ap-1);
+  border-radius: var(--radius-full); flex-shrink: 0;
+  background: color-mix(in oklab, var(--danger) 18%, transparent); color: var(--danger);
+  font-size: var(--text-xs); font-weight: var(--weight-bold); line-height: 1.15rem; text-align: center;
+}
+.admin-nav-count {
+  margin-left: auto;
+  font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-faint);
+  background: var(--bg); border: 1px solid var(--ap-line);
+  border-radius: var(--radius-full); padding: var(--ap-1) var(--ap-2);
+}
+.admin-nav-foot { margin-top: auto; padding-top: var(--ap-3); border-top: 1px solid var(--ap-line); }
+.admin-nav-back { width: 100%; }
+
+/* Ikonokra csukva: a csoportcímkékből vonal lesz. A csoporthatár az, ami
+   megakadályozza, hogy tizenkilenc ikon egyetlen oszlopnak látsszon. */
+.nav-collapsed .admin-nav { padding-inline: var(--ap-1); }
+.nav-collapsed .admin-nav-head { padding: 0 0 var(--ap-4); justify-content: center; }
+.nav-collapsed .admin-nav-brand,
+.nav-collapsed .admin-nav-badge,
+.nav-collapsed .admin-nav-label { display: none; }
+.nav-collapsed .admin-nav-group {
+  font-size: 0; padding: 0; margin: var(--ap-2) var(--ap-1);
+  border-top: 1px solid var(--ap-line);
+}
+.nav-collapsed .admin-nav-group:first-of-type { border-top: none; margin-top: 0; }
+.nav-collapsed .admin-nav-item { justify-content: center; padding: var(--ap-2) 0; }
+
+/* ---- felső sáv ---- */
+
+.admin-topbar {
+  position: sticky; top: 0; z-index: 25;
+  min-height: var(--ap-topbar);
+  display: flex; align-items: center;
+  padding-inline: var(--ap-gutter);
+  background: color-mix(in oklab, var(--bg) 85%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--ap-line);
+}
+.admin-topbar-inner {
+  display: flex; align-items: center; gap: var(--ap-2);
+  width: 100%; max-width: var(--ap-max); margin-inline: auto;
+}
+.admin-topbar-spacer { flex-grow: 1; }
+/* Telefonon ez mondja meg, hol vagy — görgetés közben is. Asztali gépen a
+   rál mondja meg, ezért ott rejtett. */
+.admin-topbar-title {
+  display: none;
+  font: var(--ap-t-section);
+  letter-spacing: -.01em;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.admin-menu-btn { display: none; }
+.admin-menu-btn,
+.admin-topbar-back {
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--ap-line); background: var(--ap-surface);
+  color: var(--fg); border-radius: var(--ap-radius-sm);
+  width: 2.25rem; height: 2.25rem; flex-shrink: 0; cursor: pointer; text-decoration: none;
+}
+.admin-menu-btn:hover,
+.admin-topbar-back:hover { background: var(--ap-surface-2); border-color: var(--border-strong); }
+
+.admin-backdrop { display: none; }
+
+/* ---- ugrás szakaszra ---- */
+
+.admin-jump { position: relative; flex-grow: 1; max-width: 22rem; min-width: 0; display: flex; align-items: center; }
+.admin-jump-icon { position: absolute; left: .7rem; display: flex; color: var(--fg-faint); pointer-events: none; }
+.admin-jump-kbd {
+  position: absolute; right: .55rem; font-family: var(--font-mono); font-size: var(--text-xs);
+  color: var(--fg-faint); border: 1px solid var(--ap-line); border-radius: var(--radius-sm);
+  padding: 0 .3rem; pointer-events: none;
+}
+.admin-jump-input {
+  width: 100%; padding: .45rem 2.2rem .45rem 2.1rem;
+  background: var(--ap-surface); border: 1px solid var(--ap-line);
+  border-radius: var(--ap-radius-sm); color: var(--fg); font: var(--ap-t-body);
+}
+.admin-jump-input:focus { outline: none; border-color: var(--accent); }
+.admin-jump-input::-webkit-search-cancel-button { display: none; }
+.admin-jump-results {
+  position: absolute; top: calc(100% + .35rem); left: 0; right: 0; z-index: 40;
+  background: var(--bg-overlay); border: 1px solid var(--ap-line);
+  border-radius: var(--ap-radius); box-shadow: var(--shadow-3); overflow: hidden;
+}
+.admin-jump-item {
+  display: block; width: 100%; text-align: left; border: none; background: none;
+  padding: var(--ap-2) var(--ap-3); cursor: pointer; color: var(--fg-muted); font: inherit;
+}
+.admin-jump-item:hover { background: var(--ap-surface-2); color: var(--fg); }
+.admin-jump-label { font-size: var(--text-sm); font-weight: var(--weight-semibold); }
+.admin-jump-sub { font: var(--ap-t-meta); color: var(--fg-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- harang, fiók ---- */
+
+.admin-bell {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  width: 2.25rem; height: 2.25rem; border-radius: var(--ap-radius-sm);
+  color: var(--fg-muted); text-decoration: none; flex-shrink: 0;
+}
+.admin-bell:hover { background: var(--ap-surface-2); color: var(--fg); }
+.admin-bell-badge {
+  position: absolute; top: .25rem; right: .25rem;
+  min-width: 1rem; height: 1rem; padding: 0 .2rem; border-radius: var(--radius-full);
+  background: var(--danger); color: white;
+  font-size: .625rem; font-weight: var(--weight-bold); line-height: 1rem; text-align: center;
+}
+.admin-account {
+  display: flex; align-items: center; gap: var(--ap-2);
+  text-decoration: none; color: inherit; flex-shrink: 0;
+  padding: var(--ap-1); border-radius: var(--ap-radius-sm);
+}
+.admin-account:hover { background: var(--ap-surface-2); }
+.admin-account-avatar {
+  width: 1.75rem; height: 1.75rem; border-radius: var(--radius-full); flex-shrink: 0;
+  background: var(--accent-soft); color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--text-xs); font-weight: var(--weight-bold);
+}
+.admin-account-text { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
+.admin-account-name { font-size: var(--text-sm); font-weight: var(--weight-bold); }
+.admin-account-role { font: var(--ap-t-meta); color: var(--fg-faint); }
+.admin-account > svg { color: var(--fg-faint); flex-shrink: 0; }
+
+/* ---- tartalom ---- */
+
+.admin-content { min-width: 0; display: flex; flex-direction: column; }
+
+.admin-content-head,
+.admin-content-body {
+  width: 100%; max-width: var(--ap-max); margin-inline: auto; padding-inline: var(--ap-gutter);
+}
+.admin-content-head {
+  padding-block: var(--ap-5) var(--ap-4);
+  margin-bottom: var(--ap-5);
+  border-bottom: 1px solid var(--ap-line);
+}
+.admin-content-body { padding-bottom: var(--ap-7); }
+.admin-content-heading { display: flex; align-items: flex-start; gap: var(--ap-3); flex-wrap: wrap; }
+.admin-content-heading > svg { color: var(--accent); margin-top: .3rem; flex-shrink: 0; }
+.admin-content-heading-text { min-width: 0; flex-grow: 1; }
+.admin-content-title { font: var(--ap-t-page); letter-spacing: -.02em; margin: 0; }
+.admin-content-sub { font: var(--ap-t-body); color: var(--fg-faint); margin: var(--ap-1) 0 0; max-width: 62ch; }
+.admin-content-actions { display: flex; align-items: center; gap: var(--ap-2); flex-shrink: 0; flex-wrap: wrap; }
+
+/* ======================================================================== */
+/* A tizenkét primitív.                                                     */
+/* ======================================================================== */
+
+/* 1. Függőleges ritmus. Minden szakasz gyereke ezt kapja, és akkor nem kell
+      minden komponensnek saját alsó margót hordania. */
+.ap-stack { display: flex; flex-direction: column; gap: var(--ap-5); }
+.ap-stack-tight { gap: var(--ap-3); }
+
+/* 2. Szakaszcím a törzsön belül. */
+.ap-section { display: flex; align-items: baseline; gap: var(--ap-3); flex-wrap: wrap; }
+.ap-section-title { font: var(--ap-t-section); letter-spacing: -.01em; }
+.ap-section-note { font: var(--ap-t-meta); color: var(--fg-faint); }
+.ap-section-actions { margin-left: auto; display: flex; gap: var(--ap-2); align-items: center; }
+
+/* 3. Rács. A `--col` a legkisebb oszlopszélesség; a hívó állítja. */
+.ap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--col, 14rem), 1fr));
+  gap: var(--ap-4);
+}
+.ap-grid-stats { --col: 13.5rem; }
+.ap-grid-2 { --col: 22rem; }
+.ap-grid-wide { --col: 30rem; }
+
+/* 4. A kártya. Egy sarok, egy keret, egy belső margó. */
+.ap-card {
+  background: var(--ap-surface);
+  border: 1px solid var(--ap-line);
+  border-radius: var(--ap-radius);
+  padding: var(--ap-4);
+  min-width: 0;
+}
+.ap-card-head { display: flex; align-items: flex-start; gap: var(--ap-3); margin-bottom: var(--ap-3); }
+.ap-card-title { font: var(--ap-t-section); letter-spacing: -.01em; flex-grow: 1; min-width: 0; }
+.ap-card-sub { font: var(--ap-t-meta); color: var(--fg-faint); margin-top: var(--ap-1); }
+.ap-card-actions { display: flex; gap: var(--ap-2); align-items: center; flex-shrink: 0; }
+
+/* 5. Mérőszám. Ez váltja a `dash-kpi`-t és a `mon-card`-ot: eddig két
+      komponens csinálta ugyanazt, két mérettel. */
+.ap-stat { display: flex; flex-direction: column; gap: var(--ap-1); }
+.ap-stat-label {
+  font: var(--ap-t-label); letter-spacing: .07em; text-transform: uppercase;
+  color: var(--fg-faint); display: flex; align-items: center; gap: var(--ap-2);
+}
+.ap-stat-value { font: var(--ap-t-metric); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.ap-stat-meta { font: var(--ap-t-meta); color: var(--fg-faint); }
+.ap-stat-dot { width: .5rem; height: .5rem; border-radius: var(--radius-full); flex-shrink: 0; background: var(--fg-faint); }
+.ap-stat-dot.ok { background: var(--green-500); }
+.ap-stat-dot.warn { background: var(--amber-500); }
+.ap-stat-dot.bad { background: var(--danger); }
+/* Az előző időszakhoz mért változás. „Nincs mihez mérni" nem nulla. */
+.ap-stat-delta { font: var(--ap-t-meta); display: flex; align-items: baseline; gap: var(--ap-1); flex-wrap: wrap; }
+.ap-stat-delta.up { color: var(--green-400); }
+.ap-stat-delta.down { color: var(--danger); }
+.ap-stat-delta.flat { color: var(--fg-faint); }
+.ap-stat-delta-note { color: var(--fg-faint); }
+
+/* 6. Lista. Egy sor: bevezető, törzs, lezárás. Ez váltja a `list-row`,
+      `meta-row`, `user-row`, `mon-service`, `perm-row` családokat. */
+.ap-list { display: flex; flex-direction: column; gap: var(--ap-2); }
+.ap-row {
+  display: flex; align-items: center; gap: var(--ap-3);
+  background: var(--ap-surface);
+  border: 1px solid var(--ap-line);
+  border-radius: var(--ap-radius);
+  padding: var(--ap-3) var(--ap-4);
+  min-width: 0;
+}
+.ap-row-link { cursor: pointer; text-align: left; width: 100%; font: inherit; color: inherit; }
+.ap-row-link:hover { border-color: var(--border-strong); background: var(--ap-surface-2); }
+.ap-row-lead { flex-shrink: 0; display: flex; align-items: center; color: var(--fg-faint); }
+.ap-row-body { flex: 1 1 60%; min-width: 0; }
+.ap-row-title { font-size: var(--text-sm); font-weight: var(--weight-semibold); display: flex; align-items: center; gap: var(--ap-2); flex-wrap: wrap; }
+.ap-row-meta { font: var(--ap-t-meta); color: var(--fg-faint); margin-top: var(--ap-1); }
+.ap-row-trail { flex-shrink: 0; display: flex; align-items: center; gap: var(--ap-2); }
+.ap-row-value {
+  font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* 7. Eszköztár: szűrők egy lista fölött. */
+.ap-toolbar { display: flex; flex-wrap: wrap; gap: var(--ap-3); align-items: center; }
+.ap-toolbar .input,
+.ap-toolbar .select { min-height: 2.25rem; }
+.ap-toolbar-grow { flex: 1 1 16rem; min-width: 0; }
+
+/* 8. Fülek. */
+.ap-tabs { display: flex; flex-wrap: wrap; gap: var(--ap-2); }
+.ap-tab {
+  display: inline-flex; align-items: center; gap: var(--ap-2);
+  font: var(--ap-t-body); font-weight: var(--weight-semibold);
+  min-height: 2.25rem; padding: 0 var(--ap-4);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--ap-line); background: transparent; color: var(--fg-muted);
+  cursor: pointer;
+}
+.ap-tab:hover { color: var(--fg); border-color: var(--border-strong); }
+.ap-tab.on { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+.ap-tab-count { font-family: var(--font-mono); font-size: var(--text-xs); opacity: .8; }
+
+/* 9. Állapotcímke. */
+.ap-tag {
+  display: inline-flex; align-items: center; gap: var(--ap-1);
+  font: var(--ap-t-meta); font-weight: var(--weight-bold);
+  padding: .1rem var(--ap-2); border-radius: var(--radius-full);
+  border: 1px solid var(--ap-line); color: var(--fg-muted); background: var(--bg);
+  white-space: nowrap;
+}
+.ap-tag.ok { color: var(--green-400); border-color: color-mix(in oklab, var(--green-500) 40%, transparent); background: color-mix(in oklab, var(--green-500) 12%, transparent); }
+.ap-tag.warn { color: var(--amber-400); border-color: color-mix(in oklab, var(--amber-500) 40%, transparent); background: color-mix(in oklab, var(--amber-500) 12%, transparent); }
+.ap-tag.bad { color: var(--danger); border-color: color-mix(in oklab, var(--danger) 40%, transparent); background: color-mix(in oklab, var(--danger) 12%, transparent); }
+.ap-tag.info { color: var(--blue-400); border-color: color-mix(in oklab, var(--blue-500) 40%, transparent); background: color-mix(in oklab, var(--blue-500) 12%, transparent); }
+.ap-tag.accent { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 40%, transparent); background: var(--accent-soft); }
+
+/* 10. Kulcs–érték sorok: egy dolog tényei. */
+.ap-kv { display: grid; grid-template-columns: minmax(6rem, auto) minmax(0, 1fr); gap: var(--ap-2) var(--ap-4); }
+.ap-kv-key { font: var(--ap-t-meta); color: var(--fg-faint); }
+.ap-kv-val { font: var(--ap-t-body); min-width: 0; overflow-wrap: anywhere; }
+
+/* 11. Üres és hibaállapot. */
+.ap-empty {
+  display: flex; flex-direction: column; align-items: center; gap: var(--ap-2);
+  padding: var(--ap-7) var(--ap-4);
+  border: 1px dashed var(--ap-line); border-radius: var(--ap-radius);
+  color: var(--fg-faint); text-align: center;
+}
+.ap-empty-title { font: var(--ap-t-section); color: var(--fg-muted); }
+.ap-empty-note { font: var(--ap-t-body); max-width: 46ch; }
+
+/* 12. Megjegyzés — egy mondat, ami a fenti szám értelmezését adja meg. */
+.ap-note { font: var(--ap-t-meta); color: var(--fg-faint); max-width: 72ch; }
+.ap-note strong { color: var(--fg-muted); }
+
+/* Felsorolás egy kártyán belül — a függőségek listája. */
+.ap-bullets { margin: 0; padding-left: var(--ap-4); font: var(--ap-t-meta); color: var(--fg-faint); }
+.ap-bullets li { margin-bottom: var(--ap-1); }
+
+/* Az összefoglaló állapotkártya a lap tetején: nem színes doboz, hanem egy
+   mondat és egy címke. A színezett sáv ugyanazt mondta, mint a címke, csak
+   hangosabban — és ettől a lap legelső eleme mindig kiabált. */
+.ap-status { border-color: var(--border-strong); }
+
+/* A biztonsági pontszám kártyája: a szám és az, amiből jött, egymás mellett.
+   A szám önmagában a legmagabiztosabb hazugság, amit egy panel mondhat. */
+.ap-posture { display: flex; align-items: center; gap: var(--ap-5); flex-wrap: wrap; }
+.ap-posture-score { text-align: center; min-width: 6rem; }
+.ap-posture-side { flex: 1 1 20rem; min-width: 0; display: flex; flex-direction: column; gap: var(--ap-2); }
+.ap-posture-counts { display: flex; gap: var(--ap-2); flex-wrap: wrap; }
+
+/* Lapozó. */
+.admin-pager { display: flex; align-items: center; justify-content: center; gap: var(--ap-3); margin-top: var(--ap-4); }
+.admin-pager-label { font: var(--ap-t-body); color: var(--fg-muted); font-variant-numeric: tabular-nums; }
+
+/* ======================================================================== */
+/* A régi komponenscsaládok, beállítva az új ritmusba.                       */
+/*                                                                          */
+/* A tizenkilenc képernyő nem egyszerre költözik át a primitívekre. Amíg     */
+/* nem tette, legalább ugyanazt a belső margót, sarkot és betűméretet        */
+/* kapják — így a panel akkor sem esik szét, ha egy lapon régi és új         */
+/* komponens is van. Ahogy egy képernyő átáll, a hozzá tartozó sor innen     */
+/* törölhető.                                                               */
+/* ======================================================================== */
+
+.admin-route .dash-panel,
+.admin-route .setting-card,
+.admin-route .mon-card,
+.admin-route .mon-service,
+.admin-route .mon-dep,
+.admin-route .mon-banner,
+.admin-route .aud-head {
+  border-radius: var(--ap-radius);
+  padding: var(--ap-4);
+}
+.admin-route .dash-panel { background: var(--ap-surface); }
+
+.admin-route .dash-panel-title,
+.admin-route .detail-section-title,
+.admin-route .user-section-title,
+.admin-route .mon-banner-title { font: var(--ap-t-section); letter-spacing: -.01em; }
+.admin-route .dash-panel-sub { font: var(--ap-t-meta); color: var(--fg-faint); }
+
+.admin-route .dash-kpis,
+.admin-route .dash-charts,
+.admin-route .dash-lower,
+.admin-route .mon-grid,
+.admin-route .mon-services,
+.admin-route .mon-deps { gap: var(--ap-4); margin-bottom: var(--ap-6); }
+
+/* Négy kártya egy sorban, nem öt: 11rem-es minimumnál két címke két sorba
+   tördelődött, és attól lett egyenetlen a sor. */
+.admin-route .mon-grid { grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr)); }
+
+.admin-route .dash-kpi { padding: var(--ap-4); border-radius: var(--ap-radius); gap: var(--ap-3); align-items: center; }
+.admin-route .dash-kpi-value,
+.admin-route .mon-card-value { font: var(--ap-t-metric); letter-spacing: -.03em; }
+.admin-route .dash-kpi-label,
+.admin-route .mon-card-label { font: var(--ap-t-label); letter-spacing: .07em; color: var(--fg-faint); }
+.admin-route .dash-kpi-icon { width: 2.4rem; height: 2.4rem; }
+
+/* A bal oldali színes csík eltűnik: tizenegy kártyán tizenegy csík az egész
+   lapot csíkossá tette, és ugyanazt mondta, amit a pötty a címke mellett. */
+.admin-route .mon-card,
+.admin-route .mon-card.mon-green,
+.admin-route .mon-card.mon-yellow,
+.admin-route .mon-card.mon-red { border-left-width: 1px; border-left-color: var(--ap-line); }
+
+.admin-route .list-row,
+.admin-route .meta-row {
+  padding: var(--ap-3) var(--ap-4);
+  border-radius: var(--ap-radius);
+  gap: var(--ap-3);
+}
+.admin-route .meta-rows { gap: var(--ap-2); margin-bottom: var(--ap-6); }
+.admin-route .meta-row { border-bottom: none; background: var(--ap-surface); }
+.admin-route .user-row { cursor: pointer; }
+
+.admin-route .admin-toolbar { gap: var(--ap-3); margin-bottom: var(--ap-5); align-items: center; }
+.admin-route .report-tabs { gap: var(--ap-2); margin-bottom: var(--ap-5); }
+.admin-route .report-tab { min-height: 2.25rem; padding-inline: var(--ap-4); }
+.admin-route .table-wrap { overflow-x: auto; border-radius: var(--ap-radius); }
+
+/* ---- Katalógus ------------------------------------------------------------
+ *
+ * Kétoszlopos: balra a lista, jobbra a szerkesztő. A lista oszlopa 22rem
+ * volt, és ebbe a keresőmező, a láthatóságszűrő és három gomb együtt nem fért
+ * el — három sorba tördelődtek, miközben jobbra egy üres, 700 képpont széles
+ * doboz állt azzal, hogy „válassz egy címet".
+ *
+ * Az eszköztár ezért a két oszlop FÖLÉ került, teljes szélességben, és a
+ * lista oszlopa szélesebb lett.
+ */
+.admin-route .cat-layout { grid-template-columns: 26rem minmax(0, 1fr); gap: var(--ap-5); }
+.admin-route .cat-toolbar {
+  grid-column: 1 / -1;
+  display: flex; flex-wrap: wrap; gap: var(--ap-2); align-items: center;
+  margin-bottom: var(--ap-2);
+}
+.admin-route .cat-toolbar .input { flex: 1 1 18rem; }
+.admin-route .cat-count { font: var(--ap-t-meta); color: var(--fg-faint); padding: 0 var(--ap-1); }
+.admin-route .cat-row { border-radius: var(--ap-radius); padding: var(--ap-3) var(--ap-4); }
+.admin-route .cat-edit-col { min-width: 0; }
+
+/* ---- Szerepkörök ----------------------------------------------------------
+ *
+ * A jelölőnégyzet 17×17 volt — a padló 24. Egy jogosultsági rácsban, ahol
+ * negyven sor van egymás alatt, egy 17 képpontos cél a rossz sor bepipálását
+ * jelenti, és egy jogosultságnál az nem apróság.
+ */
+.admin-route .perm-row input[type="checkbox"],
+.admin-route .perm-toggle input[type="checkbox"] { width: 1.5rem; height: 1.5rem; flex-shrink: 0; }
+.admin-route .perm-row { padding: var(--ap-3) var(--ap-4); gap: var(--ap-3); border-radius: var(--ap-radius-sm); }
+.admin-route .perm-group { border-radius: var(--ap-radius); }
+
+/* A jelmagyarázat kapcsolóvá vált: a tervezett jogosultságok alapból
+   rejtve vannak, mert 365-ből 325 olyan modulhoz tartozik, ami nem létezik. */
+.admin-route .perm-legend {
+  display: flex; align-items: center; gap: var(--ap-4); flex-wrap: wrap;
+  margin: var(--ap-3) 0 var(--ap-4);
+}
+.perm-toggle {
+  display: inline-flex; align-items: center; gap: var(--ap-2);
+  font: var(--ap-t-meta); color: var(--fg-muted);
+  min-height: 2rem; cursor: pointer; white-space: nowrap;
+}
+
+/* ---- Hibák, Szerepkörök: kétoszlopos elrendezések --------------------------
+ *
+ * Mindkettő listát mutat balra és részleteket jobbra. A lista oszlopa 22,
+ * illetve 15rem volt, és a bal oldali címek elvágódtak („api: External
+ * metadata sync i…"), miközben jobbra egy 700 képpont széles üres doboz állt
+ * azzal, hogy „válassz egyet". A listának kell a hely: azt olvassa az ember.
+ */
+.admin-route .err-layout { grid-template-columns: minmax(0, 28rem) minmax(0, 1fr); gap: var(--ap-5); }
+.admin-route .roles-layout { grid-template-columns: minmax(0, 17rem) minmax(0, 1fr); gap: var(--ap-5); }
+.admin-route .err-row,
+.admin-route .role-item { border-radius: var(--ap-radius); padding: var(--ap-3) var(--ap-4); }
+
+/* Az üres részletes panel: nem hatszáz képpont magas szaggatott doboz, hanem
+   annyi, amennyi a mondathoz kell. Egy üres állapot, ami a képernyő felét
+   elfoglalja, hangosabb, mint a tartalom, ami majd a helyére kerül. */
+.admin-route .cat-placeholder {
+  min-height: 0;
+  padding: var(--ap-7) var(--ap-4);
+  border-radius: var(--ap-radius);
+}
+
+/* A naplóban az azonosító gomb: rákattintva arra a sorra szűr. 65×18 volt —
+   a magasság a padló alatt, pedig ez a leggyakrabban használt szűrő ezen a
+   képernyőn. */
+.admin-route .audit-subject-id { min-height: 1.5rem; padding-inline: var(--ap-2); }
+
+/* ======================================================================== */
+/* Telefon és tablet.                                                       */
+/*                                                                          */
+/* A panel mobil felülete az asztali elrendezés összenyomott változata volt: */
+/* 35 képpontos gombok a felső sávon (a padló 44), a sáv közepén egy kereső, */
+/* ami a fél képernyőt elvette, és sehol egy jel arról, melyik szakaszban    */
+/* vagy — a címet le kellett görgetni, és görgetés közben az is eltűnt.      */
+/* ======================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-nav { transition: none; }
+  .admin-backdrop { transition: none; }
+}
+
+@media (max-width: 820px) {
+  .admin-shell,
+  .admin-shell.nav-collapsed {
+    grid-template-columns: 1fr;
+    --ap-gutter: 1rem;
+    --ap-5: 1.25rem;
+    --ap-6: 1.5rem;
+  }
+
+  /* A rál fiókká válik. Nem vízszintesen görgő gombsorrá: tizenkilenc
+     bejegyzésből ott három látszana, a többi a képernyő szélén túl, minden
+     jelzés nélkül. */
+  .admin-nav {
+    position: fixed; inset: 0 auto 0 0;
+    width: min(20rem, 86vw);
+    z-index: 60;
+    transform: translateX(-100%);
+    transition: transform var(--dur) var(--ease);
+    box-shadow: var(--shadow-3);
+    padding-bottom: max(var(--ap-4), env(safe-area-inset-bottom));
+  }
+  .admin-shell.nav-open .admin-nav { transform: none; }
+  .admin-nav-item { min-height: 2.875rem; }
+  /* Az összecsukás asztali alku; a fiók amúgy is eltűnik az útból. */
+  .admin-nav-collapse { display: none; }
+
+  .admin-backdrop {
+    display: block; position: fixed; inset: 0; z-index: 55;
+    background: color-mix(in oklab, var(--scrim) 55%, transparent);
+    opacity: 0; pointer-events: none;
+    transition: opacity var(--dur) var(--ease);
+  }
+  .admin-shell.nav-open .admin-backdrop { opacity: 1; pointer-events: auto; }
+
+  .admin-menu-btn { display: flex; }
+  /* 44 képpont, kivétel nélkül. */
+  .admin-menu-btn,
+  .admin-topbar-back,
+  .admin-bell,
+  .admin-account { min-width: 2.75rem; min-height: 2.75rem; }
+
+  /* A kereső eltűnik a sávból: kell hozzá billentyűzet, és félképernyőnyi
+     helyet vett el attól, ami megmondja, hol vagy. */
+  .admin-jump { display: none; }
+  .admin-topbar-title { display: block; }
+  .admin-account-text { display: none; }
+
+  .admin-content-head { padding-block: var(--ap-4) var(--ap-3); margin-bottom: var(--ap-4); }
+  /* A cím a felső sávban áll, görgetés közben is. Megismételve ugyanaz a szó
+     kétszer van egy 390 képpontos képernyőn, és az egyik helyet vesz el. */
+  .admin-content-title { display: none; }
+  .admin-content-heading > svg { display: none; }
+  .admin-content-sub { margin-top: 0; }
+  .admin-content-actions { width: 100%; }
+
+  /* Szűrősor: egy oszlop, teljes szélesség. Két szűrő egymás mellett 390
+     képpontnál mindkettőt olvashatatlanná vágja. */
+  .ap-toolbar,
+  .admin-route .admin-toolbar { flex-direction: column; align-items: stretch; gap: var(--ap-2); }
+  .ap-toolbar > *,
+  .admin-route .admin-toolbar > * { width: 100%; max-width: none; }
+  .admin-route .input,
+  .admin-route .select { min-height: 2.75rem; }
+  .ap-tab,
+  .admin-route .report-tab,
+  .admin-route .dash-range { min-height: 2.5rem; min-width: 2.75rem; }
+
+  /* Rácsok. Mérőszám kettesével, minden más egyesével: két oszlop 390
+     képpontnál 175 képpontos kártyákat jelent, amibe egy hosszabb cím sem
+     fér ki. */
+  .ap-grid { --col: 100%; }
+  /* A mérőszámok kettesével: egy rövid szám és a címkéje elfér 170
+     képpontban, és tizenegy teljes szélességű kártya olyan hosszú lapot ad,
+     aminek a végére senki nem görget el. */
+  .ap-grid-stats,
+  .admin-route .dash-kpis,
+  .admin-route .mon-grid { grid-template-columns: 1fr 1fr; }
+  .admin-route .dash-charts,
+  .admin-route .dash-lower,
+  .admin-route .mon-services,
+  .admin-route .mon-deps { grid-template-columns: 1fr; }
+
+  /* A sor lezárása a törzs alá kerül. Mellette a név és a tények egy 200
+     képpontos oszlopba szorultak, és szavanként tördelődtek. */
+  /* A sor tördelhet, de a bevezető pötty NE egyedül: a törzsnek 60%-os
+     alapszélessége van, tehát elfér a pötty mellett, és a cím nem csúszik
+     külön sorba egy nyolc képpontos jel alá. */
+  .ap-row,
+  .admin-route .user-row,
+  .admin-route .list-row { flex-wrap: wrap; align-items: flex-start; }
+  /* A lezárás teljes szélességű és BALRA igazodik: jobbra igazítva egy
+     hosszú technikai érték a képernyő szélén túlra futott, és pont a
+     lényege veszett el belőle. */
+  .ap-row-trail { width: 100%; justify-content: flex-start; margin-top: var(--ap-1); }
+  .admin-route .user-row > .btn,
+  .admin-route .list-row > .btn { margin-left: auto; min-height: 2.5rem; }
+
+  .ap-kv { grid-template-columns: 1fr; gap: var(--ap-1); }
+  .ap-kv-val { margin-bottom: var(--ap-2); }
+}
+
+@media (max-width: 380px) {
+  /* Egy oszlop. A határ 380, nem 460: az új mérőszámkártya címkéje 11
+     képpontos, a száma pedig rövid, tehát 390 képpontnál kettesével is
+     kifér — és tizenegy mérőszám egymás alatt olyan hosszú lapot ad, aminek
+     a végére senki nem görget el. 380 alatt viszont a szám tördelődne, egy
+     tördelt szám pedig nem szám többé. */
+  .ap-grid-stats,
+  .admin-route .dash-kpis,
+  .admin-route .mon-grid { grid-template-columns: 1fr; }
+}
