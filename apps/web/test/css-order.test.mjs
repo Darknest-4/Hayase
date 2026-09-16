@@ -29,12 +29,13 @@ import { fileURLToPath } from 'node:url'
 const here = dirname(fileURLToPath(import.meta.url))
 const CSS = readFileSync(join(here, '../css/style.css'), 'utf8')
 const COMPONENTS = readFileSync(join(here, '../css/components.css'), 'utf8')
+const ADMIN = readFileSync(join(here, '../css/admin.css'), 'utf8')
 
 // The two sheets the browser loads after tokens.css, in load order. The
 // undefined-token check below has to cover both: components.css is where the
 // primitives live now, and a token that resolves to nothing there drops a
 // declaration on every screen at once rather than on one.
-const SHEETS = [['style.css', CSS], ['components.css', COMPONENTS]]
+const SHEETS = [['style.css', CSS], ['components.css', COMPONENTS], ['admin.css', ADMIN]]
 
 /**
  * Every rule in the sheet, tagged with whether it sits inside a media query.
@@ -72,6 +73,60 @@ function rules (css) {
   }
   return found
 }
+
+/**
+ * Ugyanaz a vizsgálat, lapkánként.
+ *
+ * Az admin.css a style.css UTÁN töltődik be, tehát benne egy sima szabály
+ * elnémíthat egy korábbi lapkán álló töréspontos szabályt — a fájlon belüli
+ * sorrend ezt nem fogja meg. Ez nem elméleti: a panel átalakításakor egy
+ * áthozott `.user-history-when` pontosan ezt csinálta.
+ */
+function shadowedWithin (all) {
+  const plain = new Map()
+  for (const rule of all.filter(r => !r.inMedia)) {
+    if (!plain.has(rule.selector)) plain.set(rule.selector, [])
+    plain.get(rule.selector).push(rule.line)
+  }
+  const out = []
+  for (const rule of all.filter(r => r.inMedia)) {
+    const later = (plain.get(rule.selector) ?? []).find(l => l > rule.line)
+    if (later !== undefined) out.push(`${rule.selector} at line ${rule.line} is overridden at line ${later}`)
+  }
+  return out
+}
+
+describe('a later stylesheet does not silently undo an earlier breakpoint', () => {
+  // A betöltési sorrend: tokens → components → style → admin.
+  const ORDER = [['components.css', COMPONENTS], ['style.css', CSS], ['admin.css', ADMIN]]
+
+  it('no earlier sheet has a breakpoint a later sheet flattens', () => {
+    const broken = []
+    for (let i = 0; i < ORDER.length - 1; i++) {
+      const [earlierName, earlier] = ORDER[i]
+      const media = new Set(rules(earlier).filter(r => r.inMedia).map(r => r.selector))
+      for (const [laterName, later] of ORDER.slice(i + 1)) {
+        for (const rule of rules(later).filter(r => !r.inMedia)) {
+          if (media.has(rule.selector)) {
+            broken.push(`${earlierName} has a breakpoint for ${rule.selector}; ${laterName}:${rule.line} overrides it unconditionally`)
+          }
+        }
+      }
+    }
+    assert.deepEqual(broken, [], 'breakpoints flattened by a later sheet:\n  ' + broken.join('\n  '))
+  })
+
+  it('each sheet keeps its own breakpoints last', () => {
+    for (const [name, sheet] of ORDER) {
+      const all = rules(sheet)
+      if (!all.some(r => r.inMedia)) continue
+      const lastMedia = Math.max(...all.filter(r => r.inMedia).map(r => r.line))
+      const lastPlain = Math.max(...all.filter(r => !r.inMedia).map(r => r.line))
+      assert.ok(lastMedia > lastPlain, `${name}: last breakpoint (${lastMedia}) must come after the last plain rule (${lastPlain})`)
+      assert.deepEqual(shadowedWithin(all), [], `${name}: dead responsive rules`)
+    }
+  })
+})
 
 describe('responsive overrides are not shadowed', () => {
   const all = rules(CSS)
@@ -124,7 +179,7 @@ describe('design tokens the stylesheet asks for', () => {
     .map(name => readFileSync(join(here, '../src', String(name)), 'utf8'))
 
   const defined = new Set(
-    [TOKENS, CSS, COMPONENTS, ...inlineSources]
+    [TOKENS, CSS, COMPONENTS, ADMIN, ...inlineSources]
       .flatMap(source => [...source.matchAll(/(--[a-z0-9-]+)\s*:/gi)])
       .map(m => m[1])
   )

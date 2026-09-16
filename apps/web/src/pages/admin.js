@@ -6,6 +6,7 @@
 import { site } from '../shared/lib/site-config.js'
 import { navigate, refreshChrome } from '../shared/lib/shell.js'
 import { Charts } from '../shared/ui/charts.js'
+import { AP } from '../shared/ui/admin-ui.js'
 import { C } from '../shared/ui/components.js'
 import { I18n } from '../shared/i18n/i18n.js'
 import { Store } from '../shared/state/store.js'
@@ -47,17 +48,37 @@ export const PageAdmin = {
     users: 'Felhasználók'
   },
 
+  /*
+   * A rál csoportjai.
+   *
+   * Eddig négy csoport volt, és a „Rendszer" kilenc bejegyzést tartott — ott
+   * kötött ki minden, aminek nem volt jobb helye: mentés, biztonság,
+   * webhookok, témák, hírek, fejlesztési napló, auditállapot, beállítások,
+   * infrastruktúra. Kilenc egymás alatti sor nem csoport, hanem maradék.
+   *
+   * Öt csoport, KÉRDÉSEK szerint, nem technológia szerint:
+   *
+   *   Áttekintés   — megy az oldal?
+   *   Katalógus    — mi van rajta?
+   *   Közösség     — kik vannak rajta, és mit csinálnak?
+   *   Üzemeltetés  — mi romlott el, és mi védi?
+   *   Megjelenés   — hogy néz ki, és mi van bekapcsolva?
+   *
+   * Így a legnagyobb csoport hét bejegyzés, és mindegyikről egy mondatban
+   * meg lehet mondani, miért ott van.
+   */
   GROUPS: [
-    { key: 'insight', label: 'Betekintés' },
-    { key: 'people', label: 'Emberek' },
-    { key: 'content', label: 'Tartalom' },
-    { key: 'system', label: 'Rendszer' }
+    { key: 'insight', label: 'Áttekintés' },
+    { key: 'content', label: 'Katalógus' },
+    { key: 'people', label: 'Közösség' },
+    { key: 'ops', label: 'Üzemeltetés' },
+    { key: 'look', label: 'Megjelenés' }
   ],
 
   SECTIONS: [
     { key: 'overview', group: 'insight', label: 'Áttekintés', sub: 'A platform állapota és statisztikája', perm: 'admin.analytics.view', render: 'renderOverview', icon: '<path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>' },
-    { key: 'errors', group: 'insight', label: 'Hibák', sub: 'Csoportosított hibák és hívási láncok', perm: 'admin.analytics.view', render: 'renderErrors', icon: '<path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0"/>' },
-    { key: 'audit-log', group: 'insight', label: 'Napló', sub: 'Ki mit változtatott, és mikor', perm: 'admin.users.manage', render: 'renderAudit', icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6"/><path d="M9 11h2"/>' },
+    { key: 'errors', group: 'ops', label: 'Hibák', sub: 'Csoportosított hibák és hívási láncok', perm: 'admin.analytics.view', render: 'renderErrors', icon: '<path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0"/>' },
+    { key: 'audit-log', group: 'ops', label: 'Műveleti napló', sub: 'Ki mit változtatott, és mikor', perm: 'admin.users.manage', render: 'renderAudit', icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6"/><path d="M9 11h2"/>' },
     { key: 'analytics', group: 'insight', label: 'Látogatottság', sub: 'Kik jártak itt, és mit csináltak', perm: 'analytics.view', render: 'renderAnalytics', icon: '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>' },
 
     { key: 'users', group: 'people', label: 'Felhasználók', sub: 'Fiókok, felfüggesztések, kitiltások', perm: 'admin.users.manage', render: 'renderUsers', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
@@ -68,19 +89,19 @@ export const PageAdmin = {
     { key: 'metadata', group: 'content', label: 'Metaadatok', sub: 'AniList-lefedettség és szinkronfutások', perm: 'anime.edit', render: 'renderMetadata', icon: '<path d="M21 12a9 9 0 1 1-6.2-8.6"/><path d="M21 3v6h-6"/>' },
     { key: 'translations', group: 'content', label: 'Fordítások', sub: 'Magyar címek és leírások', perm: 'anime.edit', render: 'renderTranslations', icon: '<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>' },
 
-    { key: 'monitoring', group: 'system', label: 'Infrastruktúra', sub: 'A kiszolgáló állapota és szolgáltatásai', perm: 'system.metrics.view', render: 'renderMonitoring', icon: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>' },
-    { key: 'announcements', group: 'system', label: 'Hírek', sub: 'Az egész oldalra szóló üzenetek', perm: 'announcement.manage', render: 'renderAnnouncements', icon: '<path d="M3 11v3a1 1 0 0 0 1 1h3l4 4V6L7 10H4a1 1 0 0 0-1 1z"/><path d="M16 9a4 4 0 0 1 0 6"/><path d="M19.5 6a8 8 0 0 1 0 12"/>' },
-    { key: 'changelog', group: 'system', label: 'Fejlesztési napló', sub: 'Kiadások és a bennük lévő sorok', perm: 'changelog.manage', render: 'renderChangelog', icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>' },
-    { key: 'webhooks', group: 'system', label: 'Webhookok', sub: 'Kimenő integrációk', perm: 'admin.webhooks.manage', render: 'renderWebhooks', icon: '<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>' },
-    { key: 'themes', group: 'system', label: 'Témák', sub: 'Színek, amikből a látogatók választhatnak', perm: 'theme.publish', render: 'renderThemes', icon: '<circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2a10 10 0 0 0 0 20 2 2 0 0 0 2-2v-1a2 2 0 0 1 2-2h2a4 4 0 0 0 4-4 10 10 0 0 0-10-11"/>' },
-    { key: 'backups', group: 'system', label: 'Mentések', sub: 'Mentés, ellenőrzés, visszaállítás', perm: 'backup.manage', render: 'renderBackups', icon: '<path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/>' },
-    { key: 'security', group: 'system', label: 'Biztonság', sub: 'Biztonsági állapot és vészkapcsolók', perm: 'security.manage', render: 'renderSecurity', icon: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>' },
+    { key: 'monitoring', group: 'insight', label: 'Infrastruktúra', sub: 'A kiszolgáló állapota és szolgáltatásai', perm: 'system.metrics.view', render: 'renderMonitoring', icon: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>' },
+    { key: 'announcements', group: 'people', label: 'Hírek', sub: 'Az egész oldalra szóló üzenetek', perm: 'announcement.manage', render: 'renderAnnouncements', icon: '<path d="M3 11v3a1 1 0 0 0 1 1h3l4 4V6L7 10H4a1 1 0 0 0-1 1z"/><path d="M16 9a4 4 0 0 1 0 6"/><path d="M19.5 6a8 8 0 0 1 0 12"/>' },
+    { key: 'changelog', group: 'people', label: 'Fejlesztési napló', sub: 'Kiadások és a bennük lévő sorok', perm: 'changelog.manage', render: 'renderChangelog', icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>' },
+    { key: 'webhooks', group: 'ops', label: 'Webhookok', sub: 'Kimenő integrációk', perm: 'admin.webhooks.manage', render: 'renderWebhooks', icon: '<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>' },
+    { key: 'themes', group: 'look', label: 'Témák', sub: 'Színek, amikből a látogatók választhatnak', perm: 'theme.publish', render: 'renderThemes', icon: '<circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2a10 10 0 0 0 0 20 2 2 0 0 0 2-2v-1a2 2 0 0 1 2-2h2a4 4 0 0 0 4-4 10 10 0 0 0-10-11"/>' },
+    { key: 'backups', group: 'ops', label: 'Mentések', sub: 'Mentés, ellenőrzés, visszaállítás', perm: 'backup.manage', render: 'renderBackups', icon: '<path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/>' },
+    { key: 'security', group: 'ops', label: 'Biztonság', sub: 'Biztonsági állapot és vészkapcsolók', perm: 'security.manage', render: 'renderSecurity', icon: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>' },
     // The code audit, which is not the audit *log* in Insight above — that one
     // is what people did, this one is what is wrong with the software. It took
     // the shorter key because /admin/audit is the address it was specified at;
     // the log moved to audit-log. See YUME-AUDIT-0013.
-    { key: 'audit', group: 'system', label: 'Auditállapot', sub: 'A legutóbbi kódaudit észrevételei', perm: 'audit.read', render: 'renderAuditStatus', icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 11 2 2 4-4"/>' },
-    { key: 'config', group: 'system', label: 'Beállítások', sub: 'Funkciókapcsolók és beállítások', perm: 'settings.system', render: 'renderConfig', icon: '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>' }
+    { key: 'audit', group: 'ops', label: 'Kódaudit', sub: 'A legutóbbi kódátvizsgálás észrevételei', perm: 'audit.read', render: 'renderAuditStatus', icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 11 2 2 4-4"/>' },
+    { key: 'config', group: 'look', label: 'Beállítások', sub: 'Funkciókapcsolók és beállítások', perm: 'settings.system', render: 'renderConfig', icon: '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>' }
   ],
 
   /**
@@ -369,14 +390,27 @@ export const PageAdmin = {
       }
     }, [U.svg('<line x1="3" x2="21" y1="6" y2="6"/><line x1="3" x2="21" y1="12" y2="12"/><line x1="3" x2="21" y1="18" y2="18"/>', 18)])
 
+    /*
+     * Hol vagyok?
+     *
+     * Telefonon a rál egy fiók mögött van, tehát a képernyőn semmi nem mondta
+     * meg, melyik szakaszban vagy — a címet le kellett görgetni, és görgetés
+     * közben az is eltűnt. A felső sáv mostantól kiírja, és a `select()`
+     * frissíti. Asztali gépen rejtett: ott a rál mondja meg.
+     */
+    const barTitle = U.el('span', { class: 'admin-topbar-title', text: state.section.label })
+
     main.append(U.el('div', { class: 'admin-topbar' }, [
-      menuBtn,
-      this.sectionJump(available, section => select(section)),
-      U.el('div', { class: 'admin-topbar-spacer' }),
-      this.notifBell(),
-      this.accountChip(perms),
-      U.el('a', { class: 'admin-topbar-back', href: '#/home', title: 'Vissza az oldalra' }, [
-        U.svg('<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>', 16)
+      U.el('div', { class: 'admin-topbar-inner' }, [
+        menuBtn,
+        barTitle,
+        this.sectionJump(available, section => select(section)),
+        U.el('div', { class: 'admin-topbar-spacer' }),
+        this.notifBell(),
+        this.accountChip(perms),
+        U.el('a', { class: 'admin-topbar-back', href: '#/home', title: 'Vissza az oldalra' }, [
+          U.svg('<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>', 16)
+        ])
       ])
     ]))
 
@@ -392,6 +426,7 @@ export const PageAdmin = {
 
     const select = s => {
       state.section = s
+      barTitle.textContent = s.label
       Object.values(navItems).forEach(i => i.classList.remove('active'))
       navItems[s.key]?.classList.add('active')
       closeDrawer() // picking a section is the drawer's whole purpose
@@ -1461,34 +1496,43 @@ export const PageAdmin = {
           YumeAPI.admin.security(),
           YumeAPI.admin.posture().catch(e => ({ error: e }))
         ])
-        content.replaceChildren()
+        const stack = AP.stack([])
+        content.replaceChildren(stack)
 
-        // The state of the instance, first and unmissable. An operator opening
-        // this screen mid-incident needs to know what is already engaged
-        // before they consider engaging anything else.
-        content.append(U.el('div', { class: 'sec-state ' + (engaged.length ? 'engaged' : 'normal') }, [
-          U.el('div', { class: 'sec-state-title', text: engaged.length ? 'Vezérlő bekapcsolva' : 'Normál működés' }),
-          U.el('div', {
-            class: 'sec-state-sub',
-            text: engaged.length
-              ? engaged.map(k => controls.find(c => c.key === k)?.label ?? k).join(' · ')
-              : 'Semmi nincs visszatartva.'
-          })
-        ]))
+        /*
+         * Mi van MOST — a lap legelső eleme.
+         *
+         * Aki ezt a képernyőt incidens közben nyitja meg, annak először azt
+         * kell megtudnia, mi van már bekapcsolva, mielőtt bármit
+         * bekapcsolna. Eddig ez egy színes doboz volt; most egy mondat és
+         * annyi címke, ahány vezérlő él.
+         */
+        stack.append(AP.card({
+          cls: 'ap-status',
+          body: [
+            U.el('div', { class: 'ap-row-title' }, [
+              document.createTextNode(engaged.length ? 'Vezérlő bekapcsolva' : 'Normál működés'),
+              ...(engaged.length
+                ? engaged.map(k => AP.tag(controls.find(c => c.key === k)?.label ?? k, 'warn'))
+                : [AP.tag('semmi nincs visszatartva', 'ok')])
+            ]),
+            U.el('div', {
+              class: 'ap-row-meta',
+              text: `${context?.sessions ?? 0} élő munkamenet · ${context?.hooks ?? 0} bekapcsolt webhook · ` +
+                `${context?.runs ?? 0} futó metaadat-passz`
+            })
+          ]
+        }))
 
-        content.append(U.el('div', { class: 'sec-context' }, [
-          U.el('span', { text: `${context?.sessions ?? 0} élő munkamenet` }),
-          U.el('span', { text: `${context?.hooks ?? 0} bekapcsolt webhook` }),
-          U.el('span', { text: `${context?.runs ?? 0} futó metaadat-passz` })
-        ]))
+        stack.append(this.postureBlock(posture))
 
-        content.append(this.postureBlock(posture))
+        stack.append(AP.section('Vezérlők', {
+          note: 'Mindegyik azonnal hat, és mindegyik indoklást kér'
+        }))
+        for (const c of controls) stack.append(this.securityControl(c, load))
 
-        content.append(U.el('h3', { class: 'sec-heading', text: 'Vezérlők' }))
-        for (const c of controls) content.append(this.securityControl(c, load))
-
-        content.append(this.rateLimitCard(rateLimits ?? [], load))
-        content.append(this.revokeAllCard(load))
+        stack.append(this.rateLimitCard(rateLimits ?? [], load))
+        stack.append(this.revokeAllCard(load))
       } catch (e) {
         content.replaceChildren(P.errorState(e.message))
       }
@@ -1579,64 +1623,85 @@ export const PageAdmin = {
    * thing instead of trusting a colour. That is the whole difference between
    * this and a number somebody made up.
    */
+  /** A verdikt magyarul. Az API angol kulcsot ad; a képernyőn nem angol. */
+  VERDICT: {
+    pass: ['rendben', 'ok'],
+    warn: ['figyelmeztetés', 'warn'],
+    fail: ['hibás', 'bad'],
+    unknown: ['nem tudjuk', 'bad'],
+    skipped: ['nem alkalmazható', '']
+  },
+
+  /**
+   * A biztonsági állapot.
+   *
+   * A pontszám önmagában a legmagabiztosabb hazugság, amit egy panel mondhat:
+   * az operátor elolvassa, hogy 94, és abbahagyja a nézelődést. Ezért a szám
+   * mellett mindig ott áll, MIBŐL jött, és minden ellenőrzés kiírja, mit
+   * nézett meg — hogy utána lehessen nézni ugyanazt.
+   */
   postureBlock (posture) {
     if (posture?.error) {
-      return U.el('div', { class: 'sec-posture' }, [
-        U.el('h3', { class: 'sec-heading', text: 'Állapot' }),
-        C.errorState(posture.error)
-      ])
+      return AP.stack([AP.section('Állapot'), C.errorState(posture.error)])
     }
     const { checks = [], summary = {}, generatedAt } = posture ?? {}
-    const tone = summary.fail ? 'bad' : summary.warn ? 'warn' : 'good'
 
-    const head = U.el('div', { class: 'sec-score ' + tone }, [
-      U.el('div', { class: 'sec-score-value', text: summary.score === null ? '—' : `${summary.score}%` }),
-      U.el('div', { class: 'sec-score-side' }, [
-        U.el('div', { class: 'sec-score-counts' }, [
-          U.el('span', { class: 'tone-green', text: `${summary.pass ?? 0} rendben` }),
-          summary.warn ? U.el('span', { class: 'tone-amber', text: `${summary.warn} figyelmeztetés` }) : null,
-          summary.fail ? U.el('span', { class: 'tone-red', text: `${summary.fail} hibás` }) : null,
-          summary.unknown ? U.el('span', { class: 'tone-red', text: `${summary.unknown} ismeretlen` }) : null,
-          summary.skipped ? U.el('span', { text: `${summary.skipped} nem alkalmazható` }) : null
-        ]),
-        // Said out loud, because the number is only worth what is behind it.
-        U.el('p', {
-          class: 'sec-score-note',
-          text: `A teljesített súly az alkalmazható súlyhoz mérve, ${checks.length} ellenőrzésen. Ami itt nem értelmezhető, az nem számít bele.`
-        })
-      ])
-    ])
+    const counts = [
+      summary.pass ? AP.tag(`${summary.pass} rendben`, 'ok') : null,
+      summary.warn ? AP.tag(`${summary.warn} figyelmeztetés`, 'warn') : null,
+      summary.fail ? AP.tag(`${summary.fail} hibás`, 'bad') : null,
+      summary.unknown ? AP.tag(`${summary.unknown} nem tudjuk`, 'bad') : null,
+      summary.skipped ? AP.tag(`${summary.skipped} nem alkalmazható`) : null
+    ].filter(Boolean)
+
+    const head = AP.card({
+      body: [
+        U.el('div', { class: 'ap-posture' }, [
+          U.el('div', { class: 'ap-posture-score' }, [
+            U.el('div', { class: 'ap-stat-value', text: summary.score === null ? '—' : `${summary.score}%` }),
+            U.el('div', { class: 'ap-stat-label', text: 'biztonsági pontszám' })
+          ]),
+          U.el('div', { class: 'ap-posture-side' }, [
+            U.el('div', { class: 'ap-posture-counts' }, counts),
+            U.el('p', {
+              class: 'ap-note',
+              text: `A teljesített súly az alkalmazható súlyhoz mérve, ${checks.length} ellenőrzésen. ` +
+                'Ami itt nem értelmezhető, az nem számít bele — se fel, se le.'
+            })
+          ])
+        ])
+      ]
+    })
+
+    // Csoportonként, és a csoporton belül a baj elöl: ezért nyitja meg valaki
+    // ezt a lapot.
+    const order = { fail: 0, unknown: 1, warn: 2, pass: 3, skipped: 4 }
+    const sorted = [...checks].sort((a, b) =>
+      a.group.localeCompare(b.group) || (order[a.verdict] - order[b.verdict]))
 
     const rows = []
     let group = null
-    // Failures first within each group: the reason somebody opened this page.
-    const order = { fail: 0, unknown: 1, warn: 2, pass: 3, skipped: 4 }
-    for (const c of [...checks].sort((a, b) =>
-      a.group.localeCompare(b.group) || (order[a.verdict] - order[b.verdict]))) {
-      if (c.group !== group) {
-        group = c.group
-        rows.push(U.el('div', { class: 'sec-check-group', text: group }))
+    for (const check of sorted) {
+      if (check.group !== group) {
+        group = check.group
+        rows.push(AP.section(group))
       }
-      rows.push(U.el('div', { class: 'sec-check v-' + c.verdict }, [
-        U.el('span', { class: 'sec-check-verdict', text: c.verdict }),
-        U.el('div', { class: 'sec-check-body' }, [
-          U.el('div', { class: 'sec-check-title', text: c.title }),
-          U.el('div', { class: 'sec-check-found', text: c.found }),
-          c.remedy ? U.el('div', { class: 'sec-check-remedy', text: c.remedy }) : null,
-          U.el('code', { class: 'sec-check-looks', text: c.looksAt, title: c.looksAt })
-        ])
-      ]))
+      const [word, tone] = this.VERDICT[check.verdict] ?? [check.verdict, '']
+      rows.push(AP.row({
+        lead: U.el('span', { class: 'ap-stat-dot ' + (tone || '') }),
+        title: check.title,
+        tags: [AP.tag(word, tone)],
+        meta: [check.found, check.remedy].filter(Boolean).join(' — '),
+        trail: [U.el('code', { class: 'ap-row-value', text: check.looksAt, title: check.looksAt })]
+      }))
     }
 
-    return U.el('div', { class: 'sec-posture' }, [
-      U.el('h3', { class: 'sec-heading' }, [
-        document.createTextNode('Állapot'),
-        generatedAt
-          ? U.el('span', { class: 'sec-heading-when', text: U.relTime(new Date(generatedAt)) })
-          : null
-      ]),
+    return AP.stack([
+      AP.section('Állapot', {
+        note: generatedAt ? 'Számolva ' + U.relTime(new Date(generatedAt)) : undefined
+      }),
       head,
-      U.el('div', { class: 'sec-checks' }, rows)
+      ...rows
     ])
   },
 
@@ -2798,7 +2863,23 @@ export const PageAdmin = {
 
   // ---- Infrastructure: VPS health & service status ----
   LEVEL_DOT: { green: '🟢', yellow: '🟡', red: '🔴', not_configured: '⚪' },
-  LEVEL_WORD: { green: 'Healthy', yellow: 'Warning', red: 'Critical', not_configured: 'Not configured' },
+  LEVEL_WORD: { green: 'Rendben', yellow: 'Figyelmeztetés', red: 'Kritikus', not_configured: 'Nincs beállítva' },
+
+  /*
+   * A szonda saját magyarázata.
+   *
+   * A kiszolgáló angolul adja vissza (`probes.ts`), és ez helyes is: az API
+   * válasza nem felület. A fordítás itt történik, ahol a szöveg képernyőre
+   * kerül — amit nem ismerünk, azt változatlanul kiírjuk, mert egy ismeretlen
+   * hibaüzenet angolul is több, mint semmi.
+   */
+  PROBE_DETAIL: {
+    'not configured': 'nincs beállítva',
+    'unexpected PING reply': 'váratlan PING-válasz',
+    'cluster red': 'a fürt piros',
+    'cluster yellow': 'a fürt sárga',
+    'no metrics collected yet': 'még nincs mérés'
+  },
 
   fmtBytes (bytes) {
     if (bytes === null || bytes === undefined) return '—'
@@ -3233,168 +3314,221 @@ export const PageAdmin = {
     state.timer = setInterval(load, 30_000)
   },
 
+  /**
+   * Az Infrastruktúra képernyő.
+   *
+   * Ez volt a panel legzsúfoltabb lapja: tizenegy különböző
+   * betűméret–vastagság páros egyetlen képernyőn, mert öt saját
+   * komponenscsalád (`mon-card`, `mon-service`, `mon-dep`, `mon-alert`,
+   * `mon-trend`) élt egymás mellett, mindegyik a maga méreteivel.
+   *
+   * Most öt szakasz, mind ugyanabból a készletből: állapot, mérőszámok,
+   * szolgáltatások, függőségek, riasztások. A sorrend nem véletlen — ez az a
+   * sorrend, ahogy egy incidensben végigmegy rajta az ember: „baj van?",
+   * „mi fogyott el?", „mi nem válaszol?", „az mit visz magával?", „mióta?".
+   */
   paintMonitoring (content, data, state) {
     const m = data.metrics ?? {}
     const value = key => m[key]?.value ?? null
     const level = key => m[key]?.level ?? null
-    content.replaceChildren()
-
-    // ---- overall banner ----
-    const banner = U.el('div', { class: 'mon-banner mon-' + data.level }, [
-      U.el('span', { class: 'mon-banner-dot', text: this.LEVEL_DOT[data.level] ?? '⚪' }),
-      U.el('div', { style: 'flex-grow:1;' }, [
-        U.el('div', { class: 'mon-banner-title', text: this.LEVEL_WORD[data.level] ?? 'Unknown' }),
-        U.el('div', {
-          class: 'mon-banner-sub',
-          text: data.stale
-            ? 'No fresh samples — the monitor worker looks stopped. Values below may be out of date.'
-            : `Last collected ${data.collectedAt ? U.relTime(new Date(data.collectedAt)) : 'never'}`
-        })
-      ])
-    ])
-    content.append(banner)
-
-    // ---- metric cards ----
-    const card = (label, big, sub, lvl) => U.el('div', { class: 'mon-card' + (lvl ? ' mon-' + lvl : '') }, [
-      U.el('div', { class: 'mon-card-head' }, [
-        U.el('span', { class: 'mon-card-label', text: label }),
-        lvl ? U.el('span', { class: 'mon-card-dot', text: this.LEVEL_DOT[lvl] }) : null
-      ]),
-      U.el('div', { class: 'mon-card-value', text: big }),
-      sub ? U.el('div', { class: 'mon-card-sub', text: sub }) : null
-    ])
+    // A kiszolgáló zöld/sárga/piros szavakat ad; a készlet ok/warn/bad pöttyöt.
+    const tone = lvl => ({ green: 'ok', yellow: 'warn', red: 'bad' })[lvl] ?? null
 
     const pct = v => v === null ? '—' : v.toFixed(1) + '%'
     const ms = v => v === null ? '—' : Math.round(v) + ' ms'
 
-    const grid = U.el('div', { class: 'mon-grid' }, [
-      card('CPU', pct(value('cpu.usage_pct')),
-        `load ${(value('cpu.load1') ?? 0).toFixed(2)} · ${(value('cpu.load_per_core') ?? 0).toFixed(2)}/core`,
-        level('cpu.usage_pct')),
-      card('RAM', pct(value('mem.used_pct')),
-        `${this.fmtBytes(value('mem.used_bytes'))} / ${this.fmtBytes(value('mem.total_bytes'))}`,
-        level('mem.used_pct')),
-      card('Disk', pct(value('disk.used_pct')),
-        `${this.fmtBytes(value('disk.used_bytes'))} / ${this.fmtBytes(value('disk.total_bytes'))}`,
-        level('disk.used_pct')),
-      card('Swap', value('swap.used_pct') === null ? '—' : pct(value('swap.used_pct')),
-        value('swap.used_pct') === 0 ? 'none in use' : 'of configured swap', level('swap.used_pct')),
-      card('Network', this.fmtBps(value('net.rx_bps')),
-        `↓ ${this.fmtBps(value('net.rx_bps'))} · ↑ ${this.fmtBps(value('net.tx_bps'))}`, level('net.drop_pct')),
-      card('Net latency', ms(value('net.latency_ms')), 'TCP connect RTT', level('net.latency_ms')),
-      card('API latency', ms(value('api.latency_ms')), 'self-probe of /v1/health', level('api.latency_ms')),
-      card('DB latency', ms(value('db.latency_ms')), 'round-trip for SELECT 1', level('db.latency_ms')),
-      card('Disk I/O', this.fmtBps((value('disk.read_bps') ?? 0) + (value('disk.write_bps') ?? 0)),
-        `${Math.round(value('disk.iops') ?? 0)} IOPS · await ${ms(value('disk.await_ms'))}`, level('disk.await_ms')),
-      card('Queue', String(Math.round(value('queue.pending') ?? 0)),
-        `${Math.round(value('queue.dead') ?? 0)} dead letters`, level('queue.pending')),
-      card('Uptime', this.fmtUptime(value('host.uptime_sec')), 'since last host boot', null)
-    ])
-    content.append(grid)
+    const stack = AP.stack([])
+    content.replaceChildren(stack)
 
-    // ---- services ----
-    content.append(U.el('h2', { class: 'detail-section-title', text: 'Szolgáltatások' }))
-    const services = U.el('div', { class: 'mon-services' })
-    for (const s of data.services ?? []) {
-      services.append(U.el('div', { class: 'mon-service mon-' + s.status }, [
-        U.el('span', { class: 'mon-service-dot', text: this.LEVEL_DOT[s.status] ?? '⚪' }),
-        U.el('div', { class: 'mon-service-main' }, [
-          U.el('div', { class: 'mon-service-name', text: s.service }),
-          U.el('div', { class: 'mon-service-sub', text: s.detail ?? this.LEVEL_WORD[s.status] ?? s.status })
-        ]),
-        U.el('span', { class: 'mon-service-latency', text: s.latency_ms === null || s.latency_ms === undefined ? '' : Math.round(s.latency_ms) + ' ms' })
-      ]))
-    }
-    content.append(services)
+    // ---- 1. baj van? ----
+    const overall = tone(data.level)
+    stack.append(AP.card({
+      cls: 'ap-status',
+      body: [
+        U.el('div', { class: 'ap-row', style: 'border:none;background:none;padding:0;' }, [
+          U.el('div', { class: 'ap-row-body' }, [
+            U.el('div', { class: 'ap-row-title' }, [
+              document.createTextNode(this.LEVEL_WORD[data.level] ?? 'Ismeretlen'),
+              AP.tag(data.stale ? 'elavult mérés' : 'élő', data.stale ? 'warn' : overall ?? 'info')
+            ]),
+            U.el('div', {
+              class: 'ap-row-meta',
+              text: data.stale
+                ? 'Nincs friss minta — a figyelő feladat megállt. A lenti értékek elavultak lehetnek.'
+                : `Utolsó mérés ${data.collectedAt ? U.relTime(new Date(data.collectedAt)) : 'soha'}.`
+            })
+          ])
+        ])
+      ]
+    }))
 
-    // ---- dependency map: what a red service actually breaks ----
-    content.append(U.el('h2', { class: 'detail-section-title', text: 'Függőségek' }))
-    const statusOf = Object.fromEntries((data.services ?? []).map(s => [s.service, s.status]))
-    const deps = U.el('div', { class: 'mon-deps' })
-    for (const d of data.dependencies ?? []) {
-      const st = statusOf[d.service] ?? 'not_configured'
-      deps.append(U.el('div', { class: 'mon-dep' }, [
-        U.el('div', { class: 'mon-dep-head' }, [
-          U.el('span', { text: this.LEVEL_DOT[st] ?? '⚪' }),
-          U.el('b', { text: d.service }),
-          U.el('span', { class: 'mon-dep-tag' + (d.required ? ' mon-dep-required' : ''), text: d.required ? 'required' : 'optional' })
-        ]),
-        U.el('ul', { class: 'mon-dep-list' }, d.provides.map(p => U.el('li', { text: p })))
-      ]))
-    }
-    content.append(deps)
+    // ---- 2. mi fogyott el? ----
+    stack.append(AP.section('Erőforrások', { note: 'A gép állapota a legutóbbi mintavételkor' }))
+    stack.append(AP.grid([
+      AP.stat({
+        label: 'Processzor',
+        value: pct(value('cpu.usage_pct')),
+        meta: `terhelés ${(value('cpu.load1') ?? 0).toFixed(2)} · ${(value('cpu.load_per_core') ?? 0).toFixed(2)}/mag`,
+        tone: tone(level('cpu.usage_pct'))
+      }),
+      AP.stat({
+        label: 'Memória',
+        value: pct(value('mem.used_pct')),
+        meta: `${this.fmtBytes(value('mem.used_bytes'))} / ${this.fmtBytes(value('mem.total_bytes'))}`,
+        tone: tone(level('mem.used_pct'))
+      }),
+      AP.stat({
+        label: 'Lemez',
+        value: pct(value('disk.used_pct')),
+        meta: `${this.fmtBytes(value('disk.used_bytes'))} / ${this.fmtBytes(value('disk.total_bytes'))}`,
+        tone: tone(level('disk.used_pct'))
+      }),
+      AP.stat({
+        label: 'Lapozófájl',
+        value: value('swap.used_pct') === null ? '—' : pct(value('swap.used_pct')),
+        // Nulla lapozófájl-használat a jó állapot, és ezt ki is mondjuk: egy
+        // „0.0%" magában úgy néz ki, mintha hiányozna valami.
+        meta: value('swap.used_pct') === 0 ? 'nincs használatban — így a jó' : 'a beállított méretből',
+        tone: tone(level('swap.used_pct'))
+      }),
+      AP.stat({
+        label: 'Hálózat',
+        value: this.fmtBps(value('net.rx_bps')),
+        meta: `↓ ${this.fmtBps(value('net.rx_bps'))} · ↑ ${this.fmtBps(value('net.tx_bps'))}`,
+        tone: tone(level('net.drop_pct'))
+      }),
+      AP.stat({
+        label: 'Hálózati késleltetés',
+        value: ms(value('net.latency_ms')),
+        meta: 'TCP-kapcsolat körbefordulása',
+        tone: tone(level('net.latency_ms'))
+      }),
+      AP.stat({
+        label: 'API-késleltetés',
+        value: ms(value('api.latency_ms')),
+        meta: 'a /v1/health saját mérése',
+        tone: tone(level('api.latency_ms'))
+      }),
+      AP.stat({
+        label: 'Adatbázis-késleltetés',
+        value: ms(value('db.latency_ms')),
+        meta: 'egy SELECT 1 körbefordulása',
+        tone: tone(level('db.latency_ms'))
+      }),
+      AP.stat({
+        label: 'Lemez I/O',
+        value: this.fmtBps((value('disk.read_bps') ?? 0) + (value('disk.write_bps') ?? 0)),
+        meta: `${Math.round(value('disk.iops') ?? 0)} IOPS · várakozás ${ms(value('disk.await_ms'))}`,
+        tone: tone(level('disk.await_ms'))
+      }),
+      AP.stat({
+        label: 'Feladatsor',
+        value: String(Math.round(value('queue.pending') ?? 0)),
+        meta: `${Math.round(value('queue.dead') ?? 0)} elhasalt feladat`,
+        tone: tone(level('queue.pending'))
+      }),
+      AP.stat({
+        label: 'Üzemidő',
+        value: this.fmtUptime(value('host.uptime_sec')),
+        meta: 'az utolsó újraindítás óta'
+      })
+    ], { col: '13.5rem', stats: true }))
 
-    // ---- sustained alerts ----
-    const alertsBox = U.el('div')
-    content.append(alertsBox)
+    // ---- 3. mi nem válaszol? ----
+    stack.append(AP.section('Szolgáltatások', { note: 'Amit a kiszolgáló percenként megkérdez' }))
+    stack.append(AP.list((data.services ?? []).map(svc => AP.row({
+      lead: U.el('span', { class: 'ap-stat-dot ' + (tone(svc.status) ?? '') }),
+      title: svc.service,
+      meta: (svc.detail && (this.PROBE_DETAIL[svc.detail] ?? svc.detail)) ?? this.LEVEL_WORD[svc.status] ?? svc.status,
+      value: svc.latency_ms === null || svc.latency_ms === undefined ? null : Math.round(svc.latency_ms) + ' ms'
+    }))))
+
+    // ---- 4. az mit visz magával? ----
+    stack.append(AP.section('Függőségek', { note: 'Mi áll meg, ha egy szolgáltatás elesik' }))
+    const statusOf = Object.fromEntries((data.services ?? []).map(svc => [svc.service, svc.status]))
+    stack.append(AP.grid((data.dependencies ?? []).map(dep => {
+      const st = statusOf[dep.service] ?? 'not_configured'
+      return AP.card({
+        title: dep.service,
+        actions: [
+          AP.tag(dep.required ? 'kötelező' : 'választható', dep.required ? 'accent' : ''),
+          AP.tag(this.LEVEL_WORD[st] ?? st, tone(st) ?? '')
+        ],
+        body: [U.el('ul', { class: 'ap-bullets' }, dep.provides.map(what => U.el('li', { text: what })))]
+      })
+    }), { col: '18rem' }))
+
+    // ---- 5. mióta? ----
+    const alertsBox = U.el('div', { class: 'ap-stack' })
+    stack.append(alertsBox)
     YumeAPI.admin.monitoring.alerts().then(({ active, history }) => {
-      alertsBox.replaceChildren()
-      alertsBox.append(U.el('h2', { class: 'detail-section-title', text: 'Riasztások' }))
+      alertsBox.replaceChildren(AP.section('Riasztások', {
+        note: 'Egy küszöb átlépése önmagában még nem riasztás — tartósnak kell lennie'
+      }))
       if (!active.length) {
-        alertsBox.append(U.el('div', { class: 'mon-alert-none' }, [
-          U.el('span', { text: '🟢' }),
-          U.el('span', { text: history.length ? 'Nothing firing right now.' : 'Nothing firing. No alerts recorded yet.' })
-        ]))
+        alertsBox.append(AP.empty(
+          'Most semmi nem szól',
+          history.length
+            ? 'Volt már riasztás ezen a példányon; a legutóbbiak lent.'
+            : 'Eddig egyetlen riasztás sem futott le.'))
       }
       for (const a of active) {
-        alertsBox.append(U.el('div', { class: 'mon-alert mon-' + (a.severity === 'critical' ? 'red' : 'yellow') }, [
-          U.el('span', { class: 'mon-alert-dot', text: a.severity === 'critical' ? '🔴' : '🟡' }),
-          U.el('div', { class: 'mon-alert-main' }, [
-            U.el('div', { class: 'mon-alert-subject', text: a.subject }),
-            U.el('div', {
-              class: 'mon-alert-sub',
-              text: [
-                a.value !== null && a.value !== undefined ? `value ${Number(a.value).toFixed(1)}` : null,
-                a.threshold !== null && a.threshold !== undefined ? `threshold ${Number(a.threshold)}` : null,
-                a.detail
-              ].filter(Boolean).join(' · ') || a.severity
-            })
-          ]),
-          U.el('span', { class: 'mon-alert-since', text: 'since ' + U.relTime(new Date(a.started_at)) })
-        ]))
+        alertsBox.append(AP.row({
+          lead: U.el('span', { class: 'ap-stat-dot ' + (a.severity === 'critical' ? 'bad' : 'warn') }),
+          title: a.subject,
+          tags: [AP.tag(a.severity === 'critical' ? 'kritikus' : 'figyelmeztetés', a.severity === 'critical' ? 'bad' : 'warn')],
+          meta: [
+            a.value !== null && a.value !== undefined ? `mért érték ${Number(a.value).toFixed(1)}` : null,
+            a.threshold !== null && a.threshold !== undefined ? `küszöb ${Number(a.threshold)}` : null,
+            a.detail
+          ].filter(Boolean).join(' · ') || undefined,
+          value: U.relTime(new Date(a.started_at)) + ' óta'
+        }))
       }
       const resolved = history.filter(h => h.status === 'resolved').slice(0, 5)
       if (resolved.length) {
-        alertsBox.append(U.el('div', { class: 'mon-alert-history' }, [
-          U.el('div', { class: 'mon-trend-label', text: 'Nemrég megoldva' }),
-          ...resolved.map(h => U.el('div', { class: 'mon-alert-past' }, [
-            U.el('span', { text: h.subject }),
-            U.el('span', { class: 'mon-alert-since', text: h.resolved_at ? U.relTime(new Date(h.resolved_at)) : '' })
-          ]))
-        ]))
+        alertsBox.append(AP.section('Nemrég megoldva'))
+        alertsBox.append(AP.list(resolved.map(h => AP.row({
+          title: h.subject,
+          value: h.resolved_at ? U.relTime(new Date(h.resolved_at)) : ''
+        }))))
       }
     }).catch(() => alertsBox.replaceChildren())
 
-    // ---- components ----
+    // ---- komponensek és diagnosztika ----
     const compBox = U.el('div')
-    content.append(compBox)
+    stack.append(compBox)
     this.renderComponents(compBox)
 
-    // ---- diagnostics ----
     const diagBox = U.el('div')
-    content.append(diagBox)
+    stack.append(diagBox)
     this.renderDiagnostics(diagBox)
 
-    // ---- history sparklines ----
-    content.append(U.el('h2', { class: 'detail-section-title', text: 'Utolsó 24 óra' }))
-    const trends = U.el('div', { class: 'mon-trends' })
-    content.append(trends)
-    for (const [metric, label, max] of [['cpu.usage_pct', 'CPU %', 100], ['mem.used_pct', 'RAM %', 100], ['api.latency_ms', 'API latency (ms)', null], ['db.latency_ms', 'DB latency (ms)', null]]) {
-      const box = U.el('div', { class: 'mon-trend' }, [
-        U.el('div', { class: 'mon-trend-label', text: label }),
-        P.spinner()
-      ])
+    // ---- 24 óra ----
+    stack.append(AP.section('Utolsó 24 óra', { note: 'Óránkénti összesítőből' }))
+    const trends = AP.grid([], { col: '16rem' })
+    stack.append(trends)
+    for (const [metric, label, max] of [
+      ['cpu.usage_pct', 'Processzor %', 100],
+      ['mem.used_pct', 'Memória %', 100],
+      ['api.latency_ms', 'API-késleltetés (ms)', null],
+      ['db.latency_ms', 'Adatbázis-késleltetés (ms)', null]
+    ]) {
+      const box = AP.card({ title: label, body: [P.spinner()] })
       trends.append(box)
       YumeAPI.admin.monitoring.history(metric, 24).then(res => {
-        const values = (res.points ?? []).map(p => p.value)
-        box.replaceChildren(
-          U.el('div', { class: 'mon-trend-label', text: label }),
-          values.length
+        const values = (res.points ?? []).map(point => point.value)
+        box.replaceChildren(...AP.card({
+          title: label,
+          body: [values.length
             ? Charts.sparkline(values, { label, max })
-            : U.el('div', { class: 'mon-trend-empty', text: 'még nincs mérés' })
-        )
+            : U.el('div', { class: 'ap-stat-meta', text: 'még nincs mérés' })]
+        }).childNodes)
       }).catch(() => {
-        box.replaceChildren(U.el('div', { class: 'mon-trend-label', text: label }), U.el('div', { class: 'mon-trend-empty', text: 'nem elérhető' }))
+        box.replaceChildren(...AP.card({
+          title: label,
+          body: [U.el('div', { class: 'ap-stat-meta', text: 'nem elérhető' })]
+        }).childNodes)
       })
     }
   },
@@ -3653,27 +3787,31 @@ export const PageAdmin = {
           title: `${Math.round(this.DASH_REFRESH_MS / 1000)} másodpercenként frissül`
         }, [
           U.el('span', { class: 'dash-live-dot' }),
-          document.createTextNode(state.updatedAt ? 'Updated ' + U.relTime(state.updatedAt) : 'Live')
+          document.createTextNode(state.updatedAt ? 'Frissítve ' + U.relTime(state.updatedAt) : 'Élő')
         ])
       )
     }
 
     // ---- the numbers ----
-    const grid = U.el('div', { class: 'dash-kpis' })
-    for (const kpi of data.kpis) {
-      const [tone, icon] = this.KPI_ART[kpi.key] ?? ['blue', '<circle cx="12" cy="12" r="10"/>']
-      grid.append(U.el('div', { class: 'dash-kpi' }, [
-        U.el('span', { class: 'dash-kpi-icon tone-' + tone }, [U.svg(icon, 17)]),
-        U.el('div', { class: 'dash-kpi-body' }, [
-          U.el('div', { class: 'dash-kpi-value', text: this.kpiValue(kpi) }),
-          U.el('div', { class: 'dash-kpi-label', text: kpi.label }),
-          this.kpiDelta(kpi)
-        ])
-      ]))
-    }
-    content.append(grid)
+    /*
+     * A mérőszámok.
+     *
+     * Ikon nélkül. Eddig minden kártya bal szélén ült egy színes ikoncsempe,
+     * és tizenkét kártyánál tizenkét csempe többet mondott magáról, mint a
+     * számokról — miközben egyik sem árult el semmit, amit a címke ne
+     * mondana el pontosabban.
+     */
+    content.append(AP.grid(data.kpis.map(kpi => U.el('div', { class: 'ap-card' }, [
+      U.el('div', { class: 'ap-stat' }, [
+        U.el('div', { class: 'ap-stat-label', text: kpi.label }),
+        U.el('div', { class: 'ap-stat-value', text: this.kpiValue(kpi) }),
+        this.kpiDelta(kpi)
+      ])
+    ])), { col: '13.5rem' }))
 
     // ---- what moved ----
+    content.append(AP.section('Mi mozdult', { note: 'Napi bontásban, a fenti időszakra' }))
+
     const labels = data.series.users.map(row => this.dayLabel(row.day))
     const charts = U.el('div', { class: 'dash-charts' })
 
@@ -3681,15 +3819,15 @@ export const PageAdmin = {
       title: 'Felhasználói aktivitás',
       sub: 'Napi belépések',
       body: Charts.lines(
-        [{ name: 'Active', values: data.series.users.map(r => Number(r.active)), color: 'var(--accent)' }],
+        [{ name: 'Aktív', values: data.series.users.map(r => Number(r.active)), color: 'var(--accent)' }],
         { labels, label: 'Napi aktív felhasználók', height: 190 }
       )
     }))
 
     const contentSeries = [
       { name: 'Anime', values: data.series.content.map(r => Number(r.anime)), color: 'var(--accent)' },
-      { name: 'Episodes', values: data.series.content.map(r => Number(r.episodes)), color: 'var(--blue-400)' },
-      { name: 'Comments', values: data.series.content.map(r => Number(r.comments)), color: 'var(--green-400)' }
+      { name: 'Epizód', values: data.series.content.map(r => Number(r.episodes)), color: 'var(--blue-400)' },
+      { name: 'Hozzászólás', values: data.series.content.map(r => Number(r.comments)), color: 'var(--green-400)' }
     ]
     charts.append(this.dashPanel({
       title: 'Tartalmi aktivitás',
@@ -3702,6 +3840,8 @@ export const PageAdmin = {
     content.append(charts)
 
     // ---- what is happening ----
+    content.append(AP.section('Mi kér figyelmet', { note: 'Hibák, friss műveletek, háttérfeladatok' }))
+
     const lower = U.el('div', { class: 'dash-lower' })
     lower.append(this.errorPanel(data, reload))
     lower.append(this.activityPanel(data.activity))
@@ -3760,36 +3900,38 @@ export const PageAdmin = {
    */
   kpiDelta (kpi) {
     if (kpi.compare === null) {
-      return U.el('div', { class: 'dash-kpi-delta dash-kpi-flat', text: 'jelenlegi érték' })
+      return U.el('div', { class: 'ap-stat-delta flat', text: 'jelenlegi állás' })
     }
     if (kpi.delta === null) {
-      // previous was zero and now it is not: a percentage would be infinite.
-      return U.el('div', { class: 'dash-kpi-delta dash-kpi-up', text: `new — none in the ${kpi.compare}` })
+      // Az előző időszakban nulla volt, most nem: a százalék végtelen lenne.
+      return U.el('div', { class: 'ap-stat-delta up', text: `új — ${kpi.compare} alatt egy sem` })
     }
     const dir = kpi.delta > 0 ? 'up' : kpi.delta < 0 ? 'down' : 'flat'
     const arrow = dir === 'up' ? '↑' : dir === 'down' ? '↓' : '→'
-    return U.el('div', { class: 'dash-kpi-delta dash-kpi-' + dir }, [
-      U.el('span', { class: 'dash-kpi-arrow', text: `${arrow} ${Math.abs(kpi.delta)}%` }),
-      U.el('span', { class: 'dash-kpi-compare', text: 'vs ' + kpi.compare })
+    return U.el('div', { class: 'ap-stat-delta ' + dir }, [
+      U.el('span', { text: `${arrow} ${Math.abs(kpi.delta)}%` }),
+      U.el('span', { class: 'ap-stat-delta-note', text: kpi.compare + ' alatt' })
     ])
   },
 
   dayLabel (day) {
     const date = new Date(day)
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    // A böngésző nyelve helyett a felületé: a panel magyar, a hónapnevek is
+    // azok legyenek.
+    return date.toLocaleDateString(I18n.locale(), { month: 'short', day: 'numeric' })
   },
 
   // ---- system health ----
 
   /** The metrics worth a line on the overview, in the order they matter. */
   HEALTH_ROWS: [
-    ['db.latency_ms', 'Database', 'SELECT 1 round trip', '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/>'],
-    ['api.latency_ms', 'API', 'self-probe of /v1/health', '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>'],
-    ['cpu.usage_pct', 'CPU', 'sustained usage', '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/>'],
-    ['mem.used_pct', 'Memory', 'based on MemAvailable', '<rect x="3" y="8" width="18" height="10" rx="2"/><path d="M7 8V6M12 8V6M17 8V6"/>'],
-    ['disk.used_pct', 'Disk', 'filesystem used', '<path d="M22 12H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11"/><path d="M6 16h.01"/>'],
-    ['queue.pending', 'Queue backlog', 'runnable jobs', '<line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/>'],
-    ['queue.dead', 'Dead jobs', 'past max attempts', '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>']
+    ['db.latency_ms', 'Adatbázis', 'egy SELECT 1 körbefordulása', '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/>'],
+    ['api.latency_ms', 'API', 'a /v1/health saját mérése', '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>'],
+    ['cpu.usage_pct', 'Processzor', 'tartós terhelés', '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/>'],
+    ['mem.used_pct', 'Memória', 'a MemAvailable alapján', '<rect x="3" y="8" width="18" height="10" rx="2"/><path d="M7 8V6M12 8V6M17 8V6"/>'],
+    ['disk.used_pct', 'Lemez', 'a fájlrendszerből használt', '<path d="M22 12H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11"/><path d="M6 16h.01"/>'],
+    ['queue.pending', 'Feladatsor', 'futtatható feladatok', '<line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/>'],
+    ['queue.dead', 'Elhasalt feladatok', 'elfogytak a próbálkozásaik', '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>']
   ],
 
   /** The icon for a probed service, by what it is. */
@@ -3833,7 +3975,7 @@ export const PageAdmin = {
         ]),
         U.el('div', { class: 'dash-health-main' }, [
           U.el('div', { class: 'dash-health-label', text: service.service }),
-          U.el('div', { class: 'dash-health-sub', text: service.detail || 'responding' })
+          U.el('div', { class: 'dash-health-sub', text: (service.detail && (this.PROBE_DETAIL[service.detail] ?? service.detail)) || 'válaszol' })
         ]),
         U.el('span', {
           class: 'dash-health-value',
@@ -3850,18 +3992,18 @@ export const PageAdmin = {
       ? U.el('div', {
         class: 'dash-health-stale',
         text: health.collectedAt
-          ? 'Last collected ' + U.relTime(new Date(health.collectedAt)) + ' — the monitoring worker may be down.'
-          : 'No readings at all — the monitoring worker has never run.'
+          ? 'Utolsó mérés ' + U.relTime(new Date(health.collectedAt)) + ' — a figyelő feladat valószínűleg áll.'
+          : 'Egyetlen mérés sincs — a figyelő feladat még sosem futott le.'
       })
       : null
 
     return this.dashPanel({
       title: 'Rendszerállapot',
       sub: 'Minden mérőszám legfrissebb értéke',
-      badge: U.el('span', {
-        class: 'dash-badge dash-badge-' + (health.level ?? 'green'),
-        text: health.stale ? 'stale' : health.level === 'green' ? 'healthy' : health.level ?? 'unknown'
-      }),
+      badge: AP.tag(
+        health.stale ? 'elavult' : this.LEVEL_WORD[health.level] ?? 'ismeretlen',
+        health.stale ? 'warn' : ({ green: 'ok', yellow: 'warn', red: 'bad' })[health.level] ?? ''
+      ),
       body: rows.childElementCount
         ? U.el('div', {}, [note, rows])
         : U.el('div', { class: 'empty-state', style: 'padding:var(--space-3);', text: 'Még nincs mérőszám — a figyelő worker percenként írja őket.' })
@@ -4463,7 +4605,8 @@ export const PageAdmin = {
         YumeAPI.admin.roles().then(r => r.data ?? r.roles ?? []).catch(() => [])
       ])
 
-      const bar = U.el('div', { class: 'admin-toolbar user-toolbar' }, [
+      input.classList.add('ap-toolbar-grow')
+      const bar = AP.toolbar([
         input,
         pick(q.status, [['', 'Bármilyen állapot'], ['active', 'Aktív'], ['suspended', 'Felfüggesztve'], ['banned', 'Kitiltva']],
           v => this.renderUsers(content, { ...q, status: v, offset: 0 }), 'Szűrés állapot szerint'),
@@ -4474,20 +4617,31 @@ export const PageAdmin = {
 
       // The counts are of the filtered set, not the whole table, so they say
       // what the filter actually selected rather than repeating a constant.
-      const tally = U.el('div', { class: 'user-tally' }, [
-        U.el('span', { class: 'user-tally-item', text: `${totals?.total ?? 0} matching` }),
-        U.el('span', { class: 'user-tally-item tone-green', text: `${totals?.active ?? 0} active` }),
-        U.el('span', { class: 'user-tally-item tone-amber', text: `${totals?.suspended ?? 0} suspended` }),
-        U.el('span', { class: 'user-tally-item tone-red', text: `${totals?.banned ?? 0} banned` })
-      ])
+      /*
+       * A számok szűrőként is működnek.
+       *
+       * Eddig négy színes felirat volt, amit el lehetett olvasni és semmi
+       * többet. Egy operátor viszont, aki meglátja, hogy „2 felfüggesztve",
+       * pont azt a kettőt akarja megnézni — és ehhez eddig le kellett húznia
+       * a legördülőt. Ugyanaz a szám, egy kattintással.
+       */
+      const tally = AP.tabs([
+        ['', 'Mind', totals?.total ?? 0],
+        ['active', 'Aktív', totals?.active ?? 0],
+        ['suspended', 'Felfüggesztve', totals?.suspended ?? 0],
+        ['banned', 'Kitiltva', totals?.banned ?? 0]
+      ], q.status, value => this.renderUsers(content, { ...q, status: value, offset: 0 }))
 
-      content.replaceChildren(bar, tally)
+      const list = AP.list(data.map(user => this.userRow(user, content, q)))
+      content.replaceChildren(AP.stack([bar, tally, list]))
       if (q.query) input.focus()
 
-      for (const user of data) content.append(this.userRow(user, content, q))
-
       if (!data.length) {
-        content.append(P.emptyState('Nincs találat.'))
+        content.append(AP.empty(
+          'Nincs ilyen fiók',
+          q.query || q.status || q.role
+            ? 'A szűrők együtt semmit nem engedtek át. Vegyél le valamelyiket.'
+            : 'Ezen a példányon még nincs egyetlen fiók sem.'))
       }
 
       const total = Number(totals?.total ?? 0)
@@ -4500,7 +4654,7 @@ export const PageAdmin = {
             disabled: q.offset === 0,
             onclick: () => this.renderUsers(content, { ...q, offset: Math.max(0, q.offset - PAGE) })
           }, [document.createTextNode('← Előző')]),
-          U.el('span', { class: 'admin-pager-label', text: `${from}–${to} of ${total}` }),
+          U.el('span', { class: 'admin-pager-label', text: `${from}–${to} / ${total}` }),
           U.el('button', {
             class: 'btn btn-sm btn-ghost',
             disabled: to >= total,
@@ -4513,40 +4667,44 @@ export const PageAdmin = {
     }
   },
 
+  /** A fiók állapota magyarul. Az adatbázisban angol kulcs, a képernyőn nem. */
+  USER_STATUS: { active: 'aktív', suspended: 'felfüggesztve', banned: 'kitiltva', deleted: 'törölve' },
+
   /** One account in the list: identity, shape, and the way into the detail. */
   userRow (user, content, q) {
-    const tone = user.status === 'active' ? '' : user.status === 'banned' ? ' badge-bad' : ' badge-theme'
     const roles = (user.roles ?? []).filter(r => r !== 'user')
 
     // Facts, not decoration: each one is a reason to open the account or to
     // leave it alone.
     const facts = []
     if (roles.length) facts.push(roles.join(', '))
-    facts.push(`joined ${U.airDate(user.created_at)}`)
-    if (user.last_login_at) facts.push(`seen ${U.relTime(new Date(user.last_login_at))}`)
-    else facts.push('never signed in')
-    if (user.active_sessions > 0) facts.push(`${user.active_sessions} session${user.active_sessions === 1 ? '' : 's'}`)
-    if (user.comments > 0) facts.push(`${user.comments} comment${user.comments === 1 ? '' : 's'}`)
-    if (!user.email_verified_at) facts.push('unverified email')
+    facts.push(`regisztrált: ${U.airDate(user.created_at)}`)
+    if (user.last_login_at) facts.push(`belépett ${U.relTime(new Date(user.last_login_at))}`)
+    else facts.push('még sosem lépett be')
+    // Magyarban a szám után egyes szám áll: „3 munkamenet", nem „3 munkamenetek".
+    if (user.active_sessions > 0) facts.push(`${user.active_sessions} munkamenet`)
+    if (user.comments > 0) facts.push(`${user.comments} hozzászólás`)
+    if (!user.email_verified_at) facts.push('nincs megerősítve az e-mail')
 
     const open = () => this.userPanel(user.id, () => this.renderUsers(content, q))
 
-    return U.el('div', { class: 'list-row user-row', onclick: open }, [
-      U.el('div', { class: 'list-row-grow' }, [
-        U.el('div', { class: 'list-row-title' }, [
-          document.createTextNode(user.username + ' '),
-          U.el('span', { class: 'badge' + tone, text: user.status }),
-          ...(user.reports_against > 0
-            ? [U.el('span', { class: 'badge badge-bad', style: 'margin-left:var(--space-1);', text: `${user.reports_against} reported` })]
-            : [])
-        ]),
-        U.el('div', { class: 'list-row-sub', text: facts.join(' • ') })
-      ]),
-      U.el('button', {
-        class: 'btn btn-sm btn-secondary',
-        onclick: e => { e.stopPropagation(); open() }
-      }, [document.createTextNode('Kezelés')])
-    ])
+    /*
+     * A sor EGÉSZE nyitja meg a fiókot, és gomb, nem div: így billentyűzettel
+     * is elérhető, nem csak egérrel. Eddig egy `onclick`-es div volt, mellette
+     * egy „Kezelés" gombbal, ami ugyanoda vitt — a gomb csak megismételte a
+     * sort, telefonon viszont elvette a szélesség harmadát, és a mellette lévő
+     * szöveg szavanként tördelődött.
+     */
+    return AP.row({
+      title: user.username,
+      tags: [
+        AP.tag(this.USER_STATUS[user.status] ?? user.status,
+          user.status === 'active' ? 'ok' : user.status === 'banned' ? 'bad' : 'warn'),
+        user.reports_against > 0 ? AP.tag(`${user.reports_against} bejelentés`, 'bad') : null
+      ].filter(Boolean),
+      meta: facts.join(' · '),
+      onclick: open
+    })
   },
 
   /**
@@ -4588,7 +4746,7 @@ export const PageAdmin = {
     const head = U.el('div', { class: 'user-panel-head' }, [
       U.el('div', { class: 'user-panel-name' }, [
         U.el('h3', { text: a.username }),
-        U.el('span', { class: 'badge' + (a.status === 'active' ? '' : a.status === 'banned' ? ' badge-bad' : ' badge-theme'), text: a.status })
+        U.el('span', { class: 'badge' + (a.status === 'active' ? '' : a.status === 'banned' ? ' badge-bad' : ' badge-theme'), text: this.USER_STATUS[a.status] ?? a.status })
       ]),
       U.el('div', { class: 'user-panel-sub', text: a.email })
     ])
@@ -4653,13 +4811,13 @@ export const PageAdmin = {
     })
 
     const actions = U.el('div', { class: 'user-actions' }, [
-      ...(a.status === 'active' ? [status('suspended', 'Suspend'), status('banned', 'Ban')] : [status('active', 'Restore')]),
+      ...(a.status === 'active' ? [status('suspended', 'Felfüggesztés'), status('banned', 'Kitiltás')] : [status('active', 'Visszaállítás')]),
       // Not a punishment and not visible as one: the proportionate answer to a
       // shared password, which previously had no answer but a ban.
-      act('Sign out everywhere', 'btn-ghost', () => {
-        const reason = ask(`Sign ${a.username} out of every session — why?`, 'Credentials possibly compromised')
+      act('Kijelentkeztetés mindenhonnan', 'btn-ghost', () => {
+        const reason = ask(`Miért jelentkezteted ki ${a.username} minden munkamenetét?`, 'A jelszava kikerülhetett')
         if (!reason) return
-        run(() => YumeAPI.admin.revokeUserSessions(a.id, reason), `${a.username}: signed out`)
+        run(() => YumeAPI.admin.revokeUserSessions(a.id, reason), `${a.username}: kijelentkeztetve`)
       })
     ])
 

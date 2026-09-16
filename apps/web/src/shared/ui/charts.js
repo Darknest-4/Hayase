@@ -98,7 +98,11 @@ export const Charts = {
     const padL = 26
     const padR = 8
     const padT = 10
-    const padB = 20
+    // 26, nem 20: a tengelyfelirat alapvonala a doboz aljától 7 képpontra van,
+    // a szöveg maga ~11 képpont magas — húsz képpontnál ez négyre szorult a
+    // rajzterület aljától, és egy kitöltött terület alsó éle mellett az négy
+    // képpont úgy néz ki, mintha a felirat a grafikonon állna.
+    const padB = 26
     const plotW = W - padL - padR
     const plotH = H - padT - padB
 
@@ -137,7 +141,7 @@ export const Charts = {
     const every = Math.ceil(labels.length / 6)
     labels.forEach((name, i) => {
       if (i % every !== 0 && i !== labels.length - 1) return
-      const text = this._el('text', { x: x(i).toFixed(1), y: H - 5, 'text-anchor': 'middle', class: 'chart-axis' })
+      const text = this._el('text', { x: x(i).toFixed(1), y: H - 7, 'text-anchor': 'middle', class: 'chart-axis' })
       text.textContent = name
       children.push(text)
     })

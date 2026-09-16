@@ -210,21 +210,55 @@ describe('admin panel layout', { skip: REASON }, () => {
     await page.close()
   })
 
-  // The section name belongs on the screen exactly once. It used to live in
-  // the top bar, with the heading block hidden below a phone's width; now the
-  // heading block carries it at every width and the top bar carries none, so
-  // the same rule is checked from the other side.
-  it('does not print the section name twice on a phone', async () => {
+  /*
+   * A szakasz neve pontosan egyszer szerepeljen — és görgetés közben is
+   * látszódjon.
+   *
+   * Ez a teszt korábban a HELYÉT rögzítette (a fejlécblokkban legyen, a felső
+   * sávban ne). A hely azóta megfordult, és jó okkal: a fejlécblokk
+   * elgörgetődik, és egy hosszú operátori lapon a képernyő közepén már semmi
+   * nem mondja meg, melyik szakaszban vagy. A felső sáv tapad.
+   *
+   * Amit ki KELL kötni, az nem a hely, hanem a két tulajdonság: egyszer
+   * szerepel, és görgetés után is ott van.
+   */
+  it('names the section exactly once on a phone', async () => {
     const { page } = await open({ width: 390, height: 780 })
-    assert.equal(await shown(page, '.admin-content-head'), true, 'the heading block is hidden')
-    const title = (await page.locator('.admin-content-title').innerText()).trim()
-    assert.ok(title.length, 'the heading lost the title')
-    const echoes = await page.evaluate(name => {
-      const bar = document.querySelector('.admin-topbar')
-      if (!bar) return 0
-      return [...bar.querySelectorAll('*')].filter(el => el.textContent.trim() === name).length
-    }, title)
-    assert.equal(echoes, 0, `the top bar repeats "${title}"`)
+
+    const visibleTexts = async () => page.evaluate(() => {
+      const seen = []
+      for (const sel of ['.admin-topbar-title', '.admin-content-title']) {
+        for (const el of document.querySelectorAll(sel)) {
+          const style = getComputedStyle(el)
+          if (style.display === 'none' || style.visibility === 'hidden') continue
+          const text = el.textContent.trim()
+          if (text) seen.push(text)
+        }
+      }
+      return seen
+    })
+
+    const names = await visibleTexts()
+    assert.equal(names.length, 1, `a szakasz neve ${names.length}-szer látszik: ${names.join(' / ')}`)
+    assert.ok(names[0].length, 'a szakasznak nincs neve sehol')
+    await page.close()
+  })
+
+  it('keeps the section name on screen after scrolling', async () => {
+    const { page } = await open({ width: 390, height: 780 })
+    await page.evaluate(() => window.scrollTo(0, 1200))
+    await page.waitForTimeout(250)
+
+    const stillThere = await page.evaluate(() => {
+      for (const el of document.querySelectorAll('.admin-topbar-title, .admin-content-title')) {
+        const style = getComputedStyle(el)
+        if (style.display === 'none' || !el.textContent.trim()) continue
+        const box = el.getBoundingClientRect()
+        if (box.top >= 0 && box.bottom <= window.innerHeight) return el.textContent.trim()
+      }
+      return null
+    })
+    assert.ok(stillThere, 'lefelé görgetve semmi nem mondja meg, melyik szakaszban vagy')
     await page.close()
   })
 })

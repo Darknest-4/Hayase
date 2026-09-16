@@ -45,9 +45,32 @@ describe('the two audits are kept apart', () => {
     // specified at and an address can only mean one thing.
     assert.equal(report?.render, 'renderAuditStatus')
     assert.equal(report?.perm, 'audit.read')
-    assert.equal(report?.group, 'system')
     assert.equal(log?.render, 'renderAudit')
     assert.equal(log?.perm, 'admin.users.manage')
+    // A kettő NEVE is különbözzön, ne csak a kulcsa. Egymás mellett a rálban
+    // a „Napló" és az „Auditállapot" összekeverhető volt: az egyik azt mondja
+    // meg, ki mit csinált, a másik azt, mi a baj a szoftverrel.
+    assert.notEqual(report?.label, log?.label)
+    assert.ok(!report?.label.includes('Napló'), 'a kódaudit neve ne tartalmazza a „Napló" szót')
+  })
+
+  it('every section sits in a group the rail actually renders', () => {
+    // A rál csoportonként épül: egy nem létező csoportkulcsú szakasz sehol
+    // nem jelenik meg, és semmi nem hibázik tőle. A csoportok átrendezésekor
+    // ez volt az, ami elrejtett volna egy képernyőt.
+    const groups = new Set(PageAdmin.GROUPS.map(g => g.key))
+    const orphans = PageAdmin.SECTIONS.filter(s => !groups.has(s.group)).map(s => `${s.key} → ${s.group}`)
+    assert.deepEqual(orphans, [], 'sections in a group that does not exist')
+  })
+
+  it('no group is a dumping ground', () => {
+    // Kilenc bejegyzés egy csoportban nem csoport, hanem maradék: ott kötött
+    // ki minden, aminek nem volt jobb helye, és emiatt a rál alsó fele
+    // átolvashatatlan volt.
+    const counts = new Map()
+    for (const section of PageAdmin.SECTIONS) counts.set(section.group, (counts.get(section.group) ?? 0) + 1)
+    const crowded = [...counts].filter(([, n]) => n > 7).map(([g, n]) => `${g}: ${n}`)
+    assert.deepEqual(crowded, [], 'groups with more than seven sections')
   })
 
   it('gives every section a renderer that exists', () => {
