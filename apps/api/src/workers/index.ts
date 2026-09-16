@@ -93,6 +93,53 @@ async function scheduleIntel (): Promise<void> {
 
 const once = process.argv.includes('--once')
 
+/**
+ * Egy ütemezőhívás, ami nem viheti magával a workert.
+ *
+ * MÉRVE, EGY ADATBÁZIS-ÚJRAINDÍTÁSKOR: a worker kétszer omlott össze, mert az
+ * `enqueue` `57P03`-mal (`the database system is starting up`) elhasalt, és a
+ * hívás körül nem volt elkapás. A folyamat kilépett, a Docker újraindította, a
+ * Postgres még mindig indult, és ez ismétlődött.
+ *
+ * Az időzített hívásoknál ugyanez a `void scheduleRecurring()` alakban rejtőzött:
+ * egy elutasított ígéret `void`-dal is elutasított ígéret marad, és a Node 22
+ * kezeletlen elutasításra kilép.
+ *
+ * Egy ütemezés kimaradása nem vészhelyzet: a következő órában újra próbálja, a
+ * `dedupe` kulcsok miatt kétszer beütemezni sem tud semmit. A folyamat halála
+ * viszont az — ezért ez a burkoló naplóz, és hagyja futni a workert.
+ */
+async function attempt (name: string, fn: () => Promise<void>): Promise<boolean> {
+  try {
+    await fn()
+    return true
+  } catch (error) {
+    console.error(`${name} nem futott le: ${(error as Error).message}`)
+    return false
+  }
+}
+
+/**
+ * Indulás: megvárja, hogy az adatbázis fogadjon.
+ *
+ * A `depends_on: service_healthy` csak az EGYÜTTES indulásra vonatkozik. Ha a
+ * Postgrest külön indítják újra — például egy hangolás miatt —, a worker
+ * futva marad, elveszíti a kapcsolatait, és az ütemezése egy még induló
+ * kiszolgálóba fut. Ilyenkor várni kell, nem meghalni.
+ */
+async function waitForDatabase (attempts = 30, delayMs = 2_000): Promise<void> {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      await pool.query('SELECT 1')
+      return
+    } catch (error) {
+      if (i === attempts) throw error
+      console.log(`az adatbázis még nem fogad (${i}/${attempts}): ${(error as Error).message}`)
+      await new Promise(resolve => setTimeout(resolve, delayMs))
+    }
+  }
+}
+
 if (once) {
   await scheduleRecurring()
   await scheduleMonitor()
@@ -106,14 +153,18 @@ if (once) {
     process.once(signal, () => controller.abort())
   }
 
-  await scheduleRecurring()
-  setInterval(() => { void scheduleRecurring() }, 60 * 60 * 1000).unref()
+  // Az adatbázisnak nem kell futnia ahhoz, hogy a worker ELINDULJON — de
+  // ahhoz igen, hogy ütemezzen. A várakozás olcsóbb, mint egy összeomlási hurok.
+  await waitForDatabase()
 
-  await scheduleMonitor()
-  setInterval(() => { void scheduleMonitor() }, MONITOR_INTERVAL_MS).unref()
+  await attempt('az ismétlődő feladatok ütemezése', scheduleRecurring)
+  setInterval(() => { void attempt('az ismétlődő feladatok ütemezése', scheduleRecurring) }, 60 * 60 * 1000).unref()
 
-  await scheduleIntel()
-  setInterval(() => { void scheduleIntel() }, INTEL_INTERVAL_MS).unref()
+  await attempt('a mérőszámok ütemezése', scheduleMonitor)
+  setInterval(() => { void attempt('a mérőszámok ütemezése', scheduleMonitor) }, MONITOR_INTERVAL_MS).unref()
+
+  await attempt('az IP-adatok ütemezése', scheduleIntel)
+  setInterval(() => { void attempt('az IP-adatok ütemezése', scheduleIntel) }, INTEL_INTERVAL_MS).unref()
 
   console.log('worker running:', Object.keys(handlers).join(', '))
   await runWorker(handlers, {

@@ -262,7 +262,34 @@ export async function runWorker (
   // slow job occupies its own lane instead of stalling every other queue.
   const lane = async (): Promise<void> => {
     while (!signal?.aborted) {
-      const job = await claim(queues)
+      let job: Job | undefined
+      try {
+        job = await claim(queues)
+      } catch (err) {
+        /*
+         * AZ ADATBÁZIS NEM ELÉRHETŐ — ez a hurok nem halhat meg tőle.
+         *
+         * A `claim` minden körben lekérdez. Ha a Postgres éppen nem fogad
+         * (újraindítás, hálózati zavar), a hiba kiszáll a `runWorker`-ből, a
+         * hívó `await`-jén át a legfelső szintre, és a folyamat kilép.
+         *
+         * MÉRVE, EGY HANGOLÁSI ÚJRAINDÍTÁSKOR: `connect ECONNREFUSED
+         * 172.20.0.5:5432` a `claim`-ben, és a worker meghalt. A Docker
+         * visszahozta, de a leállás alatt nem dolgozott fel semmit, és egy
+         * lassabban induló adatbázisnál ez összeomlási hurokká válik.
+         *
+         * Helyes viselkedés: várni és újrapróbálni. Egy feladatsor-hurok
+         * dolga, hogy túlélje az adatbázist, amit kiszolgál.
+         *
+         * Nem drain módban: ott a hiba a hívóé, mert egy `--once` futás
+         * elérhetetlen adatbázissal tényleg nem tud mit csinálni.
+         */
+        if (!signal) throw err
+        console.error('a feladatsor nem éri el az adatbázist:', (err as Error).message)
+        await new Promise(resolve => setTimeout(resolve, pollMs))
+        continue
+      }
+
       if (!job) {
         if (!signal) return // no signal → drain mode: stop when empty
         await new Promise(resolve => setTimeout(resolve, pollMs))
