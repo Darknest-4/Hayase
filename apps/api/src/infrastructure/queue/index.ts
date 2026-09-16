@@ -16,6 +16,7 @@
 // file does not change.
 
 import { pool, query, queryOne } from '../database/index.ts'
+import { listenForJobs, notifyJob, sleepUntilWork } from './wake.ts'
 
 export type QueueName = 'stats' | 'notify' | 'maintenance' | 'import' | 'search-index' | 'ext-review' | 'webhook' | 'monitor' | 'metadata' | 'founder' | 'analytics' | 'edge' | 'media'
 
@@ -63,11 +64,26 @@ export function clearDeadJobListeners (): void {
  * (queue, dedupe) is pending, further enqueues are no-ops.
  */
 export async function enqueue (queue: QueueName, payload: Record<string, unknown> = {}, runAt?: Date): Promise<void> {
-  await query(
+  const inserted = await query<{ ok: number }>(
     `INSERT INTO jobs (queue, payload, run_at) VALUES ($1, $2, coalesce($3, now()))
-     ON CONFLICT DO NOTHING`,
+     ON CONFLICT DO NOTHING
+     RETURNING 1 AS ok`,
     [queue, payload, runAt ?? null]
   )
+
+  /*
+   * ÉBRESZTÉS, de csak ha tényleg keletkezett munka.
+   *
+   * Az `ON CONFLICT DO NOTHING` miatt egy `dedupe` kulcsra futó ismételt
+   * hívás nem szúr be semmit — ilyenkor felébreszteni a sávokat annyi lenne,
+   * mint fölöslegesen lekérdezni, vagyis pont az, amit meg akartunk szüntetni.
+   *
+   * Jövőbeli futásidőnél sincs mit ébreszteni: a feladat még nem esedékes, a
+   * `claim` úgysem találná meg.
+   */
+  if (!inserted.length) return
+  if (runAt && runAt.getTime() > Date.now() + 1000) return
+  await notifyJob(queue)
 }
 
 /**
@@ -260,7 +276,40 @@ export async function runWorker (
 
   // One lane per concurrent slot. Each claims and runs independently, so a
   // slow job occupies its own lane instead of stalling every other queue.
+  /*
+   * ÜRESJÁRATI VISSZALÉPÉS.
+   *
+   * MÉRVE: a `jobs_poll_idx` másodpercenként 22,2 olvasást kapott, miközben
+   * három perc alatt összesen 8 feladat futott le. A sávok kétmásodpercenként
+   * megkérdezték, van-e munka, és a válasz szinte mindig „nincs" volt — ez
+   * tranzakciónként BEGIN + SELECT + COMMIT, kapcsolatfoglalással együtt,
+   * éjjel-nappal.
+   *
+   * A hurok ezért ÜRESJÁRATBAN LASSUL: minden sikertelen lekérdezés után
+   * duplázza a várakozást a `maxPollMs` tetejéig, és az első megtalált feladat
+   * azonnal visszaállítja az alapütemre. Ha van munka, a sor ugyanolyan gyors,
+   * mint eddig; ha nincs, nem dolgozunk a semmiért.
+   *
+   * A SZÓRÁS (jitter) nem díszítés: enélkül a négy sáv egyszerre ébredne, és
+   * egyszerre nyitna négy kapcsolatot ugyanarra a lekérdezésre.
+   */
+  /*
+   * A hosszú lekérdezés BIZTONSÁGI HÁLÓ, nem az elsődleges út: a munkát a
+   * `LISTEN`/`NOTIFY` jelzi, ez csak arra való, ha egy értesítés elveszne
+   * (kapcsolatszakadás, másik példány). Ezért lehet ilyen ritka.
+   */
+  const maxPollMs = Math.max(pollMs, Number(process.env.JOB_MAX_POLL_MS ?? 30_000))
+
+  // Csak a hosszan futó módban: egy `drain()` hívás nem hagy maga után
+  // hallgató kapcsolatot.
+  if (signal) listenForJobs(signal)
+  const backoff = (empties: number): number => {
+    const base = Math.min(pollMs * 2 ** Math.min(empties, 8), maxPollMs)
+    return Math.round(base * (0.75 + Math.random() * 0.5))
+  }
+
   const lane = async (): Promise<void> => {
+    let empties = 0
     while (!signal?.aborted) {
       let job: Job | undefined
       try {
@@ -286,15 +335,19 @@ export async function runWorker (
          */
         if (!signal) throw err
         console.error('a feladatsor nem éri el az adatbázist:', (err as Error).message)
-        await new Promise(resolve => setTimeout(resolve, pollMs))
+        await sleepUntilWork(backoff(++empties), signal)
         continue
       }
 
       if (!job) {
         if (!signal) return // no signal → drain mode: stop when empty
-        await new Promise(resolve => setTimeout(resolve, pollMs))
+        await sleepUntilWork(backoff(++empties), signal)
         continue
       }
+
+      // Van munka: vissza az alapütemre. Egy feladat általában továbbiakat von
+      // maga után, és ilyenkor a gyors lekérdezés pont hasznos.
+      empties = 0
       await runOne(job)
     }
   }
