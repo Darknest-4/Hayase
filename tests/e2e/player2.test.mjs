@@ -574,6 +574,118 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
     await teardown()
   })
 
+  /*
+   * ---- AKADÁLYMENTESSÉG (28. pont) ----
+   *
+   * Ezek közül egyik sem ellenőrizhető DOM-csonkon: kiszámolt stílus kell
+   * hozzá, és egy valódi fókuszsorrend.
+   */
+  it('minden vezérlőnek van felolvasható neve', async () => {
+    await mount()
+    const nameless = await page.evaluate(() => {
+      const out = []
+      for (const el of document.querySelectorAll('.yp button, .yp [role="slider"]')) {
+        const style = window.getComputedStyle(el)
+        if (style.display === 'none' || style.visibility === 'hidden') continue
+        const name = el.getAttribute('aria-label') || el.textContent.trim()
+        if (!name) out.push(el.className || el.tagName)
+      }
+      return out
+    })
+    assert.deepEqual(nameless, [], 'ezeket a felolvasó „gomb"-ként mondaná be')
+    await teardown()
+  })
+
+  it('a fókusz látszik, és a Tab végigmegy a vezérlőkön', async () => {
+    await mount()
+    const result = await page.evaluate(() => {
+      /*
+       * A REJTETT VEZÉRLŐK KIMARADNAK, és ez nem kényelmi kivétel: a
+       * `.yp-hidden` `visibility: hidden`, amire a böngésző SZÁNDÉKOSAN nem
+       * enged fókuszt, és ki is veszi a Tab sorrendjéből. Pont ezt akarjuk —
+       * egy elrejtett gomb ne nyelje el a fókuszt a képernyőn kívül.
+       */
+      const focusable = [...document.querySelectorAll('.yp button:not([disabled]), .yp [tabindex="0"]')]
+        .filter(el => {
+          const style = window.getComputedStyle(el)
+          return style.visibility !== 'hidden' && style.display !== 'none'
+        })
+      const invisible = []
+      for (const el of focusable) {
+        el.focus()
+        const style = window.getComputedStyle(el, ':focus-visible')
+        // A `:focus-visible` kiszámolt körvonala nem mindig olvasható ki
+        // programból; a szabály MEGLÉTE viszont igen, a lapon lévő
+        // stíluslapokból.
+        if (document.activeElement !== el) invisible.push(el.className)
+      }
+      const sheets = [...document.styleSheets].filter(sheet => {
+        try { return sheet.cssRules } catch { return false }
+      })
+      const focusRules = sheets.flatMap(sheet => [...sheet.cssRules])
+        .filter(rule => rule.selectorText?.includes('.yp') && rule.selectorText.includes(':focus-visible'))
+        .map(rule => rule.style.outline || rule.style.outlineWidth)
+        .filter(Boolean)
+      return { count: focusable.length, notFocusable: invisible, focusRules: focusRules.length }
+    })
+    assert.ok(result.count >= 6, `csak ${result.count} fókuszálható vezérlő`)
+    assert.deepEqual(result.notFocusable, [], 'ezekre nem lehet fókuszálni')
+    assert.ok(result.focusRules >= 2, 'nincs látható fókuszjelölés a lejátszón')
+    await teardown()
+  })
+
+  it('a tekerősáv a felolvasónak is csúszka', async () => {
+    await mount()
+    const seek = await page.evaluate(() => {
+      const el = document.querySelector('.yp-seek')
+      return {
+        role: el.getAttribute('role'),
+        label: el.getAttribute('aria-label'),
+        min: el.getAttribute('aria-valuemin'),
+        text: el.getAttribute('aria-valuetext'),
+        tabindex: el.getAttribute('tabindex')
+      }
+    })
+    assert.equal(seek.role, 'slider')
+    assert.ok(seek.label)
+    assert.equal(seek.min, '0')
+    assert.equal(seek.tabindex, '0')
+    // Kimondott idő, nem nyers másodperc: a „nyolcszázhetvenhárom" nem
+    // mond semmit.
+    assert.match(seek.text ?? '', /másodperc|perc|óra/)
+    await teardown()
+  })
+
+  it('a mozgás letiltása megállítja a betöltő pásztázását', async () => {
+    // Akinek a folyamatos mozgás rosszullétet okoz, annak a rendszerbeállítása
+    // erről szól, és a lejátszónak illik meghallania.
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await mount()
+    const animation = await page.evaluate(() => {
+      const sweep = document.querySelector('.yp-loader-sweep')
+      const style = window.getComputedStyle(sweep)
+      return { name: style.animationName, base: window.getComputedStyle(document.querySelector('.yp-loader-base')).display }
+    })
+    assert.equal(animation.name, 'none', 'a pásztázás mozgásmentes módban is megy')
+    // A logó nem tűnik el, csak nem mozog: színesen, egyben áll ott.
+    assert.equal(animation.base, 'none')
+    await teardown()
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+  })
+
+  it('a kikapcsolt gomb nem csak halvány, hanem tiltott is', async () => {
+    // „No color-only information": egy csak opacitással jelzett tiltás a
+    // felolvasónak és a színtévesztőnek egyaránt láthatatlan.
+    await mount()
+    const previous = await page.evaluate(() => {
+      const el = document.querySelector('.yp-btn-prev')
+      return { disabled: el.disabled, aria: el.getAttribute('aria-disabled'), opacity: window.getComputedStyle(el).opacity }
+    })
+    assert.equal(previous.disabled, true, 'nincs előző rész, mégsem tiltott')
+    assert.ok(Number(previous.opacity) < 1, 'nincs látható különbség')
+    await teardown()
+  })
+
   it('nem dobott hibát a lap egyetlen lépésnél sem', () => {
     // A `pageerror` minden eddigi lépésre gyűlt. Egy elszállt ígéret nem
     // állítja meg a tesztet, de a lejátszót igen.

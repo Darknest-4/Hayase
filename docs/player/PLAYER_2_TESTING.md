@@ -1,7 +1,7 @@
 # Player 2.0 — tesztelés
 
-**201 egységteszt** nyolc készletben, és **23 böngészős teszt** egy
-kilencedikben. A kettő különbsége nem méretbeli: **mást tudnak megfogni**.
+**247 egységteszt** tíz készletben, és **28 böngészős teszt** egy
+tizenegyedikben. A kettő különbsége nem méretbeli: **mást tudnak megfogni**.
 
 | készlet | tesztek | mit őriz |
 |---|---|---|
@@ -12,8 +12,10 @@ kilencedikben. A kettő különbsége nem méretbeli: **mást tudnak megfogni**.
 | `player2-subtitles.test.mjs` | 29 | feliratelemzés, sávválasztás, minőség, átugrás |
 | `player2-ui.test.mjs` | 48 | formázás, láthatóság, vezérlők, menü, héj |
 | `player2-party.test.mjs` | 17 | közös nézés: visszhang, elsodródás |
+| `player2-extras.test.mjs` | 26 | fény, kislejátszó, zárolt képernyő, hibakereső, telemetria |
+| `player2-next-settings.test.mjs` | 20 | következő-rész kártya, teljes beállításpanel |
 | `player2-rollout.test.mjs` | 8 | a bevezetés kapcsolója |
-| `tests/e2e/player2.test.mjs` | 23 | valódi böngésző, valódi videó, 11 szélesség, mérés |
+| `tests/e2e/player2.test.mjs` | 28 | valódi böngésző, valódi videó, 11 szélesség, mérés, akadálymentesség |
 
 Futtatás:
 
@@ -71,6 +73,10 @@ mielőtt bárki látta volna őket:
 
 **Böngészős tesztek — ezeket egyetlen egységteszt sem foghatta meg:**
 
+- a **környezeti fény négy és félszeresére rontotta a képkockaközt** (16,7 →
+  75,2 ms), mert a videó vászonra másolása visszaolvasást kényszerít a
+  GPU-ról. Részletek a [teljesítménynél](PLAYER_2_PERFORMANCE.md);
+
 - a **betöltőképernyő soha nem tűnt volna el**. A `setPhase` megvolt, a
   betöltő olvasta is, de **senki nem hívta**. A logó felállt, végigfutott
   rajta a szín, és ott maradt; a videó ment alatta, láthatatlanul;
@@ -99,5 +105,8 @@ Ezt kimondva, mert egy hiányzó sor a listából hamis biztonság:
 - **intró/outró átugrás élesben.** A `skip_segments` tábla **üres**;
 - **valódi mobil eszköz.** A gesztusok logikája tesztelt, a böngészős futás
   fejetlen Chromiumban ment — igazi iOS-en és Androidon nem;
+- **zárolt képernyős vezérlés.** A Media Session kötése egységtesztelt
+  (beleértve azt is, hogy egy ismeretlen művelet nem viszi magával a
+  többit), de fejetlen Chromiumban nincs zárolt képernyő, amin látszana;
 - **HLS és DASH élesben.** A motorok megvannak és egységtesztekkel igazoltak,
   de a katalógusban ma nincs ilyen forrás, amin ki lehetne próbálni.
