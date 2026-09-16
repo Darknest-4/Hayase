@@ -80,6 +80,18 @@ export function viewerProfile () {
   return viewer
 }
 
+/**
+ * Létezik-e egyáltalán ez a kapcsoló a szerver tábláján.
+ *
+ * A `featureOn` szándékosan MEGENGEDŐ: amiről a tábla nem tud, azt átengedi,
+ * hogy egy új funkció ne tűnjön el a régi telepítéseken. Van, aminél pont ez
+ * a rossz irány — egy teljes lejátszócserénél a hiányzó sor nem „engedd át",
+ * hanem „még nem kapcsoltuk be". Az ilyen hívó ezt kérdezi meg előbb.
+ */
+export function flagDeclared (key) {
+  return Boolean(config?.flags?.[key])
+}
+
 export function featureOn (name) {
   if (!config) return true
   const flag = config.flags?.['feature.' + name]

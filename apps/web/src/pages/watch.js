@@ -7,7 +7,7 @@
 // (auto)play of the following episode.
 
 import { navigate } from '../shared/lib/shell.js'
-import { featureOn } from '../shared/lib/site-config.js'
+import { featureOn, flagDeclared } from '../shared/lib/site-config.js'
 import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
@@ -767,16 +767,22 @@ export const PageWatch = {
     /*
      * A PLAYER 2.0 kapcsoló mögött.
      *
-     * Amíg a `player2` kapcsoló ki van kapcsolva — és alapból az —, ez a
-     * sor nem csinál semmit, és a lap pontosan úgy viselkedik, ahogy eddig.
-     * Bekapcsolva a teljes új lejátszó veszi át a helyét: saját felülettel,
-     * saját forráskezeléssel, saját állapotfával.
+     * A `featureOn` NEM ELÉG ÖNMAGÁBAN: egy nem létező kapcsolóra igazat ad
+     * vissza (`if (!flag || !flag.enabled) return !flag`). Ez a többi
+     * funkciónál helyes — egy új gomb ne tűnjön el a régi telepítéseken —,
+     * egy teljes lejátszócserénél viszont azt jelentené, hogy sor nélkül az
+     * ÚJ lejátszó indul el mindenkinél, az első éles kérésnél, mérés nélkül.
+     *
+     * Ezért a kapcsolónak LÉTEZNIE ÉS BEKAPCSOLVA KELL LENNIE. A sort a 0058-as
+     * áttérés hozza létre, kikapcsolva.
      *
      * A KETTŐ EGYÜTT ÉL, amíg az új be nem bizonyítja magát éles forgalmon.
-     * Egy nagy csere, ami visszafordíthatatlan, azt jelentené, hogy az első
-     * meglepetésnél nincs hova visszalépni.
+     * Egy visszafordíthatatlan csere azt jelentené, hogy az első meglepetésnél
+     * nincs hova visszalépni.
      */
-    if (featureOn('player2')) return this.mountPlayer2(box, media, episode, total, src)
+    if (flagDeclared('feature.player2') && featureOn('player2')) {
+      return this.mountPlayer2(box, media, episode, total, src)
+    }
 
     /*
      * `preload="metadata"` KIÍRVA, nem a böngészőre bízva.
