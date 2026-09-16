@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import cookie from '@fastify/cookie'
 import cors from '@fastify/cors'
 import fastifyStatic from '@fastify/static'
+import mediaRoutes from './modules/media/routes.ts'
 import mercurius from 'mercurius'
 import Fastify from 'fastify'
 
@@ -45,6 +46,8 @@ import reportRoutes from './modules/moderation/routes.ts'
 import securityRoutes from './modules/security/routes.ts'
 import backupRoutes from './modules/backups/routes.ts'
 import analyticsAdmin from './modules/analytics/admin-routes.ts'
+import edgeAdmin from './modules/edge/admin-routes.ts'
+import { guard as edgeGuard, observe as edgeObserve } from './modules/edge/index.ts'
 import analyticsCollect from './modules/analytics/collect-routes.ts'
 import seoRoutes from './modules/seo/routes.ts'
 import libraryRoutes from './modules/library/routes.ts'
@@ -257,6 +260,31 @@ export async function buildApp (): Promise<FastifyInstance> {
     })
   })
 
+  /*
+   * A hiányzó törzs nem hiba ott, ahol semmi sem kötelező benne.
+   *
+   * Egy `POST` törzs nélkül és egy `POST {}` ugyanazt kéri — de a séma az
+   * elsőre 400-at adott („body must be object"), mert az AJV a `undefined`-ot
+   * nem tekinti objektumnak. Ez néma hibákat okozott a hívó oldalán, és
+   * egyszer biztonságit is: a törzs nélküli `POST /v1/auth/logout` 400-at
+   * kapott, a munkamenet NEM lett visszavonva, és a hozzáférési token további
+   * tizenöt percig működött. A böngészőkliens csak azért kerülte el, mert
+   * mindig küld `{}`-t; a `navigator.sendBeacon`, a `curl` és bármely másik
+   * kliens nem köteles.
+   *
+   * A szabály szűk szándékosan: CSAK akkor egészítjük ki `{}`-ra a törzset, ha
+   * az útvonal sémája egyetlen mezőt sem követel meg. Ahol van `required`, ott
+   * a hiányzó törzs továbbra is 400 — a hiányzó jelszó hiányzó jelszó marad.
+   */
+  app.addHook('preValidation', async (request) => {
+    if (request.body !== undefined && request.body !== null) return
+    const body = request.routeOptions?.schema?.body as
+      { type?: string, required?: unknown } | undefined
+    if (!body || body.type !== 'object') return
+    if (Array.isArray(body.required) && body.required.length) return
+    request.body = {}
+  })
+
   // The global body limit is sized for REST payloads; a GraphQL document is
   // parsed before anything else, so it gets its own, tighter ceiling.
   app.addHook('preValidation', async (request, reply) => {
@@ -344,6 +372,51 @@ export async function buildApp (): Promise<FastifyInstance> {
    * outside; freezing the worker would stop the stats and partition
    * maintenance that keep the instance healthy while somebody works.
    */
+  /*
+   * YUME Edge — a kockázati réteg.
+   *
+   * A sebességkorlát UTÁN fut, és szándékosan: az a nyers mennyiséget fogja
+   * meg, olcsón, és ami ott fennakad, azzal itt már nem kell foglalkozni. Ez
+   * a réteg a MINTÁT nézi — mit kér, honnan, milyen ütemben, milyen
+   * előzménnyel.
+   *
+   * Alapból SZÁRAZON fut: mindent kiértékel és naplóz, de semmit nem utasít
+   * vissza. Így a bekapcsolása nem kockázat, és egy hét múlva a naplóból
+   * lehet eldönteni, hol állnak a küszöbök. Az éles üzemre váltás egy
+   * beállítás a panelen.
+   *
+   * Kivételt nem dob és nem is enged ki: a `guard` maga kezeli a hibáit a
+   * fail-open/fail-closed szabály szerint. Egy biztonsági réteg hibája ne
+   * legyen kiesés.
+   */
+  app.addHook('onRequest', async (request, reply) => {
+    const decision = await edgeGuard(request)
+    if (!decision) return
+
+    if (decision.effective === 'throttle') {
+      return reply.code(429)
+        .header('Retry-After', String(decision.retryAfter ?? 30))
+        .send({
+          type: 'about:blank',
+          title: 'Too Many Requests',
+          status: 429,
+          detail: 'Túl sok kérés érkezett erről a címről. Próbáld újra kicsit később.'
+        })
+    }
+
+    return reply.code(403)
+      .header('Retry-After', String(decision.retryAfter ?? 60))
+      .send({
+        type: 'about:blank',
+        title: 'Forbidden',
+        status: 403,
+        // A pontszámot és a jeleket SZÁNDÉKOSAN nem adjuk vissza: abból egy
+        // támadó megtudná, melyik jel mennyit ér, és addig hangolna, amíg
+        // alá nem megy. A naplóban minden benne van.
+        detail: 'A kérést a biztonsági réteg visszautasította.'
+      })
+  })
+
   const WRITES = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
   const readOnlyExempt = /^\/v1\/(auth|admin\/(config|security|backups))\b/
   app.addHook('onRequest', async (request, reply) => {
@@ -383,6 +456,7 @@ export async function buildApp (): Promise<FastifyInstance> {
   await app.register(securityRoutes, { prefix: '/v1/admin/security' })
   await app.register(backupRoutes, { prefix: '/v1/admin/backups' })
   await app.register(analyticsAdmin, { prefix: '/v1/admin/analytics' })
+  await app.register(edgeAdmin, { prefix: '/v1/admin/edge' })
   // Látogatottság: egyetlen, hitelesítés nélkül is hívható végpont, ami
   // pontosan egy dolgot fogad el a klienstől (melyik oldalra lépett). Minden
   // más a kiszolgálóé — lásd modules/analytics/collect-routes.ts.
@@ -449,6 +523,13 @@ export async function buildApp (): Promise<FastifyInstance> {
      * route exists alongside the client's own #/anime/:id.
      */
     await app.register(seoRoutes, { webRoot })
+
+    /*
+     * A letükrözött katalógusképek. Ugyanazért kerül ide, amiért a `seoRoutes`:
+     * a `find-my-way` a literális szegmenst elébe helyezi a statikus `*`-nak,
+     * tehát a `/media/...` ide fut be, nem a fájlkiszolgálóhoz.
+     */
+    await app.register(mediaRoutes)
 
     /**
      * SPA fallback: any non-API GET that isn't a real file returns index.html.
@@ -540,6 +621,11 @@ export async function buildApp (): Promise<FastifyInstance> {
    */
   const SAMPLE_RATE = Number(process.env.PERF_SAMPLE_RATE ?? 0.01)
   app.addHook('onResponse', async (request, reply) => {
+    // Amit csak a VÁLASZBÓL lehet tudni: hány nem létező címet kért ez a cím,
+    // hány sikertelen belépése volt. Ezek a KÖVETKEZŐ kérés bizonyítékai, és
+    // memóriában gyűlnek — nincs írás.
+    edgeObserve(request, reply.statusCode)
+
     // Always keep the slow ones: a 1% sample of a rare 3-second request is
     // usually zero rows, which is exactly the request worth seeing.
     const elapsed = reply.elapsedTime

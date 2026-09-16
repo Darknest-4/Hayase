@@ -178,3 +178,70 @@ already verified, and losing tomorrow's copy because today's upload broke would
 be the worse outcome. When it is unset, every run says so — a backup on the
 same disk as the database survives a bad deploy and a dropped table, but not
 the machine.
+
+---
+
+## Cloudflare R2 — a beépített megoldás
+
+A `BACKUP_SYNC_CMD` alapértelmezése ma a mellékelt `scripts/database/sync-r2.sh`,
+mert a „másold ki a gépről" az a lépés, amit a legkönnyebb elhalasztani, és
+aminek a hiánya a legdrágább. A szkript többet csinál, mint egy `rclone copy`:
+
+* **feltölt**, majd **ellenőrzi**, hogy a távoli méret egyezik a helyivel — egy
+  félbeszakadt feltöltés rövidebb objektumot hagy, és a „sikerült" a feltöltő
+  parancstól nem bizonyíték;
+* a **távoli megőrzés** ugyanazt az ablakot követi, mint a helyi
+  (`BACKUP_KEEP_DAYS`), tehát a másolatok nem gyűlnek örökké;
+* hiányzó beállításnál **néven nevezi**, melyik változó hiányzik, ahelyett hogy
+  csak annyit mondana, „nem sikerült".
+
+A mentőkonténer ehhez saját képet használ (`infrastructure/backup/Dockerfile`):
+a hivatalos `postgres:16-alpine` fölé `rclone` kerül. A `pg_dump` így továbbra
+is pontosan a kiszolgáló verziója, de a konténernek már van mivel elhagynia a
+gépet.
+
+### Beállítás
+
+1. A Cloudflare irányítópultján hozz létre egy **privát** R2-vödröt. Ez
+   adatbázis-mentés: minden felhasználó minden adata benne van, nyilvános
+   hozzáférést semmiképp ne kapjon.
+2. **R2 → Manage API Tokens → Create API Token**, jogosultság **Object Read &
+   Write**, és a hatókört szűkítsd erre az egy vödörre. Egy fiókszintű token
+   ennél a feladatnál semmivel nem ad többet, cserébe többet visz, ha kiszivárog.
+3. A `.env`-be:
+
+   ```
+   R2_ENDPOINT=https://<fiókazonosító>.r2.cloudflarestorage.com
+   R2_BUCKET=<a vödör neve>
+   R2_PREFIX=yume
+   R2_ACCESS_KEY_ID=<a token hozzáférési kulcsa>
+   R2_SECRET_ACCESS_KEY=<a token titka>
+   ```
+
+4. A beállítás próbája **feltöltés nélkül** — ez írni is megpróbál, nem csak
+   olvasni, mert a mentéshez írni kell:
+
+   ```
+   docker compose run --rm --entrypoint sh backup -c '/db/sync-r2.sh --check'
+   ```
+
+5. Ha rendben van, indítsd újra a konténert, és nézd meg egy valódi futáson:
+
+   ```
+   docker compose up -d backup
+   docker compose logs -f backup
+   ```
+
+### Visszaállítás az R2-ből
+
+A `restore.sh` a `/backups` köteten lévő fájllal dolgozik, tehát a távoli
+másolatot előbb le kell hozni. Egy elveszett gép után, új gépen:
+
+```
+docker compose run --rm --entrypoint sh backup -c \
+  'rclone copy "R2:$R2_BUCKET/$R2_PREFIX/yume-<dátum>.dump" /backups --s3-no-check-bucket'
+docker compose run --rm backup /db/restore.sh yume-<dátum>.dump
+```
+
+A `restore.sh` a visszaállítás után lefuttatja a hiányzó migrációkat és lezárja
+a dumpból örökölt, félbemaradt mentéskéréseket — lásd fentebb.

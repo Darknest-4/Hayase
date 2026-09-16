@@ -125,9 +125,25 @@ describe('adversarial', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
     })
 
     test('an expired token is refused', async () => {
-      // exp is set directly: fast-jwt refuses a negative expiresIn option.
-      const past = Math.floor(Date.now() / 1000) - 3600
-      const token = app.jwt.sign({ sub: victim.id, username: victim.username, tv: 0, exp: past })
+      /*
+       * A lejárt token ELŐÁLLÍTÁSA a kényes rész, és egyszer már elavult.
+       *
+       * Korábban a `payload.exp` közvetlen megadása működött. A fast-jwt 6
+       * (a @fastify/jwt 10 alatt) viszont FELÜLÍRJA a payload `exp`-jét az
+       * `expiresIn` beállításból számolttal, tehát ugyanaz a hívás egy
+       * tökéletesen ÉRVÉNYES tokent adott vissza — a teszt nem azt mérte,
+       * amit hitt magáról.
+       *
+       * A lejáratot ezért az `iat` visszadátumozásával állítjuk elő: az
+       * `expiresIn` ahhoz adódik hozzá, tehát az `exp` a múltba esik, és
+       * pontosan egy tizenöt perccel ezelőtt lejárt munkamenetet mintáz.
+       */
+      const twoHoursAgo = Math.floor(Date.now() / 1000) - 7200
+      const token = app.jwt.sign({ sub: victim.id, username: victim.username, tv: 0, iat: twoHoursAgo })
+      const claims = JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString()) as { exp: number }
+      assert.ok(claims.exp < Math.floor(Date.now() / 1000),
+        'a próbatokennek tényleg lejártnak kell lennie, különben ez a teszt semmit nem mér')
+
       const res = await app.inject({ url: '/v1/me/library', headers: { authorization: `Bearer ${token}` } })
       assert.equal(res.statusCode, 401)
     })

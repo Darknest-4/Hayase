@@ -110,6 +110,24 @@ if ! pg_restore --dbname="$RESTORE_URL" --no-owner --no-privileges --exit-on-err
   fail "restore failed — \"$TARGET_DB\" now exists but is incomplete"
 fi
 
+# A VISSZAÁLLÍTÁS VÉGET VET MINDENNEK, AMI FUTOTT.
+#
+# A mentés a saját `backup_requests` sorát is lementi, futó állapotban — a
+# dump pillanatában tényleg az volt. A visszaállított példányon ezért ott ül
+# egy futás, ami sosem fejeződik be, és mivel egyszerre csak egy aktív kérés
+# lehet, a panel „Mentés most" gombja tartósan 409-et ad. Pont akkor, amikor a
+# legnagyobb szükség lenne rá: közvetlenül egy katasztrófa utáni
+# visszaállítás után.
+#
+# Amit itt találunk futó állapotban, az a MÚLT egy pillanata, nem egy élő
+# folyamat. A `pending` sorok maradnak — azok még nem kezdődtek el, és a
+# mentési ciklus fel fogja venni őket.
+STALE=$(psql "$RESTORE_URL" -tAc \
+  "UPDATE backup_requests SET status = 'failed', finished_at = now(),
+          log = coalesce(log || E'\n', '') || 'megszakadt: a sor egy visszaállításból származik'
+    WHERE status = 'running' RETURNING 1" 2>/dev/null | grep -c 1 || true)
+[ "${STALE:-0}" -gt 0 ] && log "cleared $STALE in-flight backup request(s) carried over by the dump"
+
 MIGRATIONS=$(psql "$RESTORE_URL" -tAc "SELECT count(*) FROM schema_migrations" 2>/dev/null || echo 0)
 USERS=$(psql "$RESTORE_URL" -tAc "SELECT count(*) FROM users" 2>/dev/null || echo 0)
 log "restored: $MIGRATIONS migrations, $USERS users"

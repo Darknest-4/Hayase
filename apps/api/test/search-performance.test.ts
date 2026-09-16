@@ -44,16 +44,19 @@ const page = (n: number): unknown[] => Array.from({ length: n }, (_, i) => ({ id
 describe('the fuzzy predicates are opt-out', () => {
   test('the default query still carries them, so nothing else changes', () => {
     const { sql } = buildSearchSql({})
-    assert.match(sql, /a\.canonical_title % \$1/)
-    assert.match(sql, /t\.title % \$1/)
-    assert.match(sql, /s\.synonym % \$1/)
+    // A hasonlítás a HAJTOGATOTT alakon fut — a hajtogatott trigramhalmaz a
+    // nyers bővebb halmaza, ezért kiváltja és nem kiegészíti. Lásd a
+    // `search.ts` fejlécét és a search-accents suite-ot.
+    assert.match(sql, /yume_unaccent\(a\.canonical_title\) % yume_unaccent\(\$1\)/)
+    assert.match(sql, /yume_unaccent\(t\.title\) % yume_unaccent\(\$1\)/)
+    assert.match(sql, /yume_unaccent\(s\.synonym\) % yume_unaccent\(\$1\)/)
   })
 
   test('the cheap query drops every one of them and keeps the rest', () => {
     const { sql } = buildSearchSql({}, { fuzzy: false })
-    assert.doesNotMatch(sql, /% \$1/, 'no similarity operator may survive')
+    assert.doesNotMatch(sql, / % /, 'no similarity operator may survive')
     // What it must still do: exact, prefix, substring and full-text.
-    assert.match(sql, /ILIKE '%' \|\| \$1 \|\| '%'/)
+    assert.match(sql, /ILIKE '%' \|\| yume_unaccent\(\$1\) \|\| '%'/)
     assert.match(sql, /websearch_to_tsquery\('simple', \$1\)/)
     assert.match(sql, /lower\(a\.canonical_title\) = lower\(\$1\)/)
   })
@@ -72,7 +75,7 @@ describe('which query searchAnime actually issues', () => {
     const db = spy([page(20)])
     await searchAnime(db, 'naruto', { limit: 20 })
     assert.equal(db.calls.length, 1, 'a filled page must not run the fuzzy query')
-    assert.doesNotMatch(db.calls[0]!, /% \$1/)
+    assert.doesNotMatch(db.calls[0]!, / % /)
   })
 
   test('a short page falls back to the fuzzy query and returns *its* rows', async () => {
@@ -81,8 +84,8 @@ describe('which query searchAnime actually issues', () => {
     const db = spy([page(3), page(7)])
     const rows = await searchAnime(db, 'one piece', { limit: 20 })
     assert.equal(db.calls.length, 2)
-    assert.doesNotMatch(db.calls[0]!, /% \$1/)
-    assert.match(db.calls[1]!, /% \$1/)
+    assert.doesNotMatch(db.calls[0]!, / % /)
+    assert.match(db.calls[1]!, / % yume_unaccent\(\$1\)/)
     assert.equal(rows.length, 7)
   })
 
@@ -94,7 +97,7 @@ describe('which query searchAnime actually issues', () => {
       const db = spy([page(20)])
       await searchAnime(db, 'naruto', { limit: 20, sort })
       assert.equal(db.calls.length, 1, sort)
-      assert.match(db.calls[0]!, /% \$1/, `${sort} must use the full query`)
+      assert.match(db.calls[0]!, / % yume_unaccent\(\$1\)/, `${sort} must use the full query`)
     }
   })
 

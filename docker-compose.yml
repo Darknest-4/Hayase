@@ -7,6 +7,21 @@ services:
   app:
     build: .
     restart: unless-stopped
+    # LEGKISEBB JOGOSULTSÁG.
+    #
+    # `no-new-privileges`: a konténerben futó folyamat nem szerezhet több jogot,
+    # mint amennyivel indult — setuid binárison keresztül sem. A YUME egyik
+    # szolgáltatásának sincs szüksége jogosultság-emelésre.
+    #
+    # `cap_drop: ALL`: a Docker alapból tizennégy képességet ad minden
+    # konténernek (nyers socket, chown, mknod, …). Egy Node-folyamatnak, ami egy
+    # magas portra köt és `node` felhasználóként fut, egyik sem kell.
+    #
+    # A folyamatkorlát a `deploy.resources.limits.pids` alatt ül, a memória
+    # mellett: egy elszabadult folyamat ne tudja elfogyasztani a gazdagép
+    # folyamattábláját. A mért csúcs 22 folyamat volt; a 256 bőséges tartalék.
+    security_opt: ['no-new-privileges:true']
+    cap_drop: ['ALL']
     depends_on:
       postgres:
         condition: service_healthy
@@ -31,6 +46,13 @@ services:
       # URL and the Sitemap: line in robots.txt. Leave it unset and those are
       # built from the Host header, which the caller chooses — see docs/seo.md.
       PUBLIC_URL: ${PUBLIC_URL:-}
+      # A képtükör tárhelye — KÜLÖN VÖDÖR a mentésekétől, mert ezt a
+      # tartalmat egy nyilvános útvonal szolgálja ki, a mentéseket soha semmi.
+      # Az `app` olvassa (kiszolgálás), a `worker` írja (tükrözés).
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_MEDIA_BUCKET: ${R2_MEDIA_BUCKET:-yume-media}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
     # Not published: caddy is the only way in. Expose it again only if you are
     # running without the proxy and know the request is already on a trusted
     # network.
@@ -43,7 +65,7 @@ services:
       start_period: 20s
     deploy:
       resources:
-        limits: { memory: 768M }
+        limits: { memory: 768M, pids: 256 }
 
   # Background worker — REQUIRED in production. It creates next month's
   # partitions and enforces retention (without it, inserts into the
@@ -52,6 +74,9 @@ services:
   worker:
     build: .
     restart: unless-stopped
+    # Ugyanaz a szűkítés, mint az `app`-nál — lásd az ottani indoklást.
+    security_opt: ['no-new-privileges:true']
+    cap_drop: ['ALL']
     depends_on:
       postgres:
         condition: service_healthy
@@ -69,6 +94,13 @@ services:
       # container, but statfs('/') would measure the container overlay — so the
       # host root is bind-mounted read-only, the same approach node-exporter uses.
       DISK_PATH: /host
+      # A képtükör tárhelye — KÜLÖN VÖDÖR a mentésekétől, mert ezt a
+      # tartalmat egy nyilvános útvonal szolgálja ki, a mentéseket soha semmi.
+      # Az `app` olvassa (kiszolgálás), a `worker` írja (tükrözés).
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_MEDIA_BUCKET: ${R2_MEDIA_BUCKET:-yume-media}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
       # MONITOR_INTERVAL_MS: '60000'      # collection cadence
       # METRICS_RETENTION_DAYS: '7'       # raw sample retention
     volumes:
@@ -84,7 +116,7 @@ services:
       start_period: 30s
     deploy:
       resources:
-        limits: { memory: 512M }
+        limits: { memory: 512M, pids: 256 }
 
   # one-shot catalogue seed (25k anime + episodes) into the persistent volume.
   # Run once: docker compose --profile seed run --rm --build seed
@@ -191,7 +223,10 @@ services:
   #   docker compose run --rm backup db/restore.sh --list  see what exists
   #   docker compose run --rm backup db/restore.sh         restore the newest
   backup:
-    image: postgres:16-alpine
+    # Saját kép a hivatalos Postgres fölött: a `pg_dump` verziójának egyeznie
+    # kell a kiszolgálóéval, az `alpine` viszont nem hoz magával semmit, amivel
+    # a mentés elhagyhatná a gépet. Lásd infrastructure/backup/Dockerfile.
+    build: infrastructure/backup
     restart: unless-stopped
     depends_on:
       postgres:
@@ -201,10 +236,25 @@ services:
       BACKUP_DIR: /backups
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
       BACKUP_AT_HOUR: ${BACKUP_AT_HOUR:-3}
-      # Copy each verified backup off this machine. Without it a hardware
-      # failure still ends the project — the dumps live on the same disk.
-      #   BACKUP_SYNC_CMD='rclone copy "$$1" remote:yume-backups'
-      BACKUP_SYNC_CMD: ${BACKUP_SYNC_CMD:-}
+      # A mentés MÁSOLATA a gépen kívülre. Enélkül egy lemezhiba egyszerre
+      # viszi az adatbázist és a mentését — az audit ezt nevezte meg a mentés
+      # legnagyobb nyitott kockázataként.
+      #
+      # Alapból a mellékelt R2-szkript fut; a `BACKUP_SYNC_CMD` felülírható, ha
+      # valaki máshová (rsync, S3, B2) másolna. A szkript magától kilép, ha az
+      # R2-beállítások hiányoznak, és a hiányzó változót néven nevezi.
+      #
+      # A `$$1` nem elgépelés. A `backup.sh` a parancsot
+      # `sh -c "$$BACKUP_SYNC_CMD" -- "$$DUMP"` alakban futtatja, tehát a dump
+      # útvonala a PARANCSSZTRING `$$1`-e — a sztringnek magának kell
+      # hivatkoznia rá, különben a meghívott program argumentum nélkül indul.
+      # (A dupla dollár a compose behelyettesítése elől védi.)
+      BACKUP_SYNC_CMD: ${BACKUP_SYNC_CMD:-/db/sync-r2.sh "$$1"}
+      R2_BUCKET: ${R2_BUCKET:-}
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_PREFIX: ${R2_PREFIX:-yume}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
     volumes:
       - ./scripts/database:/db:ro
       - backups:/backups
@@ -213,6 +263,12 @@ services:
 
   postgres:
     image: postgres:16-alpine
+    # `unless-stopped`, mint minden másnak. A hiánya nem elméleti hiba volt:
+    # app, worker, caddy és backup mind újraindul magától, a Postgres viszont
+    # nem — egy újraindítás vagy egy Docker-daemon-frissítés után a YUME
+    # adatbázis nélkül jött volna vissza, a többi szolgáltatás pedig egy nem
+    # létező kiszolgálóra indult volna újra körbe-körbe.
+    restart: unless-stopped
     environment:
       POSTGRES_USER: yume
       # No default: a database password that falls back to a value published

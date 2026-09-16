@@ -8,9 +8,11 @@ import { drain, enqueue, runWorker } from '../infrastructure/queue/index.ts'
 import { handleWebhookJob } from '../modules/webhooks/delivery.ts'
 import { announceDeadJobs } from '../modules/webhooks/subscriptions.ts'
 import { handleAnalyticsJob } from '../modules/analytics/worker.ts'
+import { handleEdgeJob } from '../modules/edge/worker.ts'
 import { handleFounderJob } from '../modules/library/founder.ts'
 import { handleImportJob } from '../integrations/anilist/importer.ts'
 import { handleMaintenanceJob } from '../infrastructure/maintenance.ts'
+import { handleMediaJob } from '../modules/media/mirror.ts'
 import { handleMetadataJob } from '../modules/metadata/worker.ts'
 import { handleMonitorJob } from '../modules/system/monitor-worker.ts'
 import { handleNotifyJob } from '../modules/notifications/worker.ts'
@@ -33,7 +35,15 @@ const handlers = {
   founder: handleFounderJob,
   // Napi összesítők a látogatottsághoz. Külön sor, mert a teljes napra fut és
   // percek lehet — a `stats` egy profilra fut és másodpercek.
-  analytics: handleAnalyticsJob
+  analytics: handleAnalyticsJob,
+  // Az él háttérmunkája: IP-adatok frissítése, viselkedéselemzés, összesítés,
+  // takarítás. Külön sor, mert a DNS-feloldás lassú, és nem tarthatja fel a
+  // többi feladatot.
+  edge: handleEdgeJob,
+  // A katalógusképek tükrözése saját tárhelyre. Külön sor, mert kötegenként
+  // több száz idegen CDN-kérés, és nem tarthatja fel sem a webhookokat, sem a
+  // mérőszámokat. Magát ütemezi újra, amíg van hátra — lásd `handleMediaJob`.
+  media: handleMediaJob
 } as const
 
 async function scheduleRecurring (): Promise<void> {
@@ -50,6 +60,12 @@ async function scheduleRecurring (): Promise<void> {
   await enqueue('analytics', { day: today, dedupe: `analytics:${today}` })
   await enqueue('analytics', { day: yesterday, dedupe: `analytics:${yesterday}` })
   await enqueue('analytics', { prune: true, dedupe: `analytics-prune:${today}` })
+
+  // Az él: az összesítő és a viselkedéselemzés óránként, a takarítás naponta.
+  // Az IP-frissítés a saját ütemezőjén megy, sűrűbben — lásd lent.
+  await enqueue('edge', { day: today, dedupe: `edge:${today}` })
+  await enqueue('edge', { behaviour: true, dedupe: 'edge-behaviour' })
+  await enqueue('edge', { prune: true, dedupe: `edge-prune:${today}` })
 }
 
 /**
@@ -62,11 +78,25 @@ async function scheduleMonitor (): Promise<void> {
   await enqueue('monitor', { dedupe: 'monitor' })
 }
 
+/*
+ * Az IP-adatok frissítése.
+ *
+ * Sűrűbben, mint az óránkénti kör, mert egy új cím addig „ismeretlen", amíg
+ * meg nem néztük — és az ismeretlen cím nem kap se pozitív, se negatív pontot.
+ * Kis kötegekben megy: minden cím egy fordított névfeloldás.
+ */
+const INTEL_INTERVAL_MS = Number(process.env.EDGE_INTEL_INTERVAL_MS ?? 5 * 60_000)
+
+async function scheduleIntel (): Promise<void> {
+  await enqueue('edge', { intel: true, dedupe: 'edge-intel' })
+}
+
 const once = process.argv.includes('--once')
 
 if (once) {
   await scheduleRecurring()
   await scheduleMonitor()
+  await scheduleIntel()
   const executed = await drain(handlers)
   console.log(`drained ${executed} jobs`)
   await pool.end()
@@ -81,6 +111,9 @@ if (once) {
 
   await scheduleMonitor()
   setInterval(() => { void scheduleMonitor() }, MONITOR_INTERVAL_MS).unref()
+
+  await scheduleIntel()
+  setInterval(() => { void scheduleIntel() }, INTEL_INTERVAL_MS).unref()
 
   console.log('worker running:', Object.keys(handlers).join(', '))
   await runWorker(handlers, {

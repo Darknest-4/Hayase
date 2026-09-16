@@ -77,13 +77,24 @@ describe('the founder library', { skip: HAS_DB ? false : 'no DATABASE_URL' }, ()
    * so a retry is free.
    */
   async function seed (
-    options?: Parameters<typeof seedFounderLibrary>[1]
+    options?: Parameters<typeof seedFounderLibrary>[1],
+    /*
+     * Amit egy újrakezdés ÉRVÉNYTELENÍT.
+     *
+     * A haladást gyűjtő tömb kísérletenként értendő: a vető minden futásban
+     * nulláról számol. Ha az előző kísérlet lapjai bennmaradnak, a lista
+     * 250, 500, 750, majd megint 250 — és a „a haladás csak nőhet" állítás
+     * elbukik azon, amit a burkoló maga csinált. Ez a paraméter azért van,
+     * hogy ne a teszt saját újrapróbálása buktassa meg a tesztet.
+     */
+    discardOnRetry?: unknown[]
   ): Promise<Awaited<ReturnType<typeof seedFounderLibrary>>> {
     for (let attempt = 0; ; attempt++) {
       try {
         return await seedFounderLibrary(profileId, options)
       } catch (error) {
         if (attempt >= 3 || (error as { code?: string }).code !== '23503') throw error
+        discardOnRetry?.splice(0)
       }
     }
   }
@@ -186,12 +197,26 @@ describe('the founder library', { skip: HAS_DB ? false : 'no DATABASE_URL' }, ()
     // A small batch against the published subset is enough to prove the loop
     // pages, terminates and covers: the number of pages is what the timeout
     // cared about, not their size.
+    /*
+     * A katalógus állapota a vetés ELŐTT.
+     *
+     * A záró állítás azt nézi, hogy a lapozás mindent lefedett-e. Ha viszont
+     * a vetés UTÁN kérdezzük meg, mi a nyilvános, akkor egy párhuzamosan futó
+     * suite egyetlen beszúrása megbuktatja — a suite-ok közös adatbázison
+     * futnak, és a katalógusba több is ír. Ami után keletkezett, arról ez a
+     * futás nem tudhatott, és jogosan nincs benne.
+     */
+    const { rows: existing } = await pool.query<{ id: string }>(
+      "SELECT id FROM anime WHERE visibility = 'public'"
+    )
+    const publicBefore = existing.map(row => row.id)
+
     const seenPages: Array<[string, number]> = []
     const result = await seed({
       onlyPublic: true,
       batchSize: 250,
       onProgress: (what, done) => seenPages.push([what, done])
-    })
+    }, seenPages)
 
     const titlePages = seenPages.filter(([what]) => what === 'titles')
     const episodePages = seenPages.filter(([what]) => what === 'episodes')
@@ -208,11 +233,10 @@ describe('the founder library', { skip: HAS_DB ? false : 'no DATABASE_URL' }, ()
     assert.equal(episodePages[episodePages.length - 1]![1], result.episodes)
 
     const { rows } = await pool.query(
-      `SELECT count(*)::int AS n FROM anime a
-        WHERE a.visibility = 'public'
-          AND NOT EXISTS (SELECT 1 FROM library_entries le
+      `SELECT count(*)::int AS n FROM unnest($2::uuid[]) AS a(id)
+        WHERE NOT EXISTS (SELECT 1 FROM library_entries le
                            WHERE le.profile_id = $1 AND le.anime_id = a.id)`,
-      [profileId]
+      [profileId, publicBefore]
     )
     assert.equal(rows[0]!.n, 0, 'paging left published titles out of the library')
   })

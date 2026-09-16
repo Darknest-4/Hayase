@@ -67,6 +67,21 @@ docker run --rm \
   -e FORCE=1 \
   postgres:16-alpine /db/restore.sh "$FILE"
 
+# A MENTÉS ANNYIRA FRISS, AMENNYIRE A SÉMÁJA.
+#
+# A visszaállítás a mentés pillanatának sémáját hozza vissza — a fájl óta
+# írt migrációk nélkül. Ez egyszer már elvitt egy teljes tesztfutást: 27
+# suite hasalt el azzal, hogy `relation "edge_bans" does not exist`, mert a
+# legutóbbi ellenőrzött mentés megelőzte azt a migrációt. A hibaüzenet
+# ráadásul a tesztre mutatott, nem ide.
+#
+# Ugyanez igaz egy VALÓDI visszaállításra is: egy katasztrófa után a séma a
+# mentés kora, és a migrációkat ott is le kell futtatni. Itt legalább ne
+# kelljen észben tartani.
+echo
+echo "== hiányzó migrációk pótlása"
+DATABASE_URL="postgres://yume:${PASS}@127.0.0.1:15432/${TEST_DB}" npm run migrate --workspace @yume/api
+
 echo
 echo "== kész. A tesztek így futnak ellene:"
 echo "   export DATABASE_URL='postgres://yume:***@127.0.0.1:15432/${TEST_DB}'"
