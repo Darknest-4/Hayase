@@ -5,6 +5,7 @@
 // protect — see AUTH_LIMIT / WRITE_LIMIT below.
 
 import rateLimit from '@fastify/rate-limit'
+import { internalTrustEnabled, isInternalRequest } from './internal-request.ts'
 import fp from 'fastify-plugin'
 
 import { config } from '../config.ts'
@@ -91,7 +92,23 @@ export default fp(async fastify => {
     // A második kivétel a terheléses mérésé, és három feltételhez kötött
     // (kulcs + fejléc + forráscím); kulcs nélkül nem létezik. Enélkül egy
     // mérés a korlátot méri, nem a terméket — lásd middleware/load-test.ts.
-    allowList: request => request.url.startsWith('/v1/health') || isLoadTestRequest(request),
+    /*
+     * A HARMADIK KIVÉTEL A SAJÁT RENDSZERÜNK.
+     *
+     * A worker, a bot, a mérőszkriptek és a karbantartó feladatok ugyanazon a
+     * Docker-hálózaton futnak, és ugyanezt az API-t hívják. Ha őket
+     * megfojtjuk, az nem védelem: a rendszer bénítja meg saját magát, pont
+     * amikor dolgozik — és a hiba a legrosszabb helyen jelenik meg, egy
+     * félbemaradt háttérfeladatban.
+     *
+     * A felismerés a TCP-kapcsolat túlsó végét nézi, nem fejlécet, és a
+     * proxyfejlécek jelenléte kizárja a mentességet. Kívülről tehát nem
+     * hamisítható — részletek az `internal-request.ts` fejlécében.
+     */
+    allowList: request =>
+      request.url.startsWith('/v1/health') ||
+      isInternalRequest(request) ||
+      isLoadTestRequest(request),
     // trustProxy is on, so request.ip is the real client behind a reverse proxy
     keyGenerator: request => request.ip,
     // match the app's RFC 9457 error convention
@@ -106,6 +123,21 @@ export default fp(async fastify => {
   // Egy bekapcsolva felejtett mentesség csendben rossz: semmi nem hibázik,
   // csak egy cím korlát nélkül jár. Induláskor kimondjuk, és a biztonsági
   // állapotjelentés is jelzi.
+  /*
+   * A BELSŐ MENTESSÉG KIMONDVA.
+   *
+   * Nem figyelmeztetés — ez az alapértelmezett és helyes állapot —, de
+   * kimondjuk, mert egy mentesség, amiről csak a forráskód tud, előbb-utóbb
+   * meglepetés lesz. Aki a naplót olvassa, lássa, mi van bekapcsolva.
+   */
+  fastify.log.info(
+    { trustInternal: internalTrustEnabled() },
+    internalTrustEnabled()
+      ? 'a sebességkorlát nem vonatkozik a saját hálózatunkról, proxyfejléc nélkül érkező kérésekre ' +
+        '(worker, bot, egészségjelző) — kikapcsolás: RATE_LIMIT_TRUST_INTERNAL=false'
+      : 'RATE_LIMIT_TRUST_INTERNAL=false — a saját háttérfeladataink is a sebességkorlát alá esnek'
+  )
+
   if (loadTestConfigured()) {
     fastify.log.warn(
       { ips: config.loadTestIps },

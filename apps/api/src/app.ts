@@ -55,6 +55,7 @@ import settingsRoutes from './modules/settings/routes.ts'
 import translationRoutes from './modules/translations/routes.ts'
 
 import type { FastifyError, FastifyInstance } from 'fastify'
+import { renderStatusPage, wantsHtml } from './infrastructure/http/status-page.ts'
 
 /**
  * Reject introspection queries.
@@ -211,6 +212,22 @@ export async function buildApp (): Promise<FastifyInstance> {
     }
   })
 
+  /**
+   * A `Retry-After` fejléc értéke másodpercben.
+   *
+   * A sebességkorlát számot tesz rá, de a szabvány HTTP-dátumot is enged —
+   * és egy dátumot másodpercként értelmezve a visszaszámláló évezredeket
+   * mutatna.
+   */
+  const retryAfterSeconds = (header: unknown): number | null => {
+    if (typeof header === 'number') return header > 0 ? header : null
+    if (typeof header !== 'string' || !header) return null
+    if (/^\d+$/.test(header)) return Number(header) || null
+    const at = Date.parse(header)
+    if (!Number.isFinite(at)) return null
+    return Math.max(1, Math.round((at - Date.now()) / 1000))
+  }
+
   app.setErrorHandler((error: FastifyError, request, reply) => {
     // Some throwers — the rate limiter's errorResponseBuilder among them —
     // reject with a plain object already in this app's problem+json shape
@@ -224,6 +241,29 @@ export async function buildApp (): Promise<FastifyInstance> {
 
     const shaped = error as unknown as { status?: number, title?: string, detail?: string, type?: string }
     if (typeof shaped.status === 'number' && typeof shaped.title === 'string') {
+      /*
+       * A BÖNGÉSZŐNEK OLDAL JÁR, NEM JSON.
+       *
+       * A sebességkorlát válasza eddig `application/problem+json` volt minden
+       * hívónak. Aki géppel hív, annak ez a helyes; aki viszont a címsorba
+       * írta be a címet, az egy nyers JSON-t kapott a képernyőre — ami nem
+       * hibaüzenet, hanem egy elrontott oldal látszata.
+       *
+       * A döntést az `Accept` fejléc hozza: a böngésző navigációja `text/html`-t
+       * kér ELŐBB, a `fetch` és a `curl` nem. A `*​/*` szándékosan nem elég.
+       */
+      if (wantsHtml(request.headers.accept)) {
+        const seconds = retryAfterSeconds(reply.getHeader('retry-after'))
+        return reply.code(shaped.status).type('text/html; charset=utf-8').send(renderStatusPage({
+          status: shaped.status,
+          title: shaped.status === 429 ? 'Túl sok kérés' : (shaped.title ?? 'Hiba'),
+          message: shaped.status === 429
+            ? 'Egy kicsit gyorsan érkeztek a kérések erről a hálózatról. Ez nem tiltás — pár másodperc múlva folytathatod.'
+            : 'A kérést most nem tudjuk kiszolgálni.',
+          retryAfter: seconds,
+          requestId: request.id
+        }))
+      }
       return reply.code(shaped.status).type('application/problem+json')
         .send({ ...shaped, instance: request.id, code: errorCode(route, shaped.status) })
     }

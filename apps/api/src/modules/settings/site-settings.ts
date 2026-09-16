@@ -37,10 +37,34 @@ export function rateLimitDefaults (): RateLimits {
   // az importáláskor rögzült volna, és egy teszt, ami a saját korlátját
   // állítja be a `buildApp()` előtt, a régi értéket kapta volna. A gyártásban
   // ez ugyanaz az érték; a különbség az, hogy mikor kérdezzük meg.
+  /*
+   * A GLOBÁLIS KORLÁT MÉRÉSBŐL, NEM TIPPBŐL.
+   *
+   * Megszámolva, mennyibe kerül egy valódi látogatás: a főoldal 13 API-kérés,
+   * a többi képernyő 1–5, tehát egy átlagos oldalváltás ~5. A régi 300/perc
+   * ezzel egyetlen látogatónak bőven elég lett volna — csakhogy a korlát
+   * CÍMENKÉNT számol, és egy cím mögött sokan vannak:
+   *
+   *   * mobilszolgáltatói NAT — több száz előfizető egy címen;
+   *   * munkahely, iskola, kollégium — egy kijárat;
+   *   * a saját mérőfutásaink, amik közben 429-et kaptak.
+   *
+   * Húsz ember egy cím mögött 300/perc mellett fejenként három oldalt nézhet
+   * meg percenként. Ez nem védelem, hanem egy elrontott élmény.
+   *
+   * 1200/perc mellett ugyanez húsz ember × tizenkét oldal. Egyetlen gépi
+   * gyűjtőnek viszont továbbra is valódi plafon, és a MINTA-alapú védelem
+   * (edge) ettől függetlenül fut: ott a nagy forgalom pontot ad, nem
+   * mentességet.
+   */
   return {
-    global: { max: Number(process.env.RATE_LIMIT_MAX ?? 300), windowSeconds: 60 },
+    global: { max: Number(process.env.RATE_LIMIT_MAX ?? 1200), windowSeconds: 60 },
+    // A belépés SZÁNDÉKOSAN szoros marad: ez a jelszókitalálás elleni védelem,
+    // és tíz próbálkozás negyedóránként egy valódi embernek is elég.
     auth: { max: Number(process.env.AUTH_RATE_LIMIT_MAX ?? 10), windowSeconds: 15 * 60 },
-    write: { max: Number(process.env.WRITE_RATE_LIMIT_MAX ?? 30), windowSeconds: 5 * 60 },
+    // Az írás enyhül, de nem szabadul el: aki egy beszélgetésben aktívan
+    // hozzászól, öt perc alatt harmincat is írhat.
+    write: { max: Number(process.env.WRITE_RATE_LIMIT_MAX ?? 60), windowSeconds: 5 * 60 },
     refresh: { max: Number(process.env.REFRESH_RATE_LIMIT_MAX ?? 60), windowSeconds: 15 * 60 }
   }
 }

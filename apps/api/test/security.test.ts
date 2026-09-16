@@ -72,8 +72,19 @@ describe('rate limiting', () => {
     process.env.RATE_LIMIT_MAX = '5'
     const app = await freshApp()
     let limited: Awaited<ReturnType<typeof app.inject>> | undefined
+    /*
+     * KÍVÜLRŐL érkező kérés — ezért van rajta továbbítófejléc.
+     *
+     * Az `inject` alapból hurokcímről jön, fejléc nélkül, és azt a
+     * sebességkorlát a saját rendszerünknek tekinti (a worker és a bot is így
+     * hív). A kvótát fejléc nélkül el sem lehetne fogyasztani.
+     *
+     * Az `Accept` is számít: a böngészőnek szánt HTML-oldal helyett ez a
+     * teszt a GÉPI választ méri, tehát JSON-t kér.
+     */
+    const outside = { 'x-forwarded-for': '203.0.113.70', accept: 'application/json' }
     for (let i = 0; i < 10; i++) {
-      const res = await app.inject({ method: 'GET', url: '/v1/config' })
+      const res = await app.inject({ method: 'GET', url: '/v1/config', headers: outside })
       if (res.statusCode === 429) { limited = res; break }
     }
     assert.ok(limited, 'expected a 429 within 10 requests at max=5')
