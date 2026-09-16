@@ -56,6 +56,10 @@ import translationRoutes from './modules/translations/routes.ts'
 
 import type { FastifyError, FastifyInstance } from 'fastify'
 import { renderStatusPage, wantsHtml } from './infrastructure/http/status-page.ts'
+import { guard as maintenanceGuard } from './modules/maintenance/middleware.ts'
+import { watch as watchMaintenance } from './modules/maintenance/cache.ts'
+import { stopListener } from './infrastructure/queue/wake.ts'
+import { adminMaintenance, publicStatus } from './modules/maintenance/routes.ts'
 
 /**
  * Reject introspection queries.
@@ -457,8 +461,53 @@ export async function buildApp (): Promise<FastifyInstance> {
       })
   })
 
+  /*
+   * KARBANTARTÁSI MÓD.
+   *
+   * A sebességkorlát és a kockázati réteg UTÁN fut, és szándékosan: azok
+   * olcsóbbak, és amit ott elutasítunk, azzal itt már nem kell foglalkozni.
+   * A hitelesítés ELŐTT viszont — a döntéshez elég a szerep, ha már megvan, és
+   * egy karbantartás alatt álló oldalon nem akarunk minden kérésre tokent
+   * ellenőrizni.
+   *
+   * Kérésenként NULLA adatbázis-lekérdezés: a beállítás memóriából jön,
+   * értesítéssel és lejárati idővel frissítve. Adatbázishoz csak akkor
+   * nyúlunk, ha a kérésen TÉNYLEGESEN van mentességi jegy.
+   */
+  app.addHook('onRequest', maintenanceGuard)
+
+  /*
+   * Feliratkozás a karbantartás változásaira.
+   *
+   * A meglévő, újracsatlakozó hallgató kapcsolatot használja — nem nyit
+   * másodikat. Ha nincs még kapcsolat (az API folyamatban nem fut a
+   * feladatsor), a feliratkozás elindítja.
+   */
+  watchMaintenance()
+
+  /*
+   * A hallgató kapcsolat a folyamat lezárásakor is záruljon.
+   *
+   * Egy élő PostgreSQL-kapcsolat életben tartja az eseményhurkot: enélkül a
+   * `app.close()` visszatér, a folyamat mégsem lép ki. Élesben ez „a konténer
+   * nem áll le"-ként jelentkezne, tesztben pedig egy örökre váró futásként —
+   * és az utóbbi meg is történt.
+   */
+  app.addHook('onClose', async () => { stopListener() })
+
+  /*
+   * A RÉGI CSAK-OLVASHATÓ KAPCSOLÓ.
+   *
+   * Megmarad, változatlan viselkedéssel. Nem azért, mert nem lehetne beolvasztani
+   * a `READ_ONLY` módba, hanem mert egy meglévő telepítés viselkedése nem
+   * változhat meg csendben egy átállástól: aki ma be van kapcsolva, annak
+   * holnap is pontosan ugyanaz történjen.
+   *
+   * A kettő EGYÜTT hat, és a szigorúbb nyer — a karbantartás hookja fentebb
+   * fut, tehát ami ott elbukik, ide el sem jut.
+   */
   const WRITES = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
-  const readOnlyExempt = /^\/v1\/(auth|admin\/(config|security|backups))\b/
+  const readOnlyExempt = /^\/v1\/(auth|admin\/(config|security|backups|maintenance))\b/
   app.addHook('onRequest', async (request, reply) => {
     if (!WRITES.has(request.method)) return
     if (!/^\/(v1|graphql)\b/.test(request.url)) return
@@ -472,6 +521,8 @@ export async function buildApp (): Promise<FastifyInstance> {
     })
   })
 
+  await app.register(publicStatus, { prefix: '/v1/status' })
+  await app.register(adminMaintenance, { prefix: '/v1/admin/maintenance' })
   await app.register(publicConfig, { prefix: '/v1/config' })
   await app.register(publicThemes, { prefix: '/v1/themes' })
   await app.register(adminThemes, { prefix: '/v1/admin/themes' })
