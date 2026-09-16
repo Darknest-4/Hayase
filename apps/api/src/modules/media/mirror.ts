@@ -36,7 +36,13 @@ const KIND_ORDER = ['cover', 'banner', 'backdrop', 'logo']
  *
  * TARTALOMCÍMZETT, a forrás URL-jének hasításából: ugyanaz a kép ugyanazt a
  * kulcsot kapja, tehát egy megismételt futás nem hoz létre duplikátumot, és a
- * kulcs SOSEM változik. Ez utóbbi azért számít, mert így a kiszolgálásnál
+ * kulcs SOSEM változik.
+ *
+ * TÖBB KATALÓGUSSOR OSZTOZHAT EGY KULCSON, és ezt először elrontottam: ugyanaz
+ * a borító két bejegyzéshez ugyanazt a forrás-URL-t viseli, tehát ugyanazt a
+ * kulcsot kapja. A soron lévő egyedi index emiatt 119 tükrözést bukott el
+ * 3 624-ből — a kép megérkezett, csak a sor nem tudta feljegyezni. Lásd a
+ * 0056-os migrációt. Ez utóbbi azért számít, mert így a kiszolgálásnál
  * `immutable` gyorsítótárazás adható rá — egy kulcs mögött sosem lesz más kép.
  *
  * A kiterjesztés a forrásból jön, mert a böngésző és a tárhely is ebből dönti
