@@ -39,13 +39,13 @@ export function createControls (player, actions = {}, options = {}) {
   row.className = 'yp-controls-row'
 
   const play = button('play', 'Lejátszás', call('togglePlay'), 'yp-btn-play')
-  const back = button('back10', '10 másodperc vissza', () => actions.seekBy?.(-10))
-  const forward = button('forward10', '10 másodperc előre', () => actions.seekBy?.(10))
-  const previous = button('previous', 'Előző rész', call('previousEpisode'))
-  const next = button('next', 'Következő rész', call('nextEpisode'))
+  const back = button('back10', '10 másodperc vissza', () => actions.seekBy?.(-10), 'yp-btn-back')
+  const forward = button('forward10', '10 másodperc előre', () => actions.seekBy?.(10), 'yp-btn-fwd')
+  const previous = button('previous', 'Előző rész', call('previousEpisode'), 'yp-btn-prev')
+  const next = button('next', 'Következő rész', call('nextEpisode'), 'yp-btn-next')
 
   // ---- hangerő ----
-  const mute = button('volume', 'Némítás', call('toggleMute'))
+  const mute = button('volume', 'Némítás', call('toggleMute'), 'yp-btn-mute')
   const volume = document.createElement('div')
   volume.className = 'yp-volume'
   volume.setAttribute('role', 'slider')
@@ -84,8 +84,8 @@ export function createControls (player, actions = {}, options = {}) {
 
   const subtitles = button('subtitles', 'Felirat', call('toggleSubtitles'), 'yp-btn-sub')
   const settings = button('settings', 'Beállítások', () => actions.openSettings?.(), 'yp-btn-settings')
-  const pip = button('pip', 'Kép a képben', call('togglePip'))
-  const cinema = button('cinema', 'Mozi mód', call('toggleCinema'))
+  const pip = button('pip', 'Kép a képben', call('togglePip'), 'yp-btn-pip')
+  const cinema = button('cinema', 'Mozi mód', call('toggleCinema'), 'yp-btn-cinema')
   const fullscreen = button('fullscreen', 'Teljes képernyő', call('toggleFullscreen'), 'yp-btn-fs')
 
   const left = document.createElement('div')

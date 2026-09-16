@@ -12,6 +12,7 @@
 import { createPlayer } from '../core/player.js'
 import { createPlaybackController } from '../playback/playback-controller.js'
 import { createPlayerUI } from '../ui/player-ui.js'
+import { createLoadingPhase } from '../playback/loading-phase.js'
 import { createProgressTracker } from '../playback/progress.js'
 import { createResume } from '../playback/resume.js'
 import { createSkipManager } from '../skip/skip-manager.js'
@@ -62,6 +63,11 @@ export function createEpisodePlayer (options = {}) {
     player.state.patch({ quality: { available, current: chosen.quality ?? 'auto', auto: chosen.auto } })
     return chosen
   }
+
+  // ---- a betöltőképernyő fázisa ----
+  // A videóelem saját eseményeiből. Enélkül a `setPhase`-t senki nem hívta, és
+  // a betöltő soha nem tűnt el — a videó ment alatta, láthatatlanul.
+  const loading = createLoadingPhase(player)
 
   // ---- források ----
   const sources = createSourceManager(player, { prefs: prefs.all(), timeoutMs: options.timeoutMs })
@@ -220,7 +226,7 @@ export function createEpisodePlayer (options = {}) {
   // következő rész, de csak akkor, ha a néző ezt kérte. Automatikus továbblépés
   // kikapcsolva ne történjen semmi — a videó maradjon a végén.
   player.own(player.bus.on(EV.ENDED, () => {
-    player.state.patch({ ui: { loadingPhase: LOADING_PHASE.READY } })
+    loading.set(LOADING_PHASE.READY)
     if (prefs.get('player.episode.autoNext') === true) options.onNextEpisode?.()
   }))
 
@@ -249,6 +255,7 @@ export function createEpisodePlayer (options = {}) {
     node: ui.node,
     player,
     party,
+    loading,
     ui,
     prefs,
     flags,

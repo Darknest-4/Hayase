@@ -150,6 +150,11 @@
 
 .yp-btn {
   display: inline-flex;
+  /* NEM ZSUGORODIK. A vezérlősáv rugalmas doboz, és szűk helyen a böngésző a
+     gombokat nyomja össze — 320 képpontos telefonon 40-ről 20-ra, ami ujjal
+     eltalálhatatlan. Ez nem elméleti: a böngészős mérés pontosan ezt írta ki
+     `button.yp-btn 20×40` alakban, kilenc gombra. */
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   /* Negyvennégy képpont: ez az a méret, ami ujjal eltalálható. Egy huszonnégy
@@ -464,14 +469,52 @@
 @media (max-width: 640px) {
   .yp { border-radius: var(--radius-md); }
   .yp-controls { padding: var(--space-5) var(--space-2) var(--space-2); }
-  /* Telefonon a hangerőcsúszka és a mozi mód elmarad: a hangerőt a készülék
-     gombjai állítják, a mozi módnak pedig nincs mit tágítania. */
-  .yp-volume, .yp-btn-cinema, .yp-controls-left .yp-btn:nth-child(1),
-  .yp-controls-left .yp-btn:nth-child(5) { display: none; }
+  /* Telefonon a hangerőcsúszka, a mozi mód és a részváltó gombok elmaradnak:
+     a hangerőt a készülék gombjai állítják, a mozi módnak nincs mit
+     tágítania, a részváltás pedig az epizódlistából egy koppintás.
+     Osztálynévre célozva, nem sorszámra — egy új gomb beszúrása a
+     `nth-child(5)`-öt csendben másra irányítaná. */
+  .yp-volume,
+  .yp-btn-cinema,
+  .yp-btn-prev,
+  .yp-btn-next { display: none; }
   .yp-btn { width: 40px; height: 40px; }
   .yp-btn-play { width: 48px; height: 48px; }
   .yp-time { font-size: var(--text-xs); }
   .yp-menu { right: var(--space-2); left: var(--space-2); width: auto; bottom: 68px; }
   .yp-skip { right: var(--space-3); bottom: 72px; padding: var(--space-2) var(--space-4); font-size: var(--text-sm); }
   .yp-mini { width: min(240px, 62vw); }
+}
+
+/* ---- nagy telefon ----
+ *
+ * 430 képpont (a nagy iPhone) az a pont, ahol a teljes gombsor még ELFÉR a
+ * szemnek, de már nem a mérőszalagnak: a teljes képernyő gombja kilenc
+ * képponttal a héjon kívülre került, és ott le is vágódott.
+ *
+ * Ami itt megy, az mind ELÉRHETŐ MÁSHOL: a kép a képben és a sebesség is ott
+ * van a beállítások menüben, egy koppintásra.
+ */
+@media (max-width: 560px) {
+  .yp-btn-pip,
+  .yp-btn-rate { display: none; }
+}
+
+/* ---- a legkeskenyebb készülékek ----
+ *
+ * 320 képpont az a szélesség, ahol a teljes gombsor MATEMATIKAILAG nem fér
+ * el: tíz gomb negyven képponttal négyszáz, és a képernyő háromszázhúsz. Itt
+ * nem elrendezni kell, hanem VÁLASZTANI.
+ *
+ * Ami marad: lejátszás, idő, felirat, beállítások, teljes képernyő. Ami megy:
+ * a tíz másodperces ugrás (érintésen a KÉT KOPPINTÁS ugyanezt csinálja, a
+ * képernyő két oldalán), a némítás (a készüléknek van hangerőgombja), a kép a
+ * képben és a sebesség (mindkettő ott van a beállítások menüben).
+ */
+@media (max-width: 400px) {
+  .yp-btn-back,
+  .yp-btn-fwd,
+  .yp-btn-mute { display: none; }
+  .yp-controls { padding: var(--space-5) var(--space-1) var(--space-1); }
+  .yp-time { padding: 0 var(--space-1); }
 }

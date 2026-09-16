@@ -64,6 +64,12 @@ export function createLoadingOverlay (player, options = {}) {
   const phaseNode = node.querySelector('.yp-loader-phase')
 
   const render = (current) => {
+    // A HIBA MINDENT VISZ. Az `EV.ERROR` eseményre is figyelünk, de a
+    // forráskimerülés az ÁLLAPOTBA ír hibát esemény nélkül — és akkor a
+    // betöltő ott maradt a hibaüzenet fölött, ahol egyik réteg sem olvasható.
+    // Az állapot a megbízhatóbb jel: ami látszik, az onnan jön.
+    if (current.error) { node.classList.add('yp-hidden'); return }
+
     const phase = current.ui.loadingPhase
     const done = phase === LOADING_PHASE.READY
     const source = current.source.current?.label ?? current.source.current?.name ?? null
