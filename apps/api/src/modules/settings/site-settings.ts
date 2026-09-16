@@ -57,15 +57,30 @@ export function rateLimitDefaults (): RateLimits {
    * (edge) ettől függetlenül fut: ott a nagy forgalom pontot ad, nem
    * mentességet.
    */
+  /**
+   * Egy környezeti változó értéke, ha értelmes szám — különben az alapérték.
+   *
+   * A `Number(process.env.X ?? alap)` csapda: egy ÜRES sztring nem nullish,
+   * tehát átmegy a `??`-on, és `Number('')` az NULLA. Egy elfelejtett
+   * `RATE_LIMIT_MAX=` sor így nem az alapértéket adta volna vissza, hanem
+   * nulla kérés/percet — vagyis az egész oldal 429-et adna mindenkinek.
+   */
+  const fromEnv = (name: string, fallback: number): number => {
+    const raw = process.env[name]
+    if (raw === undefined || raw === null || raw.trim() === '') return fallback
+    const value = Number(raw)
+    return Number.isFinite(value) && value > 0 ? value : fallback
+  }
+
   return {
-    global: { max: Number(process.env.RATE_LIMIT_MAX ?? 1200), windowSeconds: 60 },
+    global: { max: fromEnv('RATE_LIMIT_MAX', 1200), windowSeconds: 60 },
     // A belépés SZÁNDÉKOSAN szoros marad: ez a jelszókitalálás elleni védelem,
     // és tíz próbálkozás negyedóránként egy valódi embernek is elég.
-    auth: { max: Number(process.env.AUTH_RATE_LIMIT_MAX ?? 10), windowSeconds: 15 * 60 },
+    auth: { max: fromEnv('AUTH_RATE_LIMIT_MAX', 10), windowSeconds: 15 * 60 },
     // Az írás enyhül, de nem szabadul el: aki egy beszélgetésben aktívan
     // hozzászól, öt perc alatt harmincat is írhat.
-    write: { max: Number(process.env.WRITE_RATE_LIMIT_MAX ?? 60), windowSeconds: 5 * 60 },
-    refresh: { max: Number(process.env.REFRESH_RATE_LIMIT_MAX ?? 60), windowSeconds: 15 * 60 }
+    write: { max: fromEnv('WRITE_RATE_LIMIT_MAX', 60), windowSeconds: 5 * 60 },
+    refresh: { max: fromEnv('REFRESH_RATE_LIMIT_MAX', 60), windowSeconds: 15 * 60 }
   }
 }
 

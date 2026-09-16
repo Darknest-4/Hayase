@@ -58,6 +58,24 @@ describe('a korlát alapértéke', () => {
     assert.equal(limits.global.windowSeconds, 60)
   })
 
+  it('az üres környezeti változóból nem lesz nulla korlát', () => {
+    // `Number(process.env.X ?? alap)` csapda: az üres sztring nem nullish,
+    // átmegy a `??`-on, és `Number('')` az NULLA. Egy elfelejtett
+    // `RATE_LIMIT_MAX=` sor így mindenkinek 429-et adott volna.
+    const previous = process.env.RATE_LIMIT_MAX
+    try {
+      process.env.RATE_LIMIT_MAX = ''
+      assert.ok(rateLimitDefaults().global.max >= 1000)
+      process.env.RATE_LIMIT_MAX = 'nem-szám'
+      assert.ok(rateLimitDefaults().global.max >= 1000)
+      process.env.RATE_LIMIT_MAX = '0'
+      assert.ok(rateLimitDefaults().global.max >= 1000, 'a nulla korlát mindenkit kizárna')
+    } finally {
+      if (previous === undefined) delete process.env.RATE_LIMIT_MAX
+      else process.env.RATE_LIMIT_MAX = previous
+    }
+  })
+
   it('a belépés viszont szoros marad', () => {
     // Ez a jelszókitalálás elleni védelem. Az emelés nem vonatkozhat rá.
     const limits = rateLimitDefaults()
