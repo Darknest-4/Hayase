@@ -41,6 +41,15 @@
 // szótári találat. Az ASCII-kérdésekre semmi nem változik — azoknál a
 // hajtogatott alak önmagával egyenlő, tehát a régi ágak előbb tüzelnek.
 //
+// A hajtogatás MINDKÉT ágra kell, és ezt először elrontottam: csak a
+// részsztring-ágra kötve a „tamadas" megtalálta a „Támadás"-t, az „Őrült"
+// viszont továbbra is nullát adott. Azért, mert az a cím nem RÉSZSZTRINGKÉNT
+// egyezik, hanem hasonlóságra (tier 20, sim 0,30) — és a `%` operátor a nyers
+// szövegen fut, ahol az „Ő" és az „O" különböző trigramok. Így a hajtogatás
+// pont azt az esetet hagyta ki, amiért készült: a helyesen írt magyar szót.
+// A fuzzy ág ezért ugyanazt a hajtogatott kifejezést kapja, és ugyanazt a GIN
+// indexet használja.
+//
 // This runs entirely in Postgres. The docker-compose file carries an
 // OpenSearch service, but at 25k catalogue rows pg_trgm + tsvector answer in
 // single-digit milliseconds off the indexes added in migration 0017; a second
@@ -175,7 +184,7 @@ export function buildSearchSql (filters: SearchFilters, options: SearchSqlOption
              similarity(a.canonical_title, $1) AS sim,
              a.canonical_title AS matched_title
         FROM anime a
-       WHERE ${fuzzy ? 'a.canonical_title % $1 OR ' : ''}a.canonical_title ILIKE '%' || $1 || '%'
+       WHERE ${fuzzy ? 'a.canonical_title % $1 OR yume_unaccent(a.canonical_title) % yume_unaccent($1) OR ' : ''}a.canonical_title ILIKE '%' || $1 || '%'
           OR yume_unaccent(a.canonical_title) ILIKE '%' || yume_unaccent($1) || '%'
           OR a.search @@ websearch_to_tsquery('simple', $1)
 
@@ -189,7 +198,7 @@ export function buildSearchSql (filters: SearchFilters, options: SearchSqlOption
                   ELSE 20 END,
              similarity(t.title, $1), t.title
         FROM anime_titles t
-       WHERE ${fuzzy ? 't.title % $1 OR ' : ''}t.title ILIKE '%' || $1 || '%'
+       WHERE ${fuzzy ? 't.title % $1 OR yume_unaccent(t.title) % yume_unaccent($1) OR ' : ''}t.title ILIKE '%' || $1 || '%'
           OR yume_unaccent(t.title) ILIKE '%' || yume_unaccent($1) || '%'
 
       UNION ALL
@@ -202,7 +211,7 @@ export function buildSearchSql (filters: SearchFilters, options: SearchSqlOption
                   ELSE 20 END,
              similarity(s.synonym, $1), s.synonym
         FROM anime_synonyms s
-       WHERE ${fuzzy ? 's.synonym % $1 OR ' : ''}s.synonym ILIKE '%' || $1 || '%'
+       WHERE ${fuzzy ? 's.synonym % $1 OR yume_unaccent(s.synonym) % yume_unaccent($1) OR ' : ''}s.synonym ILIKE '%' || $1 || '%'
           OR yume_unaccent(s.synonym) ILIKE '%' || yume_unaccent($1) || '%'
     ),
     best AS (

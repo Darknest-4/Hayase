@@ -111,4 +111,29 @@ describe('ékezetes és ékezet nélküli írásmód ugyanazt találja', {
     assert.ok(await finds('arviztturo') || await finds('arvizturo'),
       'egy ékezet nélküli részlet sem találja meg a címet')
   })
+
+  /*
+   * A SZIMMETRIA, és ezt először elrontottam.
+   *
+   * A hajtogatást csak a részsztring-ágra kötve a „tamadas" megtalálta a
+   * „Támadás"-t, az ékezetes alak viszont továbbra is kevesebbet talált: a
+   * hasonlósági (`%`) ág a NYERS szövegen fut, ahol az „Ő" és az „O"
+   * különböző trigramok. Vagyis a javítás pont azt az esetet hagyta ki,
+   * amiért készült — a helyesen írt magyar szót.
+   *
+   * Az állítás ezért nem az, hogy „talál valamit", hanem hogy a két írásmód
+   * UGYANAZT találja.
+   */
+  it('a két írásmód ugyanazt a találathalmazt adja', async () => {
+    const ids = async (query: string): Promise<string[]> =>
+      (await searchAnime(pool as never, query, { limit: 50 })).map(row => String(row.id)).sort()
+
+    for (const [accented, plain] of [
+      ['Őrült Űrhajós', 'Orult Urhajos'],
+      ['Árvíztűrő', 'Arvizturo']
+    ] as const) {
+      assert.deepEqual(await ids(accented), await ids(plain),
+        `„${accented}" és „${plain}" különböző találatokat ad — a hasonlósági ág nem hajtogat`)
+    }
+  })
 })
