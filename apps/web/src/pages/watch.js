@@ -875,14 +875,67 @@ export const PageWatch = {
       ]),
       U.el('div', { class: 'player-loader-ring' })
     ])
+    /*
+     * A BETÖLTŐT A KÉSZÜLTSÉG REJTI EL, NEM A LEJÁTSZÁS.
+     *
+     * Ez a sor egyetlen eseményre figyelt: `playing`. Az `autoplay` attribútum
+     * ott van a videón, a böngésző viszont HANGGAL NEM ENGEDI az automatikus
+     * indítást, amíg a néző nem lépett kapcsolatba az oldallal — és ez nem
+     * kivétel, hanem az alapeset minden böngészőben és minden telefonon.
+     *
+     * Ilyenkor a `playing` SOHA nem érkezik meg. A videó teljesen betöltött
+     * (`readyState: 4`, megvan a hossz), a betöltőképernyő mégis ott maradt
+     * örökre — és mivel az a felületet takarja, a néző a lejátszás gombot sem
+     * érte el. Kívülről ez pontosan úgy néz ki, mintha „nem indulna el".
+     *
+     * Mérve, éles oldalon, bevezető ablak nélkül:
+     *   asztali Chromium   paused: true, readyState: 4, betöltő: LÁTSZIK
+     *   iPhone 13          paused: true, readyState: 4, betöltő: LÁTSZIK
+     *
+     * A készültség három eseménye közül bármelyik elég. A `loadeddata` azért
+     * kell, mert mobilon gyakran csak odáig jut el a böngésző magától.
+     */
     const mountedAt = Date.now()
-    const MIN_LOADER = 1100 // always show the branded loader at start, like Netflix
+    const MIN_LOADER = 1100 // a márkás betöltő mindig látszódjon egy pillanatig
+    let loaderHideTimer = null
+
     const hideLoader = () => {
+      if (loaderHideTimer) return // már ütemezve
       const wait = Math.max(0, MIN_LOADER - (Date.now() - mountedAt))
-      setTimeout(() => loader.classList.add('hidden'), wait)
+      loaderHideTimer = setTimeout(() => { loader.classList.add('hidden'); loaderHideTimer = null }, wait)
     }
-    video.addEventListener('playing', hideLoader)
-    video.addEventListener('waiting', () => loader.classList.remove('hidden'))
+    const showLoader = () => {
+      if (loaderHideTimer) { clearTimeout(loaderHideTimer); loaderHideTimer = null }
+      loader.classList.remove('hidden')
+    }
+
+    for (const type of ['canplay', 'loadeddata', 'playing']) video.addEventListener(type, hideLoader)
+
+    // A `waiting` CSAK akkor hozza vissza, ha tényleg tölt. Szünetben nincs
+    // mire várni — egy megállított videó fölé tett betöltő ugyanaz a hiba
+    // lenne, csak máskor.
+    video.addEventListener('waiting', () => {
+      if (!video.paused && video.readyState < 3) showLoader()
+    })
+
+    /*
+     * És ha az automatikus indítást elutasították, MONDJUK MEG.
+     *
+     * A középső nagy gomb szünetben magától láthatóvá válik
+     * (`.player-paused .player-center`), de csak akkor, ha a `paused` osztály
+     * tényleg felkerült — ezért kérjük meg rá a felületet, amint kiderül,
+     * hogy a böngésző nemet mondott.
+     */
+    video.addEventListener('loadeddata', () => {
+      const started = video.play?.()
+      if (started && typeof started.catch === 'function') {
+        started.catch(() => {
+          // Nem hiba: a böngésző szabálya. A néző egy koppintással indítja.
+          hideLoader()
+          shell.classList.add('player-paused')
+        })
+      }
+    }, { once: true })
 
     // W2G room badge (shown when a room is active)
     const roomBadge = U.el('button', { class: 'player-room-badge hidden', onclick: () => this.openW2G() })
