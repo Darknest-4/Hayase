@@ -279,8 +279,22 @@ export async function pruneAnalytics (): Promise<Record<string, number>> {
     `WITH d AS (UPDATE search_stats SET query = '' WHERE query <> '' AND created_at < now() - ($1 || ' days')::interval RETURNING 1)
      SELECT count(*)::int AS n FROM d`,
     RETENTION.searchRaw)
+  /*
+   * A napi só.
+   *
+   * `$1::int` — a cast nem stílus. A pg a számot ismeretlen típusú
+   * paraméterként küldi, a Postgres pedig a `current_date - $1` kifejezésre
+   * nem talál operátort, és az egész utasítás elszáll: „operator does not
+   * exist: date < integer". A takarítás utolsó lépése volt, tehát az előtte
+   * lévők lefutottak, a feladat mégis hibával végződött — és a sorbanálló
+   * újrapróbálkozott, ötször, minden nap.
+   *
+   * Két napig élesben így ment: a takarítás egyszer sem fejeződött be. A
+   * tünet nem hiányzó törlés volt, hanem egy elhasalt háttérfeladat, amiről
+   * semmi nem szólt.
+   */
   await del('analytics_salt',
-    "WITH d AS (DELETE FROM analytics_salt WHERE day < current_date - $1 RETURNING 1) SELECT count(*)::int AS n FROM d",
+    "WITH d AS (DELETE FROM analytics_salt WHERE day < current_date - $1::int RETURNING 1) SELECT count(*)::int AS n FROM d",
     RETENTION.salt)
 
   return out
