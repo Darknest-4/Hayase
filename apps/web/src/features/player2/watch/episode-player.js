@@ -29,6 +29,7 @@ import { loadSubtitleTrack } from '../subtitles/subtitle-loader.js'
 import { createPlayerPreferences } from '../preferences/player-preferences.js'
 import { createFlagEvaluator } from '../flags/player-feature-flags.js'
 import { EV } from '../core/player-events.js'
+import { SHORTCUT_HELP } from '../ui/keyboard.js'
 import { LOADING_PHASE } from '../core/player-state.js'
 
 /**
@@ -203,7 +204,7 @@ export function createEpisodePlayer (options = {}) {
     },
     openSettings: panel => ui.menu.show(panel ?? 'root'),
     openSubtitleStyle: () => options.onSubtitleStyle?.(),
-    showShortcuts: () => options.onShortcuts?.()
+    showShortcuts: () => options.onShortcuts?.(SHORTCUT_HELP)
   }
 
   const ui = createPlayerUI(player, actions, {

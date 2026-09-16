@@ -4,7 +4,7 @@
 // style. Each section is a builder that returns its content node.
 
 import { navigate, refreshChrome, refreshNotifications } from '../shared/lib/shell.js'
-import { configure, site } from '../shared/lib/site-config.js'
+import { configure, featureOn, flagDeclared, site } from '../shared/lib/site-config.js'
 import { C } from '../shared/ui/components.js'
 import { T } from '../shared/i18n/i18n.js'
 import { LibrarySync } from '../features/library-sync/library-sync.js'
@@ -15,6 +15,8 @@ import { U } from '../shared/lib/dom.js'
 import { YumeAPI } from '../shared/api/yume.js'
 import { ArtworkPicker } from '../features/profile-artwork/picker.js'
 import { PageThemes } from '../features/themes/themes.js'
+import { createSettingsPanel } from '../features/player2/ui/settings-panel.js'
+import { createPlayerPreferences } from '../features/player2/preferences/player-preferences.js'
 
 export const PageSettings = {
   SECTIONS: [
@@ -26,6 +28,12 @@ export const PageSettings = {
     { key: 'language', label: 'Language', icon: '🌐' },
     { key: 'appearance', label: 'Appearance', icon: '🎨' },
     { key: 'content', label: 'Content', icon: '🔞' },
+    // A lejátszó fül CSAK a Player 2.0 mellett jelenik meg: a panel a 2.0
+    // beállítássémájából épül, és a régi lejátszó egyik mezőt sem olvassa.
+    // Egy fül, amin minden kapcsoló hatástalan, rosszabb, mint egy hiányzó.
+    ...(flagDeclared('feature.player2') && featureOn('player2')
+      ? [{ key: 'player', label: 'Player', icon: '▶️' }]
+      : []),
     { key: 'notifications', label: 'Notifications', icon: '🔔' },
     { key: 'data', label: 'Data', icon: '💾' },
     { key: 'about', label: 'About', icon: 'ℹ️' }
@@ -55,6 +63,30 @@ export const PageSettings = {
     layout.append(panel)
     const builder = this['_' + active] ?? this._account
     panel.append(builder.call(this))
+  },
+
+  /**
+   * A lejátszó beállításai.
+   *
+   * A panelt a `player2` saját modulja építi, a sémájából — nem itt felsorolt
+   * mezőkből. Egy kézzel írt lista és egy séma előbb-utóbb eltér, és a
+   * különbség csendben egy beállítás, amit nem lehet átállítani.
+   */
+  _player () {
+    const prefs = createPlayerPreferences(Prefs)
+    const panel = createSettingsPanel(prefs, {
+      onChange: () => {
+        // A már felállt lejátszó nem látja magától a változást; a nézőoldal a
+        // következő felépítéskor olvassa újra. A visszajelzés viszont
+        // azonnal jár, különben a néző nem tudja, mentődött-e.
+        U.toast?.(T('Saved'))
+      }
+    })
+    return this._card(
+      T('Player'),
+      T('These apply to the video player. Changes take effect the next time a player opens.'),
+      panel.node
+    )
   },
 
   _card (title, desc, ...children) {

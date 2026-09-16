@@ -10,7 +10,7 @@
 // marad fókuszálható elrejtés után, mi látszik, ha nincs mit mutatni.
 
 import assert from 'node:assert/strict'
-import { beforeEach, describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it } from 'node:test'
 
 import { createDocument, withDocument } from './support/mini-dom.mjs'
 import { createPlayer } from '../src/features/player2/core/player.js'
@@ -29,11 +29,25 @@ const quiet = { error () {}, warn () {}, log () {} }
 let doc
 let restore
 
+/**
+ * A nyitott lejátszók.
+ *
+ * A héj félmásodperces időzítőt tart a vezérlők elrejtéséhez, és az ÉLETBEN
+ * TARTJA az eseményhurkot. Amíg minden teszt átment, ez nem látszott: a
+ * záró `player.destroy()` mindig lefutott. Az első BUKÓ állítás viszont
+ * félbeszakítja a tesztet a `destroy()` ELŐTT — és onnantól a tesztfuttató
+ * kiírja a hibát, majd örökre vár. A hiba oka így elveszik a lógásban.
+ */
+const open = []
+
 beforeEach(() => {
+  while (open.length) open.pop().destroy()
   restore?.()
   doc = createDocument()
   restore = withDocument(doc)
 })
+
+afterEach(() => { while (open.length) open.pop().destroy() })
 
 function harness (overrides = {}) {
   const listeners = new Map()
@@ -470,7 +484,7 @@ describe('a lejátszó héja', () => {
     const ui = createPlayerUI(player, {}, { title: 'Cím' })
     const order = ui.node.children.map(child => child === video ? 'VIDEO' : child.className.split(' ')[0])
     assert.deepEqual(order, [
-      'VIDEO', 'yp-ambient', 'yp-subtitles', 'yp-surface', 'yp-skip',
+      'VIDEO', 'yp-ambient', 'yp-subtitles', 'yp-surface', 'yp-skip', 'yp-next',
       'yp-controls', 'yp-menu', 'yp-loader', 'yp-error'
     ])
     player.destroy()

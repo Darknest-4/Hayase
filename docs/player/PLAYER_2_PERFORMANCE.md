@@ -90,6 +90,35 @@ saját színvilága a lejátszó mögött — és egy lejátszás, ami nem akad.
 A böngészős készlet azóta **a mediánra is** állít határt (40 ms), pont ezért
 a hibaosztályért.
 
+## Egy felület, amit a mérés elutasított
+
+A 37. pont kéri, hogy nézzük meg a `navigator.mediaCapabilities`-t a
+minőségdöntéshez — de kikötéssel: *„Ne implementáld csak azért, mert létezik.
+Csak mérhető előnyt hozó esetben használd."*
+
+Megmértük. Amit ezen a gépen válaszol:
+
+| amit kérdeztünk | `supported` | `smooth` | `powerEfficient` |
+|---|---|---|---|
+| H.264 1080p | igen | **igen** | nem |
+| H.264 2160p | igen | **igen** | nem |
+| VP9 1080p | igen | **igen** | nem |
+| AV1 2160p | igen | **igen** | nem |
+| kitalált kodek | nem | nem | nem |
+
+A negyedik sor dönti el. Ez a gép egy megosztott magú VPS **AV1-gyorsítás
+nélkül**; hogy a 4K AV1 „gördülékenyen" menne rajta, egyszerűen nem igaz. A
+`smooth` tehát nem hordoz információt — optimista választ ad mindenre, amit
+egyáltalán dekódolni tud.
+
+Marad a `supported`, ami a kitalált kodeket helyesen elutasítja. Azt viszont a
+`video.canPlayType()` **ugyanúgy megmondja**, szinkronban, ígéret nélkül, és a
+lejátszó már használja is.
+
+**Nincs mérhető előny, tehát nincs bevezetve.** Ha egy későbbi böngésző
+őszintébb `smooth` értéket ad, a mérés megismételhető — a fenti táblázat a
+kiindulópont.
+
 ## Mit nem mértünk
 
 - **valódi hálózaton, valódi nézővel.** Ez a mérés helyi fájlból játszik le,

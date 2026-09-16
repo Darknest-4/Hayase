@@ -15,6 +15,7 @@ import { createControls } from './controls.js'
 import { createLoadingOverlay } from './loading-overlay.js'
 import { createSeekBar } from './seek-bar.js'
 import { createSettingsMenu } from './settings-menu.js'
+import { createNextEpisodeCard } from './next-episode.js'
 import { createVisibility } from './controls-visibility.js'
 import { attachGestures } from './gestures.js'
 import { attachKeyboard } from './keyboard.js'
@@ -64,8 +65,13 @@ export function createPlayerUI (player, actions = {}, options = {}) {
   const controls = createControls(player, actions, { seekBar })
   const menu = createSettingsMenu(player, actions)
   const loader = createLoadingOverlay(player, options)
+  const nextCard = createNextEpisodeCard(player, {
+    prefs: options.prefs,
+    onNext: () => actions.nextEpisode?.()
+  })
 
-  shell.append(video, ambient, subtitleLayer, surface, skipButton, controls.node, menu.node, loader.node, errorLayer)
+  shell.append(video, ambient, subtitleLayer, surface, skipButton, nextCard.node,
+    controls.node, menu.node, loader.node, errorLayer)
 
   // ---- a vezérlők láthatósága ----
   const visibility = createVisibility({
@@ -210,6 +216,7 @@ export function createPlayerUI (player, actions = {}, options = {}) {
     ambient,
     controls,
     menu,
+    nextCard,
     seekBar,
     loader,
     visibility,

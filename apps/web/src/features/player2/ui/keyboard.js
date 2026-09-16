@@ -50,11 +50,15 @@ export function shortcutFor (event) {
     case 'm': case 'M':       return { action: 'toggle-mute' }
     case 'f': case 'F':       return { action: 'toggle-fullscreen' }
     case 't': case 'T':       return { action: 'toggle-cinema' }
+    // A 24. pont kiosztása szerint: P = kép a képben, B = előző rész. Az `I`
+    // megmarad másodiknak, mert a YouTube azt használja, és az ujjak
+    // megjegyzik — de az elsődleges a leírásé.
+    case 'p': case 'P':
     case 'i': case 'I':       return { action: 'toggle-pip' }
+    case 'b': case 'B':       return { action: 'previous-episode' }
     case 'c': case 'C':       return { action: 'toggle-subtitles' }
     case 's': case 'S':       return { action: 'skip-segment' }
     case 'n': case 'N':       return { action: 'next-episode' }
-    case 'p': case 'P':       return { action: 'previous-episode' }
     case '<':                 return { action: 'rate-by', value: -1 }
     case '>':                 return { action: 'rate-by', value: 1 }
     case ',':                 return { action: 'frame-step', value: -1 }
@@ -75,10 +79,10 @@ export const SHORTCUT_HELP = Object.freeze([
   { keys: ['M'], what: 'némítás' },
   { keys: ['F'], what: 'teljes képernyő' },
   { keys: ['T'], what: 'mozi mód' },
-  { keys: ['I'], what: 'kép a képben' },
+  { keys: ['P', 'I'], what: 'kép a képben' },
   { keys: ['C'], what: 'felirat be / ki' },
   { keys: ['S'], what: 'intró vagy outró átugrása' },
-  { keys: ['N', 'P'], what: 'következő / előző rész' },
+  { keys: ['N', 'B'], what: 'következő / előző rész' },
   { keys: ['<', '>'], what: 'lejátszási sebesség' },
   { keys: [',', '.'], what: 'képkocka léptetés szünetben' },
   { keys: ['?'], what: 'ez a lista' }

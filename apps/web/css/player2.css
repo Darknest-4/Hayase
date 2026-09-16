@@ -309,6 +309,84 @@
   white-space: nowrap;
 }
 
+/* ---- következő rész kártya ---- */
+.yp-next {
+  position: absolute;
+  right: var(--space-5);
+  bottom: 84px;
+  max-width: min(320px, calc(100% - var(--space-8)));
+  padding: var(--space-4);
+  background: color-mix(in srgb, var(--ink-950) 92%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+  backdrop-filter: blur(12px);
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.yp-next-title {
+  margin: 0 0 var(--space-3);
+  font-weight: var(--weight-semibold);
+  color: var(--fg);
+  /* Egy hosszú epizódcím ne tolja szét a kártyát. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.yp-next-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.yp-next-go {
+  flex: 1 1 auto;
+  padding: var(--space-2) var(--space-4);
+  font: inherit;
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-fg);
+  background: var(--accent);
+  border: 0;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.yp-next-cancel {
+  padding: var(--space-2) var(--space-3);
+  font: inherit;
+  color: var(--fg-muted);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+}
+.yp-next-cancel:hover { color: var(--fg); background: var(--bg-raised); }
+
+/* Az átugrás gombja és a kártya egymás mellett nem fér el; a kártya
+   fontosabb, mert időhöz kötött. */
+.yp:has(.yp-next:not(.yp-hidden)) .yp-skip { display: none; }
+
+/* ---- teljes beállításpanel ---- */
+.yp-settings { display: grid; gap: var(--space-6); }
+.yp-settings-group { display: grid; gap: var(--space-2); }
+.yp-settings-title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.yp-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-height: 40px;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.yp-settings-label { color: var(--fg); min-width: 0; }
+.yp-settings-input { flex: 0 0 auto; max-width: 50%; }
+.yp-settings-input[type="range"] { width: 140px; }
+.yp-settings-input[type="color"] { width: 44px; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; }
+
 /* ---- beállítások menü ---- */
 .yp-menu {
   position: absolute;
