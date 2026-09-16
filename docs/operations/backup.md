@@ -245,3 +245,58 @@ docker compose run --rm backup /db/restore.sh yume-<dátum>.dump
 
 A `restore.sh` a visszaállítás után lefuttatja a hiányzó migrációkat és lezárja
 a dumpból örökölt, félbemaradt mentéskéréseket — lásd fentebb.
+
+---
+
+## A katalógus képeinek tükre
+
+Ugyanaz a tárhely, **másik vödör** (`yume-media`), és ez a szétválasztás
+szándékos: a képeket egy nyilvános útvonal szolgálja ki, ami a tárhelykulcsot a
+kérés URL-jéből veszi. Ha a mentések ugyanabban a vödörben lennének, egyetlen
+hiba abban az útvonalban az egész adatbázist letölthetővé tenné.
+
+### Miért létezik
+
+A YUME mind az 57 012 borítóját, bannerét és háttérképét idegen CDN-ről
+hotlinkeli. Ez ma ingyen van — a látogató böngészője tölti a képeket —, de a
+katalógus kinézete három olyan cégen múlik, amelyikkel nincs szerződés. Azon a
+napon, amikor bármelyik letiltja a hotlinkelést, a képek eltűnnek, és akkor már
+letükrözni sem lehet őket.
+
+A tükrözés ezért **nem változtat azon, honnan szolgáljuk ki a képeket**. Csak
+elkészíti a másolatot, amit utólag nem lehetne.
+
+### Üzemeltetés
+
+```bash
+# indítás vagy folytatás (minden fajta, borítóval kezdve)
+docker compose exec -T postgres psql -U yume -d yume -c \
+  "INSERT INTO jobs (queue, payload) VALUES ('media', '{\"dedupe\":\"media-inditas\"}'::jsonb)"
+
+# csak egy fajta
+#   '{"kinds":["cover"],"dedupe":"media-inditas"}'
+
+# hol tart
+docker compose exec -T postgres psql -U yume -d yume -c \
+  "SELECT kind, count(*) FILTER (WHERE mirror_key IS NOT NULL) AS tukrozve, count(*) AS osszes
+     FROM anime_images WHERE object_key LIKE 'http%' GROUP BY 1 ORDER BY 1"
+```
+
+A feladat kötegenként fut, és magát ütemezi újra, amíg van hátra. Egyszerre
+egy tükrözés áll a sorban — ezt a `scheduleNext` számolja, nem a `dedupe`
+kulcs, mert a kezelő futása közben a saját sora még nincs késznek jelölve.
+
+Hangolás: `MEDIA_MIRROR_BATCH` (alap 200), `MEDIA_MIRROR_CONCURRENCY` (alap 4),
+`MEDIA_MIRROR_TIMEOUT_MS` (alap 20 000). A párhuzamosság szándékosan alacsony:
+harmincezer kérés egy idegen CDN-re rövid idő alatt pontosan az a viselkedés,
+amiért a hotlinkelést letiltják.
+
+### Az átkapcsolás
+
+A kiszolgálás **egyelőre az eredeti forrásról megy**. A tükör a `/media/<kulcs>`
+útvonalon már elérhető, egy évre gyorsítótárazható válasszal (a kulcs a forrás
+URL-jének hasítása, tehát mögötte sosem lesz más kép). Az átkapcsoláshoz a
+katalógus lekérdezéseinek a `mirror_key`-t kell visszaadniuk az `object_key`
+helyett, ha van — ez egy külön, visszavonható lépés, és addig érdemes megvárni,
+amíg vagy a forrás megbízhatatlanná válik, vagy a YUME saját domaint kap (akkor
+az R2 saját domainnel, nulla kimenő díjjal szolgálhat ki).
