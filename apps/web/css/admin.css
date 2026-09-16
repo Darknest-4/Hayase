@@ -542,6 +542,76 @@
 .admin-route .report-tab { min-height: 2.25rem; padding-inline: var(--ap-4); }
 .admin-route .table-wrap { overflow-x: auto; border-radius: var(--ap-radius); }
 
+/* ---- Katalógus ------------------------------------------------------------
+ *
+ * Kétoszlopos: balra a lista, jobbra a szerkesztő. A lista oszlopa 22rem
+ * volt, és ebbe a keresőmező, a láthatóságszűrő és három gomb együtt nem fért
+ * el — három sorba tördelődtek, miközben jobbra egy üres, 700 képpont széles
+ * doboz állt azzal, hogy „válassz egy címet".
+ *
+ * Az eszköztár ezért a két oszlop FÖLÉ került, teljes szélességben, és a
+ * lista oszlopa szélesebb lett.
+ */
+.admin-route .cat-layout { grid-template-columns: 26rem minmax(0, 1fr); gap: var(--ap-5); }
+.admin-route .cat-toolbar {
+  grid-column: 1 / -1;
+  display: flex; flex-wrap: wrap; gap: var(--ap-2); align-items: center;
+  margin-bottom: var(--ap-2);
+}
+.admin-route .cat-toolbar .input { flex: 1 1 18rem; }
+.admin-route .cat-count { font: var(--ap-t-meta); color: var(--fg-faint); padding: 0 var(--ap-1); }
+.admin-route .cat-row { border-radius: var(--ap-radius); padding: var(--ap-3) var(--ap-4); }
+.admin-route .cat-edit-col { min-width: 0; }
+
+/* ---- Szerepkörök ----------------------------------------------------------
+ *
+ * A jelölőnégyzet 17×17 volt — a padló 24. Egy jogosultsági rácsban, ahol
+ * negyven sor van egymás alatt, egy 17 képpontos cél a rossz sor bepipálását
+ * jelenti, és egy jogosultságnál az nem apróság.
+ */
+.admin-route .perm-row input[type="checkbox"],
+.admin-route .perm-toggle input[type="checkbox"] { width: 1.5rem; height: 1.5rem; flex-shrink: 0; }
+.admin-route .perm-row { padding: var(--ap-3) var(--ap-4); gap: var(--ap-3); border-radius: var(--ap-radius-sm); }
+.admin-route .perm-group { border-radius: var(--ap-radius); }
+
+/* A jelmagyarázat kapcsolóvá vált: a tervezett jogosultságok alapból
+   rejtve vannak, mert 365-ből 325 olyan modulhoz tartozik, ami nem létezik. */
+.admin-route .perm-legend {
+  display: flex; align-items: center; gap: var(--ap-4); flex-wrap: wrap;
+  margin: var(--ap-3) 0 var(--ap-4);
+}
+.perm-toggle {
+  display: inline-flex; align-items: center; gap: var(--ap-2);
+  font: var(--ap-t-meta); color: var(--fg-muted);
+  min-height: 2rem; cursor: pointer; white-space: nowrap;
+}
+
+/* ---- Hibák, Szerepkörök: kétoszlopos elrendezések --------------------------
+ *
+ * Mindkettő listát mutat balra és részleteket jobbra. A lista oszlopa 22,
+ * illetve 15rem volt, és a bal oldali címek elvágódtak („api: External
+ * metadata sync i…"), miközben jobbra egy 700 képpont széles üres doboz állt
+ * azzal, hogy „válassz egyet". A listának kell a hely: azt olvassa az ember.
+ */
+.admin-route .err-layout { grid-template-columns: minmax(0, 28rem) minmax(0, 1fr); gap: var(--ap-5); }
+.admin-route .roles-layout { grid-template-columns: minmax(0, 17rem) minmax(0, 1fr); gap: var(--ap-5); }
+.admin-route .err-row,
+.admin-route .role-item { border-radius: var(--ap-radius); padding: var(--ap-3) var(--ap-4); }
+
+/* Az üres részletes panel: nem hatszáz képpont magas szaggatott doboz, hanem
+   annyi, amennyi a mondathoz kell. Egy üres állapot, ami a képernyő felét
+   elfoglalja, hangosabb, mint a tartalom, ami majd a helyére kerül. */
+.admin-route .cat-placeholder {
+  min-height: 0;
+  padding: var(--ap-7) var(--ap-4);
+  border-radius: var(--ap-radius);
+}
+
+/* A naplóban az azonosító gomb: rákattintva arra a sorra szűr. 65×18 volt —
+   a magasság a padló alatt, pedig ez a leggyakrabban használt szűrő ezen a
+   képernyőn. */
+.admin-route .audit-subject-id { min-height: 1.5rem; padding-inline: var(--ap-2); }
+
 /* ======================================================================== */
 /* Telefon és tablet.                                                       */
 /*                                                                          */

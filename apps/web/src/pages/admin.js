@@ -563,7 +563,7 @@ export const PageAdmin = {
             U.el('div', { class: 'err-row-count', text: String(g.event_count) }),
             U.el('div', { class: 'err-row-main' }, [
               U.el('div', { class: 'err-row-title', text: g.title }),
-              U.el('div', { class: 'err-row-sub', text: 'last ' + U.relTime(g.last_seen) })
+              U.el('div', { class: 'err-row-sub', text: 'legutóbb ' + U.relTime(g.last_seen) })
             ]),
             U.el('span', { class: 'cat-badge ' + cls, text: label })
           ]))
@@ -765,7 +765,17 @@ export const PageAdmin = {
     const groups = {}
     for (const p of catalog) (groups[p.group] ??= []).push(p)
 
-    const state = { role: roles[0], granted: new Set(roles[0].permissions), filter: '' }
+    /*
+     * Alapból csak az ÉLŐ jogosultságok látszanak.
+     *
+     * A katalógusban 365 sor van, és ebből 325 olyan modulokhoz tartozik,
+     * amik nem léteznek — angol leírással, mert sosem került képernyőre.
+     * Aki szerepkört állít, a negyven valódit keresi; a másik
+     * háromszázhuszonöt között kell hozzá görgetnie. Egy kapcsolóval
+     * előhozhatók, mert a katalógus maga nem hazugság: azok tényleg
+     * tervezett jogosultságok.
+     */
+    const state = { role: roles[0], granted: new Set(roles[0].permissions), filter: '', showPlanned: false }
 
     const layout = U.el('div', { class: 'roles-layout' })
     content.append(layout)
@@ -789,7 +799,8 @@ export const PageAdmin = {
         U.el('div', { class: 'role-name', text: r.name }),
         U.el('div', { class: 'role-sub' }, [
           U.el('code', { text: r.slug }),
-          document.createTextNode(` · ${r.user_count} user${r.user_count === '1' ? '' : 's'}`)
+          // Magyarban a szám után egyes szám áll: „3 fiók", nem „3 fiókok".
+          document.createTextNode(` · ${r.user_count} fiók`)
         ]),
         cnt
       ]))
@@ -822,11 +833,20 @@ export const PageAdmin = {
       panel.append(head)
 
       const liveTotal = catalog.filter(p => p.status === 'active').length
-      panel.append(U.el('p', { class: 'perm-legend' }, [
-        U.el('span', { class: 'perm-badge perm-badge-live', text: 'LIVE' }),
-        document.createTextNode(` — ${liveTotal} jogosultságot érvényesít ma útvonal · `),
-        U.el('span', { class: 'perm-badge perm-badge-planned', text: 'tervezett' }),
-        document.createTextNode(` — ${total - liveTotal} későbbi modulokhoz van katalogizálva.`)
+      panel.append(U.el('div', { class: 'perm-legend' }, [
+        U.el('span', {
+          class: 'ap-note',
+          text: `${liveTotal} jogosultságot érvényesít ma egy útvonal. ` +
+            `További ${total - liveTotal} későbbi modulokhoz van katalogizálva — ezek ma semmit nem kapcsolnak.`
+        }),
+        U.el('label', { class: 'perm-toggle' }, [
+          U.el('input', {
+            type: 'checkbox',
+            ...(state.showPlanned ? { checked: '' } : {}),
+            onchange: e => { state.showPlanned = e.target.checked; renderList() }
+          }),
+          U.el('span', { text: 'a tervezettek is' })
+        ])
       ]))
 
       const listWrap = U.el('div', { class: 'perm-groups' })
@@ -835,7 +855,9 @@ export const PageAdmin = {
       const renderList = () => {
         listWrap.replaceChildren()
         for (const [group, perms] of Object.entries(groups)) {
-          const visible = perms.filter(p => !state.filter || p.slug.includes(state.filter) || p.description.toLowerCase().includes(state.filter))
+          const visible = perms.filter(p =>
+            (state.showPlanned || p.status === 'active') &&
+            (!state.filter || p.slug.includes(state.filter) || p.description.toLowerCase().includes(state.filter)))
           if (!visible.length) continue
           const grantedInGroup = visible.filter(p => has(p.slug)).length
           const liveInGroup = visible.filter(p => p.status === 'active').length
@@ -860,8 +882,8 @@ export const PageAdmin = {
                 U.el('div', { class: 'perm-slug-row' }, [
                   U.el('code', { class: 'perm-slug', text: p.slug }),
                   p.status === 'active'
-                    ? U.el('span', { class: 'perm-badge perm-badge-live', title: 'Ma már útvonal érvényesíti', text: 'LIVE' })
-                    : U.el('span', { class: 'perm-badge perm-badge-planned', title: 'Egy későbbi modulhoz katalogizálva', text: 'planned' })
+                    ? U.el('span', { class: 'perm-badge perm-badge-live', title: 'Ma már útvonal érvényesíti', text: 'él' })
+                    : U.el('span', { class: 'perm-badge perm-badge-planned', title: 'Egy későbbi modulhoz katalogizálva', text: 'tervezett' })
                 ]),
                 U.el('span', { class: 'perm-desc', text: p.description })
               ])
@@ -878,7 +900,7 @@ export const PageAdmin = {
           // keep the source role object in sync so counts persist across switches
           state.role.permissions = [...state.granted]
           updateCounts()
-          head.querySelector('.list-row-sub').textContent = `${state.granted.size} of ${total} permissions granted`
+          head.querySelector('.list-row-sub').textContent = `${total} jogosultságból ${state.granted.size} megadva`
           renderList()
         } catch (err) { U.toast(err.message, 'error'); if (el) el.checked = !granted }
       }
@@ -1993,7 +2015,6 @@ export const PageAdmin = {
     const layout = U.el('div', { class: 'cat-layout' })
     const listCol = U.el('div', { class: 'cat-list-col' })
     const editCol = U.el('div', { class: 'cat-edit-col' })
-    layout.append(listCol, editCol)
     content.replaceChildren(layout)
 
     const state = { offset: 0, publishedOnly: true, selected: null }
@@ -2178,7 +2199,7 @@ export const PageAdmin = {
     const toolbar = U.el('div', { class: 'cat-toolbar' }, [
       U.el('input', { class: 'input', placeholder: 'Keresés a katalógusban…', oninput: U.debounce(e => { state.q = e.target.value.trim(); loadList() }) }),
       U.el('select', { class: 'select', 'aria-label': 'Szűrés láthatóság szerint', onchange: e => { state.visibility = e.target.value; loadList() } },
-        [['', 'All visibility'], ['public', 'Public'], ['unlisted', 'Unlisted'], ['hidden', 'Hidden']].map(([v, l]) =>
+        [['', 'Bármilyen láthatóság'], ['public', 'Nyilvános'], ['unlisted', 'Listázatlan'], ['hidden', 'Rejtett']].map(([v, l]) =>
           U.el('option', { value: v, text: l }))),
       can('anime.create') ? U.el('button', { class: 'btn btn-primary btn-sm', onclick: () => openEditor(null) }, [document.createTextNode('+ Új anime')]) : null,
       can('anime.merge') ? U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => { state.selected = null; this.renderCatDuplicates(editCol, can, () => { loadList(); this.renderCatDuplicates(editCol, can, loadList) }) } }, [document.createTextNode('Duplikátumok')]) : null,
@@ -2193,6 +2214,11 @@ export const PageAdmin = {
         }, [document.createTextNode('Epizódok publikálása…')])
         : null
     ])
+
+    // Az eszköztár a két oszlop FÖLÖTT, teljes szélességben. A 22rem-es
+    // listaoszlopban a kereső, a szűrő és három gomb három sorba tördelődött,
+    // miközben jobbra egy üres, 700 képpont széles doboz állt.
+    layout.append(toolbar, listCol, editCol)
 
     /**
      * Az egész katalógus epizódjainak publikálása.
@@ -2216,14 +2242,14 @@ export const PageAdmin = {
         U.toast(res.changed ? `${res.changed.toLocaleString(I18n.locale())} epizód ${verb}` : 'Nem volt mit változtatni')
       } catch (e) { U.toast(e.message, 'error') }
     }
-    listCol.append(toolbar, listBox)
+    listCol.append(listBox)
 
     const loadList = async () => {
       listBox.replaceChildren(P.spinner())
       try {
         const { data, total } = await YumeAPI.admin.catalogue.list({ q: state.q, visibility: state.visibility, limit: 40 })
         listBox.replaceChildren()
-        listBox.append(U.el('div', { class: 'cat-count', text: `${total.toLocaleString()} entries` }))
+        listBox.append(U.el('div', { class: 'cat-count', text: `${total.toLocaleString(I18n.locale())} cím` }))
         if (!data.length) { listBox.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-4);', text: 'Nincs találat.' })); return }
         for (const a of data) listBox.append(this.catRow(a, state, openEditor))
       } catch (e) {
@@ -2248,12 +2274,19 @@ export const PageAdmin = {
   catPlaceholder () {
     return U.el('div', { class: 'cat-placeholder' }, [
       U.svg('<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>', 40),
-      U.el('p', { text: 'Válassz egy animét szerkesztésre, vagy hozz létre újat.' })
+      U.el('p', { text: 'Válassz egy címet a listából, vagy hozz létre újat.' })
     ])
   },
 
   catRow (a, state, openEditor) {
-    const [label, cls] = this.VIS_BADGE[a.visibility] ?? this.VIS_BADGE.public
+    /*
+     * A láthatóság címkéje CSAK akkor jelenik meg, ha nem nyilvános.
+     *
+     * Harmincketten­ezer sorból mind nyilvános: egy zöld „NYILVÁNOS" minden
+     * soron nem információ, csak zaj — és pont attól nem tűnik fel az az öt,
+     * ami rejtett. A kivétel az, amit látni kell.
+     */
+    const [label, tone] = this.VIS_TAG[a.visibility] ?? []
     const row = U.el('button', {
       class: 'cat-row' + (a.id === state.selected ? ' active' : ''),
       dataset: { id: a.id },
@@ -2261,11 +2294,20 @@ export const PageAdmin = {
     }, [
       U.el('div', { class: 'cat-row-main' }, [
         U.el('div', { class: 'cat-row-title', text: a.canonical_title }),
-        U.el('div', { class: 'cat-row-sub', text: `${a.format} · ${a.season_year ?? '—'} · ${a.episode_rows} ep` })
+        U.el('div', {
+          class: 'cat-row-sub',
+          text: `${a.format} · ${a.season_year ?? '—'} · ${a.episode_rows} epizód`
+        })
       ]),
-      U.el('span', { class: 'vis-badge ' + cls, text: label })
+      label ? AP.tag(label, tone) : null
     ])
     return row
+  },
+
+  /** Csak a nem nyilvános állapotoknak van címkéje — lásd `catRow`. */
+  VIS_TAG: {
+    unlisted: ['listázatlan', 'warn'],
+    hidden: ['rejtett', 'bad']
   },
 
   renderCatEditor (host, anime, { can, onSaved, onDeleted }) {
