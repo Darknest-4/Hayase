@@ -10,8 +10,8 @@ Ez a jelentés **mérésekre** épül, nem becslésre. Ahol szám szerepel, az e
 
 | | darab |
 |---|---|
-| Talált probléma | 22 |
-| Javítva és ellenőrizve | 9 |
+| Talált probléma | 23 |
+| Javítva és ellenőrizve | 10 |
 | Dokumentálva, szándékosan nem javítva | 13 |
 | Kritikus, ami **nyitva maradt** | 1 (SSH-01 — beavatkozást igényel) |
 
@@ -125,6 +125,20 @@ Naponta 03:00 UTC, 14 napos megőrzés, 22 mentés a köteten, egyenként ~104 M
 | táblák / indexek / függvények / kiterjesztések | 164 / 421 / 122 / 5 | **egyezik** |
 
 A helyreállíthatóság tehát bizonyított. A próba-adatbázist eldobtam.
+
+**Frissítés (2026-09-16, az audit után):** a mentések azóta **Cloudflare R2-be
+is kimennek**, minden ellenőrzött futás után. Ez az audit legfontosabb nyitott
+mentési kockázatát zárja le. Nem csak a feltöltést mértem:
+
+* a `sync-r2.sh` a feltöltés után összeveti a távoli méretet a helyivel;
+* **az R2-ből letöltött fájlból visszaállítottam egy külön adatbázist, a helyi
+  kötet csatolása nélkül** — mintha új gép lenne —, és az eredmény soronként
+  egyezett az élessel (anime 32 536, episodes 364 064, watch_progress 364 064,
+  anime_synonyms 224 347, 164 tábla, 423 index, 122 függvény, 5 kiterjesztés);
+* a távoli megőrzés 14 napos ablakkal 0 fájlt törölne ma, 0 másodperces
+  küszöbbel 1-et talál — tehát a mechanizmus nem csak hallgat.
+
+Egy 109 MB-os dump feltöltése 7 másodperc.
 
 ## 10. Titkok
 
@@ -477,6 +491,26 @@ Az Edge `dryRun: true` módban fut: mindent kiértékel és naplóz, de **nem ha
 A `LOAD_TEST_KEY` és a `LOAD_JWT_SECRET` benne maradt a `.env`-ben a terhelésmérés után. **Nem aktív**: a fő `docker-compose.yml` nem adja át az appnak, és a futó konténerben ellenőrizve nincs beállítva. Rendrakásként érdemes kivenni; a Biztonság képernyő ellenőrzése amúgy is figyelmeztet, ha egyszer mégis átadásra kerülne.
 
 ---
+**ID:** SEC-02 · **Súlyosság:** MEDIUM · **Komponens:** titkok / R2 · **Státusz:** ⚠️ nyitva
+
+**Probléma:** A mentéshez használt R2 API-token fiókszintű jogosultságú.
+
+**Bizonyíték:** A token leírása szerint: „create, list, and delete buckets, edit bucket configuration, read, write, and list objects", hatókör: **All R2 buckets on this account**.
+
+**Hatás:** A tokennek egyetlen dolga van — egy dumpot írni egy vödörbe és a lejártakat törölni. Ha ez a kulcs kiszivárog (a `.env`-ből, egy naplóból, egy képernyőmegosztásból), a támadó a teljes R2-fiókot viszi: minden vödröt olvashat, írhat és **törölhet** — beleértve magukat a mentéseket. Egy zsarolóvírus-forgatókönyvben pont az a másolat semmisül meg, amiért az egész készült.
+
+**Gyökérok:** A Cloudflare felületén a legegyszerűbb út a fiókszintű token.
+
+**Javítási terv:**
+1. **R2 → Manage API Tokens → Create API Token**, jogosultság **Object Read & Write**, „Specify bucket(s)" → csak `yume-backups`.
+2. Az új kulcsokat írd a `.env`-be (`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`).
+3. Próba feltöltés nélkül: `docker compose run --rm --entrypoint sh backup -c '/db/sync-r2.sh --check'`
+4. Ha rendben: `docker compose up -d backup`, majd a naplóban ellenőrizd a következő futást.
+5. Csak ezután **töröld a régi, fiókszintű tokent** a Cloudflare-en.
+
+**Megjegyzés:** a jelenlegi kulcsok egy beszélgetés leiratában is szerepelnek, ami önmagában is ok a cserére.
+
+---
 **ID:** OS-01 · **Súlyosság:** INFO · **Komponens:** gazdagép · **Státusz:** ⚠️ nyitva
 
 Felesleges szolgáltatások futnak egy KVM-vendégen: `open-vm-tools` (VMware-hez való, ez KVM), `ModemManager`, `gpu-manager`, `multipathd`, `open-iscsi`. Egyik sem sebezhetőség önmagában, de támadási felület és RAM. Kikapcsolásuk (`systemctl disable --now`) alacsony kockázatú, de nem sürgős.
@@ -491,19 +525,19 @@ Felesleges szolgáltatások futnak egy KVM-vendégen: `open-vm-tools` (VMware-he
 | Gazdagép-szolgáltatás kitettsége tűzfal nélkül | alacsony (kevés figyel) | változó | NET-01 |
 | OOM-kilövés swap nélkül | alacsony | szolgáltatáskiesés | VPS-03 |
 | A `yonagi` projekt változásai megtörik a YUME proxyját | **közepes** | YUME-kiesés | közös Caddyfile — lásd alább |
-| Egyetlen gép, külső mentésmásolat nélkül | alacsony | **teljes adatvesztés** | `BACKUP_SYNC_CMD` beállítása |
+| ~~Egyetlen gép, külső mentésmásolat nélkül~~ | — | — | ✅ **megoldva** — R2-másolat, visszaállítással bizonyítva |
 
 **Két rendszerszintű kockázat, amit érdemes kimondani:**
 
 1. **A YUME elérhetősége egy másik projekt konfigurációs fájlján múlik.** A `/opt/YonagiFansub/Caddyfile` szolgálja ki mindkét oldalt; egy ottani elgépelés a YUME-ot is leviszi. A YUME saját `caddy` szolgáltatása készen áll a compose-ban, de nem fut.
-2. **A mentések ugyanazon a lemezen vannak, mint az adatbázis.** A `backup.sh` maga figyelmeztet: „BACKUP_SYNC_CMD is not set, so backups live only on this machine". Egy lemezhiba egyszerre viszi az adatot és a mentést. A visszaállítás bizonyítottan működik — de csak amíg a lemez él.
+2. ~~**A mentések ugyanazon a lemezen vannak, mint az adatbázis.**~~ ✅ **Megoldva.** Minden ellenőrzött mentés másolata kimegy Cloudflare R2-be, és az onnan való visszaállítást végigmértem. Ami ebből maradt: az R2-token jelenleg **fiókszintű** („All R2 buckets", vödör-létrehozással és -törléssel), pedig a feladathoz elég lenne egy `Object Read & Write` token egyetlen vödörre szűkítve — lásd SEC-02.
 
 ## 20. Ajánlott következő lépések
 
 **Ebben a sorrendben:**
 
 1. **SSH-kulcs beállítása, majd a jelszavas belépés kikapcsolása** (SSH-01). Ez az egyetlen kritikus, ami nyitva maradt.
-2. **Mentés másolása a gépről** — `BACKUP_SYNC_CMD` beállítása (rclone, scp, S3). Ez a különbség „van mentésem" és „van mentésem egy lemezhiba után" között.
+2. ~~**Mentés másolása a gépről.**~~ ✅ Kész — Cloudflare R2, `scripts/database/sync-r2.sh`. Hátravan az R2-token szűkítése (SEC-02).
 3. Tűzfal (NET-01), a 3000-es port lezárása (NET-02), swap (VPS-03).
 4. PostgreSQL hangolás (DB-02) — ez a keresés maradék költségének egy részét is visszaadhatja.
 5. A fordított proxy monitorozása (MON-01), hogy a következő proxy-kiesést ne kézzel kelljen megtalálni.
@@ -530,7 +564,7 @@ Felesleges szolgáltatások futnak egy KVM-vendégen: `open-vm-tools` (VMware-he
 | Média működik? | **részben** | a végpontok válaszolnak, de **videóforrás nincs feltöltve** — ez a termék ismert hiánya, nem az infrastruktúráé |
 | Admin működik? | **igen** | `/v1/admin/edge` hitelesítés nélkül 401; a panel mind a 20 szekciója renderel |
 | Edge működik? | **igen, száraz üzemben** | 239/239 Edge- és biztonsági teszt zöld — EDGE-01 |
-| Mentés működik? | **igen, bizonyítottan** | valódi visszaállítás: 164 tábla, 421 index, minden sorszám egyezik |
+| Mentés működik? | **igen, bizonyítottan** | valódi visszaállítás a helyi fájlból ÉS az R2-másolatból: 164 tábla, minden sorszám egyezik |
 | Monitorozás működik? | **igen, egy réssel** | 24 mérőszám percenként; a proxy egészsége hiányzik — MON-01 |
 
 **Amit nem ellenőriztem, és ezért nem is állítok:** nem futtattam külső gépről terhelésmérést (a korábbi 250 egyidejű felhasználós mérés ugyanerről a gépről készült, tehát a hálózati út nincs benne); nem végeztem képernyőolvasós akadálymentességi átnézést; nem auditáltam a `yonagi` projekt kódját, csak azokat a pontjait, ahol a YUME-mal érintkezik; és nem néztem át egyenként a 368 jogosultságot.
