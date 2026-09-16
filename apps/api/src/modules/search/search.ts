@@ -41,14 +41,23 @@
 // szótári találat. Az ASCII-kérdésekre semmi nem változik — azoknál a
 // hajtogatott alak önmagával egyenlő, tehát a régi ágak előbb tüzelnek.
 //
-// A hajtogatás MINDKÉT ágra kell, és ezt először elrontottam: csak a
-// részsztring-ágra kötve a „tamadas" megtalálta a „Támadás"-t, az „Őrült"
-// viszont továbbra is nullát adott. Azért, mert az a cím nem RÉSZSZTRINGKÉNT
-// egyezik, hanem hasonlóságra (tier 20, sim 0,30) — és a `%` operátor a nyers
-// szövegen fut, ahol az „Ő" és az „O" különböző trigramok. Így a hajtogatás
-// pont azt az esetet hagyta ki, amiért készült: a helyesen írt magyar szót.
-// A fuzzy ág ezért ugyanazt a hajtogatott kifejezést kapja, és ugyanazt a GIN
-// indexet használja.
+// A hajtogatás a JELÖLTVÁLASZTÁST VÁLTJA KI, nem egészíti ki — és a
+// különbség mérhető volt.
+//
+// Először a nyers predikátumok MELLÉ tettem a hajtogatottakat. Helyes lett, de
+// drága: `demon` 54 ms → 87 ms, `kimetsu` 99 ms → 151 ms. Az EXPLAIN megmondta,
+// miért: egy ékezet nélküli kérdésnél a `yume_unaccent(title) % 'kimetsu'`
+// PONTOSAN ugyanazt a 3119 sort adta, mint a `title % 'kimetsu'` — kétszer
+// ugyanaz az indexolvasás, kétszer ugyanaz a heap recheck.
+//
+// Ugyanez a mérés adta a megoldást. A hajtogatás 1:1 karakterleképezés, tehát a
+// hajtogatott alak trigramhalmaza a nyersének BŐVEBB halmaza: amit a nyers
+// predikátum megtalál, azt a hajtogatott is megtalálja, és néha többet. A nyers
+// ágak ezért KIVÁLTHATÓK. Forrásonként egy indexolvasás marad, mint a javítás
+// előtt, és közben az „Őrült" is megtalálja azt, amit az „Orult".
+//
+// A RANGSOR nyers marad: a CASE és a `similarity()` a ténylegesen beírt betűket
+// nézi, tehát a pontos betűzés továbbra is előrébb kerül a hajtogatottnál.
 //
 // This runs entirely in Postgres. The docker-compose file carries an
 // OpenSearch service, but at 25k catalogue rows pg_trgm + tsvector answer in
@@ -184,8 +193,7 @@ export function buildSearchSql (filters: SearchFilters, options: SearchSqlOption
              similarity(a.canonical_title, $1) AS sim,
              a.canonical_title AS matched_title
         FROM anime a
-       WHERE ${fuzzy ? 'a.canonical_title % $1 OR yume_unaccent(a.canonical_title) % yume_unaccent($1) OR ' : ''}a.canonical_title ILIKE '%' || $1 || '%'
-          OR yume_unaccent(a.canonical_title) ILIKE '%' || yume_unaccent($1) || '%'
+       WHERE ${fuzzy ? 'yume_unaccent(a.canonical_title) % yume_unaccent($1) OR ' : ''}yume_unaccent(a.canonical_title) ILIKE '%' || yume_unaccent($1) || '%'
           OR a.search @@ websearch_to_tsquery('simple', $1)
 
       UNION ALL
@@ -198,8 +206,7 @@ export function buildSearchSql (filters: SearchFilters, options: SearchSqlOption
                   ELSE 20 END,
              similarity(t.title, $1), t.title
         FROM anime_titles t
-       WHERE ${fuzzy ? 't.title % $1 OR yume_unaccent(t.title) % yume_unaccent($1) OR ' : ''}t.title ILIKE '%' || $1 || '%'
-          OR yume_unaccent(t.title) ILIKE '%' || yume_unaccent($1) || '%'
+       WHERE ${fuzzy ? 'yume_unaccent(t.title) % yume_unaccent($1) OR ' : ''}yume_unaccent(t.title) ILIKE '%' || yume_unaccent($1) || '%'
 
       UNION ALL
 
@@ -211,8 +218,7 @@ export function buildSearchSql (filters: SearchFilters, options: SearchSqlOption
                   ELSE 20 END,
              similarity(s.synonym, $1), s.synonym
         FROM anime_synonyms s
-       WHERE ${fuzzy ? 's.synonym % $1 OR yume_unaccent(s.synonym) % yume_unaccent($1) OR ' : ''}s.synonym ILIKE '%' || $1 || '%'
-          OR yume_unaccent(s.synonym) ILIKE '%' || yume_unaccent($1) || '%'
+       WHERE ${fuzzy ? 'yume_unaccent(s.synonym) % yume_unaccent($1) OR ' : ''}yume_unaccent(s.synonym) ILIKE '%' || yume_unaccent($1) || '%'
     ),
     best AS (
       SELECT DISTINCT ON (id) id, tier, sim, matched_title
