@@ -86,7 +86,38 @@ serve_request () {
   log "request #$ID finished: $STATUS"
 }
 
+# --------------------------------------------------------- árva kérések
+#
+# EZ A CIKLUS AZ EGYETLEN GAZDÁJA a `backup_requests` soroknak: ez veszi fel,
+# ez jelöli futónak, ez zárja le. Amit tehát INDULÁSKOR futó állapotban
+# találunk, annak nincs gazdája — a folyamat, ami elkezdte, már nem él.
+#
+# Amíg ez nem volt itt, egy ilyen sor ÖRÖKRE ott maradt, és mivel a táblán
+# egyszerre csak egy aktív kérés lehet, a panel „Mentés most" gombja tartósan
+# 409-et adott: „Egy backup kérés már fut vagy sorban áll." Semmi nem futott.
+#
+# Két úton keletkezik, és mindkettő valódi:
+#
+#   * a konténer leáll a mentés közepén (újraindítás, frissítés, OOM);
+#   * VISSZAÁLLÍTÁS. A mentés a saját kérés-sorát is lementi, futó állapotban
+#     — a dump pillanatában tényleg az volt. A visszaállított példányon ezért
+#     ott ül egy futás, ami sosem fejeződik be. Pont akkor blokkolja a
+#     mentést, amikor a legnagyobb szükség lenne rá: katasztrófa után.
+#
+# A `pending` sorokat MEGHAGYJUK: azok még nem kezdődtek el, és a ciklus fel
+# fogja venni őket. Csak ami „fut", az hazugság.
+reclaim_orphans () {
+  ORPHANS=$(ask "SELECT count(*) FROM backup_requests WHERE status = 'running'")
+  [ "${ORPHANS:-0}" != "0" ] || return 0
+  log "reclaiming $ORPHANS orphaned request(s) — nothing was running when this loop started"
+  tell "UPDATE backup_requests
+           SET status = 'failed', finished_at = now(),
+               log = coalesce(log || E'\n', '') || 'megszakadt: a mentési folyamat leállt, vagy a sor visszaállításból származik'
+         WHERE status = 'running'"
+}
+
 log "scheduled daily at ${HOUR}:00 UTC; polling for panel requests every ${POLL}s"
+reclaim_orphans
 [ "${BACKUP_ON_START:-1}" = "1" ] && run_scheduled
 
 LAST_RUN_DAY=""

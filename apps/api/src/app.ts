@@ -259,6 +259,31 @@ export async function buildApp (): Promise<FastifyInstance> {
     })
   })
 
+  /*
+   * A hiányzó törzs nem hiba ott, ahol semmi sem kötelező benne.
+   *
+   * Egy `POST` törzs nélkül és egy `POST {}` ugyanazt kéri — de a séma az
+   * elsőre 400-at adott („body must be object"), mert az AJV a `undefined`-ot
+   * nem tekinti objektumnak. Ez néma hibákat okozott a hívó oldalán, és
+   * egyszer biztonságit is: a törzs nélküli `POST /v1/auth/logout` 400-at
+   * kapott, a munkamenet NEM lett visszavonva, és a hozzáférési token további
+   * tizenöt percig működött. A böngészőkliens csak azért kerülte el, mert
+   * mindig küld `{}`-t; a `navigator.sendBeacon`, a `curl` és bármely másik
+   * kliens nem köteles.
+   *
+   * A szabály szűk szándékosan: CSAK akkor egészítjük ki `{}`-ra a törzset, ha
+   * az útvonal sémája egyetlen mezőt sem követel meg. Ahol van `required`, ott
+   * a hiányzó törzs továbbra is 400 — a hiányzó jelszó hiányzó jelszó marad.
+   */
+  app.addHook('preValidation', async (request) => {
+    if (request.body !== undefined && request.body !== null) return
+    const body = request.routeOptions?.schema?.body as
+      { type?: string, required?: unknown } | undefined
+    if (!body || body.type !== 'object') return
+    if (Array.isArray(body.required) && body.required.length) return
+    request.body = {}
+  })
+
   // The global body limit is sized for REST payloads; a GraphQL document is
   // parsed before anything else, so it gets its own, tighter ceiling.
   app.addHook('preValidation', async (request, reply) => {

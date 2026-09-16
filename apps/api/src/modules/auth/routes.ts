@@ -53,10 +53,18 @@ const credentialsSchema = {
  * whoever else was holding this account is now out. Doing it in one place is
  * what keeps the reset path from quietly forgetting the revocation.
  */
-async function applyNewPassword (userId: string, newPassword: string, ip: string, event: string): Promise<void> {
-  await accounts.setPassword(userId, await hashPassword(newPassword))
+async function applyNewPassword (
+  userId: string, newPassword: string, ip: string, event: string, expectedHash?: string
+): Promise<boolean> {
+  // `expectedHash` makes this a compare-and-swap — see `setPassword`. Without
+  // it two changes racing both passed the current-password check and both
+  // wrote; the later one won, even when the password it checked against had
+  // already been replaced.
+  const written = await accounts.setPassword(userId, await hashPassword(newPassword), expectedHash)
+  if (!written) return false
   await revokeTokens(userId)
   await accounts.log(userId, event, ip)
+  return true
 }
 
 const routes: FastifyPluginAsync = async fastify => {
@@ -375,6 +383,11 @@ const routes: FastifyPluginAsync = async fastify => {
     properties: { refreshToken: { type: 'string', minLength: 1, maxLength: 512 } }
   }
 
+  /*
+   * A törzs elhagyható: az `app.ts` `preValidation` szabálya egészíti ki
+   * `{}`-ra, mert a séma egyetlen mezőt sem követel. Enélkül egy törzs nélküli
+   * kijelentkezés 400-at kapott, és a hívó BEJELENTKEZVE MARADT.
+   */
   fastify.post('/logout', { preHandler: fastify.authenticate, schema: { body: logoutBody } }, async (request, reply) => {
     const { refreshToken } = (request.body ?? {}) as { refreshToken?: string }
     const sid = request.user.sid
@@ -532,7 +545,24 @@ const routes: FastifyPluginAsync = async fastify => {
       })
     }
 
-    await applyNewPassword(request.user.sub, newPassword, request.ip, 'password_changed')
+    /*
+     * A tárolt kivonatra hivatkozva írunk: ha közben más megváltoztatta a
+     * jelszót, ez a kérés nem ír. Enélkül két párhuzamos változtatás mindkét
+     * ellenőrzése átment, mindkettő írt, és az utolsó nyert — akkor is, ha az
+     * a régi jelszóval indult, amit az első már leváltott.
+     */
+    const written = await applyNewPassword(
+      request.user.sub, newPassword, request.ip, 'password_changed', user.password_hash)
+    if (!written) {
+      await recordAccountEvent('PASSWORD_CHANGE', {
+        userId: request.user.sub, result: 'failed', ...fromRequest(request),
+        metadata: { reason: 'password_changed_concurrently' }
+      })
+      return reply.code(409).send({
+        type: 'about:blank', title: 'Conflict', status: 409,
+        detail: 'A jelszó közben megváltozott — kezdd elölről a mostani jelszóval'
+      })
+    }
     await recordAccountEvent('PASSWORD_CHANGE', { userId: request.user.sub, ...fromRequest(request) })
 
     // The caller keeps working: they just proved they own the account, and

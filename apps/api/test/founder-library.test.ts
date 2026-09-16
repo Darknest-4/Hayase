@@ -77,13 +77,24 @@ describe('the founder library', { skip: HAS_DB ? false : 'no DATABASE_URL' }, ()
    * so a retry is free.
    */
   async function seed (
-    options?: Parameters<typeof seedFounderLibrary>[1]
+    options?: Parameters<typeof seedFounderLibrary>[1],
+    /*
+     * Amit egy újrakezdés ÉRVÉNYTELENÍT.
+     *
+     * A haladást gyűjtő tömb kísérletenként értendő: a vető minden futásban
+     * nulláról számol. Ha az előző kísérlet lapjai bennmaradnak, a lista
+     * 250, 500, 750, majd megint 250 — és a „a haladás csak nőhet" állítás
+     * elbukik azon, amit a burkoló maga csinált. Ez a paraméter azért van,
+     * hogy ne a teszt saját újrapróbálása buktassa meg a tesztet.
+     */
+    discardOnRetry?: unknown[]
   ): Promise<Awaited<ReturnType<typeof seedFounderLibrary>>> {
     for (let attempt = 0; ; attempt++) {
       try {
         return await seedFounderLibrary(profileId, options)
       } catch (error) {
         if (attempt >= 3 || (error as { code?: string }).code !== '23503') throw error
+        discardOnRetry?.splice(0)
       }
     }
   }
@@ -205,7 +216,7 @@ describe('the founder library', { skip: HAS_DB ? false : 'no DATABASE_URL' }, ()
       onlyPublic: true,
       batchSize: 250,
       onProgress: (what, done) => seenPages.push([what, done])
-    })
+    }, seenPages)
 
     const titlePages = seenPages.filter(([what]) => what === 'titles')
     const episodePages = seenPages.filter(([what]) => what === 'episodes')

@@ -241,10 +241,39 @@ export class AuthRepository extends Repository {
    * this account is now out. Splitting them is how a reset path quietly
    * forgets the revocation.
    */
-  setPassword (userId: string, passwordHash: string): Promise<void> {
+  /**
+   * Write a new password and end every session.
+   *
+   * `expectedHash` makes the write a COMPARE-AND-SWAP, and that is the point.
+   * The deliberate-change path reads the stored hash, verifies the submitted
+   * current password against it, and only then writes — three steps with no
+   * lock between them. Two changes racing therefore both passed the check and
+   * both wrote, and the later write won. Measured: three parallel changes, all
+   * three answered 200.
+   *
+   * That is not only untidy. Somebody who knows the old password — the exact
+   * person a password change exists to lock out — can have their write land
+   * *after* the owner's, and the account ends up on the password they chose,
+   * although by then the old one was no longer current. Requiring the hash to
+   * be unchanged turns the second writer into a plain 403: the password you
+   * checked against is not the password that is stored.
+   *
+   * The reset path passes no `expectedHash`, because there is no current
+   * password to compare — the single-use token is what proves the claim, and
+   * it is consumed atomically on its own.
+   *
+   * Returns false when nothing was written, i.e. the hash moved underneath us.
+   */
+  setPassword (userId: string, passwordHash: string, expectedHash?: string): Promise<boolean> {
     return this.transaction(async (client: pg.PoolClient) => {
-      await client.query('UPDATE users SET password_hash = $2 WHERE id = $1', [userId, passwordHash])
+      const written = await client.query(
+        `UPDATE users SET password_hash = $2
+          WHERE id = $1 AND ($3::text IS NULL OR password_hash = $3)`,
+        [userId, passwordHash, expectedHash ?? null]
+      )
+      if (!written.rowCount) return false
       await client.query('UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [userId])
+      return true
     })
   }
 

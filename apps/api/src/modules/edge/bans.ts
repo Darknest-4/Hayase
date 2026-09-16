@@ -15,7 +15,7 @@
 // iskola, egy kollégium, egy mobilszolgáltató NAT-ja) a kettő
 // összekapcsolása sok ártatlant fogna meg egyetlen elkövetőért.
 
-import { query, queryOne } from '../../infrastructure/database/index.ts'
+import { query, queryOne, transaction } from '../../infrastructure/database/index.ts'
 
 export type BanKind = 'ip' | 'network' | 'user' | 'session' | 'api_key'
 export type BanSource = 'manual' | 'risk' | 'waf' | 'rate_limit' | 'bot' | 'abuse'
@@ -175,18 +175,55 @@ export async function ban (input: NewBan): Promise<Ban | null> {
   const asInet = input.kind === 'ip' || input.kind === 'network' ? input.subject : null
 
   try {
-    const row = await queryOne<Row>(
-      `INSERT INTO edge_bans
-         (kind, subject, subject_inet, reason, source, risk_score, automatic, created_by, expires_at, notes)
-       VALUES ($1, $2, $3::inet, $4, $5, $6, $7, $8, $9, $10::jsonb)
-       RETURNING id::text, kind, subject, reason, source, automatic, risk_score, created_at, expires_at`,
-      [
-        input.kind, input.subject, asInet, input.reason,
-        input.source ?? 'manual', input.riskScore ?? null,
-        input.automatic ?? false, input.createdBy ?? null, expires,
-        JSON.stringify(input.notes ?? {})
-      ]
-    )
+    /*
+     * EGY ALANY, EGY ÉLŐ TILTÁS.
+     *
+     * Enélkül a kétszer kiadott tiltás két élő sort hagyott — és ez nem
+     * kozmetikai: a feloldás egy SORRA szól, tehát az operátor feloldotta,
+     * amit a listában látott, a másik pedig maradt. A látogató ki volt zárva
+     * úgy, hogy a panel szerint nincs rá tiltás. Ugyanez rontotta el az
+     * automatikus tiltás fokozását is, ami a korábbi tiltások SZÁMÁT nézi:
+     * a duplikátumok felfújták, és egy első fennakadás sokadikként büntetődött.
+     *
+     * Az ismételt tiltás ezért MEGHOSSZABBÍT, nem hozzáad. A hosszabb lejárat
+     * nyer — egy egyórás tiltás fölé adott ötperces nem rövidíthet —, és a
+     * végleges tiltás (`expires_at IS NULL`) mindent felülír.
+     *
+     * A tranzakció és a tanácsadó zár azért van, mert a hívás párhuzamos: két
+     * egyszerre blokkolt kérés mindkét `autoBan`-je ugyanarra a címre fut, és
+     * zár nélkül mindkettő „nincs élő tiltás"-t látna.
+     */
+    const row = await transaction(async client => {
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${input.kind}:${input.subject}`])
+
+      const extended = await client.query<Row>(
+        `UPDATE edge_bans SET
+           expires_at = CASE WHEN $3::timestamptz IS NULL OR expires_at IS NULL
+                             THEN NULL ELSE greatest(expires_at, $3::timestamptz) END,
+           reason = $4,
+           risk_score = coalesce($5::smallint, risk_score)
+         WHERE kind = $1 AND subject = $2 AND lifted_at IS NULL
+           AND (expires_at IS NULL OR expires_at > now())
+         RETURNING id::text, kind, subject, reason, source, automatic, risk_score, created_at, expires_at`,
+        [input.kind, input.subject, expires, input.reason, input.riskScore ?? null]
+      )
+      if (extended.rows[0]) return extended.rows[0]
+
+      const fresh = await client.query<Row>(
+        `INSERT INTO edge_bans
+           (kind, subject, subject_inet, reason, source, risk_score, automatic, created_by, expires_at, notes)
+         VALUES ($1, $2, $3::inet, $4, $5, $6, $7, $8, $9, $10::jsonb)
+         RETURNING id::text, kind, subject, reason, source, automatic, risk_score, created_at, expires_at`,
+        [
+          input.kind, input.subject, asInet, input.reason,
+          input.source ?? 'manual', input.riskScore ?? null,
+          input.automatic ?? false, input.createdBy ?? null, expires,
+          JSON.stringify(input.notes ?? {})
+        ]
+      )
+      return fresh.rows[0]
+    })
+
     invalidate()
     return row ? fromRow(row) : null
   } catch {
@@ -222,15 +259,27 @@ export async function autoBan (
   return await ban({ kind, subject, reason, source, seconds, riskScore, automatic: true })
 }
 
-/** Feloldás. A sor marad — az előzmény attól előzmény, hogy nem tűnik el. */
+/**
+ * Feloldás. A sor marad — az előzmény attól előzmény, hogy nem tűnik el.
+ *
+ * A feloldás az ALANYRA szól, nem a megjelölt sorra. Egy sorra szóló feloldás
+ * azt jelentette, hogy ha ugyanarra a címre valahogy mégis két élő tiltás
+ * került, az operátor feloldotta az egyiket, a látogató pedig továbbra is ki
+ * volt zárva — a panel szerint ok nélkül. A `ban` ma már nem hoz létre
+ * másodikat, de a korábban keletkezett párokat is fel kell tudni oldani, és
+ * „oldd fel ezt a címet" nem jelentheti azt, hogy „az egyiket".
+ */
 export async function lift (id: string, by: string | null, reason: string): Promise<boolean> {
-  const row = await queryOne<{ id: string }>(
-    `UPDATE edge_bans SET lifted_at = now(), lifted_by = $2, lift_reason = $3
-      WHERE id = $1 AND lifted_at IS NULL RETURNING id::text`,
+  const rows = await query<{ id: string }>(
+    `WITH target AS (SELECT kind, subject FROM edge_bans WHERE id = $1)
+     UPDATE edge_bans b SET lifted_at = now(), lifted_by = $2, lift_reason = $3
+       FROM target t
+      WHERE b.kind = t.kind AND b.subject = t.subject AND b.lifted_at IS NULL
+      RETURNING b.id::text`,
     [id, by, reason]
   )
   invalidate()
-  return Boolean(row)
+  return rows.length > 0
 }
 
 /** A lejárt tiltások takarítása — a workerből. A lejárt sor nem tiltás. */
