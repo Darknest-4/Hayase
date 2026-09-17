@@ -29,6 +29,9 @@
 #   scripts/cloudflare/trust-proxy.sh                  kiírja az értéket
 #   scripts/cloudflare/trust-proxy.sh --write          beírja a .env-be
 #   scripts/cloudflare/trust-proxy.sh --caddy <fájl>   beírja a Caddyfile-ba
+#   scripts/cloudflare/trust-proxy.sh --matcher        kiírja a Caddy-szűrőt,
+#                                                      ami a nem-Cloudflare
+#                                                      kapcsolatokat kizárja
 #
 # Az `--write` után `docker compose up -d app worker`, a `--caddy` után
 # `caddy reload` kell, hogy hasson.
@@ -111,6 +114,18 @@ PYEOF
   fi
   echo "a Caddyfile frissítve — $COUNT Cloudflare-tartomány"
   echo "hatályba lépéshez: docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile"
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# A szűrő, ami kizárja a Cloudflare megkerülését
+# ---------------------------------------------------------------------------
+#
+# A Caddy `remote_ip` matcherébe való. A DOCKER-HÁLÓZAT IS BENNE VAN: a
+# `docker-proxy` a saját címére fordítja a beérkező kapcsolatot, és a
+# konténerek közti hívások (egészségjelző, bot) is onnan jönnek.
+if [ "${1:-}" = "--matcher" ]; then
+  printf 'remote_ip %s %s\n' "$DOCKER_NET" "$(printf '%s\n%s\n' "$V4" "$V6" | paste -sd' ' -)"
   exit 0
 fi
 
