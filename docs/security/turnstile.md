@@ -167,3 +167,24 @@ oldalt."), nem pedig egy örökké pörgő gombot vagy egy értelmezhetetlen 403
 * Nincs „terheléses kulcs" típusú megkerülés. Egy emberpróba, amin egy
   megosztott titokkal át lehet menni, pont annyit ér, mint a titok.
 
+## Mellékes, de ugyanaz a hibafajta: a Web Analytics beacon
+
+A Cloudflare Web Analytics mérőszkriptjét **nem mi tesszük be**: ha a zónán be
+van kapcsolva, a Cloudflare az élen fűzi bele a HTML-be, a mi kódunk
+megkerülésével. A CSP viszont a mi fejlécünk — és az blokkolta:
+
+```
+Loading the script 'https://static.cloudflareinsights.com/beacon.min.js/…'
+violates the following Content Security Policy directive: "script-src 'self'…"
+```
+
+A kapcsoló a Cloudflare felületén be volt kapcsolva, a beacon minden
+oldalbetöltésnél megpróbált elindulni, és **semmilyen adat nem érkezett**.
+Néma hiba, ugyanaz a fajta, mint a widget CSP-problémája lett volna.
+
+```
+CLOUDFLARE_ANALYTICS=true
+```
+
+Alapból nincs benne: egy Cloudflare nélküli telepítés ne engedjen be egy
+origót, amit sosem fog használni.

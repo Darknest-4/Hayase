@@ -34,6 +34,26 @@ import type { FastifyRequest } from 'fastify'
  */
 const TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com'
 
+/**
+ * A Cloudflare Web Analytics mérőszkriptje.
+ *
+ * NEM MI TESSZÜK BE: ha a zónán be van kapcsolva a Web Analytics, a Cloudflare
+ * az ÉLEN fűzi bele a HTML-be, a mi kódunk megkerülésével. A CSP viszont a mi
+ * fejlécünk — és az blokkolja. Az eredmény egy tökéletesen néma hiba: a
+ * kapcsoló a felületen be van kapcsolva, a beacon minden oldalbetöltésnél
+ * megpróbál elindulni, és semmilyen adat nem érkezik.
+ *
+ * Mérve, böngészőből:
+ *
+ *   Loading the script 'https://static.cloudflareinsights.com/beacon.min.js/…'
+ *   violates the following Content Security Policy directive: "script-src 'self'…"
+ *
+ * Ezért KAPCSOLÓS: aki bekapcsolta a Cloudflare felületén, az itt is kimondja.
+ * Alapból nincs benne — egy Cloudflare nélküli telepítés ne engedjen be egy
+ * origót, amit sosem fog használni.
+ */
+const ANALYTICS_ORIGIN = 'https://static.cloudflareinsights.com'
+const cloudflareAnalytics = (): boolean => process.env.CLOUDFLARE_ANALYTICS === 'true'
 
 const CSP = [
   "default-src 'self'",
@@ -42,7 +62,8 @@ const CSP = [
   // sandbox gone, the allowance is one fewer way for injected script to reach
   // execution and nothing needs it.
   "script-src 'self'" +
-    (turnstileEnabled() ? ` ${TURNSTILE_ORIGIN}` : ''),
+    (turnstileEnabled() ? ` ${TURNSTILE_ORIGIN}` : '') +
+    (cloudflareAnalytics() ? ` ${ANALYTICS_ORIGIN}` : ''),
   "worker-src 'self'",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",

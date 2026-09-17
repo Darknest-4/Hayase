@@ -27,6 +27,7 @@ process.env.TURNSTILE_SECRET_KEY = SECRET
 process.env.TURNSTILE_HOSTNAMES = 'teszt.pelda.hu'
 process.env.JWT_SECRET ??= 'turnstile-http-secret-0123456789abcdef'
 process.env.PUBLIC_URL ??= 'https://teszt.pelda.hu'
+process.env.CLOUDFLARE_ANALYTICS = 'true'
 
 /** Amit a hamis Cloudflare válaszol a következő ellenőrzésre. */
 let siteverify: unknown = { success: true, hostname: 'teszt.pelda.hu' }
@@ -166,5 +167,16 @@ describe('az emberpróba a hitelesítési útvonalakon', { skip: HAS_DB ? false 
       assert.ok(!scriptSrc.includes("'unsafe-inline'"), 'a script-src szigorú marad')
     })
 
+    /*
+     * A Web Analytics beaconját NEM MI tesszük be: ha a zónán be van
+     * kapcsolva, a Cloudflare az ÉLEN fűzi bele a HTML-be. A CSP viszont a mi
+     * fejlécünk, és az blokkolja — élesben pontosan ez történt, és az
+     * eredmény egy néma hiba volt: a kapcsoló bekapcsolva, adat sehol.
+     */
+    test('a CSP beengedi a Web Analytics beaconját, ha be van kapcsolva', async () => {
+      const res = await app.inject({ method: 'GET', url: '/v1/config' })
+      const scriptSrc = /script-src ([^;]+)/.exec(res.headers['content-security-policy'] as string)?.[1] ?? ''
+      assert.ok(scriptSrc.includes('https://static.cloudflareinsights.com'), `script-src: ${scriptSrc}`)
+    })
   })
 })

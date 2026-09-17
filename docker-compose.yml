@@ -90,6 +90,13 @@ services:
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
       TURNSTILE_PROTECT: ${TURNSTILE_PROTECT:-}
       TURNSTILE_HOSTNAMES: ${TURNSTILE_HOSTNAMES:-}
+      # Cloudflare Web Analytics.
+      #
+      # A mérőszkriptet NEM mi tesszük be: ha a zónán be van kapcsolva, a
+      # Cloudflare az ÉLEN fűzi bele a HTML-be. A CSP viszont a mi fejlécünk, és
+      # az blokkolja — az eredmény egy néma hiba, ahol a kapcsoló be van
+      # kapcsolva, és mégsem érkezik adat. Ez a sor engedi be az origót.
+      CLOUDFLARE_ANALYTICS: ${CLOUDFLARE_ANALYTICS:-}
       # A képtükör tárhelye — KÜLÖN VÖDÖR a mentésekétől, mert ezt a
       # tartalmat egy nyilvános útvonal szolgálja ki, a mentéseket soha semmi.
       # Az `app` olvassa (kiszolgálás), a `worker` írja (tükrözés).
