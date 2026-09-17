@@ -2,6 +2,7 @@
 // index.ts so tests can build an app without binding a port).
 
 import { existsSync } from 'node:fs'
+import { readFile, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -54,8 +55,9 @@ import libraryRoutes from './modules/library/routes.ts'
 import settingsRoutes from './modules/settings/routes.ts'
 import translationRoutes from './modules/translations/routes.ts'
 
-import type { FastifyError, FastifyInstance } from 'fastify'
+import type { FastifyError, FastifyInstance, FastifyReply } from 'fastify'
 import { renderStatusPage, wantsHtml } from './infrastructure/http/status-page.ts'
+import { STAMP_PREFIX, clientVersion, stampAssets, unstamp } from './infrastructure/http/client-version.ts'
 import { guard as maintenanceGuard } from './modules/maintenance/middleware.ts'
 import { watch as watchMaintenance } from './modules/maintenance/cache.ts'
 import { stopListener } from './infrastructure/queue/wake.ts'
@@ -629,11 +631,22 @@ export async function buildApp (): Promise<FastifyInstance> {
    * configuration changes that.
    */
   const CLIENT_DIRS = ['assets', 'css', 'src']
-  const CLIENT_FILES = ['index.html', 'favicon.ico', 'robots.txt', 'manifest.webmanifest']
+  /*
+   * AZ `index.html` NINCS A LISTÁN, és ez nem feledékenység.
+   *
+   * A lap NEM nyers fájlként megy ki: a hivatkozásai a kliens verziójával
+   * bélyegezve kerülnek bele (lásd `servePage`). Ha a fájlkiszolgáló is
+   * kiadhatná, akkor a `/` a bélyegzett lapot adná, a `/index.html` pedig a
+   * nyerset — ugyanaz az oldal két változatban, és az egyiken visszatérne az
+   * elavult gyorsítótár. Innen kihagyva mindkét cím ugyanoda esik.
+   */
+  const CLIENT_FILES = ['favicon.ico', 'robots.txt', 'manifest.webmanifest']
 
   const allowedPath = (pathName: string): boolean => {
     const clean = pathName.replace(/^\/+/, '')
-    if (clean === '' || CLIENT_FILES.includes(clean)) return true
+    // A gyökér a LAPÉ, nem a fájlkiszolgálóé — lásd `CLIENT_FILES`.
+    if (clean === '') return false
+    if (CLIENT_FILES.includes(clean)) return true
     const top = clean.split('/')[0]
     return top !== undefined && CLIENT_DIRS.includes(top)
   }
@@ -642,15 +655,101 @@ export async function buildApp (): Promise<FastifyInstance> {
   // one container/port (WEB_ROOT overrides; defaults to the repo's web/).
   const webRoot = process.env.WEB_ROOT ?? join(dirname(fileURLToPath(import.meta.url)), '../../web')
   if (existsSync(webRoot)) {
+    /*
+     * A KLIENS VERZIÓJA, és az `index.html` vele bélyegezve.
+     *
+     * Egyszer, induláskor. A bélyegzett lap ugyanaz a fájl, csak a `/src/` és
+     * a `/css/` hivatkozásai előtt ott a verzió — a modulgráf relatív
+     * importjai innentől maguktól a bélyegzett előtag alatt oldódnak fel.
+     *
+     * Ha bármi elhasal, a BÉLYEGZÉS MARAD EL, nem a lap: verzió nélkül a
+     * régi, közvetlen címek járják, és az oldal ugyanúgy működik, csak a
+     * gyorsítótár megint lomha lesz. Egy gyorsítótár-optimalizálás nem
+     * döntheti el, hogy elindul-e az oldal.
+     */
+    let stamp = ''
+    try {
+      stamp = await clientVersion(webRoot)
+      app.log.info({ version: stamp }, 'a kliens verziója')
+    } catch (error) {
+      app.log.warn({ err: (error as Error).message },
+        'a kliens verziója nem számolható ki; a hivatkozások bélyegzés nélkül mennek ki')
+    }
+
+    /*
+     * A BÉLYEGZETT ÚTVONAL: `/b/<verzió>/src/...`
+     *
+     * A `find-my-way` a literális szegmenst elébe helyezi a statikus `*`-nak,
+     * ezért ez a kérés ide fut be, nem a fájlkiszolgálóhoz. Egy évre,
+     * `immutable`: a cím a tartalmat azonosítja, tehát ami egyszer megjött,
+     * az soha nem lesz elavult. A böngésző így EGYETLEN kérést sem küld a
+     * modulokért, amíg a verzió nem változik.
+     */
+    app.get(`/${STAMP_PREFIX}/*`, async (request, reply) => {
+      const file = unstamp(request.url)
+      if (file === null) return reply.callNotFound()
+      return await reply.sendFile(file)
+    })
+
     await app.register(fastifyStatic, {
       root: webRoot,
+      /*
+       * A KÖNYVTÁRINDEX MEGMARAD, pedig a `/`-ot már nem ez szolgálja ki.
+       *
+       * Kikapcsolva a `send` egy könyvtárkérésre (`/src/`) 403-at ad 404
+       * helyett — vagyis egy létező könyvtár MEGKÜLÖNBÖZTETHETŐ lenne egy nem
+       * létezőtől, pusztán a státuszkódból. Ez pont az a szivárgás, ami ellen
+       * az `allowedPath` visszautasítása is 404-et ad. A `/` nem ide fut be:
+       * azt az `allowedPath` utasítja vissza.
+       */
       index: 'index.html',
       // Never a directory index. It is off by default; saying so is cheap and
       // the failure mode — an index of the client's whole asset tree — is the
       // kind that arrives by upgrade rather than by edit.
       list: false,
       dotfiles: 'ignore',
-      allowedPath
+      allowedPath,
+      /*
+       * A KLIENS FORRÁSA MINDIG ELLENŐRZÉS ALATT.
+       *
+       * Ez a projekt szándékosan build nélküli: a böngésző azokat a
+       * fájlneveket tölti le, amik a lemezen vannak. Nincs tehát tartalomból
+       * származó fájlnév, ami magától frissülne — egy telepítés után a
+       * böngésző ugyanarról a címről kérné az ÚJ kódot, és ha a régit
+       * gyorsítótárazta, nem kéri.
+       *
+       * ÉS EZ MEG IS TÖRTÉNT. Az `index.html` mindig friss volt, a modulok
+       * viszont négy órára eltárolódtak, tehát egy visszatérő látogató ÚJ
+       * vázat kapott RÉGI kóddal — az új útvonal „Page not found" lett a
+       * telefonján, miközben a kiszolgálón minden rendben volt. A négy órát
+       * nem mi adtuk: az eredet `max-age=0`-t küldött, és a Cloudflare írta
+       * felül. Mérve:
+       *
+       *   konténer:  cache-control: public, max-age=0
+       *   az élen:   cache-control: public, max-age=14400
+       *
+       * A `no-cache` NEM azt jelenti, hogy „ne tárold" — azt, hogy „tárold,
+       * de HASZNÁLAT ELŐTT kérdezd meg". Az ETag megmarad, tehát a válasz
+       * jellemzően egy pár száz bájtos 304, nem újratöltés. Ez az ár egy
+       * build nélküli kliensért, és olcsóbb, mint egy fél napig törött oldal.
+       *
+       * Az `assets/` kimarad: képek, betűk, videó. Ezek ritkán változnak, és
+       * egy elavult kép legrosszabb esetben csúnya — nem törött alkalmazás.
+       */
+      setHeaders (response, filePath) {
+        /*
+         * EGY HELYEN DÖNTÜNK, mert a `sendFile` úgyis ezt futtatja utoljára —
+         * a bélyegzett útvonalon beállított fejlécet is felülírná. Először
+         * ezért azt nézzük meg, bélyegzett címről jött-e a kérés.
+         */
+        if (unstamp(response.request.url) !== null) {
+          // A cím a tartalmat azonosítja: ami egyszer megjött, sosem avul el.
+          response.header('cache-control', 'public, max-age=31536000, immutable')
+          return
+        }
+        const forras = /\.(?:js|mjs|css|html|webmanifest)$/i.test(filePath)
+        response.header('cache-control', forras ? 'no-cache' : 'public, max-age=86400')
+      }
     })
     /**
      * robots.txt, sitemap.xml, and /anime/:id with a real <head>.
@@ -690,12 +789,55 @@ export async function buildApp (): Promise<FastifyInstance> {
       const clean = pathName.replace(/^\/+/, '')
       if (CLIENT_FILES.includes(clean)) return true
       const top = clean.split('/')[0]
+      /*
+       * A BÉLYEGZETT ELŐTAG IS FÁJLKÉRÉS.
+       *
+       * Enélkül egy elrontott `/b/...` cím a LAPOT kapná, 200-zal — a
+       * böngésző pedig nem futtat HTML-t modulként, tehát fehér lap lenne
+       * belőle, miközben minden ellenőrzés egészséget jelent. Pontosan az a
+       * hiba, ami miatt ez a függvény létezik.
+       */
+      if (top === STAMP_PREFIX) return true
       return top !== undefined && CLIENT_DIRS.includes(top)
     }
 
-    app.setNotFoundHandler((request, reply) => {
+    /*
+     * A LAP MAGA — bélyegzett hivatkozásokkal, és MINDIG ellenőrizve.
+     *
+     * Ez az egyetlen hely, ahonnan az `index.html` kimegy (a `/` is ide esik,
+     * mert a fájlkiszolgáló nem ad könyvtárindexet). A `no-cache` nem azt
+     * jelenti, hogy „ne tárold", hanem hogy „használat előtt kérdezd meg" —
+     * és a lap a legkisebb fájl a készletben. Ez a lap hozza a verziót, tehát
+     * ha ez elavulna, minden más is elavulna vele.
+     *
+     * Mérve: a Cloudflare a HTML-re átengedi ezt a fejlécet (a JS-re nem —
+     * lásd `client-version.ts`).
+     */
+    /*
+     * A KÉSZ LAP ELTÉVE, a módosítási időre kulcsolva.
+     *
+     * Kérésenkénti `stat`, nem kérésenkénti olvasás és karakterlánccsere: a
+     * konténerben a fájl sosem változik, fejlesztés közben viszont gyakran, és
+     * egy beragadt lap ott a legrosszabb fajta hiba — a forrásban már ott a
+     * változás, a böngészőben még nincs. Ugyanaz a megfontolás, mint a
+     * `seo/meta.ts` sablonjánál.
+     */
+    let page: { mtimeMs: number, html: string } | null = null
+
+    const servePage = async (reply: FastifyReply): Promise<string> => {
+      reply.type('text/html; charset=utf-8')
+      reply.header('cache-control', 'no-cache')
+      const path = join(webRoot, 'index.html')
+      const { mtimeMs } = await stat(path)
+      if (page?.mtimeMs !== mtimeMs) {
+        page = { mtimeMs, html: stampAssets(await readFile(path, 'utf8'), stamp) }
+      }
+      return page.html
+    }
+
+    app.setNotFoundHandler(async (request, reply) => {
       if (request.method === 'GET' && !/^\/(v1|graphql|graphiql|ws)\b/.test(request.url) && !isClientAsset(request.url)) {
-        return reply.sendFile('index.html')
+        return await servePage(reply)
       }
       return reply.code(404).type('application/problem+json').send({ type: 'about:blank', title: 'Not Found', status: 404 })
     })
