@@ -24,7 +24,6 @@ I18n.register('hu', {
   Dashboard: 'Áttekintés',
   Analytics: 'Statisztika',
   History: 'Előzmények',
-  Achievements: 'Eredmények',
   Themes: 'Témák',
   Admin: 'Adminisztráció',
   More: 'Továbbiak',
@@ -66,7 +65,6 @@ I18n.register('hu', {
   Data: 'Adatok',
   Account: 'Fiók',
   Appearance: 'Megjelenés',
-  About: 'Névjegy',
 
   // ---------------------------------------------------------------- lejátszás
   'Watch now': 'Megnézem',
@@ -403,6 +401,73 @@ I18n.register('hu', {
     'A listád, az előzményeid és a beállításaid veled tartanak.',
   'It takes a moment, and nothing but an email address.':
     'Egy pillanat, és nem kell hozzá más, csak egy e-mail-cím.',
+  // ------------------------------------------------------------ beállítások
+  //
+  // A lap fele angolul állt egy magyar felületen — nem azért, mert hiányzott
+  // a T(), hanem mert a szótárban nem volt mit találnia.
+  'Signed in': 'Be vagy lépve',
+  'Not signed in': 'Nem vagy belépve',
+  'Sign in to sync your library across devices and join the discussion.':
+    'Lépj be, hogy a könyvtárad minden eszközödön ugyanaz legyen, és hozzászólhass.',
+  'Shown on your profile page.': 'Ez jelenik meg a profilodon.',
+  'Profile artwork': 'Profilképek',
+  'Library sync': 'Könyvtár szinkronizálása',
+  'Your library status and episode progress follow you across devices while signed in.':
+    'Belépve a könyvtárad állapota és az epizódjaid állása minden eszközödön ugyanaz.',
+  'Synced to your account': 'Szinkronizálva a fiókoddal',
+  'Sync unavailable': 'A szinkronizálás nem elérhető',
+  'Library synced': 'A könyvtár szinkronizálva',
+  Saved: 'Mentve',
+
+  Theme: 'Téma',
+  'Base, accent and surface tint apply instantly and are saved for this profile.':
+    'Az alap, a kiemelőszín és a felület árnyalata azonnal érvényes, és megmarad ennél a profilnál.',
+  Titles: 'Címek',
+  'How anime titles are displayed across the app.':
+    'Milyen nyelven jelenjenek meg az anime címek az oldalon.',
+  'Preferred (AniList default)': 'Ahogy az AniList adja',
+  Native: 'Eredeti',
+
+  'Include 18+ entries in search results and listings.':
+    'A 18+ címek is megjelennek a keresésben és a listákban.',
+  'Autoplay next episode': 'A következő rész automatikus indítása',
+  'Automatically start the next episode when one finishes.':
+    'Ha egy rész véget ér, a következő magától elindul.',
+  'Auto-skip intros': 'A főcím automatikus átugrása',
+  'Skip openings and endings automatically when timing data is available (AniSkip).':
+    'A főcím és a záró automatikus átugrása, ha van hozzá időadat (AniSkip).',
+
+  'What you are told about': 'Miről kapsz értesítést',
+  'Airing episodes': 'Megjelenő epizódok',
+  'When a new episode of something in your library airs.':
+    'Ha megjelenik egy új rész abból, ami a könyvtáradban van.',
+  'Reminders to pick up shows you started but paused.':
+    'Emlékeztető azokról, amiket elkezdtél, de félbehagytál.',
+  Achievements: 'Eredmények',
+  'When you unlock a new achievement.': 'Ha új eredményt szerzel.',
+  'Notification inbox': 'Értesítési postaláda',
+  'These are generated from your library and activity — no account required.':
+    'Az értesítések a könyvtáradból és a tevékenységedből készülnek — fiók sem kell hozzájuk.',
+
+  'Your data': 'Az adataid',
+  'Export and import': 'Mentés és visszatöltés',
+  'Your anime list, favourites and progress live only in this browser. Export them as JSON to back them up or move devices.':
+    'A listád, a kedvenceid és az állásod csak ebben a böngészőben élnek. JSON-ba mentve megőrizheted vagy átviheted másik eszközre.',
+  'API cache': 'Gyorsítótár',
+  'Responses from AniList, Jikan and ani.zip are kept locally to keep the app fast and to stay under their rate limits.':
+    'Az AniList, a Jikan és az ani.zip válaszai helyben megmaradnak, hogy az oldal gyors legyen, és ne fussunk bele a korlátaikba.',
+  'Danger zone': 'Veszélyes műveletek',
+  'Delete all local data': 'Minden helyi adat törlése',
+  'Your list, favourites, history and settings in this browser. This cannot be undone.':
+    'A listád, a kedvenceid, az előzményeid és a beállításaid ebben a böngészőben. Nem vonható vissza.',
+  'Delete ALL local data (list, favourites, settings)?':
+    'Tényleg törlöd MINDEN helyi adatot (lista, kedvencek, beállítások)?',
+
+  About: 'Névjegy',
+  'Framework-free web client on the Yume design system. Catalogue data from AniList, Jikan (MyAnimeList) and ani.zip.':
+    'Keretrendszer nélküli webkliens a Yume designrendszerén. A katalógus adatai az AniListről, a Jikanből (MyAnimeList) és az ani.zipről származnak.',
+  Sources: 'Források',
+
   'Yume server updated': 'A Yume-kiszolgáló frissítve',
   'Sync now': 'Szinkronizálás most',
 

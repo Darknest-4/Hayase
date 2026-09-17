@@ -47,7 +47,8 @@ provideShell({
     await App.loadConfig()
     App.applyNavVisibility()
     App.refreshAdminNav()
-  }
+  },
+  afterAuth: () => App.afterAuth()
 })
 
 // The store reports what changed; these decide what that means. Registering

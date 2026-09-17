@@ -16,7 +16,6 @@
 // látogatóknak szabályzati döntés, nem oldalszerkesztés.
 
 import { C } from '../../shared/ui/components.js'
-import { openAuthDialog } from './auth-dialog.js'
 import { T } from '../../shared/i18n/i18n.js'
 import { U } from '../../shared/lib/dom.js'
 import { YumeAPI } from '../../shared/api/yume.js'
@@ -53,7 +52,8 @@ export const Landing = {
   /**
    * @param {HTMLElement} root  ide kerül az oldal
    * @param {object} site       a /v1/config `site` blokkja: { name, tagline }
-   * @param {Function} onAuth   sikeres belépés után fut le
+   * @param {Function} onAuth   megmarad a hívó kedvéért; a belépés a `#/login`
+   *                              lapon történik, ami maga frissíti a krómot
    */
   render (root, site, onAuth = () => {}) {
     const name = site?.name ?? 'Yume'
@@ -68,10 +68,14 @@ export const Landing = {
       class: 'lp-account',
       type: 'button',
       'aria-label': T('Fiók'),
+      /*
+       * A BELÉPÉSNEK SAJÁT LAPJA VAN (`#/login`), fülekkel. Itt korábban egy
+       * felugró ablak nyílt: ugyanaz az űrlap, másik keretben. Két felület
+       * ugyanarra a dologra azt jelenti, hogy az egyik előbb-utóbb lemarad
+       * egy változásról — pontosan ez történt, amikor az emberpróba bekerült.
+       */
       onclick: () => {
-        const user = YumeAPI.user()
-        if (user) { window.location.hash = '#/profile'; return }
-        openAuthDialog(() => { paintAccount(); onAuth() })
+        window.location.hash = YumeAPI.user() ? '#/profile' : '#/login'
       }
     })
 
@@ -144,8 +148,7 @@ export const Landing = {
           class: 'btn btn-primary',
           type: 'button',
           onclick: () => {
-            if (YumeAPI.user()) { window.location.hash = '#/home'; return }
-            openAuthDialog(() => { paintAccount(); onAuth() })
+            window.location.hash = YumeAPI.user() ? '#/home' : '#/login/register'
           }
         }, [document.createTextNode(YumeAPI.user() ? T('Tovább a főoldalra') : T('Fiók létrehozása'))])
       ])

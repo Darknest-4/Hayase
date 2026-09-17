@@ -710,8 +710,6 @@ a.badge:hover { color: var(--accent); border-color: var(--accent); }
 .lp-account-letter { font-weight: var(--weight-black); font-size: var(--text-sm); }
 
 /* ---- belépő ablak ---- */
-.auth-modal .dialog { width: min(24rem, calc(100vw - 2rem)); }
-.auth-body { display: flex; flex-direction: column; gap: var(--space-4); }
 .auth-fields { display: flex; flex-direction: column; gap: var(--space-3); }
 .auth-fields .input { width: 100%; }
 

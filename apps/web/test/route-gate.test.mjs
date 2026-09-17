@@ -199,3 +199,60 @@ describe('what the refusal says', () => {
     assert.doesNotMatch(source, /text: `\$\{gate\.flag\.label\}/)
   })
 })
+
+// ---------------------------------------------------------------------------
+// A PRIVÁT PÉLDÁNY
+// ---------------------------------------------------------------------------
+//
+// `require_login` mellett a katalógus nem jár egy kijelentkezett látogatónak —
+// és ilyenkor NEM egy lakatot mutatunk, hanem a kezdőképernyőt. Egy zárt
+// ajtóval szemben az a különbség, hogy van mit nézni, és van hova menni.
+//
+// A kapu két irányban is elromolhat, és a második a veszélyesebb: ha a
+// belépőlapot is elzárná, egy privát példányon senki nem tudna bejelentkezni.
+// Ez nem elméleti — a `_gateExempt` egy háromelemű lista, és egy hiányzó elem
+// pont ezt jelentené.
+
+describe('a privát példány kapuja', () => {
+  const privat = { site: { requireLogin: true, name: 'Yume' } }
+
+  it('kijelentkezve a kezdőképernyőre terel, nem lakatra', () => {
+    const verdict = gate('home', { signedIn: false, config: privat })
+    assert.equal(verdict.ok, false)
+    assert.equal(verdict.kind, 'site-login')
+  })
+
+  it('a katalógus minden útvonala mögé odaáll', () => {
+    for (const route of ['home', 'search', 'list', 'anime', 'community', 'schedule']) {
+      assert.equal(gate(route, { signedIn: false, config: privat }).kind, 'site-login', route)
+    }
+  })
+
+  /*
+   * EZ A FONTOSABB IRÁNY. Ha a belépőlap is a kapu mögé kerülne, egy privát
+   * példányon nem lenne mód bejelentkezni — a látogató a kezdőképernyőre
+   * jutna, onnan a belépésre kattintana, és ugyanoda érkezne vissza.
+   */
+  it('a belépéshez vezető utak nyitva maradnak', () => {
+    for (const route of ['login', 'landing', 'settings']) {
+      assert.equal(gate(route, { signedIn: false, config: privat }).ok, true, route)
+    }
+  })
+
+  it('belépve minden a szokásos módon jár', () => {
+    assert.equal(gate('home', { signedIn: true, config: privat }).ok, true)
+  })
+
+  it('nyilvános példányon a kapu nem szól bele', () => {
+    assert.equal(gate('home', { signedIn: false }).ok, true)
+  })
+
+  it('a kapu a kezdőképernyőt rajzolja, és leveszi az alkalmazás krómját', () => {
+    // Az ikonsáv öt olyan helyre mutatna, ahová egy kijelentkezett látogató
+    // nem juthat el.
+    const router = readFileSync(join(here, '../src/app/router.js'), 'utf8')
+    const branch = router.slice(router.indexOf("gate.kind === 'site-login'"), router.indexOf("} else if (gate.kind === 'auth')"))
+    assert.match(branch, /Landing\.render/)
+    assert.match(branch, /classList\.add\('landing-route'\)/)
+  })
+})

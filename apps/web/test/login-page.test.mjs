@@ -210,11 +210,17 @@ describe('a lap be van kötve', () => {
 describe('egy űrlap van, nem három', () => {
   const forras = nev => readFileSync(join(here, '..', 'src', nev), 'utf8')
 
-  it('a felugró ablak a közös űrlapot használja', () => {
-    const s = forras('features/landing/auth-dialog.js')
-    assert.match(s, /createAuthForm/)
-    assert.doesNotMatch(s, /YumeAPI\.(login|register)\(/,
-      'saját beléptetést csinál a közös űrlap helyett')
+  /*
+   * A FELUGRÓ ABLAK MEGSZŰNT. Ugyanazt az űrlapot adta, másik keretben — és
+   * két felület ugyanarra a dologra azt jelenti, hogy az egyik előbb-utóbb
+   * lemarad egy változásról. Pontosan ez történt, amikor az emberpróba
+   * bekerült: a három másolatból kettőbe nem került bele.
+   */
+  it('a kezdőképernyő a belépőlapra visz, nem saját ablakot nyit', () => {
+    const s = forras('features/landing/landing.js')
+    assert.match(s, /#\/login/)
+    assert.doesNotMatch(s, /openAuthDialog|createAuthForm/,
+      'a kezdőképernyő megint saját belépőfelületet épít')
   })
 
   /*

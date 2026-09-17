@@ -26,6 +26,7 @@ import { P } from '../shared/ui/primitives.js'
 import { T } from '../shared/i18n/i18n.js'
 import { U } from '../shared/lib/dom.js'
 import { YumeAPI } from '../shared/api/yume.js'
+import { afterAuth, setTitle } from '../shared/lib/shell.js'
 import { createAuthForm } from '../features/auth/auth-form.js'
 
 /**
@@ -58,17 +59,15 @@ export const PageLogin = {
   /**
    * @param {HTMLElement} root
    * @param {URLSearchParams} params
-   * @param {string|undefined} arg      `#/login/register` → 'register'
-   * @param {object} ctx                amit a router ad — lásd alább
-   * @param {Function} ctx.onAuthed     újratölti a konfigurációt és a jogokat
-   * @param {Function} ctx.setTitle     a böngészőfül címe
+   * @param {string|undefined} arg   `#/login/register` → 'register'
    *
-   * A LAP NEM IMPORTÁLJA A ROUTERT, és ez nem stílus: a `site-config.js` ki is
-   * mondja, hogy egy komponens, ami a routert kéri, megfordítja a
-   * függőséget — az alapozás akkor az alkalmazásra támaszkodik, és nem lehet
-   * kiemelni belőle. A `Landing` ugyanígy kap visszahívást, nem modult.
+   * A LAP NEM IMPORTÁLJA A ROUTERT, és ez nem stílus: a `shared/lib/shell.js`
+   * ki is mondja, miért — tizenkét képernyő tette, és attól egyiket sem
+   * lehetett betölteni vagy tesztelni a teljes router nélkül, miközben a
+   * router minden képernyőt importál. A shell azt ajánlja fel, amit egy
+   * képernyő kérhet tőle; ez a lap kettőt kér.
    */
-  render (root, params, arg, { onAuthed = async () => {}, setTitle = () => {} } = {}) {
+  render (root, params, arg) {
     const next = safeNext(params.get('next'))
     const go = () => { window.location.hash = `#/${next}` }
 
@@ -89,7 +88,7 @@ export const PageLogin = {
           P.button(T('Continue'), { variant: 'primary', onclick: go }),
           P.button(T('Sign out'), {
             variant: 'ghost',
-            onclick: async () => { await YumeAPI.logout(); await onAuthed() }
+            onclick: async () => { await YumeAPI.logout(); await afterAuth() }
           })
         ])
       ]))
@@ -113,7 +112,7 @@ export const PageLogin = {
          * frissítés már a célra érkezik.
          */
         go()
-        await onAuthed()
+        await afterAuth()
       },
       onModeChange: mode => {
         cim.textContent = mode === 'login' ? T('Sign in') : T('Create an account')

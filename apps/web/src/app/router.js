@@ -47,10 +47,7 @@ export const App = {
     // Saját címe van, mert hivatkozni kell rá: a hozzáférési kapuból, egy
     // levélből, egy hibaüzenetből. A felugró ablak megmarad a
     // kezdőképernyőn — a kettő UGYANAZT az űrlapot használja.
-    login: (root, params, arg) => PageLogin.render(root, params, arg, {
-      onAuthed: () => App.afterAuth(),
-      setTitle: text => App.setTitle(text)
-    }),
+    login: (root, params, arg) => PageLogin.render(root, params, arg),
     profile: (root, params) => PageProfile.render(root, params),
     notifications: (root, params) => PageNotifications.render(root, params),
     dashboard: (root, params) => PageDashboard.render(root, params),
