@@ -38,6 +38,14 @@ export interface StatusPage {
   requestId?: string | null
   /** Automatikus újrapróbálás. Alapból be, de sosem agresszívan. */
   autoRetry?: boolean
+  /**
+   * Háttérvideó, ha van.
+   *
+   * NÉMÁN, ISMÉTELVE, `playsinline`-nal — ez az egyetlen alak, amit a
+   * böngészők gesztus nélkül elindítanak. Ha mégsem indul el, a poszter marad
+   * ott, és az oldal ugyanúgy teljes: a videó DÍSZ, nem tartalom.
+   */
+  video?: { url: string, type: string, poster?: string | null } | null
 }
 
 /**
@@ -118,6 +126,16 @@ export function renderStatusPage (page: StatusPage): string {
     pointer-events: none;
   }
   main { position: relative; max-width: 34rem; width: 100%; }
+  /* A HÁTTÉRVIDEÓ nem tartalom: elsötétítve, a szöveg mögött, és a
+     felolvasó elől elrejtve. Ha nem indul el, semmi nem hiányzik. */
+  .bg {
+    position: fixed; inset: 0; width: 100%; height: 100%;
+    object-fit: cover; opacity: .22; filter: saturate(.75);
+    pointer-events: none; z-index: 0;
+  }
+  /* Mozgásmentes módban EGYÁLTALÁN NEM jelenik meg. A 19. pont kéri, és egy
+     hurokban futó háttérvideó pont az, amitől valakinek rosszul lehet. */
+  @media (prefers-reduced-motion: reduce) { .bg { display: none; } }
   .logo {
     font-size: clamp(1.6rem, 6vw, 2.2rem); font-weight: 900;
     letter-spacing: .24em; margin: 0 0 28px; color: var(--fg);
@@ -151,6 +169,11 @@ export function renderStatusPage (page: StatusPage): string {
 </style>
 </head>
 <body>
+${page.video
+  ? `<video class="bg" autoplay muted loop playsinline preload="metadata" aria-hidden="true" tabindex="-1"${
+      page.video.poster ? ` poster="${escape(page.video.poster)}"` : ''
+    }><source src="${escape(page.video.url)}" type="${escape(page.video.type)}"></video>`
+  : ''}
 <main>
   <p class="logo">YUME</p>
   <div class="card">

@@ -979,6 +979,21 @@ export const YumeAPI = {
     // Emergency controls. Each switch has an enforcement point in the server
     // and the GET says which — see apps/api/src/modules/security/routes.ts.
     security: () => YumeAPI._request('/v1/admin/security', { auth: true }),
+
+    // ---- karbantartási mód ----
+    // A `security.manage` jogosultsághoz kötve, ugyanoda, ahova a
+    // csak-olvasható üzem: nem tartalmi szerkesztés, hanem üzemeltetés.
+    maintenance: () => YumeAPI._request('/v1/admin/maintenance', { auth: true }),
+    setMaintenance: body => YumeAPI._request('/v1/admin/maintenance', { method: 'PUT', auth: true, body }),
+    /** Előnézet: NEM aktivál semmit, csak megmondja, mi történne. */
+    previewMaintenance: body =>
+      YumeAPI._request('/v1/admin/maintenance/preview', { method: 'POST', auth: true, body }),
+    createMaintenanceBypass: body =>
+      YumeAPI._request('/v1/admin/maintenance/bypass', { method: 'POST', auth: true, body }),
+    revokeMaintenanceBypass: id =>
+      YumeAPI._request(`/v1/admin/maintenance/bypass/${encodeURIComponent(id)}`, { method: 'DELETE', auth: true }),
+    /** A nyilvános státusz — az admin előnézethez is ezt kérdezzük. */
+    publicStatus: () => YumeAPI._request('/v1/status'),
     // The posture: every entry inspects something and says what it found.
     posture: () => YumeAPI._request('/v1/admin/security/posture', { auth: true }),
     // A sebességkorlátok átírása. Ugyanaz a jogosultság, ami a

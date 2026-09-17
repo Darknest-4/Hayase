@@ -14,6 +14,7 @@ import { config as cachedConfig } from './cache.ts'
 import { isInternalRequest } from '../../middleware/internal-request.ts'
 import { renderStatusPage, wantsHtml } from '../../infrastructure/http/status-page.ts'
 import { MODE } from './state.ts'
+import { resolveVideo } from './video-resolver.ts'
 
 import type { FastifyReply, FastifyRequest } from 'fastify'
 
@@ -89,7 +90,7 @@ export async function evaluate (request: FastifyRequest): Promise<Decision> {
  * gépnevet, hívásvermet, titkot, infrastruktúra-részletet. Az `reason` mező
  * a NAPLÓBA megy, nem a válaszba.
  */
-export function respond (request: FastifyRequest, reply: FastifyReply, decision: Decision): FastifyReply {
+export async function respond (request: FastifyRequest, reply: FastifyReply, decision: Decision): Promise<FastifyReply> {
   const configuration = cachedConfig()
   const retryAfter = decision.retryAfter ?? 120
 
@@ -99,12 +100,26 @@ export function respond (request: FastifyRequest, reply: FastifyReply, decision:
   reply.header('X-Request-ID', String(request.id))
 
   if (wantsHtml(request.headers.accept)) {
+    /*
+     * A videó keresése CSAK a HTML-ágon.
+     *
+     * Egy gépi hívó 503-a percenként ezerszer is előfordulhat, és egy
+     * könyvtárolvasás mindegyikhez fölösleges lemezmunka lenne. A
+     * karbantartási OLDALT viszont ember nézi, és ott a videó a lényeg.
+     *
+     * Elhasalni sem tud: hiányzó könyvtár vagy videó esetén `null` jön
+     * vissza, és az oldal ugyanúgy teljes.
+     */
+    let video: { url: string, type: string } | null = null
+    try { video = await resolveVideo(null) } catch { video = null }
+
     return reply.code(503).type('text/html; charset=utf-8').send(renderStatusPage({
       status: 503,
       title: configuration.title || 'Karbantartás',
       message: configuration.publicMessage || 'A YUME rövidesen újra elérhető lesz.',
       retryAfter,
-      requestId: String(request.id)
+      requestId: String(request.id),
+      video
     }))
   }
 
@@ -142,5 +157,5 @@ export async function guard (request: FastifyRequest, reply: FastifyReply): Prom
     mode: decision.mode, scope: decision.scope, reason: decision.reason, url: request.url
   }, 'karbantartás: kérés visszautasítva')
 
-  return respond(request, reply, decision)
+  return await respond(request, reply, decision)
 }

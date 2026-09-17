@@ -5,7 +5,7 @@
 import { Copy } from '../shared/i18n/copy.js'
 import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
-import { configure as configureFeatures, featureOn } from '../shared/lib/site-config.js'
+import { configure as configureFeatures, featureOn, permissionsHeld } from '../shared/lib/site-config.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
 import { Announcements } from '../features/announcements/announcements.js'
 import { Landing } from '../features/landing/landing.js'
@@ -31,6 +31,8 @@ import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 import { YumeAPI } from '../shared/api/yume.js'
 import { pageView } from '../shared/lib/analytics.js'
+import { createMaintenanceService } from '../features/maintenance/core/maintenance-service.js'
+import { createMaintenancePage } from '../features/maintenance/ui/maintenance-page.js'
 
 export const App = {
   routes: {
@@ -127,6 +129,65 @@ export const App = {
 
   _navGen: 0,
 
+  /**
+   * A karbantartási oldal, ha most azt kell mutatni — különben `null`.
+   *
+   * A TELJES OLDAL csak a mindent lezáró módokban jár. A részleges és a
+   * csak-olvasható üzem mellett az oldal MEGY, és ott szalag a helyes válasz:
+   * az elmondja, mi nem működik, és nem áll az útba.
+   */
+  _maintenanceGate (route) {
+    const service = this._maintenance
+    if (!service) return null
+    const status = service.status
+    const blocking = status.mode === 'ACTIVE' || status.mode === 'EMERGENCY'
+    if (!blocking) {
+      this._renderMaintenanceBanner(status)
+      return null
+    }
+
+    // Az üzemeltető átmegy a szerveren, tehát a lapja is működjön. Az
+    // adminfelület ráadásul az EGYETLEN hely, ahonnan ki lehet kapcsolni.
+    if (permissionsHeld().length > 0 || route === 'admin') {
+      this._renderMaintenanceBanner(status)
+      return null
+    }
+
+    this._maintenancePage?.destroy()
+    this._maintenancePage = createMaintenancePage(status, {
+      service,
+      onRetry: () => { window.location.reload() }
+    })
+    return this._maintenancePage.node
+  },
+
+  /** A szalag a működő oldal tetején — részleges vagy ütemezett üzemnél. */
+  _renderMaintenanceBanner (status) {
+    document.getElementById('mnt-banner')?.remove()
+    const interesting = ['SCHEDULED', 'DEGRADED', 'READ_ONLY', 'ACTIVE', 'EMERGENCY']
+    if (!interesting.includes(status.mode)) return
+
+    const text = {
+      SCHEDULED: 'Tervezett karbantartás következik.',
+      DEGRADED: 'Néhány funkció átmenetileg nem érhető el.',
+      READ_ONLY: 'Most csak olvasni lehet — a módosításokat nem fogadjuk.',
+      ACTIVE: 'Karbantartás folyik. Neked a jogosultságod miatt működik az oldal.',
+      EMERGENCY: 'Rendkívüli karbantartás folyik.'
+    }[status.mode]
+
+    const banner = U.el('div', { class: 'mnt-banner', id: 'mnt-banner', role: 'status' }, [
+      U.el('span', { class: 'mnt-banner-text', text: status.title ? `${status.title} — ${text}` : text }),
+      U.el('button', {
+        class: 'mnt-banner-close',
+        type: 'button',
+        'aria-label': 'Értesítés bezárása',
+        text: '×',
+        onclick: e => e.currentTarget.parentElement.remove()
+      })
+    ])
+    document.getElementById('page')?.prepend(banner)
+  },
+
   async navigate () {
     const gen = ++this._navGen
     const { route, arg, params } = this.parseHash()
@@ -187,6 +248,26 @@ export const App = {
     const primary = ['home', 'search', 'list', 'notifications', 'anime', 'watch']
     document.getElementById('nav-more')?.classList.toggle('active', !primary.includes(route))
     this.refreshNotifBadge()
+
+    /*
+     * ---- KARBANTARTÁSI KAPU ----
+     *
+     * EZ NEM BIZTONSÁGI HATÁR, és fontos tudni, hogy miért nem: a szerver
+     * minden kérést maga bírál el (`modules/maintenance/middleware.ts`), és
+     * ami oda nem jut be, azt ez a kapu sem engedi ki. Amit itt csinálunk, az
+     * a MEGJELENÍTÉS — hogy a néző ne egy sor elhasalt kérésből következtesse
+     * ki, mi történik.
+     *
+     * Aki a szerver szerint bemehet (üzemeltető, jeggyel rendelkező), annak a
+     * kérései sikeresek — ezért a teljes oldalt csak akkor mutatjuk, ha a
+     * nézőnek nincs üzemeltetői jogosultsága. Egy adminnak, aki épp a
+     * karbantartást kapcsolja ki, a legrosszabb dolog egy karbantartási oldal.
+     */
+    const maintenancePage = this._maintenanceGate(route)
+    if (maintenancePage) {
+      page.replaceChildren(maintenancePage)
+      return
+    }
 
     // feature-flag / access gate (DB-driven site config)
     const gate = this._gateCheck(route)
@@ -900,6 +981,17 @@ export const App = {
     this.initSearchModal()
     this.initMobileMore()
     this.initNavCollapse()
+    /*
+     * A karbantartás figyelése.
+     *
+     * Kétpercenként kérdez, karbantartás alatt húszmásodpercenként — és a
+     * változásra ÚJRARAJZOL, hogy a néző ne egy elavult oldalt nézzen, amikor
+     * már vége.
+     */
+    this._maintenance = createMaintenanceService({})
+    this._maintenance.subscribe(() => { this.navigate() })
+    this._maintenance.start()
+
     window.addEventListener('hashchange', () => { this.closeMoreSheet(); this.navigate() })
 
     // load DB-driven site config + permissions, apply the site name, then route

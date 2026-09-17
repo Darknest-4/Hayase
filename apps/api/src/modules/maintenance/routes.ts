@@ -14,6 +14,7 @@ import { effectiveMode, formatInZone, secondsUntilChange, toDate } from './sched
 import { history, recordEvent, save } from './repository.ts'
 import { MODE, MODES, SCOPES, isRestricting, parseMode, parseScope } from './state.ts'
 import * as bypass from './bypass.ts'
+import { discover, resolveVideo } from './video-resolver.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
 
@@ -48,7 +49,15 @@ export const publicStatus: FastifyPluginAsync = async fastify => {
       retryAfter: seconds,
       // A verzió a kliensnek szól: ebből tudja, hogy változott-e valami,
       // anélkül, hogy az egészet összehasonlítaná.
-      version: configuration.version
+      version: configuration.version,
+      /*
+       * A KARBANTARTÁSI VIDEÓ, ha van.
+       *
+       * Csak akkor keressük meg, ha tényleg karbantartás van: normál
+       * üzemben egy könyvtárolvasás minden státuszkérésnél fölösleges
+       * lemezmunka lenne.
+       */
+      video: isRestricting(mode) ? await resolveVideo(null) : null
     }
   })
 }
@@ -97,7 +106,9 @@ export const adminMaintenance: FastifyPluginAsync = async fastify => {
       scopes: SCOPES,
       cache: stats(),
       bypasses: await bypass.live(),
-      history: await history(20)
+      history: await history(20),
+      // Az admin lássa, MIBŐL lehet választani — és azt is, ha nincs videó.
+      videos: await discover()
     }
   })
 
