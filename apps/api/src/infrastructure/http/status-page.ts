@@ -14,6 +14,33 @@
 // A színek a `tokens.css` értékei, kézzel átemelve — ez az egyetlen hely, ahol
 // a másolás helyes: a token a kliensé, ez a válasz a szerveré, és a kettő
 // között nincs futásidejű kapcsolat.
+//
+// ---------------------------------------------------------------------------
+// SZKRIPT NINCS BENNE, ÉS EZ MÉRÉS EREDMÉNYE
+//
+// Az első változatban volt: egy beágyazott `<script>` kezelte az „Újratöltés"
+// gombot és a másodpercenkénti visszaszámlálót. Böngészőben kipróbálva ez
+// jelent meg a konzolon:
+//
+//   Executing inline script violates the following Content Security Policy
+//   directive 'script-src 'self''
+//
+// Az alkalmazás saját biztonsági szabályzata tiltja a beágyazott szkriptet —
+// helyesen. A gomb tehát NEM CSINÁLT SEMMIT, a visszaszámláló nem mozdult, és
+// mindez csendben: a lap kinézett rendben, csak nem működött.
+//
+// A javítás nem az, hogy kivételt adunk a szabályzat alól. Az oldal mostantól
+// SZKRIPT NÉLKÜL működik:
+//
+//   * az „Újratöltés" egy sima HIVATKOZÁS ugyanarra a címre;
+//   * az automatikus újrapróbálkozás `<meta http-equiv="refresh">`;
+//   * a visszaszámláló STATIKUS szöveg („próbáld újra 2 perc múlva").
+//
+// Így működik letiltott JavaScript mellett is, bármilyen szabályzat alatt, és
+// nincs se szkript-lenyomat, se kivétel, amit karban kellene tartani. A ketyegő
+// visszaszámláló ott van, ahol nem kerül szkript-tilalom alá: az alkalmazás
+// SAJÁT karbantartási oldalán (`features/maintenance/ui/maintenance-page.js`),
+// ami rendes modul, nem beágyazott kód.
 
 /** A YUME sötét palettája, a `tokens.css` szerint. */
 const PALETTE = {
@@ -36,6 +63,13 @@ export interface StatusPage {
   retryAfter?: number | null
   /** A kérés azonosítója — ezt idézheti, ha ír nekünk. */
   requestId?: string | null
+  /**
+   * Hova mutasson az „Újratöltés".
+   *
+   * Az eredeti címre, hogy a néző oda jusson vissza, ahova indult. Üresen
+   * hagyva a hivatkozás az aktuális lapra mutat, ami ugyanezt teszi.
+   */
+  retryHref?: string | null
   /** Automatikus újrapróbálás. Alapból be, de sosem agresszívan. */
   autoRetry?: boolean
   /**
@@ -102,6 +136,7 @@ export function renderStatusPage (page: StatusPage): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
+${autoRetry ? `<meta http-equiv="refresh" content="${retrySeconds}">` : ''}
 <title>${escape(page.title)} — YUME</title>
 <style>
   :root {
@@ -152,14 +187,17 @@ export function renderStatusPage (page: StatusPage): string {
     font-size: .92rem; color: var(--fg);
   }
   .when b { color: var(--accent); font-weight: 700; }
-  button {
-    font: inherit; font-weight: 700; cursor: pointer;
-    padding: 12px 28px; min-height: 44px;
+  /* Hivatkozás, nem gomb: szkript nélkül is működik. Gombnak látszik, mert a
+     néző számára az a jelentése. */
+  .retry {
+    display: inline-block; min-height: 44px;
+    font: inherit; font-weight: 700; text-decoration: none;
+    padding: 12px 28px;
     color: #1a1206; background: var(--accent);
-    border: 0; border-radius: 999px;
+    border-radius: 999px;
   }
-  button:hover { filter: brightness(1.08); }
-  button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
+  .retry:hover { filter: brightness(1.08); }
+  .retry:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
   .rid {
     margin: 22px 0 0; font-size: .78rem; color: var(--muted);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all;
@@ -179,34 +217,11 @@ ${page.video
   <div class="card">
     <h1>${escape(page.title)}</h1>
     <p>${escape(page.message)}</p>
-    ${delay ? `<p class="when">Próbáld újra <b id="when">${escape(delay)}</b> múlva</p>` : ''}
-    <p><button id="retry" type="button">Újratöltés</button></p>
+    ${delay ? `<p class="when">Próbáld újra <b>${escape(delay)}</b> múlva</p>` : ''}
+    <p><a class="retry" href="${escape(page.retryHref ?? '')}" rel="nofollow">Újratöltés</a></p>
     ${page.requestId ? `<p class="rid">Kérésazonosító: ${escape(page.requestId)}</p>` : ''}
   </div>
 </main>
-<script>
-(function () {
-  var button = document.getElementById('retry')
-  button.addEventListener('click', function () { location.reload() })
-  var left = ${retrySeconds === null ? 'null' : String(retrySeconds)}
-  var when = document.getElementById('when')
-  if (left === null) return
-  /*
-   * VISSZASZÁMLÁLÁS, NEM PÖRGETÉS. Egy oldal, ami másodpercenként újratölti
-   * magát, pont azt a kiszolgálót veri tovább, amelyik már most sem bírja —
-   * és a sebességkorlát ablakát is folyamatosan újraindítaná.
-   *
-   * Egyetlen automatikus újratöltés van, a megadott idő UTÁN. A gomb
-   * bármikor elérhető, ha a látogató hamarabb próbálkozna.
-   */
-  var tick = setInterval(function () {
-    left -= 1
-    if (left <= 0) { clearInterval(tick); ${autoRetry ? 'location.reload()' : 'if (when) when.textContent = "most"'}; return }
-    if (!when) return
-    when.textContent = left < 60 ? left + ' másodperc' : Math.round(left / 60) + ' perc'
-  }, 1000)
-})()
-</script>
 </body>
 </html>`
 }

@@ -119,6 +119,7 @@ export async function respond (request: FastifyRequest, reply: FastifyReply, dec
       message: configuration.publicMessage || 'A YUME rövidesen újra elérhető lesz.',
       retryAfter,
       requestId: String(request.id),
+      retryHref: request.url,
       video
     }))
   }

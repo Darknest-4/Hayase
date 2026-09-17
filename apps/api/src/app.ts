@@ -265,7 +265,9 @@ export async function buildApp (): Promise<FastifyInstance> {
             ? 'Egy kicsit gyorsan érkeztek a kérések erről a hálózatról. Ez nem tiltás — pár másodperc múlva folytathatod.'
             : 'A kérést most nem tudjuk kiszolgálni.',
           retryAfter: seconds,
-          requestId: request.id
+          requestId: request.id,
+          // Oda vissza, ahonnan jött — nem a főoldalra.
+          retryHref: request.url
         }))
       }
       return reply.code(shaped.status).type('application/problem+json')

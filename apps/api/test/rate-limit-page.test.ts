@@ -173,6 +173,33 @@ describe('mit lát, akit megfojtott', () => {
     assert.match(String(throttled.headers['content-type']), /json/)
   })
 
+  it('az oldalon NINCS beágyazott szkript', async () => {
+    /*
+     * Ezt böngésző találta meg, nem átolvasás.
+     *
+     * Az első változat egy beágyazott `<script>`-tel kezelte az „Újratöltés"
+     * gombot és a visszaszámlálót. Az alkalmazás saját biztonsági szabályzata
+     * (`script-src 'self'`) viszont tiltja a beágyazott szkriptet — helyesen —,
+     * és a konzolon ez állt:
+     *
+     *   Executing inline script violates the following Content Security
+     *   Policy directive 'script-src 'self''
+     *
+     * A gomb tehát NEM CSINÁLT SEMMIT, csendben. A lap kinézett rendben.
+     *
+     * Az oldal azóta szkript nélkül működik: hivatkozás és `meta refresh`. Ez
+     * a teszt azt őrzi, hogy ne kerüljön vissza egy „csak ez az egy kis
+     * szkript" — mert az újra néma lenne.
+     */
+    const app = await freshApp(2)
+    const throttled = await untilThrottled(app, { 'x-forwarded-for': '203.0.113.25', accept: 'text/html' })
+    assert.ok(throttled)
+    assert.ok(!/<script/i.test(throttled.body), 'beágyazott szkript került az oldalra')
+    assert.ok(!/\son[a-z]+\s*=/i.test(throttled.body), 'beágyazott eseménykezelő került az oldalra')
+    // Az újratöltés így is elérhető — csak hivatkozásként.
+    assert.match(throttled.body, /class="retry"/)
+  })
+
   it('az oldal nem árul el belső részletet', async () => {
     const app = await freshApp(2)
     const throttled = await untilThrottled(app, {

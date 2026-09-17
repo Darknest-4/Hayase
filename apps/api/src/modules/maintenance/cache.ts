@@ -54,7 +54,24 @@ let inFlight: Promise<MaintenanceConfig> | null = null
 let listening = false
 let lastError: string | null = null
 
-/** Csak teszthez: minden állapot eldobása. */
+/**
+ * A betöltő — cserélhető.
+ *
+ * NEM kényelmi mankó a teszteknek: ez a modul egyetlen külső függése, és a
+ * viselkedése attól függ, hogy a betöltés SIKERÜL-E. Az „mi történik, ha az
+ * adatbázis eltűnik" kérdésre másképp nem lehet választ adni, mint hogy a
+ * betöltés elhasal — és egy ES-modul exportját nem lehet kívülről kicserélni.
+ *
+ * A seam tehát itt van, kimondva, egy helyen.
+ */
+let load: () => Promise<MaintenanceConfig | null> = loadCurrent
+
+/** A betöltő cseréje. Az alapértelmezettre `setLoader(null)` állít vissza. */
+export function setLoader (next: (() => Promise<MaintenanceConfig | null>) | null): void {
+  load = next ?? loadCurrent
+}
+
+/** Minden állapot eldobása — teszthez és hidegindítás szimulálásához. */
 export function reset (): void {
   current = null
   readAt = 0
@@ -83,7 +100,7 @@ async function refresh (): Promise<MaintenanceConfig> {
   if (inFlight) return inFlight
   inFlight = (async () => {
     try {
-      const loaded = await loadCurrent()
+      const loaded = await load()
       if (loaded) {
         current = loaded
         readAt = Date.now()
