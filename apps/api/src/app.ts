@@ -358,16 +358,29 @@ export async function buildApp (): Promise<FastifyInstance> {
    * catalogue, and every other read endpoint, to anyone who called the API
    * directly or simply opened it in a second browser.
    *
-   * Three paths stay open, because they are what a signed-out caller needs in
+   * Four paths stay open, because they are what a signed-out caller needs in
    * order to stop being signed out: the readiness probes (a private instance
    * must still be monitorable), the config document that tells the client the
    * site is private in the first place, and the auth endpoints themselves.
    * Everything else under /v1 and /graphql needs a live token.
    *
+   * A NEGYEDIK A KARBANTARTÁSI ÁLLAPOT, és utólag került ide. A karbantartási
+   * oldal a kiszolgálóról kirajzolva eddig is eljutott mindenkihez — az a lap
+   * HTML, és ez a kapu csak a `/v1`-et és a `/graphql`-t őrzi. A lap viszont
+   * MAGÁT IS FRISSÍTI: a `/v1/status`-ból tudja meg, meddig tart és mikor
+   * jöhet vissza. Privát példányon ez 401-et adott, tehát pont egy
+   * kijelentkezett látogatónál állt meg a visszaszámláló — azon, akinek a
+   * legkevesebb más módja van megtudni, mi történik.
+   *
+   * Nem szivárog vele semmi: amit a válasz tartalmaz (cím, üzenet, várható
+   * vég), azt a kiszolgálóról kirajzolt lap amúgy is kiírja ugyanannak a
+   * névtelen látogatónak. Az üzemeltetőnek szánt karbantartási felület a
+   * `/v1/admin/maintenance` alatt van, és az továbbra sem mentes.
+   *
    * The setting is read through the cached reader, so the common case — a
    * public instance — costs one map lookup per request, not a query.
    */
-  const loginExempt = /^\/v1\/(health|config|auth)\b/
+  const loginExempt = /^\/v1\/(health|config|auth|status)\b/
   app.addHook('onRequest', async (request, reply) => {
     if (!/^\/(v1|graphql)\b/.test(request.url)) return
     if (loginExempt.test(request.url)) return

@@ -100,7 +100,15 @@ describe('site settings actually govern the server', { skip: HAS_DB ? false : 'n
   test('a private instance refuses an unauthenticated API call', async () => {
     mock.method(settings, 'requiresLogin', async () => true)
     try {
-      for (const url of ['/v1/anime?limit=1', '/v1/anime/search?q=test', '/v1/comments?animeId=1']) {
+      /*
+       * Az ÜZEMELTETŐI karbantartási felület NEM mentes — csak a nyilvános
+       * állapot az. A kettő egy betűben tér el, és a különbség az, hogy ki
+       * kapcsolhatja ki a karbantartást.
+       */
+      for (const url of [
+        '/v1/anime?limit=1', '/v1/anime/search?q=test', '/v1/comments?animeId=1',
+        '/v1/admin/maintenance'
+      ]) {
         const res = await app.inject({ url })
         assert.equal(res.statusCode, 401, `${url} answered ${res.statusCode}: ${res.body}`)
       }
@@ -123,6 +131,21 @@ describe('site settings actually govern the server', { skip: HAS_DB ? false : 'n
         const res = await app.inject({ url })
         assert.equal(res.statusCode, 200, `${url} answered ${res.statusCode}`)
       }
+
+      /*
+       * ÉS A KARBANTARTÁSI ÁLLAPOT.
+       *
+       * A karbantartási oldal a kiszolgálóról kirajzolva eddig is eljutott
+       * mindenkihez — az HTML, ezt a kaput meg sem érinti. A lap viszont
+       * MAGÁT IS FRISSÍTI ebből a végpontból: innen tudja, meddig tart és
+       * mikor jöhet vissza a látogató. Privát példányon ez 401 volt, tehát
+       * pont egy kijelentkezett látogatónál állt meg a visszaszámláló.
+       *
+       * Nem szivárog vele semmi: amit a válasz tartalmaz, azt a kirajzolt lap
+       * amúgy is kiírja ugyanannak a névtelen látogatónak.
+       */
+      const status = await app.inject({ url: '/v1/status' })
+      assert.equal(status.statusCode, 200, `/v1/status answered ${status.statusCode}`)
       // Wrong password, but it reached the handler rather than the gate.
       const login = await app.inject({
         method: 'POST', url: '/v1/auth/login', payload: { identifier: 'nobody-here', password: 'wrong-password-but-long' }
