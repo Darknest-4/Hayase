@@ -54,6 +54,40 @@ export interface VideoAsset {
   preferred: boolean
 }
 
+/** Ahonnan a videó megy ki, ha nincs beállítva más: a saját kiszolgálónk. */
+const DEFAULT_VIDEO_BASE = '/assets/videos/'
+
+/**
+ * A NYILVÁNOS ALAP, ahonnan a videó megy ki.
+ *
+ * Alapból a saját kiszolgálónk (`/assets/videos/`) — így egy friss telepítésen
+ * nincs mit beállítani.
+ *
+ * MIÉRT ÁLLÍTHATÓ EGYÁLTALÁN. A karbantartási oldal pont akkor megy ki, amikor
+ * a kiszolgáló bajban van: túlterhelés, telepítés, adatbázishiba. Egy 35 MB-os
+ * háttérvideó minden egyes látogatónak, a saját sávszélességünkről, pont a
+ * legrosszabb pillanatban — miközben az R2-ből a Cloudflare-en át NULLA kimenő
+ * díjjal és a mi terhelésünk nélkül menne.
+ *
+ * A KÖNYVTÁR MARAD A KATALÓGUS: a nevek, a méretek és a választás továbbra is
+ * a helyi fájlokból jön. Ez az alap csak azt mondja meg, honnan TÖLTI LE a
+ * böngésző ugyanazt a nevet — tehát a vödörben ugyanazon a néven kell lennie.
+ *
+ * Érvénytelen érték esetén az alapértelmezés marad. Egy elgépelt cím nem
+ * vihet ki a saját kiszolgálónkról egy tetszőleges idegen gazdára.
+ */
+export function videoBaseUrl (): string {
+  const raw = (process.env.MAINTENANCE_VIDEO_BASE ?? '').trim()
+  if (!raw) return DEFAULT_VIDEO_BASE
+  const absolute = /^https:\/\/[a-z0-9.-]{1,253}(:\d{1,5})?(\/[a-z0-9._~/-]{0,120})?$/i.test(raw)
+  // A `(?!\/)` NEM szépészet. A `//idegen.hu/` séma nélküli cím: a mintára
+  // illik mint „abszolút útvonal", a böngésző viszont IDEGEN GAZDÁNAK olvassa,
+  // és onnan töltené a videót. Kipróbálva: enélkül átment.
+  const relative = /^\/(?!\/)[a-z0-9._~/-]{0,120}$/i.test(raw)
+  if (!absolute && !relative) return DEFAULT_VIDEO_BASE
+  return raw.endsWith('/') ? raw : raw + '/'
+}
+
 /** A videók könyvtára. EGYETLEN hely, ahonnan dolgozunk. */
 export function videoRoot (): string {
   const web = process.env.WEB_ROOT ??
@@ -96,6 +130,9 @@ export async function discover (root = videoRoot()): Promise<VideoAsset[]> {
     return []
   }
 
+  // `publicBase`, nem `base`: a cikluson belül a `base` már a kiterjesztés
+  // nélküli fájlnév, és az árnyékolná ezt.
+  const publicBase = videoBaseUrl()
   const found: VideoAsset[] = []
   for (const name of names) {
     if (!isSafeName(name, root)) continue
@@ -110,7 +147,7 @@ export async function discover (root = videoRoot()): Promise<VideoAsset[]> {
     const base = name.slice(0, name.length - extname(name).length).toLowerCase()
     found.push({
       name,
-      url: `/assets/videos/${encodeURIComponent(name)}`,
+      url: publicBase + encodeURIComponent(name),
       type: MIME[extname(name).toLowerCase()] ?? 'application/octet-stream',
       sizeBytes: size,
       preferred: PREFERRED.includes(base)
@@ -138,4 +175,51 @@ export async function resolveVideo (configured?: string | null, root = videoRoot
   }
 
   return assets[0] ?? null
+}
+
+/**
+ * Válaszol-e a beállított videóforrás — indulásnál, hangosan.
+ *
+ * Ugyanaz a logika, mint a képeknél (`verifyMediaBase`), és ugyanazért: ha a
+ * cím nem él, semmi nem hibázik nálunk. A karbantartási oldal felépül, a
+ * videó helyén üres marad — és a hibát a LÁTOGATÓ böngészője nyeli le, egy
+ * olyan oldalon, amit épp azért néz, mert valami már amúgy is elromlott.
+ *
+ * NEM ESÜNK VISSZA MAGUNKTÓL a helyi fájlra: egy csendes visszaállás azt
+ * jelentené, hogy a beállítás nem hat, és erről senki nem tud.
+ */
+export async function verifyVideoBase (
+  log: { warn: (data: unknown, message: string) => void, info: (data: unknown, message: string) => void },
+  root = videoRoot()
+): Promise<boolean> {
+  const base = videoBaseUrl()
+  // A saját útvonalunkat ugyanez a folyamat szolgálja ki; külső kéréssel
+  // ellenőrizni értelmetlen.
+  if (!base.startsWith('https://')) return true
+
+  const asset = await resolveVideo(null, root)
+  // Nincs videó: nincs mit ellenőrizni, és ez érvényes állapot.
+  if (!asset) return true
+
+  try {
+    const response = await fetch(asset.url, { method: 'HEAD', signal: AbortSignal.timeout(8000) })
+    if (response.ok) {
+      log.info({ base, name: asset.name }, 'a karbantartási videó a beállított címről megy ki')
+      return true
+    }
+    log.warn(
+      { base, name: asset.name, status: response.status },
+      'A KARBANTARTÁSI VIDEÓ NEM SZOLGÁL KI A BEÁLLÍTOTT CÍMRŐL. A karbantartási ' +
+      'oldal videó nélkül fog megjelenni. Töltsd fel ugyanezen a néven ' +
+      '(scripts/upload-video.ts --key …), vagy vedd ki a MAINTENANCE_VIDEO_BASE sort.'
+    )
+    return false
+  } catch (error) {
+    log.warn(
+      { base, name: asset.name, err: (error as Error).message },
+      'A KARBANTARTÁSI VIDEÓ CÍME NEM ÉRHETŐ EL. A karbantartási oldal videó ' +
+      'nélkül fog megjelenni. Vedd ki a MAINTENANCE_VIDEO_BASE sort, ha ez nem szándékos.'
+    )
+    return false
+  }
 }

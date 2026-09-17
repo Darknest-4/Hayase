@@ -46,6 +46,14 @@ describe('az alap', () => {
       'https://a b.hu',               // szóköz
       'https://x.hu/utvonal?q=1',     // lekérdezés
       '../../etc',                    // relatív kitörés
+      /*
+       * SÉMA NÉLKÜLI CÍM. Ez abszolút ÚTVONALNAK látszik — perjellel kezdődik,
+       * csupa engedélyezett karakter —, a böngésző viszont IDEGEN GAZDÁNAK
+       * olvassa, és onnan töltene minden képet. A minta eredetileg átengedte;
+       * ez a sor az, ami elbukott, mielőtt a `(?!/)` bekerült.
+       */
+      '//idegen/',
+      '//idegen/kepek/',
       '   '
     ]) {
       process.env.MEDIA_BASE_URL = bad

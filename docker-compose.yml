@@ -52,6 +52,18 @@ services:
       # NULLA kimenő díjjal, és a mi gépünket el sem éri. Ehhez a vödröt a
       # Cloudflare-en össze kell kötni a domainnel — lásd docs/operations/domain.md.
       MEDIA_BASE_URL: ${MEDIA_BASE_URL:-}
+      # A karbantartási oldal háttérvideója. Ugyanaz a megfontolás, csak
+      # élesebben: ez az oldal PONT AKKOR megy ki, amikor a kiszolgáló bajban
+      # van — túlterhelés, telepítés, adatbázishiba —, és egy 35 MB-os videó
+      # minden látogatónak, a saját sávszélességünkről, a lehető legrosszabb
+      # pillanatban érkezne. Beállítva a fájl az R2-ből megy, a mi gépünk
+      # terhelése nélkül.
+      #
+      # A KÖNYVTÁR MARAD A KATALÓGUS: a neveket továbbra is az
+      # `assets/videos` adja, ez csak azt mondja meg, honnan tölti le a
+      # böngésző ugyanazt a nevet. A vödörben tehát ugyanazon a néven kell
+      # lennie — feltöltés: apps/api/scripts/upload-video.ts --key …
+      MAINTENANCE_VIDEO_BASE: ${MAINTENANCE_VIDEO_BASE:-}
       # This site's public address. Used for the canonical link, the Open Graph
       # URL and the Sitemap: line in robots.txt. Leave it unset and those are
       # built from the Host header, which the caller chooses — see docs/seo.md.

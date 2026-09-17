@@ -10,7 +10,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
 
-import { SUPPORTED, discover, isSafeName, resolveVideo } from '../src/modules/maintenance/video-resolver.ts'
+import {
+  SUPPORTED, discover, isSafeName, resolveVideo, verifyVideoBase, videoBaseUrl
+} from '../src/modules/maintenance/video-resolver.ts'
 
 let root: string
 
@@ -159,5 +161,120 @@ describe('felismerés', () => {
     assert.ok(found, 'nem találta meg az ékezetes nevet')
     assert.ok(!found.url.includes(' '), 'a szóköz kódolatlanul maradt az URL-ben')
     assert.equal(decodeURIComponent(found.url), '/assets/videos/karbantartás videó.mp4')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// A NYILVÁNOS ALAP
+// ---------------------------------------------------------------------------
+//
+// A karbantartási oldal pont akkor megy ki, amikor a kiszolgáló bajban van.
+// Egy 35 MB-os háttérvideó ilyenkor a saját sávszélességünkről a legrosszabb,
+// amit tehetünk — az R2-ből viszont nulla kimenő díjjal és a mi terhelésünk
+// nélkül megy. Ez a beállítás dönti el, honnan.
+
+describe('a videók nyilvános alapja', () => {
+  const eredeti = process.env.MAINTENANCE_VIDEO_BASE
+  after(() => {
+    if (eredeti === undefined) delete process.env.MAINTENANCE_VIDEO_BASE
+    else process.env.MAINTENANCE_VIDEO_BASE = eredeti
+  })
+
+  it('beállítás nélkül a saját kiszolgálónk', () => {
+    delete process.env.MAINTENANCE_VIDEO_BASE
+    assert.equal(videoBaseUrl(), '/assets/videos/')
+  })
+
+  it('a hiányzó záró perjelet pótolja', () => {
+    process.env.MAINTENANCE_VIDEO_BASE = 'https://media.pelda.hu/video/maintenance'
+    assert.equal(videoBaseUrl(), 'https://media.pelda.hu/video/maintenance/')
+  })
+
+  it('a felismert videó címe a beállított alapról jön', async () => {
+    process.env.MAINTENANCE_VIDEO_BASE = 'https://media.pelda.hu/video/maintenance/'
+    const dir = await mkdtemp(join(tmpdir(), 'yume-base-'))
+    try {
+      await writeFile(join(dir, 'maintenance.mp4'), Buffer.alloc(16))
+      const asset = await resolveVideo(null, dir)
+      assert.equal(asset?.url, 'https://media.pelda.hu/video/maintenance/maintenance.mp4')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  /*
+   * EGY ELGÉPELT CÍM NE VIGYE KI A FORGALMAT egy tetszőleges idegen gazdára.
+   * Ami nem felismerhetően a saját útvonalunk vagy egy https-cím, az az
+   * alapértelmezésre esik vissza — nem lesz belőle URL.
+   */
+  it('az érvénytelen értékek az alapértelmezésre esnek vissza', () => {
+    for (const rossz of [
+      'http://nem-tls.hu/',            // titkosítatlan: kevert tartalom lenne
+      'javascript:alert(1)',
+      '//idegen.hu/',                  // séma nélküli: a böngésző idegen gazdának olvasná
+      'https://a hu/',                 // szóköz a gazdában
+      'ftp://pelda.hu/',
+      'pelda.hu/video/'                // séma nélkül
+    ]) {
+      process.env.MAINTENANCE_VIDEO_BASE = rossz
+      assert.equal(videoBaseUrl(), '/assets/videos/', rossz)
+    }
+  })
+
+  it('az üres érték is az alapértelmezés', () => {
+    process.env.MAINTENANCE_VIDEO_BASE = '   '
+    assert.equal(videoBaseUrl(), '/assets/videos/')
+  })
+})
+
+describe('a beállított videóforrás ellenőrzése', () => {
+  const eredeti = process.env.MAINTENANCE_VIDEO_BASE
+  after(() => {
+    if (eredeti === undefined) delete process.env.MAINTENANCE_VIDEO_BASE
+    else process.env.MAINTENANCE_VIDEO_BASE = eredeti
+  })
+
+  const naplo = (): { warns: string[], infos: string[], warn: (d: unknown, m: string) => void, info: (d: unknown, m: string) => void } => {
+    const warns: string[] = []
+    const infos: string[] = []
+    return { warns, infos, warn: (_d, m) => { warns.push(m) }, info: (_d, m) => { infos.push(m) } }
+  }
+
+  it('a saját útvonalunkat nem kérdezi meg hálózaton', async () => {
+    delete process.env.MAINTENANCE_VIDEO_BASE
+    const log = naplo()
+    assert.equal(await verifyVideoBase(log, root), true)
+    assert.equal(log.warns.length, 0)
+  })
+
+  it('videó nélkül nincs mit ellenőrizni', async () => {
+    process.env.MAINTENANCE_VIDEO_BASE = 'https://media.pelda.hu/video/'
+    const ures = await mkdtemp(join(tmpdir(), 'yume-ures-'))
+    try {
+      const log = naplo()
+      assert.equal(await verifyVideoBase(log, ures), true)
+      assert.equal(log.warns.length, 0)
+    } finally {
+      await rm(ures, { recursive: true, force: true })
+    }
+  })
+
+  /*
+   * Ez az az eset, ami miatt az ellenőrzés egyáltalán létezik: a beállítás
+   * bekerül, a fájl viszont nincs feltöltve — és NÁLUNK semmi nem hibázik.
+   * A napló az egyetlen hely, ahol ez kiderülhet.
+   */
+  it('elérhetetlen cím esetén hangosan figyelmeztet', async () => {
+    process.env.MAINTENANCE_VIDEO_BASE = 'https://ez.a.gazda.nem.letezik.invalid/video/'
+    const dir = await mkdtemp(join(tmpdir(), 'yume-hibas-'))
+    try {
+      await writeFile(join(dir, 'maintenance.mp4'), Buffer.alloc(16))
+      const log = naplo()
+      assert.equal(await verifyVideoBase(log, dir), false)
+      assert.equal(log.warns.length, 1)
+      assert.match(log.warns[0]!, /NEM ÉRHETŐ EL/)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })

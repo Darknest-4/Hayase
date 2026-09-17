@@ -209,7 +209,7 @@ cache-control: public, max-age=31536000, immutable
 cf-cache-status: HIT          ← a Cloudflare már gyorsítótárazza
 ```
 
-### 6. `media.animehub.hu` — az utolsó lépés
+### 6. `media.animehub.hu` — **KÉSZ**
 
 A kép ma a saját gépünkön megy át (`/media/…`), és a Cloudflare a saját élén
 gyorsítótárazza. Ami még hátravan: a gyorsítótár-tévesztés is közvetlenül az
@@ -240,15 +240,35 @@ R2-ből menjen, a mi gépünk megkerülésével.
    A képek azonnal a saját `/media/` útvonalra esnek vissza, ami végig
    működik.
 
-**Amíg ez nincs meg, semmi nem hiányzik**: a képek a tükörből jönnek, a
-Cloudflare gyorsítótárazza őket, és az idegen CDN-t nem használjuk.
+**Ez megvan.** A képek a `media.animehub.hu` címről mennek ki, a vödrön ott a
+CORS-szabály (enélkül a lejátszó környezeti fénye csendben elmaradt), és a
+karbantartási oldal háttérvideója is onnan jön. A részletek — a feltöltés, a
+CORS, az objektumok eltávolítása, a költségek — külön lapon:
+[`media.md`](media.md).
+
+### 7. A Cloudflare megkerülése lezárva — **KÉSZ**
+
+A `83.229.82.185` a világ elől nincs elrejtve, és aki megtudja, `--resolve`-val
+közvetlenül idejöhet. Kipróbálva: **HTTP 200-at adott** — az ilyen kérés
+kihagyta a WAF-ot, a DDoS-elnyelést és a gyorsítótárat.
+
+A szokásos megoldás a tűzfalban zárná le a 80/443-at a Cloudflare
+tartományaira, az viszont **eltörné a `yonagifansub.duckdns.org`-ot**, ami
+ugyanazokon a portokon fut és nincs Cloudflare mögött. Ezért a szűrés
+**nevenként** van: az `animehub.hu` blokk zár (`@nem_cloudflare` → 403), a többi
+érintetlen. Mérve: a megkerülő kérés 403, a Cloudflare-en át 200, a másik két
+gazda változatlan.
+
+A lista generálva: `scripts/cloudflare/trust-proxy.sh --caddy /opt/YonagiFansub/Caddyfile --matcher`
 
 ## Ami az átállás után is nyitva marad
 
-A `83.229.82.185` továbbra is elérhető, tehát aki megtalálja az origin IP-t,
-megkerülheti a Cloudflare-t — és egy Cloudflare-címről (például WARP-ról)
-közvetlenül érkező hívás fejlécét a bizalmi lista el is hiszi. Ezt nem a
-`TRUST_PROXY` javítja, hanem az, ha az origin csak a Cloudflare tartományaiból
-fogad kapcsolatot a 80/443-on. A gépen viszont ott a `yonagifansub.duckdns.org`
-is ugyanazokon a portokon, ezért ez külön döntés — lásd az audit `NET-01`
-tételét.
+* **SSL/TLS mód.** Az origin ma valódi Let's Encrypt tanúsítványt hord, tehát a
+  Cloudflare `Full (strict)`-re állítható — ez az egyetlen mód, amiben a
+  Cloudflare hitelesíti is az origint. A `Full` titkosít, de nem ellenőriz. A
+  kapcsoló a Cloudflare felületén van.
+* **Az R2-token hatóköre** (`SEC-02`): fiókszintű, és két vödörre kellene
+  szűkíteni.
+* **Zóna-ürítés.** Nincs Cloudflare API-tokenünk, ezért a gyorsítótárat nem
+  tudjuk parancsból üríteni — egy fejlécváltozás hatása a `max-age` lejártáig
+  (ma négy óra) késik.

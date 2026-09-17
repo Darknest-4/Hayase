@@ -43,7 +43,10 @@ export function mediaBaseUrl (): string {
   if (!raw) return DEFAULT_BASE
 
   const absolute = /^https:\/\/[a-z0-9.-]{1,253}(:\d{1,5})?\/?$/i.test(raw)
-  const relative = /^\/[a-z0-9/_-]{0,60}$/i.test(raw)
+  // A `(?!\/)` ugyanazt a rést zárja, amit a karbantartási videónál: a
+  // `//idegen/` séma nélküli cím abszolút útvonalnak látszik, a böngésző
+  // viszont idegen gazdának olvassa, és onnan töltené MINDEN képet.
+  const relative = /^\/(?!\/)[a-z0-9/_-]{0,60}$/i.test(raw)
   if (!absolute && !relative) return DEFAULT_BASE
 
   return raw.endsWith('/') ? raw : raw + '/'
