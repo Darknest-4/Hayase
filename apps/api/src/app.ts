@@ -61,6 +61,7 @@ import { watch as watchMaintenance } from './modules/maintenance/cache.ts'
 import { stopListener } from './infrastructure/queue/wake.ts'
 import { adminMaintenance, publicStatus } from './modules/maintenance/routes.ts'
 import { verifyMediaBase } from './modules/media/public-url.ts'
+import { verifyVideoBase } from './modules/maintenance/video-resolver.ts'
 
 /**
  * Reject introspection queries.
@@ -499,14 +500,34 @@ export async function buildApp (): Promise<FastifyInstance> {
   app.addHook('onClose', async () => { stopListener() })
 
   /*
-   * A beállított képforrás ellenőrzése — induláskor, egyszer, a háttérben.
+   * `onReady` HOOK, ÉS NEM `app.ready(callback)`.
    *
-   * Nem tartja fel az indulást, és nem esik vissza magától: egyetlen dolga,
-   * hogy ha a cím nem szolgál ki, azt VALAKI MEGTUDJA. Enélkül az oldal
-   * minden képe törött, és a naplóban egy sor sincs róla — a hiba a látogató
-   * böngészőjében történik, nem nálunk.
+   * A különbség nem stílus, és drágán derült ki. Az `app.ready(callback)`
+   * ELINDÍTJA az avvio bootfolyamatát — nem csak feliratkozik rá. Ettől a
+   * `buildApp()` által visszaadott példány már bootolás közben van, és aki
+   * utána regisztrál egy útvonalat (`app.get(...)`), majd `await app.ready()`-t
+   * hív, az ÖRÖKRE ÁLL. Nem hibaüzenettel: némán.
+   *
+   * Ez pontosan megtörtént: a `cloudflare-chain.test.ts` — ami a `buildApp()`
+   * után tesz fel egy „ki vagyok" útvonalat — beragadt, és onnantól az EGÉSZ
+   * API-suite nem tudott végigfutni, mert a futtató erre a fájlra várt.
+   *
+   * Az `onReady` ezzel szemben csak feliratkozik: a boot akkor indul, amikor a
+   * hívó akarja.
    */
-  app.ready(() => {
+  app.addHook('onReady', async function bootEllenorzesek () {
+    /*
+     * A BEÁLLÍTOTT KÜLSŐ FORRÁSOK ELLENŐRZÉSE — egyszer, a háttérben.
+     *
+     * Nem tartja fel az indulást (ezért nincs `await` egyiken sem), és nem
+     * esik vissza magától: egyetlen dolga, hogy ha egy cím nem szolgál ki, azt
+     * VALAKI MEGTUDJA. Enélkül az oldal képei törötten, a karbantartási videó
+     * pedig sehogy sem jelenik meg, és a naplóban egy sor sincs róla — a hiba
+     * a látogató böngészőjében történik, nem nálunk.
+     *
+     * A kettő KÜLÖN próbálkozás: a képek ellenőrzése adatbázist kér, a videóé
+     * nem. Egy adatbázis-hiba ne vigye magával a másikat.
+     */
     void (async () => {
       try {
         const { queryOne } = await import('./infrastructure/database/index.ts')
@@ -518,6 +539,7 @@ export async function buildApp (): Promise<FastifyInstance> {
         // Az ellenőrzés hibája nem akadályozhatja az indulást.
       }
     })()
+    void verifyVideoBase(app.log).catch(() => {})
   })
 
   /*
