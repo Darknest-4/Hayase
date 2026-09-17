@@ -68,6 +68,28 @@ services:
       # URL and the Sitemap: line in robots.txt. Leave it unset and those are
       # built from the Host header, which the caller chooses — see docs/seo.md.
       PUBLIC_URL: ${PUBLIC_URL:-}
+      # EMBERPRÓBA (Cloudflare Turnstile) a hitelesítési űrlapokon.
+      #
+      # Két kulcs. A HELYSZÍNÉ nyilvános — a widget HTML-jébe kerül, tehát
+      # minden látogató böngészőjében ott van amúgy is. A TITOK sosem hagyja el
+      # a kiszolgálót: ez érvényesíti a tokent a Cloudflare felé.
+      #
+      # Mindkettő hiányában a modul minden kérést átenged, és az idegen eredetű
+      # widget-szkript a CSP-be sem kerül bele. A KIKAPCSOLÁS ezért egy sor
+      # kivétele a .env-ből — ez az a fogantyú, amihez éjjel is hozzá lehet
+      # nyúlni, ha valami elromlana.
+      #
+      # TURNSTILE_PROTECT: melyik űrlapot védje (register,login,forgot).
+      #   Alapból register,login. A `forgot` azért nincs benne, mert a
+      #   webkliensben nincs hozzá űrlap, ami tokent tudna szerezni — bevenni
+      #   annyi lenne, mint csendben bezárni egy végpontot.
+      # TURNSTILE_HOSTNAMES: mely gazdanevekről fogadunk el tokent, a
+      #   PUBLIC_URL-én felül. A Cloudflare megmondja, melyik oldalon futott a
+      #   widget; enélkül egy máshol szerzett token is jó lenne.
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      TURNSTILE_PROTECT: ${TURNSTILE_PROTECT:-}
+      TURNSTILE_HOSTNAMES: ${TURNSTILE_HOSTNAMES:-}
       # A képtükör tárhelye — KÜLÖN VÖDÖR a mentésekétől, mert ezt a
       # tartalmat egy nyilvános útvonal szolgálja ki, a mentéseket soha semmi.
       # Az `app` olvassa (kiszolgálás), a `worker` írja (tükrözés).

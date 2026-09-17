@@ -8,6 +8,7 @@ import { query, queryOne } from '../../infrastructure/database/index.ts'
 import { settings as siteSettings } from './site-settings.ts'
 import { flags as featureFlags } from './feature-flags.ts'
 import { configured as passwordResetConfigured } from '../auth/reset-delivery.ts'
+import * as turnstile from '../auth/turnstile.ts'
 import { invalidateThresholds } from '../system/thresholds.ts'
 import { PREFERENCES } from '../profiles/preferences.ts'
 import { emitEvent } from '../webhooks/delivery.ts'
@@ -84,6 +85,24 @@ async function buildPublicConfig (): Promise<unknown> {
        * takes the name that does not need an exception.
        */
       recoveryAvailable: passwordResetConfigured(),
+      /*
+       * Az emberpróba HELYSZÍNKULCSA — nyilvános, és ez nem elnézés.
+       *
+       * A Turnstile két kulcsot ad. Ez az, ami a widget HTML-jébe kerül, tehát
+       * minden látogató böngészőjében ott van amúgy is; a titok, ami a tokent
+       * érvényesíti, sosem hagyja el a kiszolgálót, és nincs olyan export,
+       * ami visszaadná.
+       *
+       * `null`, ha ez a példány nem kér emberpróbát — a kliens ebből tudja,
+       * hogy a widgetet be sem kell töltenie.
+       */
+      turnstileSiteKey: turnstile.siteKey(),
+      /*
+       * MELYIK ŰRLAPON kérünk emberpróbát. Enélkül a kliens vagy mindenhová
+       * kitenné a widgetet (fölöslegesen), vagy sehová (és akkor a kiszolgáló
+       * utasítaná vissza a küldést, ami a látogatónak értelmezhetetlen).
+       */
+      turnstileOn: turnstile.PROTECTABLE.filter(what => turnstile.protects(what)),
       /*
        * Van-e egyáltalán bármi, amit ez a példány le tud játszani.
        *

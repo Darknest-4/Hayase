@@ -217,15 +217,25 @@ export const YumeAPI = {
 
   // ---- auth ----
 
-  async register (email, username, password) {
-    const tokens = await this._request('/v1/auth/register', { method: 'POST', body: { email, username, password }, credentials: 'include' })
+  /*
+   * A `turnstileToken` VÁLASZTHATÓ, és ez nem hanyagság: azt, hogy kell-e
+   * emberpróba, a TELEPÍTÉS dönti el, nem a kliens. A hívó a `turnstile.js`
+   * `needed()`-jétől kérdezi meg, kell-e szereznie egyet; ha ez a példány nem
+   * kér, a mező el sem megy.
+   */
+  async register (email, username, password, turnstileToken) {
+    const body = { email, username, password }
+    if (turnstileToken) body.turnstileToken = turnstileToken
+    const tokens = await this._request('/v1/auth/register', { method: 'POST', body, credentials: 'include' })
     this._saveTokens(tokens)
     this._perms = null
     return this.user()
   },
 
-  async login (identifier, password) {
-    const tokens = await this._request('/v1/auth/login', { method: 'POST', body: { identifier, password }, credentials: 'include' })
+  async login (identifier, password, turnstileToken) {
+    const body = { identifier, password }
+    if (turnstileToken) body.turnstileToken = turnstileToken
+    const tokens = await this._request('/v1/auth/login', { method: 'POST', body, credentials: 'include' })
     this._saveTokens(tokens)
     this._perms = null
     return this.user()

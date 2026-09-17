@@ -9,6 +9,7 @@ import { internalTrustEnabled, isInternalRequest } from './internal-request.ts'
 import fp from 'fastify-plugin'
 
 import { config } from '../config.ts'
+import { enabled as turnstileEnabled } from '../modules/auth/turnstile.ts'
 import { isLoadTestRequest, loadTestConfigured } from './load-test.ts'
 import { settings as siteSettings, type RateLimits } from '../modules/settings/site-settings.ts'
 
@@ -22,20 +23,34 @@ import type { FastifyRequest } from 'fastify'
  * Scripts are all separate files, so script-src stays strict — which is the
  * directive that actually blocks XSS payloads.
  */
+/**
+ * A Turnstile origója.
+ *
+ * Innen jön a widget szkriptje ÉS az iframe, amiben fut — tehát két
+ * direktívába kell bekerülnie. Ez az egyetlen idegen eredetű szkript az
+ * oldalon, és CSAK AKKOR kerül a fejlécbe, ha az emberpróba be van állítva:
+ * egy Turnstile nélküli telepítés ne lazítson a `script-src 'self'`-en olyasmi
+ * kedvéért, amit nem is használ.
+ */
+const TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com'
+
+
 const CSP = [
   "default-src 'self'",
   // No blob: any more. It was there for the extension sandbox, which imported
   // a hash-verified package as a module from an in-memory blob; with the
   // sandbox gone, the allowance is one fewer way for injected script to reach
   // execution and nothing needs it.
-  "script-src 'self'",
+  "script-src 'self'" +
+    (turnstileEnabled() ? ` ${TURNSTILE_ORIGIN}` : ''),
   "worker-src 'self'",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: blob: https:",      // artwork comes from AniList/MAL CDNs
   "media-src 'self' blob: https:",          // video sources are external by design
   "connect-src 'self' https:",              // AniList/Jikan/ani.zip are called from the client
-  "frame-src https://www.youtube-nocookie.com https://www.youtube.com", // trailers
+  'frame-src https://www.youtube-nocookie.com https://www.youtube.com' +   // trailers
+    (turnstileEnabled() ? ` ${TURNSTILE_ORIGIN}` : ''),                       // az emberpróba iframe-je
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",

@@ -715,6 +715,25 @@ a.badge:hover { color: var(--accent); border-color: var(--accent); }
 .auth-fields { display: flex; flex-direction: column; gap: var(--space-3); }
 .auth-fields .input { width: 100%; }
 
+/*
+ * Az emberpróba widgetje.
+ *
+ * A méretét a Cloudflare iframe-e adja (300×65 a normál változaté), és NEM
+ * mi mondjuk meg: egy átméretezett emberpróba-widget gyanús, és a Cloudflare
+ * a torzított beágyazást vissza is utasíthatja. Amit szabályozunk, az a
+ * körülötte lévő hely és a vízszintes igazítás.
+ *
+ * `min-height`: amíg az iframe betölt, a widget helye nulla magas, és az
+ * ablak alja megugrana a látogató szeme előtt — épp akkor, amikor a „Belépés"
+ * gombra célozna.
+ */
+.turnstile {
+  display: flex;
+  justify-content: center;
+  min-height: 65px;
+}
+.turnstile iframe { max-width: 100%; }
+
 .lp-hero {
   position: relative;
   min-height: min(78vh, 42rem);
