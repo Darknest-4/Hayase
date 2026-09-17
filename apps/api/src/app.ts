@@ -60,6 +60,7 @@ import { guard as maintenanceGuard } from './modules/maintenance/middleware.ts'
 import { watch as watchMaintenance } from './modules/maintenance/cache.ts'
 import { stopListener } from './infrastructure/queue/wake.ts'
 import { adminMaintenance, publicStatus } from './modules/maintenance/routes.ts'
+import { verifyMediaBase } from './modules/media/public-url.ts'
 
 /**
  * Reject introspection queries.
@@ -496,6 +497,28 @@ export async function buildApp (): Promise<FastifyInstance> {
    * és az utóbbi meg is történt.
    */
   app.addHook('onClose', async () => { stopListener() })
+
+  /*
+   * A beállított képforrás ellenőrzése — induláskor, egyszer, a háttérben.
+   *
+   * Nem tartja fel az indulást, és nem esik vissza magától: egyetlen dolga,
+   * hogy ha a cím nem szolgál ki, azt VALAKI MEGTUDJA. Enélkül az oldal
+   * minden képe törött, és a naplóban egy sor sincs róla — a hiba a látogató
+   * böngészőjében történik, nem nálunk.
+   */
+  app.ready(() => {
+    void (async () => {
+      try {
+        const { queryOne } = await import('./infrastructure/database/index.ts')
+        const row = await queryOne<{ mirror_key: string }>(
+          'SELECT mirror_key FROM anime_images WHERE mirror_key IS NOT NULL LIMIT 1'
+        )
+        await verifyMediaBase(row?.mirror_key ?? null, app.log)
+      } catch {
+        // Az ellenőrzés hibája nem akadályozhatja az indulást.
+      }
+    })()
+  })
 
   /*
    * A RÉGI CSAK-OLVASHATÓ KAPCSOLÓ.

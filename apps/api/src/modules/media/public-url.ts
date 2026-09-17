@@ -79,3 +79,53 @@ export function imageUrl (objectKey: string | null, mirrorKey: string | null): s
   if (mirrorKey) return mediaBaseUrl() + mirrorKey
   return objectKey ?? null
 }
+
+/**
+ * Tényleg kiszolgálja-e a beállított cím a képeinket?
+ *
+ * MIÉRT INDULÁSKOR, ÉS MIÉRT HANGOSAN
+ *
+ * A `MEDIA_BASE_URL` átállítása egyetlen sor, és ha a cím még nem él, a
+ * következmény az oldal MINDEN képe. Semmi nem hibázik: az API helyes választ
+ * ad, a lap felépül, csak minden kép törött — és a naplóban egy sor sincs
+ * róla, mert a hiba a LÁTOGATÓ böngészőjében történik, nem nálunk.
+ *
+ * Ez pontosan megtörtént: a beállítás bekerült, mielőtt a vödör domainje
+ * elérhető lett volna.
+ *
+ * NEM ESÜNK VISSZA MAGUNKTÓL. Egy induláskori hálózati zökkenő miatt csendben
+ * a saját kiszolgálónkra terelni minden képet rosszabb, mint egy hangos sor a
+ * naplóban: az első esetben senki nem tudja meg, hogy a beállítás nem hat.
+ */
+export async function verifyMediaBase (
+  probeKey: string | null,
+  log: { warn: (data: unknown, message: string) => void, info: (data: unknown, message: string) => void }
+): Promise<boolean> {
+  const base = mediaBaseUrl()
+  // A saját útvonalunkat nincs értelme külső kéréssel ellenőrizni: az
+  // ugyanez a folyamat, és ha az nem megy, arról már úgyis tudunk.
+  if (!base.startsWith('https://')) return true
+  if (!probeKey) return true
+
+  const url = base + probeKey
+  try {
+    const response = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(8000) })
+    if (response.ok) {
+      log.info({ base }, 'a képek a beállított címről mennek ki, és az válaszol')
+      return true
+    }
+    log.warn(
+      { base, status: response.status },
+      'A BEÁLLÍTOTT KÉPFORRÁS NEM SZOLGÁL KI. Az oldal minden képe törött lesz. ' +
+      'Ellenőrzés: scripts/cloudflare/check-media.sh — visszaállítás: vedd ki a MEDIA_BASE_URL sort.'
+    )
+    return false
+  } catch (error) {
+    log.warn(
+      { base, err: (error as Error).message },
+      'A BEÁLLÍTOTT KÉPFORRÁS NEM ÉRHETŐ EL. Az oldal minden képe törött lesz. ' +
+      'Ellenőrzés: scripts/cloudflare/check-media.sh — visszaállítás: vedd ki a MEDIA_BASE_URL sort.'
+    )
+    return false
+  }
+}
