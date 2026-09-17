@@ -34,6 +34,93 @@ naplót nem ír. Ezt a `cloudflare-chain.test.ts` méri, mindkét irányban — 
 látogatót felismerjük, és hogy egy közvetlen kapcsolatból beírt fejlécet ne
 higgyünk el.
 
+## AMI VALÓJÁBAN TÖRTÉNT — 2026-09-17
+
+Az átállás megtörtént. Ez a szakasz azt rögzíti, ami a tervhez képest MÁSKÉNT
+sült el, mert a tanulság a következő domainnél is érvényes lesz.
+
+### A tanúsítvány tyúk-tojás problémája
+
+A terv szerint a Caddy egyszerűen kért volna Let's Encrypt-tanúsítványt. Nem
+tudott, és a hibaüzenet a Cloudflare-től jött: **525 SSL Handshake Failed**.
+
+Az ok nem nyilvánvaló:
+
+```
+curl http://animehub.hu/.well-known/acme-challenge/proba
+  → 308, Server: cloudflare      ← az ÉLEN irányít át HTTPS-re
+```
+
+A Cloudflare a HTTP-kihívást átirányítja HTTPS-re; a Let's Encrypt követi az
+átirányítást; a HTTPS-kapcsolat visszajön hozzánk — ahhoz viszont épp az a
+tanúsítvány kellene, amit meg akarunk szerezni.
+
+**A feloldás három lépésben:**
+
+1. `tls internal` — a Caddy helyben aláírt tanúsítványt ad. A Cloudflare
+   `Full` módban ezt elfogadja (titkosít, de nem hitelesít), tehát az
+   origin-kapcsolat feláll;
+2. ettől a kihívás útja járhatóvá válik. Mérve:
+   `curl -L http://animehub.hu/.well-known/acme-challenge/proba-utvonal`
+   → `elerheto`;
+3. innentől kérhető valódi tanúsítvány. Meg is jött, mindkét névre:
+   `certificate obtained successfully · issuer: letsencrypt`.
+
+### A Caddy eldobta a látogató címét
+
+Ez volt a legfontosabb felfedezés, és a `TRUST_PROXY` **önmagában nem oldotta
+meg**. A Caddy 2.7 óta alapértelmezésben NEM hiszi el a beérkező
+`X-Forwarded-For` fejlécet: felülírja a közvetlen peer címével. Ez helyes
+védelem a hamisítás ellen — de a Cloudflare mögött pont a látogató címét
+dobja el.
+
+Mérve, a `.env` beírása UTÁN, a Caddy beállítása ELŐTT:
+
+```
+request.ip = 141.101.76.109 / 162.158.74.20 / 172.71.95.140
+             └─ mind Cloudflare él-szerver, nem a látogató
+```
+
+A megoldás a Caddy globális blokkja:
+
+```
+{
+	servers {
+		trusted_proxies static <a Cloudflare tartományai>
+	}
+}
+```
+
+A listát ugyanaz a szkript írja, ami a `.env`-be is:
+
+```bash
+scripts/cloudflare/trust-proxy.sh --caddy /opt/YonagiFansub/Caddyfile
+```
+
+### A becsatolt fájl és az inode
+
+A szkript első változata `mv`-vel cserélte a Caddyfile-t. A Caddyfile **fájl
+szinten** van becsatolva a konténerbe, és egy `mv` ÚJ INODE-ot hoz létre — a
+becsatolás pedig a régit tartja. A konténer ezért egy láthatatlan, elavult
+példányt olvasott:
+
+```
+gazdagép:  108 sor          konténer:  90 sor
+caddy reload → "config is unchanged"
+```
+
+A szkript azóta **helyben ír**, és ezt a fájl is kimondja. Ha mégis előfordul:
+`docker compose restart caddy` újraoldja a becsatolást.
+
+### Az eredmény, mérve
+
+```
+a sebességkorlát számlálója három kérésre:  1199 → 1198 → 1197
+hamisított X-Forwarded-For-ral:             1196 → 1195   (ugyanaz a vödör)
+az origin tanúsítványa:                     CN=animehub.hu, Let's Encrypt
+mind a négy cím:                            200
+```
+
 ## Lépések
 
 ### 1. A domain a Cloudflare-re (a tulajdonos dolga)
@@ -47,8 +134,13 @@ higgyünk el.
    | A | `www` | `83.229.82.185` | Proxied |
 
 3. A Cloudflare által kiírt két névkiszolgáló beállítása **a regisztrátornál**
-4. **SSL/TLS → Overview → `Full (strict)`**. A „Flexible" titkosítatlanul
-   továbbítana az origin felé, és átirányítási hurkot okoz.
+4. **SSL/TLS → Overview → `Full`** az átállás idejére. A „Flexible"
+   titkosítatlanul továbbítana az origin felé, és átirányítási hurkot okoz.
+
+   **A `Full (strict)`-re a valódi tanúsítvány megszerzése UTÁN kell váltani** —
+   előtte a saját aláírású tanúsítványt elutasítaná, és a 525 megmaradna. A
+   `Full` titkosít, de nem hitelesíti az origint; a `Full (strict)` mindkettőt
+   megteszi, és most már át lehet rá állni.
 
 MX rekordot csak akkor, ha tényleg lesz levelezés `@animehub.hu` címre — egy
 rossz MX rosszabb, mint a semmi.

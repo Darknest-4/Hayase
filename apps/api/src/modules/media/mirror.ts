@@ -86,7 +86,7 @@ async function mirrorOne (
       headers: {
         // Megmondjuk, kik vagyunk. Egy névtelen tömeges letöltés az, amit egy
         // CDN üzemeltetője joggal blokkol.
-        'user-agent': 'YUME image mirror (https://yumee.duckdns.org)',
+        'user-agent': 'YUME image mirror (https://animehub.hu)',
         accept: 'image/*'
       }
     })

@@ -11,10 +11,27 @@
 # A DOCKER-HÁLÓZAT IS KELL. A lánc `látogató → Cloudflare → Caddy → app`: a
 # közvetlen peer a Caddy a compose-hálózaton, és a bizalom nála kezdődik.
 #
-#   scripts/cloudflare/trust-proxy.sh            kiírja az értéket
-#   scripts/cloudflare/trust-proxy.sh --write    beírja a .env-be
+# A CADDY IS KELL, ÉS EZ NEM MAGÁTÓL ÉRTETŐDŐ
+# -------------------------------------------
+# A Caddy 2.7 óta ALAPÉRTELMEZÉSBEN NEM hiszi el a beérkező `X-Forwarded-For`
+# fejlécet: felülírja a közvetlen peer címével. Ez helyes védelem a hamisítás
+# ellen — de a Cloudflare mögött pont a látogató címét dobja el.
 #
-# Az `--write` után `docker compose up -d app worker` kell, hogy hasson.
+# Mérve, a lista beírása UTÁN, de a Caddy beállítása ELŐTT:
+#
+#   request.ip = 141.101.76.109 / 162.158.74.20 / 172.71.95.140
+#                └─ mind Cloudflare él-szerver, nem a látogató
+#
+# Az appnak adott `TRUST_PROXY` önmagában tehát KEVÉS: ha a Caddy már eldobta
+# a látogató címét, az app nem tudja visszaszerezni. A két beállítás együtt
+# működik, és ugyanabból a listából kell jönnie.
+#
+#   scripts/cloudflare/trust-proxy.sh                  kiírja az értéket
+#   scripts/cloudflare/trust-proxy.sh --write          beírja a .env-be
+#   scripts/cloudflare/trust-proxy.sh --caddy <fájl>   beírja a Caddyfile-ba
+#
+# Az `--write` után `docker compose up -d app worker`, a `--caddy` után
+# `caddy reload` kell, hogy hasson.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -36,6 +53,66 @@ if [ "$COUNT" -lt 15 ] || printf '%s' "$V4" | grep -qi '<'; then
 fi
 
 VALUE="$(printf '%s\n%s\n%s\n' "$DOCKER_NET" "$V4" "$V6" | paste -sd, -)"
+
+# ---------------------------------------------------------------------------
+# A Caddyfile globális blokkja
+# ---------------------------------------------------------------------------
+#
+# A `trusted_proxies static` mondja meg a Caddynak, kinek az
+# `X-Forwarded-For`-ját hiheti el. A Docker-hálózat NEM kell ide: az a Caddy
+# és az app közötti szakasz, és arról a Caddy nem is dönt.
+if [ "${1:-}" = "--caddy" ]; then
+  TARGET="${2:-}"
+  [ -n "$TARGET" ] && [ -f "$TARGET" ] || { echo "használat: --caddy <Caddyfile>" >&2; exit 1; }
+
+  LIST="$(printf '%s\n%s\n' "$V4" "$V6" | paste -sd' ' -)"
+  BLOCK="$(cat <<EOF
+{
+	# A CLOUDFLARE CÍMEI — generálva, nem kézzel másolva.
+	#
+	# A Caddy 2.7 óta alapból NEM hiszi el a beérkező X-Forwarded-For fejlécet,
+	# hanem felülírja a közvetlen peer címével. Ez helyes védelem a hamisítás
+	# ellen, de a Cloudflare mögött a látogató címét dobja el — és onnantól az
+	# app minden látogatót ugyanannak a Cloudflare él-szervernek lát.
+	#
+	# Frissítés: scripts/cloudflare/trust-proxy.sh --caddy <ez a fájl>
+	# Utoljára: $(date -u +%Y-%m-%d)
+	servers {
+		trusted_proxies static $LIST
+	}
+}
+EOF
+)"
+
+  # A régi blokk cseréje, ha van; különben a fájl elejére.
+  if grep -q 'trusted_proxies static' "$TARGET"; then
+    python3 - "$TARGET" "$BLOCK" <<'PYEOF'
+import re, sys
+path, block = sys.argv[1], sys.argv[2]
+text = open(path, encoding='utf-8').read()
+# Az első globális blokk a fájl elején: `{` ... `}` az első oszlopban.
+pattern = re.compile(r'\A\{\n.*?\n\}\n', re.S)
+if pattern.search(text):
+    text = pattern.sub(block + '\n', text, count=1)
+else:
+    text = block + '\n\n' + text
+open(path, 'w', encoding='utf-8').write(text)
+PYEOF
+  else
+    # HELYBEN ÍRUNK, NEM CSERÉLÜNK FÁJLT.
+    #
+    # A Caddyfile egy FÁJL-szintű Docker-becsatolás. Egy `mv` új inode-ot hoz
+    # létre, a becsatolás pedig a RÉGIT tartja — a konténer onnantól egy
+    # láthatatlan, elavult példányt olvas, és a `caddy reload` azt mondja:
+    # „config is unchanged". Ez pontosan megtörtént: a gazdagépen 108 sor
+    # volt, a konténerben 90.
+    NEW="$(printf '%s\n\n%s' "$BLOCK" "$(cat "$TARGET")")"
+    printf '%s' "$NEW" > "$TARGET"
+  fi
+  echo "a Caddyfile frissítve — $COUNT Cloudflare-tartomány"
+  echo "hatályba lépéshez: docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile"
+  exit 0
+fi
 
 if [ "${1:-}" = "--write" ]; then
   [ -f .env ] || { echo "nincs .env" >&2; exit 1; }
