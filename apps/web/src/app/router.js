@@ -18,6 +18,7 @@ import { PageCommunity } from '../pages/community.js'
 import { PageDashboard } from '../pages/dashboard.js'
 import { PageHome } from '../pages/home.js'
 import { PageList } from '../pages/list.js'
+import { PageLogin } from '../pages/login.js'
 import { PageNotifications } from '../pages/notifications.js'
 import { PageProfile } from '../pages/profile.js'
 import { PageSchedule } from '../pages/schedule.js'
@@ -43,6 +44,13 @@ export const App = {
     search: (root, params) => PageSearch.render(root, params),
     schedule: (root, params) => PageSchedule.render(root, params),
     list: (root, params) => PageList.render(root, params),
+    // Saját címe van, mert hivatkozni kell rá: a hozzáférési kapuból, egy
+    // levélből, egy hibaüzenetből. A felugró ablak megmarad a
+    // kezdőképernyőn — a kettő UGYANAZT az űrlapot használja.
+    login: (root, params, arg) => PageLogin.render(root, params, arg, {
+      onAuthed: () => App.afterAuth(),
+      setTitle: text => App.setTitle(text)
+    }),
     profile: (root, params) => PageProfile.render(root, params),
     notifications: (root, params) => PageNotifications.render(root, params),
     dashboard: (root, params) => PageDashboard.render(root, params),
@@ -226,6 +234,9 @@ export const App = {
     // A jelölést a `_renderGate` és a `landing` útvonal is átírhatja: a kapu a
     // kezdőképernyőt rajzolja olyan útvonalon, amit még máshogy hívnak.
     document.body.classList.toggle('landing-route', route === 'landing')
+    // Ugyanaz a megfontolás a belépőlapon: az ikonsáv olyan helyekre mutatna,
+    // ahová a látogató épp most próbál eljutni.
+    document.body.classList.toggle('login-route', route === 'login')
 
     /*
      * Jelezzük, hogy megnyílt egy oldal.
@@ -272,7 +283,7 @@ export const App = {
     // feature-flag / access gate (DB-driven site config)
     const gate = this._gateCheck(route)
     if (!gate.ok) {
-      this._renderGate(page, gate, route)
+      this._renderGate(page, gate, route, arg)
       if (!this.CHROMELESS.includes(route)) page.append(C.footer())
       return
     }
@@ -287,7 +298,7 @@ export const App = {
      */
     const handler = this.routes[route]
     if (!handler) {
-      this._renderGate(page, { kind: 'not-found' }, route)
+      this._renderGate(page, { kind: 'not-found' }, route, arg)
       if (!this.CHROMELESS.includes(route)) page.append(C.footer())
       return
     }
@@ -352,10 +363,12 @@ export const App = {
    * The immersive screens (the player, watch-together, the profile picker)
    * plus the admin panel, which brings its own frame entirely.
    */
-  CHROMELESS: ['watch', 'w2g', 'admin', 'landing'],
+  CHROMELESS: ['watch', 'w2g', 'admin', 'landing', 'login'],
 
   // routes always reachable so users can configure the server / sign in
-  _gateExempt: ['settings', 'landing'],
+  // A `login` KÜLÖN FONTOS: ha a kapu elzárná, egy privát példányon a
+  // belépőlap maga is kapu mögé kerülne, és nem lenne mód bejutni.
+  _gateExempt: ['settings', 'landing', 'login'],
 
   /**
    * Routes that must never be reachable by accident.
@@ -479,7 +492,7 @@ export const App = {
     })
   },
 
-  _renderGate (page, gate, route) {
+  _renderGate (page, gate, route, arg) {
     const wrap = U.el('div', { class: 'gate' })
 
     if (gate.kind === 'site-login') {
@@ -493,6 +506,19 @@ export const App = {
       Landing.render(page, this.config?.site, () => { this.afterAuth() })
       return
     } else if (gate.kind === 'auth') {
+      /*
+       * A KAPU ELKÜLD, NEM BEÁGYAZ.
+       *
+       * Eddig egy kis beágyazott űrlapot rajzolt ide. Két baja volt: ez a
+       * harmadik másolat volt ugyanabból a logikából (és amikor az emberpróba
+       * bekerült, ebbe nem került bele, tehát a regisztráció innen 403-mal
+       * hasalt volna el), és nem is volt hová visszatérni belőle — belépés
+       * után a látogató ott maradt, ahol volt, ahelyett hogy megérkezett
+       * volna oda, ahová indult.
+       *
+       * A `next` viszi tovább a szándékot: a belépőlap ide hozza vissza.
+       */
+      const back = `${route}${arg ? '/' + arg : ''}`
       wrap.append(
         U.el('div', { class: 'gate-icon', text: '🔑' }),
         // `gate.flag?.label` rather than `gate.flag.label`: a kind that
@@ -500,7 +526,12 @@ export const App = {
         // inside the renderer and leave the viewer a blank page.
         U.el('h1', { class: 'gate-title', text: gate.flag ? `Sign in for ${gate.flag.label}` : T('Sign in to continue') }),
         U.el('p', { class: 'gate-sub', text: T('This section needs a signed-in account.') }),
-        C.authCard(() => { this.afterAuth() })
+        U.el('div', { class: 'gate-actions' }, [
+          U.el('a', { class: 'btn btn-primary', href: `#/login?next=${encodeURIComponent(back)}` },
+            [document.createTextNode(T('Sign in'))]),
+          U.el('a', { class: 'btn btn-secondary', href: `#/login/register?next=${encodeURIComponent(back)}` },
+            [document.createTextNode(T('Create account'))])
+        ])
       )
     } else if (gate.kind === 'not-found' || (gate.kind === 'permission' && this.PRIVILEGED.includes(route))) {
       // One branch for two cases on purpose. A privileged route the viewer may

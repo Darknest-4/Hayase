@@ -137,6 +137,7 @@ class MiniNode {
     else this.children.splice(at, 0, node)
     return node
   }
+
   replaceChildren (...kids) {
     this.children = []
     this._text = ''
@@ -147,6 +148,20 @@ class MiniNode {
     if (!this.parentNode) return
     this.parentNode.children = this.parentNode.children.filter(c => c !== this)
     this.parentNode = null
+  }
+
+  /**
+   * Benne van-e ez a csomópont a részfában.
+   *
+   * A valódi DOM-ban egy elem ÖNMAGÁT is tartalmazza, és ez nem apróság: a
+   * lapok ezzel a hívással veszik észre, hogy kikerültek a dokumentumból, és
+   * ilyenkor szerelik le magukat (időzítők, idegen iframe-ek). Enélkül a
+   * csonk kivételt dobna, és a takarítás tesztje nem is létezhetne.
+   */
+  contains (node) {
+    if (node === this) return true
+    for (const kid of this.walk()) if (kid === node) return true
+    return false
   }
 
   /** Minden leszármazott, mélységi sorrendben. */
@@ -264,6 +279,20 @@ export function createDocument () {
     pictureInPictureElement: null,
     listeners: new Map(),
     createElement (tag) { return new MiniNode(tag, doc) },
+    /*
+     * Szövegcsomópont.
+     *
+     * A felület sok helyen `document.createTextNode(...)`-dal tesz szöveget
+     * egy gombba vagy egy hivatkozásba — a `P.button` és minden `<a>` így
+     * készül. Enélkül a csonk azoknál a moduloknál dobott kivételt, amiknek a
+     * felirata így kerül a helyére, és a hiba nem is a modulban volt.
+     *
+     * Csak annyit tud, amennyi a fából kiolvasható szöveghez kell: nincs
+     * gyereke, és a `textContent`-je önmaga.
+     */
+    createTextNode (value) {
+      return { nodeType: 3, textContent: String(value ?? ''), parentNode: null, children: [] }
+    },
     addEventListener (type, fn) {
       if (!doc.listeners.has(type)) doc.listeners.set(type, [])
       doc.listeners.get(type).push(fn)

@@ -511,44 +511,30 @@ export const C = {
         return
       }
 
-      let mode = 'login'
-      const email = U.el('input', { class: 'input', type: 'email', placeholder: T('Email'), autocomplete: 'email' })
-      const identifier = U.el('input', { class: 'input', type: 'text', placeholder: T('Email or username'), autocomplete: 'username' })
-      const username = U.el('input', { class: 'input', type: 'text', placeholder: T('Username'), autocomplete: 'username' })
-      const password = U.el('input', { class: 'input', type: 'password', placeholder: T('Password (min 8 chars)'), autocomplete: 'current-password' })
-      const fields = U.el('div', { style: 'display:flex;flex-direction:column;gap:var(--space-2);max-width:22rem;' })
-      const switchBtn = U.el('button', { class: 'btn btn-ghost btn-sm' })
-      const submitBtn = U.el('button', { class: 'btn btn-primary btn-sm' })
-
-      const renderMode = () => {
-        fields.replaceChildren(...(mode === 'login' ? [identifier, password] : [email, username, password]))
-        submitBtn.textContent = mode === 'login' ? 'Sign in' : 'Create account'
-        switchBtn.textContent = mode === 'login' ? 'New here? Register' : 'Have an account? Sign in'
-      }
-      switchBtn.addEventListener('click', () => { mode = mode === 'login' ? 'register' : 'login'; renderMode() })
-
-      submitBtn.addEventListener('click', async () => {
-        try {
-          submitBtn.disabled = true
-          if (mode === 'login') await YumeAPI.login(identifier.value.trim(), password.value)
-          else await YumeAPI.register(email.value.trim(), username.value.trim(), password.value)
-          U.toast(`Signed in as ${YumeAPI.user().username}`)
-          render()
-          onAuthed()
-        } catch (e) {
-          U.toast(e.message, 'error')
-        } finally {
-          submitBtn.disabled = false
-        }
-      })
-      password.addEventListener('keydown', e => { if (e.key === 'Enter') submitBtn.click() })
-
-      renderMode()
+      /*
+       * KIJELENTKEZVE: ELKÜLDÜNK, NEM ŰRLAPOT RAJZOLUNK.
+       *
+       * Itt korábban egy teljes belépő űrlap állt — a HARMADIK másolat
+       * ugyanabból a logikából, a felugró ablak és a kapu mellett. A
+       * következménye pontosan az lett, ami a másolatoké szokott: amikor az
+       * emberpróba bekerült, ebbe nem került bele, tehát a regisztráció innen
+       * 403-mal hasalt volna el — ráadásul némán, mert ez a kártya a hibát egy
+       * eltűnő toastban mutatta.
+       *
+       * Egy belépőlap van (`#/login`), és ez odavisz. A `next` viszi a
+       * szándékot: aki a közösségi lapról indul, oda tér vissza.
+       */
+      const here = String(window.location.hash || '').replace(/^#\/?/, '').split('?')[0]
+      const next = here ? `?next=${encodeURIComponent(here)}` : ''
       wrap.append(
         U.el('h3', { text: T('Yume account') }),
         U.el('p', { text: T('Sign in to join the discussion and sync with the platform.') }),
-        fields,
-        U.el('div', { style: 'display:flex;gap:var(--space-2);margin-top:var(--space-3);' }, [submitBtn, switchBtn])
+        U.el('div', { style: 'display:flex;gap:var(--space-2);margin-top:var(--space-3);flex-wrap:wrap;' }, [
+          U.el('a', { class: 'btn btn-primary btn-sm', href: `#/login${next}` },
+            [document.createTextNode(T('Sign in'))]),
+          U.el('a', { class: 'btn btn-ghost btn-sm', href: `#/login/register${next}` },
+            [document.createTextNode(T('Create account'))])
+        ])
       )
     }
 

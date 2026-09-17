@@ -388,7 +388,21 @@ I18n.register('hu', {
   Email: 'E-mail',
   'Email or username': 'E-mail vagy felhasználónév',
   Username: 'Felhasználónév',
+  Password: 'Jelszó',
   'Password (min 8 chars)': 'Jelszó (legalább 8 karakter)',
+  '3–32 characters, letters and numbers.': '3–32 karakter, betű és szám.',
+  'At least 8 characters.': 'Legalább 8 karakter.',
+  'Sign in': 'Belépés',
+  Register: 'Regisztráció',
+  'Create account': 'Fiók létrehozása',
+  'Create an account': 'Fiók létrehozása',
+  // A szóköz a végén szándékos: a felhasználónév kerül utána.
+  'Signed in as ': 'Belépve: ',
+  'You are signed in': 'Már be vagy lépve',
+  'Your list, your history and your settings follow you.':
+    'A listád, az előzményeid és a beállításaid veled tartanak.',
+  'It takes a moment, and nothing but an email address.':
+    'Egy pillanat, és nem kell hozzá más, csak egy e-mail-cím.',
   'Yume server updated': 'A Yume-kiszolgáló frissítve',
   'Sync now': 'Szinkronizálás most',
 
