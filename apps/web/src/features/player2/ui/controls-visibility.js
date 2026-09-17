@@ -20,7 +20,7 @@ export function createVisibility (options = {}) {
   const now = options.now ?? (() => Date.now())
   let visible = true
   let lastActivity = now()
-  let pinned = false     // menü nyitva, csúszka fogva — ilyenkor nem tűnhet el
+  let pinned = false // menü nyitva, csúszka fogva — ilyenkor nem tűnhet el
   let paused = true
   let touch = false
 

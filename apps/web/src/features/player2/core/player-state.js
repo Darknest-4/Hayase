@@ -15,8 +15,14 @@ export function initialState () {
   return {
     status: 'idle',
     playback: {
-      playing: false, currentTime: 0, duration: 0, buffered: 0,
-      volume: 1, muted: false, rate: 1, seeking: false
+      playing: false,
+      currentTime: 0,
+      duration: 0,
+      buffered: 0,
+      volume: 1,
+      muted: false,
+      rate: 1,
+      seeking: false
     },
     source: { current: null, candidates: [], type: null },
     quality: { current: 'auto', available: [], auto: true },
@@ -24,8 +30,12 @@ export function initialState () {
     audio: { current: null, tracks: [] },
     episode: { current: null, next: null, previous: null },
     ui: {
-      controlsVisible: true, fullscreen: false, pip: false,
-      cinema: false, ambient: false, miniPlayer: false,
+      controlsVisible: true,
+      fullscreen: false,
+      pip: false,
+      cinema: false,
+      ambient: false,
+      miniPlayer: false,
       loadingPhase: 'INITIALIZING',
       // Az éppen felajánlható átugrás, vagy `null`. A mezőnek ITT a helye, és
       // nem csak akkor kell léteznie, amikor van mit ajánlani: egy

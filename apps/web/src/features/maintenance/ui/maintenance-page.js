@@ -143,7 +143,6 @@ export function createMaintenancePage (status, options = {}) {
       // szerver dönt, és ha még mindig karbantartás van, ugyanide jutunk.
       if (fresh && (fresh.mode === 'OFF' || fresh.status === 'operational')) {
         options.onRetry?.()
-        return
       }
     } finally {
       retry.disabled = false

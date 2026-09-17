@@ -852,8 +852,8 @@ export const C = {
          * A burkoló amúgy is görgethető (lásd `.modal-backdrop`), ez a korlát
          * csak azt akadályozza meg, hogy a gombok EGYÁLTALÁN lecsússzanak.
          */
-        style: 'display:flex;flex-direction:column;gap:var(--space-3);max-height:60dvh;overflow-y:auto;'
-      }, fields),
+          style: 'display:flex;flex-direction:column;gap:var(--space-3);max-height:60dvh;overflow-y:auto;'
+        }, fields),
         U.el('div', { style: 'display:flex;gap:var(--space-2);margin-top:var(--space-4);' }, [
           submit,
           U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => backdrop.close() }, [document.createTextNode(T('Cancel'))])

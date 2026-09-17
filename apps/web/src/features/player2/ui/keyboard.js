@@ -39,33 +39,33 @@ export function shortcutFor (event) {
 
   switch (key) {
     case ' ':
-    case 'Spacebar':          // régebbi böngészők neve ugyanerre
-    case 'k': case 'K':       return { action: 'toggle-play' }
-    case 'ArrowLeft':         return { action: 'seek-by', value: -5 }
-    case 'ArrowRight':        return { action: 'seek-by', value: 5 }
-    case 'j': case 'J':       return { action: 'seek-by', value: -10 }
-    case 'l': case 'L':       return { action: 'seek-by', value: 10 }
-    case 'ArrowUp':           return { action: 'volume-by', value: 0.05 }
-    case 'ArrowDown':         return { action: 'volume-by', value: -0.05 }
-    case 'm': case 'M':       return { action: 'toggle-mute' }
-    case 'f': case 'F':       return { action: 'toggle-fullscreen' }
-    case 't': case 'T':       return { action: 'toggle-cinema' }
+    case 'Spacebar': // régebbi böngészők neve ugyanerre
+    case 'k': case 'K': return { action: 'toggle-play' }
+    case 'ArrowLeft': return { action: 'seek-by', value: -5 }
+    case 'ArrowRight': return { action: 'seek-by', value: 5 }
+    case 'j': case 'J': return { action: 'seek-by', value: -10 }
+    case 'l': case 'L': return { action: 'seek-by', value: 10 }
+    case 'ArrowUp': return { action: 'volume-by', value: 0.05 }
+    case 'ArrowDown': return { action: 'volume-by', value: -0.05 }
+    case 'm': case 'M': return { action: 'toggle-mute' }
+    case 'f': case 'F': return { action: 'toggle-fullscreen' }
+    case 't': case 'T': return { action: 'toggle-cinema' }
     // A 24. pont kiosztása szerint: P = kép a képben, B = előző rész. Az `I`
     // megmarad másodiknak, mert a YouTube azt használja, és az ujjak
     // megjegyzik — de az elsődleges a leírásé.
     case 'p': case 'P':
-    case 'i': case 'I':       return { action: 'toggle-pip' }
-    case 'b': case 'B':       return { action: 'previous-episode' }
-    case 'c': case 'C':       return { action: 'toggle-subtitles' }
-    case 's': case 'S':       return { action: 'skip-segment' }
-    case 'n': case 'N':       return { action: 'next-episode' }
-    case '<':                 return { action: 'rate-by', value: -1 }
-    case '>':                 return { action: 'rate-by', value: 1 }
-    case ',':                 return { action: 'frame-step', value: -1 }
-    case '.':                 return { action: 'frame-step', value: 1 }
-    case '?':                 return { action: 'show-shortcuts' }
-    case 'Escape':            return { action: 'escape' }
-    default:                  return null
+    case 'i': case 'I': return { action: 'toggle-pip' }
+    case 'b': case 'B': return { action: 'previous-episode' }
+    case 'c': case 'C': return { action: 'toggle-subtitles' }
+    case 's': case 'S': return { action: 'skip-segment' }
+    case 'n': case 'N': return { action: 'next-episode' }
+    case '<': return { action: 'rate-by', value: -1 }
+    case '>': return { action: 'rate-by', value: 1 }
+    case ',': return { action: 'frame-step', value: -1 }
+    case '.': return { action: 'frame-step', value: 1 }
+    case '?': return { action: 'show-shortcuts' }
+    case 'Escape': return { action: 'escape' }
+    default: return null
   }
 }
 

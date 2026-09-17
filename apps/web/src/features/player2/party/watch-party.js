@@ -104,7 +104,7 @@ export function createWatchParty (player, options = {}) {
 
     switch (message.action) {
       case 'play':
-        quietly(() => { video.currentTime = position; void video.play?.() })
+        quietly(() => { video.currentTime = position; video.play?.() })
         return { applied: 'play', position }
       case 'pause':
         quietly(() => { video.pause?.(); video.currentTime = position })

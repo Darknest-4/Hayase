@@ -58,8 +58,14 @@ function harness (videoOverrides = {}) {
   restore = withDocument(doc)
   const listeners = new Map()
   const video = {
-    paused: true, currentTime: 0, duration: 1400, playbackRate: 1, readyState: 4,
-    videoWidth: 1920, videoHeight: 1080, networkState: 1,
+    paused: true,
+    currentTime: 0,
+    duration: 1400,
+    playbackRate: 1,
+    readyState: 4,
+    videoWidth: 1920,
+    videoHeight: 1080,
+    networkState: 1,
     buffered: { length: 0, start: () => 0, end: () => 0 },
     ownerDocument: doc,
     addEventListener (type, fn) { if (!listeners.has(type)) listeners.set(type, []); listeners.get(type).push(fn) },
@@ -116,7 +122,7 @@ describe('környezeti fény', () => {
     assert.ok(SAMPLE_WIDTH <= 64 && SAMPLE_HEIGHT <= 36, 'túl nagy mintavevő vászon')
   })
 
-  it('kikapcsolva egyetlen képet sem másol', async () => {
+  it('kikapcsolva a réteg rejtve marad', async () => {
     const { doc, player } = harness()
     const canvas = doc.createElement('canvas')
     const wrap = doc.createElement('div'); wrap.append(canvas); canvas.parentNode = wrap
@@ -131,6 +137,7 @@ describe('környezeti fény', () => {
     // A festés megtörténik, de a réteg NEM jelenik meg. A kép betöltése
     // ugyanis már elindult, mire a beállítást megnézhettük volna — és egy
     // félbehagyott festés bonyolultabb, mint egy rejtett réteg.
+    assert.equal(draws, 1, 'a festés megtörténik — csak nem látszik')
     assert.equal(wrap.classList.contains('yp-ambient-on'), false)
     assert.equal(canvas.style.opacity, '0')
   })
@@ -338,7 +345,7 @@ describe('fejlesztői réteg', () => {
     let clock = 0
     const { video, player } = harness()
     const debug = createDebugOverlay(player, { now: () => clock })
-    clock = 5000                    // ennyit várt a lap, mielőtt forrás lett
+    clock = 5000 // ennyit várt a lap, mielőtt forrás lett
     player.bus.emit('source:selected', { id: 'a' })
     clock = 5400
     video.fire('loadeddata')

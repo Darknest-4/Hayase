@@ -135,7 +135,7 @@ I18n.register('hu', {
   // A Player 2.0 hibataxonómiája (`core/player-errors.js`). Fordítás nélkül a
   // lejátszó pont azt csinálná, amit a saját fejléce kifogásol: angol
   // fejlesztői mondatot tenne a képernyőre egy magyar oldalon.
-  'Player': 'Lejátszó',
+  Player: 'Lejátszó',
   'These apply to the video player. Changes take effect the next time a player opens.':
     'Ezek a videólejátszóra vonatkoznak. A következő lejátszó megnyitásakor lépnek életbe.',
   'There is no source for this episode yet.': 'Ehhez a részhez még nincs forrás.',

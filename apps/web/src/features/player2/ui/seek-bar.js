@@ -137,9 +137,12 @@ export function createSeekBar (player, options = {}) {
     if (!total) return
     const step = event.shiftKey ? 30 : 5
     const jump = {
-      ArrowLeft: -step, ArrowRight: step,
-      Home: -Infinity, End: Infinity,
-      PageDown: -60, PageUp: 60
+      ArrowLeft: -step,
+      ArrowRight: step,
+      Home: -Infinity,
+      End: Infinity,
+      PageDown: -60,
+      PageUp: 60
     }[event.key]
     if (jump === undefined) return
     event.preventDefault()

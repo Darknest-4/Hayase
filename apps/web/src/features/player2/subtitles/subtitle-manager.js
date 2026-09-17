@@ -10,9 +10,15 @@ export function languageCode (value) {
   const text = String(value ?? '').trim().toLowerCase()
   if (!text) return null
   const named = {
-    hungarian: 'hu', magyar: 'hu', hun: 'hu',
-    english: 'en', eng: 'en',
-    japanese: 'ja', japán: 'ja', jpn: 'ja', jp: 'ja'
+    hungarian: 'hu',
+    magyar: 'hu',
+    hun: 'hu',
+    english: 'en',
+    eng: 'en',
+    japanese: 'ja',
+    japán: 'ja',
+    jpn: 'ja',
+    jp: 'ja'
   }
   if (named[text]) return named[text]
   return text.split(/[-_]/)[0].slice(0, 3) || null

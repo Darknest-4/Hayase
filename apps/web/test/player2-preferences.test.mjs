@@ -18,7 +18,6 @@ import {
   PLAYER_FLAGS, createFlagEvaluator, detectCapabilities, detectPlatform
 } from '../src/features/player2/flags/player-feature-flags.js'
 
-
 const here = dirname(fileURLToPath(import.meta.url))
 
 describe('a kód nem kérhet nem létező beállítást', () => {

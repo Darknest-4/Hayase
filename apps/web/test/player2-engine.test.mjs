@@ -21,14 +21,19 @@ const quiet = { error () {}, warn () {}, log () {} }
  */
 function fakeVideo (failSubstrings = [], errorCode = 2) {
   const listeners = {}
+  let currentSrc = ''
   return {
     error: { code: errorCode },
     addEventListener (type, fn) { (listeners[type] ||= []).push(fn) },
     removeEventListener (type, fn) { if (listeners[type]) listeners[type] = listeners[type].filter(f => f !== fn) },
     load () {},
     removeAttribute () {},
+    // Getter is, nem csak setter: egy valódi `<video>`-nál a `src`
+    // visszaolvasható, és az álelem se hazudjon többet a kelleténél.
+    get src () { return currentSrc },
     set src (url) {
-      const bucket = failSubstrings.some(s => String(url).includes(s)) ? 'error' : 'loadedmetadata'
+      currentSrc = String(url)
+      const bucket = failSubstrings.some(s => currentSrc.includes(s)) ? 'error' : 'loadedmetadata'
       setTimeout(() => { (listeners[bucket] ?? []).slice().forEach(fn => fn()) }, 2)
     }
   }

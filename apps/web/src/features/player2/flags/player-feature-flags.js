@@ -101,8 +101,8 @@ export function createFlagEvaluator ({ featureOn, prefs, capabilities = {}, plat
 
   const isOn = (name) => {
     const spec = PLAYER_FLAGS[name]
-    if (!spec) return false            // ismeretlen név: nincs ilyen funkció
-    if (spec.core) return true         // mag: nem kapcsolható ki
+    if (!spec) return false // ismeretlen név: nincs ilyen funkció
+    if (spec.core) return true // mag: nem kapcsolható ki
 
     // A KIFEJEZETTEN KÉRENDŐ funkciók: itt a hallgatás NEM beleegyezés. Csak
     // az kapcsolja be, aki tényleg mondta — se a hiányzó kapcsolótábla, se a

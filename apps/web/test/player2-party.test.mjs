@@ -21,7 +21,9 @@ const quiet = { error () {}, warn () {}, log () {} }
 function fakeVideo () {
   const listeners = new Map()
   return {
-    paused: true, currentTime: 0, duration: 1400,
+    paused: true,
+    currentTime: 0,
+    duration: 1400,
     addEventListener (type, fn) { if (!listeners.has(type)) listeners.set(type, []); listeners.get(type).push(fn) },
     removeEventListener () {},
     fire (type) { (listeners.get(type) ?? []).slice().forEach(fn => fn({ type })) },
@@ -91,7 +93,7 @@ describe('visszhang', () => {
     const { video, sent, api } = party()
     api.join()
     video.currentTime = 50
-    void video.play()
+    video.play()
     sent.length = 0
 
     api.receive({ type: 'w2g', action: 'pause', position: 60 })
@@ -115,7 +117,7 @@ describe('visszhang', () => {
     const { video, sent, api } = party()
     api.join()
     video.currentTime = 30
-    void video.play()
+    video.play()
     assert.equal(sent.length, 1)
     assert.deepEqual(sent[0], { type: 'w2g', action: 'play', position: 30 })
   })
@@ -132,14 +134,14 @@ describe('ki vezethet', () => {
     const api = createWatchParty(player, { send: message => sent.push(message) })
     api.join()
     video.currentTime = 10
-    void video.play()
+    video.play()
     assert.equal(sent.length, 1)
   })
 
   it('akiről tudjuk, hogy nem vezethet, annak a forgalmát megspóroljuk', () => {
     const { video, sent, api } = party({ host: false })
     api.join()
-    void video.play()
+    video.play()
     video.currentTime = 90
     video.fire('seeked')
     assert.deepEqual(sent, [])
@@ -150,7 +152,7 @@ describe('ki vezethet', () => {
     const { video, api } = party({ host: false })
     api.join()
     video.currentTime = 100
-    void video.play()
+    video.play()
     video.pause()
     assert.equal(video.paused, true, 'a vendég nem tudta megállítani magának')
 
@@ -161,7 +163,7 @@ describe('ki vezethet', () => {
 
   it('szobán kívül semmi nem megy ki', () => {
     const { video, sent } = party()
-    void video.play()
+    video.play()
     assert.deepEqual(sent, [], 'csatlakozás nélkül küldött')
   })
 })
@@ -173,7 +175,7 @@ describe('a helyzetjelentés üteme', () => {
     assert.ok(POSITION_INTERVAL_MS >= 2000, 'túl sűrű helyzetjelentés')
     const { video, sent, api } = party()
     api.join()
-    void video.play()
+    video.play()
     sent.length = 0
     for (let i = 0; i < 20; i++) video.fire('timeupdate')
     assert.deepEqual(sent, [])
@@ -225,7 +227,7 @@ describe('a kapcsolat később is megjöhet', () => {
     const api = createWatchParty(player, {})
 
     video.currentTime = 20
-    void video.play()          // szobán kívül: nincs hova
+    video.play() // szobán kívül: nincs hova
 
     const sent = []
     api.connect({ send: message => sent.push(message) })

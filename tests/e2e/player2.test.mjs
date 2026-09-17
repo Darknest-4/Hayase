@@ -14,7 +14,7 @@
 //
 //   npm run test:e2e            (apps/api-ból, DATABASE_URL-lel)
 
-/* global document, window, performance */
+/* global document, window, performance, requestAnimationFrame */
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -105,7 +105,7 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
     host.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#000;'
     document.body.append(host)
 
-    const { createEpisodePlayer } = await import('/src/features/player2/watch/episode-player.js')
+    const { createEpisodePlayer } = await import('../../../../src/features/player2/watch/episode-player.js')
     const video = document.createElement('video')
     video.playsInline = true
     video.muted = true
@@ -166,7 +166,7 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
       })
       if (!started) return { started: false }
       await video.play().catch(() => {})
-      await new Promise(r => setTimeout(r, 1600))
+      await new Promise(resolve => setTimeout(resolve, 1600))
       const loader = document.querySelector('.yp-loader')
       return {
         started: true,
@@ -191,7 +191,7 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
     await mount()
     await page.evaluate(async () => {
       const video = document.querySelector('.yp video')
-      if (video.readyState < 2) await new Promise(r => video.addEventListener('loadeddata', r, { once: true }))
+      if (video.readyState < 2) await new Promise(resolve => video.addEventListener('loadeddata', resolve, { once: true }))
       await video.play().catch(() => {})
     })
     await page.mouse.move(700, 400)
@@ -215,7 +215,7 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
     await mount()
     await page.evaluate(async () => {
       const video = document.querySelector('.yp video')
-      if (video.readyState < 2) await new Promise(r => video.addEventListener('loadeddata', r, { once: true }))
+      if (video.readyState < 2) await new Promise(resolve => video.addEventListener('loadeddata', resolve, { once: true }))
       video.pause()
     })
     await page.waitForTimeout(4200)
@@ -228,7 +228,7 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
     await mount()
     await page.evaluate(async () => {
       const video = document.querySelector('.yp video')
-      if (video.readyState < 2) await new Promise(r => video.addEventListener('loadeddata', r, { once: true }))
+      if (video.readyState < 2) await new Promise(resolve => video.addEventListener('loadeddata', resolve, { once: true }))
     })
     await page.mouse.move(700, 400)
     await page.waitForTimeout(200)
@@ -242,7 +242,7 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
       for (const type of ['pointerdown', 'pointerup']) {
         seek.dispatchEvent(new window.PointerEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true, pointerId: 1 }))
       }
-      await new Promise(r => setTimeout(r, 300))
+      await new Promise(resolve => setTimeout(resolve, 300))
       return { before, after: video.currentTime, duration: video.duration }
     })
     // A felezőpontra kattintva a felénél kell lennie. Nem pontosan: a
@@ -257,15 +257,15 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
     const result = await page.evaluate(async () => {
       const shell = document.querySelector('.yp')
       const video = shell.querySelector('video')
-      if (video.readyState < 2) await new Promise(r => video.addEventListener('loadeddata', r, { once: true }))
+      if (video.readyState < 2) await new Promise(resolve => video.addEventListener('loadeddata', resolve, { once: true }))
       video.currentTime = 30
-      await new Promise(r => setTimeout(r, 120))
+      await new Promise(resolve => setTimeout(resolve, 120))
 
       const key = (target, k) => target.dispatchEvent(
         new window.KeyboardEvent('keydown', { key: k, bubbles: true }))
 
       key(shell, 'ArrowRight')
-      await new Promise(r => setTimeout(r, 120))
+      await new Promise(resolve => setTimeout(resolve, 120))
       const afterArrow = video.currentTime
 
       // Beviteli mező a lejátszón belül — ez a közös nézés csevegőmezője.
@@ -273,7 +273,7 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
       shell.append(input)
       input.focus()
       key(input, 'ArrowRight')
-      await new Promise(r => setTimeout(r, 120))
+      await new Promise(resolve => setTimeout(resolve, 120))
       const afterTyping = video.currentTime
       input.remove()
       return { afterArrow, afterTyping }
@@ -290,7 +290,7 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
       host.id = 'yp-harness'
       host.style.cssText = 'position:fixed;inset:0;z-index:9999;'
       document.body.append(host)
-      const { createEpisodePlayer } = await import('/src/features/player2/watch/episode-player.js')
+      const { createEpisodePlayer } = await import('../../../../src/features/player2/watch/episode-player.js')
       const video = document.createElement('video')
       video.muted = true
       const mounted = createEpisodePlayer({
@@ -328,7 +328,7 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
         host.id = 'yp-harness'
         host.style.cssText = 'position:relative;width:100%;'
         document.body.append(host)
-        const { createEpisodePlayer } = await import('/src/features/player2/watch/episode-player.js')
+        const { createEpisodePlayer } = await import('../../../../src/features/player2/watch/episode-player.js')
         const video = document.createElement('video')
         video.muted = true
         video.preload = 'metadata'
@@ -353,7 +353,8 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
         const limit = doc.clientWidth
         const name = el => el.tagName.toLowerCase() +
           (typeof el.className === 'string' && el.className.trim()
-            ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '')
+            ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.')
+            : '')
 
         /*
          * A MÉRTÉK A HÉJ, NEM A KÉPERNYŐ — és csak arra, amit a néző használ.
@@ -419,7 +420,7 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
    */
   it('a felépítés ára', async () => {
     const measured = await page.evaluate(async (src) => {
-      const { createEpisodePlayer } = await import('/src/features/player2/watch/episode-player.js')
+      const { createEpisodePlayer } = await import('../../../../src/features/player2/watch/episode-player.js')
       const runs = []
       for (let i = 0; i < 12; i++) {
         const host = document.createElement('div')
@@ -449,15 +450,17 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
 
   it('az állapotfrissítés ára', async () => {
     const measured = await page.evaluate(async (src) => {
-      const { createEpisodePlayer } = await import('/src/features/player2/watch/episode-player.js')
+      const { createEpisodePlayer } = await import('../../../../src/features/player2/watch/episode-player.js')
       const host = document.createElement('div')
       host.style.cssText = 'position:absolute;left:-9999px;width:800px;'
       document.body.append(host)
       const video = document.createElement('video')
       video.muted = true
       const mounted = createEpisodePlayer({
-        video, sources: [{ id: 'local', url: src, quality: 1080 }],
-        media: { title: 'Próba' }, episode: { number: 1 }
+        video,
+        sources: [{ id: 'local', url: src, quality: 1080 }],
+        media: { title: 'Próba' },
+        episode: { number: 1 }
       })
       host.append(mounted.node)
 
@@ -490,7 +493,7 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
 
   it('a szétbontás után nem marad semmi', async () => {
     const leak = await page.evaluate(async (src) => {
-      const { createEpisodePlayer } = await import('/src/features/player2/watch/episode-player.js')
+      const { createEpisodePlayer } = await import('../../../../src/features/player2/watch/episode-player.js')
       const nodesBefore = document.querySelectorAll('*').length
 
       let owned = 0
@@ -501,8 +504,10 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
         const video = document.createElement('video')
         video.muted = true
         const mounted = createEpisodePlayer({
-          video, sources: [{ id: 'local', url: src, quality: 1080 }],
-          media: { title: 'Próba' }, episode: { number: 1 }
+          video,
+          sources: [{ id: 'local', url: src, quality: 1080 }],
+          media: { title: 'Próba' },
+          episode: { number: 1 }
         })
         host.append(mounted.node)
         mounted.destroy()
@@ -526,7 +531,10 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
     const measured = await page.evaluate(async () => {
       const video = document.querySelector('.yp video')
       if (video.readyState < 2) {
-        await new Promise(r => { video.addEventListener('loadeddata', r, { once: true }); setTimeout(r, 15000) })
+        await new Promise(resolve => {
+          video.addEventListener('loadeddata', resolve, { once: true })
+          setTimeout(resolve, 15000)
+        })
       }
       await video.play().catch(() => {})
 
@@ -613,7 +621,6 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
       const invisible = []
       for (const el of focusable) {
         el.focus()
-        const style = window.getComputedStyle(el, ':focus-visible')
         // A `:focus-visible` kiszámolt körvonala nem mindig olvasható ki
         // programból; a szabály MEGLÉTE viszont igen, a lapon lévő
         // stíluslapokból.
@@ -692,4 +699,3 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
     assert.deepEqual(errors, [])
   })
 })
-

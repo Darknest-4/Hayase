@@ -133,8 +133,11 @@ describe('a státusz szolgáltatás', () => {
 describe('a karbantartási oldal', () => {
   const status = {
     ...unknownStatus(),
-    status: 'maintenance', mode: MODE.ACTIVE, version: 1,
-    title: 'Épp dolgozunk', message: 'Mindjárt jövünk.'
+    status: 'maintenance',
+    mode: MODE.ACTIVE,
+    version: 1,
+    title: 'Épp dolgozunk',
+    message: 'Mindjárt jövünk.'
   }
 
   it('a címet és az üzenetet mutatja', () => {

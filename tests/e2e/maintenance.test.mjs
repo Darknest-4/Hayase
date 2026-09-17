@@ -84,12 +84,18 @@ describe('karbantartási oldal böngészőben', { skip: REASON }, () => {
 
   const setMode = async (mode, over = {}) => {
     await repository.save({
-      mode, scope: 'global', enabled: true,
-      startsAt: null, endsAt: null, estimatedEndAt: null,
+      mode,
+      scope: 'global',
+      enabled: true,
+      startsAt: null,
+      endsAt: null,
+      estimatedEndAt: null,
       timezone: 'Europe/Budapest',
       title: 'Épp dolgozunk rajta',
       publicMessage: 'A YUME hamarosan újra elérhető lesz. Köszönjük a türelmet.',
-      allowExistingSessions: false, drainSeconds: 0, actorId: null,
+      allowExistingSessions: false,
+      drainSeconds: 0,
+      actorId: null,
       ...over
     })
     cache.invalidate()
@@ -131,7 +137,9 @@ describe('karbantartási oldal böngészőben', { skip: REASON }, () => {
       const node = document.querySelector('video.bg')
       if (!node) return null
       return {
-        muted: node.muted, loop: node.loop, hidden: node.getAttribute('aria-hidden'),
+        muted: node.muted,
+        loop: node.loop,
+        hidden: node.getAttribute('aria-hidden'),
         src: node.querySelector('source')?.getAttribute('src') ?? null
       }
     })

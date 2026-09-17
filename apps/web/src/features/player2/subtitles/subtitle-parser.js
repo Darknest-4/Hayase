@@ -43,7 +43,7 @@ export function stripMarkup (text) {
  * fele hiányzik, még mindig jobb, mint a semmi.
  */
 export function parseSubtitles (text) {
-  const body = String(text ?? '').replace(/\r\n?/g, '\n').replace(/^﻿/, '')
+  const body = String(text ?? '').replace(/\r\n?/g, '\n').replace(/^\uFEFF/, '')
   const cues = []
 
   for (const block of body.split(/\n{2,}/)) {

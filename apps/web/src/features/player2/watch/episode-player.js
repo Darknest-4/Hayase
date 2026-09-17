@@ -91,7 +91,7 @@ export function createEpisodePlayer (options = {}) {
     for (const track of video.textTracks ?? []) {
       track.mode = chosen && track.language === (chosen.language ?? chosen.lang) ? 'showing' : 'disabled'
     }
-    if (chosen) void attachTrack(chosen)
+    if (chosen) attachTrack(chosen)
     return chosen
   }
 
@@ -224,7 +224,8 @@ export function createEpisodePlayer (options = {}) {
     }
   })
   ui.seekBar.setMarkers(skip.segments.map(segment => ({
-    start: segment.start, kind: segment.kind,
+    start: segment.start,
+    kind: segment.kind,
     label: segment.kind === 'outro' ? 'Stáblista' : 'Intró'
   })))
 

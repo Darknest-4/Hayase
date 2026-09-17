@@ -26,7 +26,9 @@ const quiet = { error () {}, warn () {}, log () {} }
 function fakeVideo (overrides = {}) {
   const listeners = {}
   return {
-    paused: true, currentTime: 0, duration: 1400,
+    paused: true,
+    currentTime: 0,
+    duration: 1400,
     addEventListener (type, fn) { (listeners[type] ||= []).push(fn) },
     removeEventListener (type, fn) { if (listeners[type]) listeners[type] = listeners[type].filter(f => f !== fn) },
     fire (type) { (listeners[type] ?? []).slice().forEach(fn => fn()) },
@@ -36,10 +38,10 @@ function fakeVideo (overrides = {}) {
 
 describe('feliratelemzés', () => {
   it('mindkét időformátumot érti', () => {
-    assert.equal(parseTimestamp('00:00:01,500'), 1.5)   // SRT: vessző
-    assert.equal(parseTimestamp('00:00:01.500'), 1.5)   // VTT: pont
+    assert.equal(parseTimestamp('00:00:01,500'), 1.5) // SRT: vessző
+    assert.equal(parseTimestamp('00:00:01.500'), 1.5) // VTT: pont
     assert.equal(parseTimestamp('01:02:03.250'), 3723.25)
-    assert.equal(parseTimestamp('02:03.250'), 123.25)   // óra nélkül
+    assert.equal(parseTimestamp('02:03.250'), 123.25) // óra nélkül
     assert.equal(parseTimestamp('semmi'), null)
   })
 
@@ -136,7 +138,7 @@ describe('feliratsáv választása', () => {
 
   it('a stílusból CSS-változó lesz, korlátok közé szorítva', () => {
     const style = subtitleStyle({ 'player.subtitle.size': 500, 'player.subtitle.backgroundOpacity': 3 })
-    assert.equal(style['--yp-sub-size'], '2')          // 200% a plafon
+    assert.equal(style['--yp-sub-size'], '2') // 200% a plafon
     assert.equal(style['--yp-sub-bg-opacity'], '1')
     assert.equal(subtitleStyle({})['--yp-sub-size'], '1')
   })
@@ -154,8 +156,10 @@ describe('minőségválasztás', () => {
 
   it('a kézi választás erősebb a hálózati korlátnál', () => {
     const chosen = chooseQuality({
-      available: [1080, 480], manual: '1080',
-      prefs: { 'player.quality.wifi': '480' }, network: { type: 'wifi' }
+      available: [1080, 480],
+      manual: '1080',
+      prefs: { 'player.quality.wifi': '480' },
+      network: { type: 'wifi' }
     })
     assert.equal(chosen.quality, 1080)
     assert.equal(chosen.auto, false)
@@ -194,7 +198,7 @@ describe('átugrás', () => {
     const segments = normaliseSegments([
       { kind: 'intro', start_sec: 10, end_sec: 100 },
       { kind: 'kitalált', start_sec: 1, end_sec: 2 },
-      { kind: 'outro', start_sec: 50, end_sec: 40 }   // fordított
+      { kind: 'outro', start_sec: 50, end_sec: 40 } // fordított
     ])
     assert.equal(segments.length, 1)
     assert.equal(segments[0].kind, SKIP_KIND.INTRO)

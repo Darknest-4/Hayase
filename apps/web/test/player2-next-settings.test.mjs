@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, it } from 'node:test'
 
 import { createDocument, withDocument } from './support/mini-dom.mjs'
 import { createPlayer } from '../src/features/player2/core/player.js'
-import { createNextEpisodeCard, shouldShow, SHOW_BEFORE_END_SEC } from '../src/features/player2/ui/next-episode.js'
+import { createNextEpisodeCard, shouldShow } from '../src/features/player2/ui/next-episode.js'
 import { createSettingsPanel, controlFor, SETTINGS_GROUPS } from '../src/features/player2/ui/settings-panel.js'
 import {
   PLAYER_PREFERENCE_SCHEMA, createPlayerPreferences
@@ -32,7 +32,9 @@ afterEach(() => { while (open.length) open.pop().destroy(); restore?.(); restore
 function harness (prefValues = {}) {
   const listeners = new Map()
   const video = {
-    paused: false, currentTime: 0, duration: 1400,
+    paused: false,
+    currentTime: 0,
+    duration: 1400,
     ownerDocument: doc,
     addEventListener (type, fn) { if (!listeners.has(type)) listeners.set(type, []); listeners.get(type).push(fn) },
     removeEventListener () {},

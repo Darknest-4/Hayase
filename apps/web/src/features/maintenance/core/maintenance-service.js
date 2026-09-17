@@ -10,8 +10,12 @@
 // tiltás a szerveren történik.
 
 export const MODE = Object.freeze({
-  OFF: 'OFF', SCHEDULED: 'SCHEDULED', ACTIVE: 'ACTIVE',
-  DEGRADED: 'DEGRADED', READ_ONLY: 'READ_ONLY', EMERGENCY: 'EMERGENCY'
+  OFF: 'OFF',
+  SCHEDULED: 'SCHEDULED',
+  ACTIVE: 'ACTIVE',
+  DEGRADED: 'DEGRADED',
+  READ_ONLY: 'READ_ONLY',
+  EMERGENCY: 'EMERGENCY'
 })
 
 /** Ennyit várunk két lekérdezés között, amikor MEGY az oldal. */
@@ -22,9 +26,16 @@ export const ACTIVE_POLL_MS = 20_000
 /** Üres állapot: amíg nem tudunk semmit, az oldal működik. */
 export function unknownStatus () {
   return {
-    status: 'operational', mode: MODE.OFF, scope: 'global',
-    title: null, message: null, startsAt: null, estimatedEnd: null,
-    retryAfter: null, version: 0, video: null
+    status: 'operational',
+    mode: MODE.OFF,
+    scope: 'global',
+    title: null,
+    message: null,
+    startsAt: null,
+    estimatedEnd: null,
+    retryAfter: null,
+    version: 0,
+    video: null
   }
 }
 
@@ -82,7 +93,7 @@ export function createMaintenanceService (options = {}) {
     const restricting = current.mode !== MODE.OFF && current.mode !== MODE.SCHEDULED
     // Hiba után ritkítunk: egy elérhetetlen szervert nem ver tovább a lap.
     const backoff = Math.min(failures, 4) * 15_000
-    timer = setTimeout(() => { void poll() }, (restricting ? ACTIVE_POLL_MS : IDLE_POLL_MS) + backoff)
+    timer = setTimeout(() => { poll() }, (restricting ? ACTIVE_POLL_MS : IDLE_POLL_MS) + backoff)
   }
 
   return {
@@ -108,7 +119,7 @@ export function createMaintenanceService (options = {}) {
     },
     start () {
       stopped = false
-      void poll()
+      poll()
     },
     stop () {
       stopped = true

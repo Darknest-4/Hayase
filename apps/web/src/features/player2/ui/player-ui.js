@@ -45,7 +45,7 @@ export function createPlayerUI (player, actions = {}, options = {}) {
 
   const subtitleLayer = document.createElement('div')
   subtitleLayer.className = 'yp-subtitles'
-  subtitleLayer.setAttribute('aria-hidden', 'true')  // a szöveg a `<track>`-ből jön
+  subtitleLayer.setAttribute('aria-hidden', 'true') // a szöveg a `<track>`-ből jön
 
   const surface = document.createElement('div')
   surface.className = 'yp-surface'
@@ -170,7 +170,7 @@ export function createPlayerUI (player, actions = {}, options = {}) {
       errorLayer.classList.remove('yp-hidden')
       errorLayer.innerHTML =
         `<div class="yp-error-box">${icon('warning', 28)}` +
-        `<p class="yp-error-text"></p>` +
+        '<p class="yp-error-text"></p>' +
         '<div class="yp-error-actions"></div></div>'
       errorLayer.querySelector('.yp-error-text').textContent = current.error.message ?? 'Ismeretlen hiba'
       const buttons = errorLayer.querySelector('.yp-error-actions')

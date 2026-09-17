@@ -44,7 +44,7 @@ export function gestureFor (touch, previous = null) {
     return { type: 'swipe', axis: 'y', delta: -dy, side }
   }
 
-  if (distance > TAP_SLOP_PX) return null   // görgetés volt, nem koppintás
+  if (distance > TAP_SLOP_PX) return null // görgetés volt, nem koppintás
 
   const width = touch.width ?? 0
   const zone = width * EDGE_ZONE
@@ -89,13 +89,17 @@ export function attachGestures (player, surface, handlers = {}) {
       ? surface.getBoundingClientRect()
       : { left: 0, top: 0, width: 0, height: 0 }
     start = {
-      startX: point.clientX - rect.left, startY: point.clientY - rect.top,
+      startX: point.clientX - rect.left,
+      startY: point.clientY - rect.top,
       // A képernyőkoordináta is kell: a `touchmove` a MOZGÁST méri, és azt
       // két képernyőpont különbségéből kapjuk. Az elemhez viszonyított és a
       // képernyőhöz viszonyított koordináta összekeverése itt egy egész
       // elemszélességnyi hibát adott, és minden mozdulat „csúsztatás" lett.
-      clientX: point.clientX, clientY: point.clientY,
-      startedAt: Date.now(), width: rect.width, height: rect.height
+      clientX: point.clientX,
+      clientY: point.clientY,
+      startedAt: Date.now(),
+      width: rect.width,
+      height: rect.height
     }
     longPressFired = false
     if (typeof handlers.longPressStart === 'function') {
@@ -134,7 +138,7 @@ export function attachGestures (player, surface, handlers = {}) {
       lastTap = { x: start.startX, at: start.startedAt }
       handlers.tap?.(gesture.side)
     } else if (gesture?.type === 'double-tap') {
-      lastTap = null   // a harmadik koppintás ne legyen megint „dupla"
+      lastTap = null // a harmadik koppintás ne legyen megint „dupla"
       handlers.doubleTap?.(gesture.side)
     } else if (gesture?.type === 'swipe') {
       lastTap = null

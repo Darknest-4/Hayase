@@ -37,7 +37,7 @@ export function createMediaSession (player, options = {}) {
   }
 
   const handlers = {
-    play: () => { void video.play?.() },
+    play: () => { video.play?.() },
     pause: () => video.pause?.(),
     seekbackward: details => { video.currentTime = Math.max(0, video.currentTime - (details?.seekOffset ?? 10)) },
     seekforward: details => { video.currentTime += details?.seekOffset ?? 10 },

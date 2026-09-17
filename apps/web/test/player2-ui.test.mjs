@@ -16,7 +16,7 @@ import { createDocument, withDocument } from './support/mini-dom.mjs'
 import { createPlayer } from '../src/features/player2/core/player.js'
 import { createVisibility, HIDE_DELAY_MS, TOUCH_HIDE_DELAY_MS } from '../src/features/player2/ui/controls-visibility.js'
 import { createControls } from '../src/features/player2/ui/controls.js'
-import { createLoadingOverlay, MIN_VISIBLE_MS } from '../src/features/player2/ui/loading-overlay.js'
+import { createLoadingOverlay } from '../src/features/player2/ui/loading-overlay.js'
 import { createSeekBar } from '../src/features/player2/ui/seek-bar.js'
 import { createSettingsMenu } from '../src/features/player2/ui/settings-menu.js'
 import { createPlayerUI } from '../src/features/player2/ui/player-ui.js'
@@ -52,7 +52,12 @@ afterEach(() => { while (open.length) open.pop().destroy() })
 function harness (overrides = {}) {
   const listeners = new Map()
   const video = {
-    paused: true, currentTime: 0, duration: 1400, volume: 1, muted: false, playbackRate: 1,
+    paused: true,
+    currentTime: 0,
+    duration: 1400,
+    volume: 1,
+    muted: false,
+    playbackRate: 1,
     buffered: { length: 0, start: () => 0, end: () => 0 },
     ownerDocument: doc,
     addEventListener (type, fn) { (listeners.get(type) ?? listeners.set(type, []).get(type)).push(fn) },
@@ -327,7 +332,7 @@ describe('tekerősáv', () => {
     player.state.patch({ playback: { duration: 1000, currentTime: 100 } })
     assert.equal(seek.node.querySelector('.yp-seek-played').style.width, '10%')
 
-    seek.node.fire('pointerdown', { button: 0, clientX: 200 })   // 200/400 = 50%
+    seek.node.fire('pointerdown', { button: 0, clientX: 200 }) // 200/400 = 50%
     assert.equal(seek.scrubbing, true)
     assert.equal(seek.node.querySelector('.yp-seek-played').style.width, '50%')
 
@@ -395,8 +400,8 @@ describe('tekerősáv', () => {
     player.state.patch({ playback: { duration: 1000 } })
     seek.setMarkers([
       { start: 100, kind: 'intro' },
-      { start: 0, kind: 'intro' },        // a legelején nincs mit jelölni
-      { start: 5000, kind: 'outro' }      // a videón kívül
+      { start: 0, kind: 'intro' }, // a legelején nincs mit jelölni
+      { start: 5000, kind: 'outro' } // a videón kívül
     ])
     const markers = seek.node.querySelectorAll('.yp-seek-marker')
     assert.equal(markers.length, 1)

@@ -111,7 +111,10 @@ export function createMaintenancePlayer (asset, options = {}) {
     return node
   }
 
-  const play = button('play', 'Lejátszás', () => { video.paused ? void video.play().catch(() => {}) : video.pause() })
+  const play = button('play', 'Lejátszás', () => {
+    if (video.paused) video.play().catch(() => {})
+    else video.pause()
+  })
   const mute = button('volume', 'Némítás', () => { video.muted = !video.muted; render() })
 
   const seek = document.createElement('input')
@@ -143,8 +146,8 @@ export function createMaintenancePlayer (asset, options = {}) {
   right.className = 'mnt-controls-right'
 
   const fullscreen = button('fullscreen', 'Teljes képernyő', () => {
-    if (document.fullscreenElement === shell) void document.exitFullscreen?.()
-    else void shell.requestFullscreen?.().catch(() => {})
+    if (document.fullscreenElement === shell) document.exitFullscreen?.()
+    else shell.requestFullscreen?.().catch(() => {})
   })
   right.append(fullscreen)
 
@@ -152,8 +155,8 @@ export function createMaintenancePlayer (asset, options = {}) {
   // egy hiányzó.
   if (typeof video.requestPictureInPicture === 'function' && document.pictureInPictureEnabled) {
     right.append(button('pip', 'Kép a képben', () => {
-      if (document.pictureInPictureElement === video) void document.exitPictureInPicture?.()
-      else void video.requestPictureInPicture().catch(() => {})
+      if (document.pictureInPictureElement === video) document.exitPictureInPicture?.()
+      else video.requestPictureInPicture().catch(() => {})
     }))
   }
 

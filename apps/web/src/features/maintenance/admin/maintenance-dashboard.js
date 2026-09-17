@@ -29,8 +29,12 @@ const MODE_LABEL = {
 }
 
 const MODE_TONE = {
-  OFF: 'ok', SCHEDULED: 'warn', ACTIVE: 'bad',
-  DEGRADED: 'warn', READ_ONLY: 'warn', EMERGENCY: 'bad'
+  OFF: 'ok',
+  SCHEDULED: 'warn',
+  ACTIVE: 'bad',
+  DEGRADED: 'warn',
+  READ_ONLY: 'warn',
+  EMERGENCY: 'bad'
 }
 
 const MODE_HELP = {
