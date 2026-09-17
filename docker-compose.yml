@@ -42,6 +42,16 @@ services:
       # never a bare hop count — Fastify 5.12 reads that as "trust nobody",
       # which puts every client into one rate-limit bucket. Address or subnet.
       TRUST_PROXY: ${TRUST_PROXY:-172.16.0.0/12}
+      # HONNAN JÖN A KATALÓGUS KÉPE.
+      #
+      # Üresen a saját `/media/` útvonalunk, ami külső beállítás nélkül
+      # működik — a kép a tükörből jön, nem az idegen CDN-ről.
+      #
+      # `https://media.animehub.hu`-ra állítva a kép közvetlenül az R2-ből
+      # megy a látogatóhoz, a hozzá legközelebbi Cloudflare él-szerverről,
+      # NULLA kimenő díjjal, és a mi gépünket el sem éri. Ehhez a vödröt a
+      # Cloudflare-en össze kell kötni a domainnel — lásd docs/operations/domain.md.
+      MEDIA_BASE_URL: ${MEDIA_BASE_URL:-}
       # This site's public address. Used for the canonical link, the Open Graph
       # URL and the Sitemap: line in robots.txt. Leave it unset and those are
       # built from the Host header, which the caller chooses — see docs/seo.md.
@@ -106,6 +116,7 @@ services:
       # látja. Üresen hagyva a `PUBLIC_URL`-re esik vissza; ha egyik sincs, a
       # szonda csendben kimarad ahelyett, hogy hibát jelentene.
       EDGE_PROBE_URL: ${EDGE_PROBE_URL:-https://yumee.duckdns.org}
+
       # A képtükör tárhelye — KÜLÖN VÖDÖR a mentésekétől, mert ezt a
       # tartalmat egy nyilvános útvonal szolgálja ki, a mentéseket soha semmi.
       # Az `app` olvassa (kiszolgálás), a `worker` írja (tükrözés).

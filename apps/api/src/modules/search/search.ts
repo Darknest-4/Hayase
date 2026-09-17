@@ -66,6 +66,7 @@
 // dependency for no measurable gain. See docs/search.md.
 
 import type pg from 'pg'
+import { imageUrlSql } from '../media/public-url.ts'
 
 export const SEARCH_SORTS = {
   relevance: null, // tier → similarity → popularity (the default)
@@ -228,7 +229,7 @@ export function buildSearchSql (filters: SearchFilters, options: SearchSqlOption
     SELECT a.id, a.canonical_title, a.format::text, a.status::text, a.season::text,
            a.season_year, a.episode_count, a.average_score, a.popularity, a.is_adult,
            a.next_airing_at, a.next_airing_ep,
-           img.object_key AS cover_key, map.anilist_id,
+           ${imageUrlSql('img')} AS cover_key, map.anilist_id,
            m.tier, round(m.sim::numeric, 4) AS sim, m.matched_title
       FROM best m
       JOIN anime a ON a.id = m.id

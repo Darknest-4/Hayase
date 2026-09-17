@@ -188,20 +188,60 @@ Ezt a SEO kanonikus URL-jei, az `og:url` és a webhook-üzenetek linkjei
 használják. A Biztonság képernyő ellenőrzése figyelmeztet, ha üres vagy nem
 egyezik.
 
-### 5. `media.animehub.hu` — a képtükör kifizetődése
+### 5. A képtükör használatba vétele — **KÉSZ**
 
-A képek ma az R2-ben vannak, de a látogató még az eredeti CDN-ről kapja őket.
-Saját domainnel az R2 közvetlenül szolgálhat ki, **nulla kimenő díjjal**, a
-látogatóhoz legközelebbi Cloudflare él-szerverről:
+A képek a tükörből mennek ki. Ez a lépés megtörtént, és nem igényelt semmilyen
+Cloudflare-beállítást.
 
-1. Cloudflare → **R2 → yume-media → Settings → Custom Domains → Connect Domain**
-   → `media.animehub.hu`
-2. A DNS-rekord automatikusan elkészül
-3. A katalógus lekérdezései a `mirror_key`-t adják vissza `object_key` helyett,
-   `https://media.animehub.hu/<kulcs>` alakban
+**Amit ez javított:** a tükrözés 56 997 képet másolt az R2-be, és utána **senki
+nem használta** — a katalógus továbbra is az idegen CDN-re mutatott. A képek
+ott voltak nálunk, és a látogató máshonnan töltötte le őket.
 
-A harmadik lépés kódváltozás, és külön, visszavonható lépésnek való: addig a
-képek az eredeti forrásról jönnek, ahogy eddig.
+A döntés EGY helyen van (`modules/media/public-url.ts`), nem huszonhat
+lekérdezésben szétszórva: egy elfelejtett lekérdezés csendben visszaesne az
+idegen CDN-re, és semmi nem hibázna tőle.
+
+Mérve, böngészőben, a főoldalon:
+
+```
+betöltött kép: 160 · saját tükörből: 160 · idegen CDN-ről: 0 · hibás: 0
+cache-control: public, max-age=31536000, immutable
+cf-cache-status: HIT          ← a Cloudflare már gyorsítótárazza
+```
+
+### 6. `media.animehub.hu` — az utolsó lépés
+
+A kép ma a saját gépünkön megy át (`/media/…`), és a Cloudflare a saját élén
+gyorsítótárazza. Ami még hátravan: a gyorsítótár-tévesztés is közvetlenül az
+R2-ből menjen, a mi gépünk megkerülésével.
+
+1. Cloudflare → **R2 → yume-media → Settings → Custom Domains → Connect
+   Domain** → `media.animehub.hu`
+
+   A DNS-rekord és a tanúsítvány automatikusan elkészül. Ez az EGYETLEN lépés,
+   amit nem lehet innen elvégezni: az R2 vödör beállítása a Cloudflare
+   REST API-ján megy, amihez a tárolókulcsok (S3) nem elegendők.
+
+2. Ellenőrzés:
+
+   ```bash
+   dig +short media.animehub.hu
+   curl -sI https://media.animehub.hu/media/cover/<bármelyik kulcs>.jpg
+   ```
+
+3. Átkapcsolás — **egy sor**:
+
+   ```bash
+   echo 'MEDIA_BASE_URL=https://media.animehub.hu' >> .env
+   docker compose up -d app
+   ```
+
+4. Visszavonás, ha bármi gond van: vedd ki a sort, `docker compose up -d app`.
+   A képek azonnal a saját `/media/` útvonalra esnek vissza, ami végig
+   működik.
+
+**Amíg ez nincs meg, semmi nem hiányzik**: a képek a tükörből jönnek, a
+Cloudflare gyorsítótárazza őket, és az idegen CDN-t nem használjuk.
 
 ## Ami az átállás után is nyitva marad
 

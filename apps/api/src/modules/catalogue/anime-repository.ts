@@ -20,6 +20,7 @@
 import { Repository } from '@yume/database'
 
 import { db } from '../../infrastructure/database/index.ts'
+import { imageUrlSql } from '../media/public-url.ts'
 
 /** The cover image every card needs, joined the same way everywhere. */
 const COVER = "LEFT JOIN anime_images img ON img.anime_id = a.id AND img.kind = 'cover' AND img.is_primary"
@@ -79,8 +80,8 @@ export class AnimeRepository extends Repository {
            * fajtánként egy képet. Ahol van elsődleges, az nyer; ahol nincs, ott
            * a legrégebbi sor, ami stabil és ismételhető választás.
            */
-          (SELECT coalesce(jsonb_agg(jsonb_build_object('kind', i.kind, 'key', i.object_key, 'blurhash', i.blurhash, 'color', i.dominant_color)), '[]')
-             FROM (SELECT DISTINCT ON (x.kind) x.kind, x.object_key, x.blurhash, x.dominant_color
+          (SELECT coalesce(jsonb_agg(jsonb_build_object('kind', i.kind, 'key', ${imageUrlSql('i')}, 'blurhash', i.blurhash, 'color', i.dominant_color)), '[]')
+             FROM (SELECT DISTINCT ON (x.kind) x.kind, x.object_key, x.mirror_key, x.blurhash, x.dominant_color
                      FROM anime_images x WHERE x.anime_id = a.id
                     ORDER BY x.kind, x.is_primary DESC, x.id) i) AS images,
           (SELECT to_jsonb(m) - 'anime_id' FROM anime_mappings m WHERE m.anime_id = a.id) AS mappings
@@ -128,8 +129,8 @@ export class AnimeRepository extends Repository {
               -- kiszámolódik és soha nem hagyja el az adatbázist.
               a.next_airing_at, a.next_airing_ep,
               ${page.sort.column} AS sort_value,
-              img.object_key AS cover_key, img.blurhash, img.dominant_color AS cover_color,
-              bimg.object_key AS banner_key
+              ${imageUrlSql('img')} AS cover_key, img.blurhash, img.dominant_color AS cover_color,
+              ${imageUrlSql('bimg')} AS banner_key
        FROM anime a
        ${COVER}
        ${BANNER}
@@ -150,7 +151,7 @@ export class AnimeRepository extends Repository {
     return this.query(
       `SELECT e.id AS episode_id, e.number AS episode, e.air_date,
               a.id AS anime_id, a.canonical_title, a.format, a.is_adult,
-              img.object_key AS cover_key, m.anilist_id
+              ${imageUrlSql('img')} AS cover_key, m.anilist_id
        FROM episodes e
        JOIN anime a ON a.id = e.anime_id
        ${COVER}
@@ -168,7 +169,7 @@ export class AnimeRepository extends Repository {
       `SELECT a.id, m.anilist_id, a.canonical_title, a.format, a.status,
               a.season_year, a.episode_count, a.average_score, a.is_adult,
               t.title AS romaji, te.title AS english,
-              img.object_key AS cover_key, img.dominant_color AS cover_color
+              ${imageUrlSql('img')} AS cover_key, img.dominant_color AS cover_color
          FROM anime_mappings m
          JOIN anime a ON a.id = m.anime_id
          LEFT JOIN anime_titles t ON t.anime_id = a.id AND t.kind = 'romaji'
@@ -247,7 +248,7 @@ export class AnimeRepository extends Repository {
   relations (id: string): Promise<Array<Record<string, unknown>>> {
     return this.query(
       `SELECT r.relation, a.id, a.canonical_title, a.format, a.status,
-              img.object_key AS cover_key, m.anilist_id
+              ${imageUrlSql('img')} AS cover_key, m.anilist_id
        FROM anime_relations r
        JOIN anime a ON a.id = r.related_id
        ${COVER}
@@ -288,7 +289,7 @@ export class AnimeRepository extends Repository {
        nodes AS (SELECT id, min(depth) AS depth FROM walk GROUP BY id)
        SELECT a.id, a.canonical_title, a.format, a.status, a.season, a.season_year,
               a.start_date, a.episode_count, n.depth,
-              img.object_key AS cover_key, m.anilist_id,
+              ${imageUrlSql('img')} AS cover_key, m.anilist_id,
               -- the direct edge to the title that was asked about, when there
               -- is one; further out there is no single relation to name
               (SELECT r.relation FROM anime_relations r
@@ -350,7 +351,7 @@ export class AnimeRepository extends Repository {
     return this.query(
       `SELECT a.id, a.canonical_title, a.format::text, a.status::text, a.season_year,
               a.episode_count, a.average_score, r.score,
-              img.object_key AS cover_key, m.anilist_id
+              ${imageUrlSql('img')} AS cover_key, m.anilist_id
          FROM anime_recommendations r
          JOIN anime a ON a.id = r.recommended_id
          ${COVER}
