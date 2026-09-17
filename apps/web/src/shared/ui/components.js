@@ -841,7 +841,19 @@ export const C = {
     }, [
       U.el('div', { class: 'search-modal', style: 'padding:var(--space-4);max-width:40rem;width:min(40rem,calc(100vw - 2rem));' }, [
         U.el('h3', { style: 'margin:0 0 var(--space-4);font-size:var(--text-lg);font-weight:800;', text: title }),
-        U.el('div', { style: 'display:flex;flex-direction:column;gap:var(--space-3);max-height:65vh;overflow-y:auto;' }, fields),
+        U.el('div', {
+        /*
+         * `dvh`, nem `vh`.
+         *
+         * A `vh` a TELJES képernyőt jelenti, a böngésző címsávja alattit is —
+         * telefonon tehát nagyobb, mint a látható terület. A `dvh` a ténylegesen
+         * láthatót méri, és így a mezők doboza nem lóghat ki a képernyőről.
+         *
+         * A burkoló amúgy is görgethető (lásd `.modal-backdrop`), ez a korlát
+         * csak azt akadályozza meg, hogy a gombok EGYÁLTALÁN lecsússzanak.
+         */
+        style: 'display:flex;flex-direction:column;gap:var(--space-3);max-height:60dvh;overflow-y:auto;'
+      }, fields),
         U.el('div', { style: 'display:flex;gap:var(--space-2);margin-top:var(--space-4);' }, [
           submit,
           U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => backdrop.close() }, [document.createTextNode(T('Cancel'))])

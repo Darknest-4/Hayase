@@ -142,6 +142,31 @@
    Dialog — backdrop plus panel.
    --------------------------------------------------------------------------- */
 
+/*
+ * A PÁRBESZÉDABLAK BURKOLÓJA — ÉS AMIÉRT GÖRGETHETŐ.
+ *
+ * Ez rögzített, a képernyő egészét lefedi, és középre igazít. Ha a benne lévő
+ * ablak MAGASABB a maradék helynél, akkor a túllógó rész — az alja, ahol a
+ * gombok vannak — egyszerűen elérhetetlen: nincs mit görgetni, mert a burkoló
+ * nem görgethető, a lap mögötte pedig nem mozdul.
+ *
+ * Ez élesben elő is fordult, telefonon, az admin tiltás-űrlapján: a mezők
+ * kitöltődtek, a „Mentés" gomb viszont a látható terület ALATT volt, és
+ * semmivel nem lehetett odajutni. Kívülről úgy néz ki, mintha az egész oldal
+ * lefagyott volna — „nem tudok lejjebb görgetni, se létrehozni semmit".
+ *
+ * A számtan iPhone-on: a `vh` a TELJES képernyőt jelenti, a címsáv alattit is.
+ * Egy 844 pontos készüléken a `12vh` ~101 pont, a mezők doboza (`65vh`) ~549,
+ * a cím és a gombok még ~100 — összesen 750, miközben a LÁTHATÓ terület a
+ * címsáv miatt ~660. Kilencven pont a semmibe lóg.
+ *
+ * Két változás oldja meg:
+ *   * a burkoló GÖRGETHETŐ, tehát a túllógó rész elérhető marad;
+ *   * telefonon nem pazarolunk 12%-ot a tetejére.
+ *
+ * Az `overscroll-behavior: contain` azt akadályozza meg, hogy a burkoló
+ * végigérése után a MÖGÖTTE lévő lap kezdjen el görögni.
+ */
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -152,7 +177,14 @@
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-top: 12vh;
+  padding: 12vh var(--space-4) var(--space-4);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 640px) {
+  /* Telefonon a képernyő nyolcada nem dísz, hanem elvett hely. */
+  .modal-backdrop { padding: var(--space-4) var(--space-3) var(--space-5); }
 }
 .modal-backdrop.hidden { display: none; }
 
