@@ -58,7 +58,13 @@ export function createAuthForm ({
    * elrontott jelszó visszajelzése különben csak azoknak létezik, akik
    * látják.
    */
-  const error = U.el('p', { class: 'field-error', role: 'alert', hidden: true })
+  /*
+   * Az üzenetnek AZONOSÍTÓJA van, mert a mezők `aria-describedby`-jal
+   * mutatnak rá. Egy űrlaponként egy példány él, de két űrlap egy lapon
+   * (a felugró ablak és a lap) ütköző azonosítót adna — ezért egyedi.
+   */
+  const errorId = 'auth-error-' + Math.random().toString(36).slice(2, 9)
+  const error = U.el('p', { class: 'field-error', role: 'alert', hidden: true, id: errorId })
   const submit = P.button('', { variant: 'primary', type: 'submit' })
 
   /*
@@ -84,6 +90,7 @@ export function createAuthForm ({
 
   function paint () {
     error.hidden = true
+    jelol(false)
 
     if (turnstile) { turnstile.destroy(); turnstile = null }
     if (turnstileNeeded(mode)) turnstile = createTurnstile(mode)
@@ -126,8 +133,39 @@ export function createAuthForm ({
     ;(mode === 'login' ? identifier : email).focus()
   }
 
+  /** Az éppen látható mezők — a mód szerint. */
+  function aktivMezok () {
+    return mode === 'login' ? [identifier, password] : [email, username, password]
+  }
+
+  /*
+   * A HIBA A MEZŐN IS LÁTSZIK, nem csak alatta.
+   *
+   * A `P.field` tud `aria-invalid`-ot állítani — de csak ÉPÍTÉSKOR, ha már
+   * akkor van hiba. Ez az űrlap utólag kap hibát, tehát a mezőkre soha nem
+   * került rá semmi: a `components.css` `[aria-invalid='true']` szabálya
+   * ezen a lapon holt kód volt, és egy képernyőolvasó sem tudta meg, MELYIK
+   * mező a gond.
+   *
+   * Az `aria-describedby` a másik fele: enélkül a hibaüzenet csak egyszer,
+   * megjelenéskor hangzik el (`role="alert"`), és aki utána visszalép a
+   * mezőbe, már nem hallja, mi volt a baj.
+   */
+  function jelol (hibas) {
+    for (const mezo of [identifier, password, email, username]) {
+      if (hibas && aktivMezok().includes(mezo)) {
+        mezo.setAttribute('aria-invalid', 'true')
+        mezo.setAttribute('aria-describedby', errorId)
+      } else {
+        mezo.removeAttribute('aria-invalid')
+        mezo.removeAttribute('aria-describedby')
+      }
+    }
+  }
+
   async function send () {
     error.hidden = true
+    jelol(false)
     submit.disabled = true
     submit.dataset.loading = '1'
     try {
@@ -146,6 +184,7 @@ export function createAuthForm ({
       // amit valaki egy elrontott jelszó után keres.
       error.textContent = e.message
       error.hidden = false
+      jelol(true)
       /*
        * A TOKEN EGYSZER HASZNÁLATOS. Akármi miatt bukott el a küldés — rossz
        * jelszó is —, a token elhasználódott, és a következő próbálkozás

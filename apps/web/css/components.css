@@ -273,9 +273,29 @@
 .input[disabled], .select[disabled], .textarea[disabled] {
   opacity: .5; cursor: not-allowed; background: var(--bg);
 }
-.input[aria-invalid='true'], .textarea[aria-invalid='true'] {
+/*
+ * A HIBÁS MEZŐ NE CSAK SZÍNBEN KÜLÖNBÖZZÖN A FÓKUSZÁLTTÓL.
+ *
+ * A `--accent` (rose-500) és a `--danger` (red-500) a képernyőn gyakorlatilag
+ * ugyanaz a piros. A fókuszgyűrű az elsőt használja, a hibajelzés a
+ * másodikat — vagyis egy üres, még meg sem érintett mező fókuszban pontosan
+ * úgy nézett ki, mint egy elrontott. A belépőlapon ez volt az első, ami
+ * szembejött.
+ *
+ * A palettához nem nyúlunk. A megkülönböztetés VASTAGSÁGBAN történik: a
+ * belső árnyék megdupláznja a keret vonalát, tehát a hibás mező akkor is
+ * „megjelöltnek" látszik, ha épp nincs rajta a fókusz — és akkor is, ha
+ * valaki nem látja a két piros közti különbséget. Szín SOSEM lehet az
+ * egyetlen csatorna.
+ *
+ * Belső árnyék, nem vastagabb keret: egy 2 képpontos `border` minden hibánál
+ * egy képponttal arrébb tolná a mező tartalmát.
+ */
+.input[aria-invalid='true'], .textarea[aria-invalid='true'], .select[aria-invalid='true'] {
   border-color: var(--danger);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--danger) 18%, transparent);
+  box-shadow:
+    0 0 0 3px color-mix(in oklab, var(--danger) 18%, transparent),
+    inset 0 0 0 1px var(--danger);
 }
 
 .field { display: flex; flex-direction: column; gap: var(--space-1); }

@@ -42,6 +42,25 @@ class MiniNode {
         enumerable: true
       })
     }
+    /*
+     * AZ ŰRLAPMEZŐKNEK VAN `value`-JUK, ÜRESEN IS.
+     *
+     * A valódi DOM-ban egy `<input>` `value`-ja üres sztring, nem
+     * `undefined`. A csonk nem adott semmit, és emiatt minden kód, ami
+     * `mezo.value.trim()`-et hív — vagyis minden űrlapküldés — kivétellel
+     * hasalt el, MIELŐTT a tesztelt logikához ért volna.
+     *
+     * Ez csendes fajta hiba: a küldés `try/catch`-ben fut, tehát a teszt
+     * látott egy hibaüzenetet, és attól zöld volt — csak épp nem attól, amit
+     * mérni akart. A belépés hibakezelését vizsgáló három állításom pontosan
+     * így ment át, mielőtt egy negyedik, a hibaüzenet SZÖVEGÉT ellenőrző
+     * állítás le nem leplezte.
+     */
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') {
+      this.value = ''
+      this.checked = false
+    }
+
     this.classList = {
       add: (...names) => this.#classes(set => names.forEach(n => set.add(n))),
       remove: (...names) => this.#classes(set => names.forEach(n => set.delete(n))),

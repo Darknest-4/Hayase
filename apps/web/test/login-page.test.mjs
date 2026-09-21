@@ -237,6 +237,64 @@ describe('a lap', () => {
   })
 })
 
+/*
+ * A HIBA A MEZŐN IS LÁTSZIK, nem csak alatta.
+ *
+ * A `P.field` tud `aria-invalid`-ot állítani, de csak ÉPÍTÉSKOR. Ez az űrlap
+ * utólag kap hibát, tehát a mezőkre soha nem került rá semmi: a
+ * `components.css` `[aria-invalid='true']` szabálya ezen a lapon HOLT KÓD
+ * volt, és egy képernyőolvasó sem tudta meg, melyik mező a gond.
+ */
+describe('egy elrontott belépés a mezőn is látszik', () => {
+  /** Elbuktat egy belépést, és visszaadja a lap gyökerét. */
+  async function bukas () {
+    mock.method(YumeAPI, 'login', () => Promise.reject(new Error('Hibás jelszó')))
+    const root = render()
+    const form = root.querySelector('.auth-form')
+    form.fire('submit', { preventDefault () {} })
+    // A küldés aszinkron; a következő mikrotaszk-körre már lefutott.
+    await new Promise(resolve => setTimeout(resolve, 0))
+    return root
+  }
+
+  it('a próba tényleg elbuktatja a belépést', async () => {
+    // Enélkül minden alábbi állítás egy le sem futott űrlapon lenne igaz.
+    const root = await bukas()
+    const hiba = root.querySelector('.field-error')
+    assert.equal(hiba.hidden, false, 'a hibaüzenet nem jelent meg')
+    assert.match(hiba.textContent, /Hibás jelszó/)
+  })
+
+  it('megjelöli a mezőket', async () => {
+    const root = await bukas()
+    const mezok = root.querySelectorAll('input')
+    assert.ok(mezok.length > 0)
+    for (const mezo of mezok) {
+      assert.equal(mezo.getAttribute('aria-invalid'), 'true',
+        `a(z) ${mezo.getAttribute('name')} mező nincs megjelölve`)
+    }
+  })
+
+  it('a mezőtől el lehet jutni a hibaüzenetig', async () => {
+    const root = await bukas()
+    const hiba = root.querySelector('.field-error')
+    const id = hiba.getAttribute('id')
+    assert.ok(id, 'a hibaüzenetnek nincs azonosítója')
+    for (const mezo of root.querySelectorAll('input')) {
+      assert.equal(mezo.getAttribute('aria-describedby'), id,
+        'a mező nem mutat a hibaüzenetre — aki visszalép bele, nem hallja, mi volt a baj')
+    }
+  })
+
+  it('induláskor egyik mező sincs megjelölve', () => {
+    const root = render()
+    for (const mezo of root.querySelectorAll('input')) {
+      assert.equal(mezo.getAttribute('aria-invalid'), null,
+        'egy meg sem érintett mező hibásnak jelölve')
+    }
+  })
+})
+
 describe('a lap be van kötve', () => {
   it('van `login` útvonal', () => {
     assert.equal(typeof App.routes.login, 'function')
