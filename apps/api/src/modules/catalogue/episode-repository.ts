@@ -12,6 +12,7 @@
 import { Repository } from '@yume/database'
 
 import { db } from '../../infrastructure/database/index.ts'
+import { resolveExternalIds } from '../providers/mapping/index.ts'
 
 export class EpisodeRepository extends Repository {
   /**
@@ -73,6 +74,7 @@ export class EpisodeRepository extends Repository {
     title: string, synonyms: string[], year: number | null, number: number
   } | null> {
     const row = await this.queryOne<{
+      anime_id: string,
       anilist_id: number | null, mal_id: number | null, kitsu_id: number | null, anidb_id: number | null,
       canonical_title: string, start_date: string | null, number: string
     }>(
@@ -89,7 +91,8 @@ export class EpisodeRepository extends Repository {
        * szolgáltató, ami MAL vagy AniDB szerint katalogizál, különben cím
        * szerint párosítana, ami két évadnál rendre téved.
        */
-      `SELECT m.anilist_id, m.mal_id, m.kitsu_id, m.anidb_id,
+      `SELECT a.id AS anime_id,
+              m.anilist_id, m.mal_id, m.kitsu_id, m.anidb_id,
               a.canonical_title, a.start_date, e.number
          FROM episodes e
          JOIN anime a ON a.id = e.anime_id
@@ -99,6 +102,20 @@ export class EpisodeRepository extends Repository {
     )
     if (!row) return null
 
+    /*
+     * A HIÁNYZÓ AZONOSÍTÓK KIEGÉSZÍTÉSE.
+     *
+     * A tábla azt tudja, amit valaha beírtunk. Ami hiányzik, azt eddig egy
+     * adapter cím szerint próbálta pótolni — és ott téved a legnagyobbat: két
+     * évad címe gyakran majdnem azonos, az azonosítójuk viszont nem
+     * (mérve: a Shingeki no Kyojin 1. évadához `anidb 9541`, a 3.-hoz
+     * `anidb 13241` tartozik).
+     *
+     * A feloldó nem dob, és nem is lassít, ha nincs mit tennie: teljes
+     * leképezésnél egyetlen külső hívás sincs.
+     */
+    const ids = await resolveExternalIds(row.anime_id)
+
     const synonyms = await this.query<{ title: string }>(
       `SELECT title FROM anime_titles t
          JOIN episodes e ON e.anime_id = t.anime_id
@@ -107,10 +124,10 @@ export class EpisodeRepository extends Repository {
     ).catch(() => [])
 
     return {
-      anilistId: row.anilist_id ?? null,
-      malId: row.mal_id ?? null,
-      kitsuId: row.kitsu_id ?? null,
-      anidbId: row.anidb_id ?? null,
+      anilistId: ids.anilistId,
+      malId: ids.malId,
+      kitsuId: ids.kitsuId,
+      anidbId: ids.anidbId,
       title: row.canonical_title,
       synonyms: synonyms.map(s => s.title).filter(Boolean),
       year: row.start_date ? Number(String(row.start_date).slice(0, 4)) : null,
