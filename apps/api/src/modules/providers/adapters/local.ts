@@ -42,6 +42,7 @@ function variantOf (value: string | null): SourceVariant {
 interface SourceRow {
   ref: string
   kind: string
+  provider: string | null
   title: string | null
   resolution: string | null
   language: string | null
@@ -69,11 +70,13 @@ export const localProvider: AnimeProvider = {
    */
   async search (queryText: string, hint): Promise<ProviderMatch[]> {
     const rows = await query<{ id: string, canonical_title: string, anilist_id: number | null, start_date: string | null }>(
-      `SELECT id, canonical_title, anilist_id, start_date
-         FROM anime
-        WHERE visibility = 'public'
-          AND ($2::int IS NULL OR anilist_id = $2::int)
-          AND ($2::int IS NOT NULL OR canonical_title ILIKE '%' || $1 || '%')
+      // A külső azonosítók az `anime_mappings` táblában élnek, nem az `anime`-n.
+      `SELECT a.id, a.canonical_title, m.anilist_id, a.start_date
+         FROM anime a
+         LEFT JOIN anime_mappings m ON m.anime_id = a.id
+        WHERE a.visibility = 'public'
+          AND ($2::int IS NULL OR m.anilist_id = $2::int)
+          AND ($2::int IS NOT NULL OR a.canonical_title ILIKE '%' || $1 || '%')
         LIMIT 20`,
       [queryText, hint?.anilistId ?? null]
     )
@@ -103,23 +106,35 @@ export const localProvider: AnimeProvider = {
    * egyezés két különböző évadot összemoshat.
    */
   async resolve (ref: EpisodeRef): Promise<ProviderResult> {
-    if (ref.anilistId == null) return noResult()
+    /*
+     * A SAJÁT AZONOSÍTÓNK AZ ELSŐ. Ha a hívó megmondta, melyik epizódról van
+     * szó, nincs mit párosítani — mi vagyunk a katalógus. Az AniList-út csak
+     * a tartalék arra az esetre, ha a hívó csak a külső azonosítót ismeri.
+     *
+     * Enélkül egy leképezés nélküli címnél a saját forrásainkat tagadtuk meg.
+     */
+    let episodeId = ref.episodeId ?? null
 
-    const episodes = await query<{ id: string }>(
-      `SELECT e.id
-         FROM episodes e
-         JOIN anime a ON a.id = e.anime_id
-        WHERE a.anilist_id = $1 AND e.number = $2
-          AND e.visibility = 'public' AND a.visibility <> 'hidden'
-        LIMIT 1`,
-      [ref.anilistId, ref.number]
-    )
-    const episodeId = episodes[0]?.id
+    if (!episodeId) {
+      if (ref.anilistId == null) return noResult()
+      const episodes = await query<{ id: string }>(
+        `SELECT e.id
+           FROM episodes e
+           JOIN anime a ON a.id = e.anime_id
+           JOIN anime_mappings m ON m.anime_id = a.id
+          WHERE m.anilist_id = $1 AND e.number = $2
+            AND e.visibility = 'public' AND a.visibility <> 'hidden'
+          LIMIT 1`,
+        [ref.anilistId, ref.number]
+      )
+      episodeId = episodes[0]?.id ?? null
+    }
     if (!episodeId) return noResult()
 
-    const want = ref.variant ?? 'sub'
+    // Nincs kért változat = mindet adjuk. Lásd `EpisodeRef.variant`.
+    const want = ref.variant ?? null
     const rows = await query<SourceRow>(
-      `SELECT ref, kind, title, resolution, language, variant
+      `SELECT ref, kind, provider, title, resolution, language, variant
          FROM video_sources
         WHERE episode_id = $1 AND enabled
         ORDER BY priority, created_at`,
@@ -131,11 +146,13 @@ export const localProvider: AnimeProvider = {
       const transport = transportOf(row.kind, row.ref)
       if (!transport) continue
       const variant = variantOf(row.variant)
-      // A kért változat nyer; ha a sor nem mond változatot, `sub`-nak vesszük.
-      if (variant !== want) continue
+      // A kért változat nyer; ha a hívó nem kért egyet, mindet átengedjük.
+      if (want !== null && variant !== want) continue
       sources.push({
         kind: transport,
         url: row.ref,
+        // Amit az üzemeltető a forrás mellé beírt — ez a NÉV, amit a néző lát.
+        label: row.provider ?? row.title ?? null,
         quality: row.resolution,
         language: row.language,
         variant,

@@ -18,6 +18,7 @@ import type { SearchFilters } from '../search/search.ts'
 import type { FastifyPluginAsync } from 'fastify'
 import { profileOf } from '../../middleware/profile.ts'
 import { uuidParams } from '../../infrastructure/http/params.ts'
+import { resolveEpisode } from '../providers/index.ts'
 
 /**
  * Browse orderings, as keyset components rather than raw ORDER BY strings.
@@ -487,14 +488,95 @@ const routes: FastifyPluginAsync = async fastify => {
    * Visibility is checked through the episode's anime, not only the episode:
    * publishing an episode under a hidden entry must not make it reachable.
    */
-  fastify.get('/episodes/:eid/sources', async (request, reply) => {
+  /**
+   * Honnan játszható le ez az epizód.
+   *
+   * MOSTANTÓL A SZOLGÁLTATÓI LÁNC SZOLGÁLJA KI, nem egy közvetlen
+   * táblaolvasás. A `yume-local` adapter ugyanazokat a sorokat adja vissza,
+   * amiket eddig is — de köré került egy lánc, ami tud gyorsítótárazni,
+   * időkorlátot szabni, és egy romlott szolgáltatót kihagyni.
+   *
+   * A VÁLASZ ALAKJA VÁLTOZATLAN. A kliens a nyers sor mezőit olvassa
+   * (`ref`, `provider`, `resolution`, `variant`, `language`), ezért a
+   * `ProviderSource` visszafordul erre az alakra. Új mezők kerültek MELLÉ
+   * (`kind`, `headers`), ami visszafelé ártalmatlan: amit a kliens nem
+   * ismer, azt figyelmen kívül hagyja.
+   *
+   * A `?variant=` elhagyása MINDEN változatot jelent, nem `sub`-ot — lásd
+   * `EpisodeRef.variant`. Enélkül a bekötés csendben kizárta volna a
+   * szinkronos forrásokat.
+   */
+  fastify.get('/episodes/:eid/sources', {
+    schema: {
+      params: { type: 'object', properties: { eid: { type: 'string', format: 'uuid' } }, required: ['eid'] },
+      querystring: {
+        type: 'object',
+        properties: { variant: { type: 'string', enum: ['sub', 'dub', 'raw'] } }
+      }
+    }
+  }, async (request, reply) => {
     const { eid } = request.params as { eid: string }
-    if (!UUID.test(eid)) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    const { variant } = request.query as { variant?: 'sub' | 'dub' | 'raw' }
 
     if (!await episodeRepo.isPlayable(eid)) {
       return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
     }
-    return { data: await episodeRepo.sourcesFor(eid) }
+
+    const ref = await episodeRepo.providerRef(eid)
+    if (!ref) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+
+    // `exactOptionalPropertyTypes`: a hiányzó változat NEM `undefined` érték,
+    // hanem hiányzó kulcs — a kettő itt nem ugyanaz.
+    // A saját azonosítónk is megy: a helyi adapternek nem kell párosítania.
+    const base = { ...ref, episodeId: eid }
+    const resolution = await resolveEpisode(variant ? { ...base, variant } : base)
+
+    return {
+      data: resolution.sources.map((source, index) => ({
+        /*
+         * AZONOSÍTÓ EGY OLYAN DOLOGHOZ, AMINEK NINCS SORA.
+         *
+         * A kliens ebből képez egy `catalogue:<id>` kulcsot, amivel a
+         * lejátszó megkülönbözteti a forrásokat. Egy szolgáltatótól jött
+         * címnek nincs adatbázis-azonosítója, ezért a szolgáltató neve és a
+         * sorszám adja — stabil egy válaszon belül, és megmondja, honnan jött.
+         */
+        id: `${resolution.provider ?? 'ismeretlen'}:${index}`,
+        kind: source.kind,
+        ref: source.url,
+        title: null,
+        /*
+         * A FORRÁS NEVE, nem a feloldó szolgáltatóé.
+         *
+         * A kliens ezt írja ki a forrás mellé. Ha ide a láncot feloldó
+         * szolgáltató kerülne, három különböző kiszolgáló háromszor
+         * ugyanannak látszana — és a nézőnek nem lenne mi alapján
+         * választania.
+         */
+        provider: source.label ?? resolution.provider,
+        /** Melyik szolgáltató adta. Ez a lánc adata, nem a forrásé. */
+        resolved_by: resolution.provider,
+        resolution: source.quality ?? null,
+        language: source.language ?? null,
+        variant: source.variant,
+        is_batch: false,
+        size_bytes: null,
+        seeders: null,
+        // Amit a lejátszónak is el kell küldenie, ha a kiszolgáló megköveteli.
+        headers: source.headers && Object.keys(source.headers).length ? source.headers : null
+      })),
+      subtitles: resolution.subtitles,
+      /*
+       * A LÁNC NAPLÓJA A VÁLASZBAN.
+       *
+       * Egy „nincs forrás" válaszra a kérdés az, hogy MIÉRT — és erre egy
+       * üres tömb nem felelet. Ez megmondja, kit kérdeztünk meg, mit
+       * válaszolt, és mennyi ideig tartott.
+       */
+      provider: resolution.provider,
+      cached: resolution.fromCache,
+      attempts: resolution.attempts
+    }
   })
 
   fastify.get('/:id/relations', { schema: uuidParams() }, async (request, reply) => {

@@ -33,6 +33,17 @@ export type SourceVariant = 'sub' | 'dub' | 'raw'
 export interface ProviderSource {
   kind: SourceKind
   url: string
+  /**
+   * Ennek a forrásnak a NEVE, ahogy a nézőnek megmutatjuk.
+   *
+   * Nem a szolgáltató neve: egy szolgáltató több kiszolgálót is kínálhat
+   * ugyanahhoz az epizódhoz, és a néző azok KÖZÜL választ. Nálunk ez az,
+   * amit az üzemeltető a forrás mellé beírt.
+   *
+   * Enélkül a réteg minden forrást a feloldó szolgáltató nevén mutatott
+   * volna, és három különböző kiszolgáló háromszor ugyanannak látszott.
+   */
+  label?: string | null
   /** Emberi felbontásjelölés, ha a szolgáltató ad ilyet: `1080p`, `auto`. */
   quality?: string | null
   /** A HANG nyelve, BCP-47 (`ja`, `en`, `hu`). A feliraté a `ProviderSubtitle`-ben van. */
@@ -94,13 +105,32 @@ export interface ProviderEpisode {
  * legtöbb katalógus ismeri.
  */
 export interface EpisodeRef {
+  /**
+   * A SAJÁT epizódazonosítónk — csak a HÁZON BELÜLI adaptereknek.
+   *
+   * Külső szolgáltató ezzel nem tud mit kezdeni, és nem is kell: figyelmen
+   * kívül hagyja. A saját tárolónk viszont pontosan ezt ismeri, és neki
+   * párosítania sem kell — ő MI VAGYUNK.
+   *
+   * Enélkül a helyi adapter az AniList-azonosítóra volt utalva, és egy olyan
+   * címnél, amihez nincs leképezés, megtagadta a SAJÁT epizódjainkat. Ezt a
+   * `video-sources` tesztje fogta meg: üres lista ott, ahol három forrás állt.
+   */
+  episodeId?: string
   anilistId: number | null
   title: string
   /** Alternatív címek — a párosítás sokszor ezen múlik. */
   synonyms?: string[]
   year?: number | null
   number: number
-  /** Melyik változatot keressük. Alapértelmezés: `sub`. */
+  /**
+   * Melyik változatot keressük.
+   *
+   * HIÁNYZÓ ÉRTÉK = BÁRMELYIK, nem `sub`. Ez nem apróság: ha a hiány
+   * `sub`-ot jelentene, egy változatot nem kérő hívás CSENDBEN kizárná a
+   * szinkronos forrásokat — a néző pedig azt látná, hogy „nincs forrás",
+   * miközben van.
+   */
   variant?: SourceVariant
 }
 

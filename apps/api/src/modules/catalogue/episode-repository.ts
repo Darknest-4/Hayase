@@ -60,6 +60,54 @@ export class EpisodeRepository extends Repository {
   }
 
   /**
+   * Amit a szolgáltatóknak tudniuk kell erről az epizódról.
+   *
+   * MIÉRT NEM A SAJÁT SOR-AZONOSÍTÓNK MEGY KI. Egy külső szolgáltató nem tud
+   * mit kezdeni egy YUME-uuid-vel. Ami segít neki, az az AniList-azonosító (a
+   * legjobb horgony, mert a legtöbb katalógus ismeri), a cím, az évszám és a
+   * rész száma — a szinonimák pedig azért, mert a párosítás sokszor épp azon
+   * áll vagy bukik.
+   */
+  async providerRef (episodeId: string): Promise<{
+    anilistId: number | null, title: string, synonyms: string[], year: number | null, number: number
+  } | null> {
+    const row = await this.queryOne<{
+      anilist_id: number | null, canonical_title: string, start_date: string | null, number: string
+    }>(
+      /*
+       * AZ ANILIST-AZONOSÍTÓ NEM AZ `anime` TÁBLÁN VAN, hanem az
+       * `anime_mappings`-ben, a többi külső azonosító mellett — és `LEFT
+       * JOIN`, mert egy katalógusbeli címhez nem feltétlenül tartozik
+       * leképezés. Az első nekifutásom `a.anilist_id`-t írt, és a
+       * `video-sources` tesztje azonnal elbuktatta: „column a.anilist_id does
+       * not exist".
+       */
+      `SELECT m.anilist_id, a.canonical_title, a.start_date, e.number
+         FROM episodes e
+         JOIN anime a ON a.id = e.anime_id
+         LEFT JOIN anime_mappings m ON m.anime_id = a.id
+        WHERE e.id = $1 AND e.visibility = 'public' AND a.visibility <> 'hidden'`,
+      [episodeId]
+    )
+    if (!row) return null
+
+    const synonyms = await this.query<{ title: string }>(
+      `SELECT title FROM anime_titles t
+         JOIN episodes e ON e.anime_id = t.anime_id
+        WHERE e.id = $1 LIMIT 20`,
+      [episodeId]
+    ).catch(() => [])
+
+    return {
+      anilistId: row.anilist_id ?? null,
+      title: row.canonical_title,
+      synonyms: synonyms.map(s => s.title).filter(Boolean),
+      year: row.start_date ? Number(String(row.start_date).slice(0, 4)) : null,
+      number: Number(row.number)
+    }
+  }
+
+  /**
    * Where this episode can be played from.
    *
    * References, never media. Disabled rows are left out: `enabled` is how an

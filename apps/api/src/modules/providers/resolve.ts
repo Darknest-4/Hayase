@@ -65,7 +65,7 @@ export function clearCache (): void { cache.clear() }
  * lejátszóban derülne ki, rossz hangsávként.
  */
 function keyOf (ref: EpisodeRef): string {
-  return [ref.anilistId ?? ref.title.toLowerCase(), ref.number, ref.variant ?? 'sub'].join('|')
+  return [ref.anilistId ?? ref.title.toLowerCase(), ref.number, ref.variant ?? 'any'].join('|')
 }
 
 /**
