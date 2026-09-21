@@ -1,10 +1,14 @@
 /**
- * A beágyazó cím ellenőrzése, MIELŐTT `iframe`-be kerülne.
+ * Szolgáltatótól kapott cím ellenőrzése, MIELŐTT a nézőhöz jutna.
  *
  * EZ EGY BIZTONSÁGI HATÁR, nem formai szűrés. Ami innen kijut, azt a
- * böngésző egy `iframe` `src`-jébe teszi — vagyis idegen kód fut tőle a
- * felhasználó lapján. A bizalom láncolata itt ér véget: a szolgáltató
- * válasza ettől a ponttól kezdve NEM megbízható adat.
+ * böngésző betölti: `iframe` `src`-jeként, HLS-manifesztként vagy
+ * feliratsávként. A bizalom láncolata itt ér véget — a szolgáltató válasza
+ * ettől a ponttól kezdve NEM megbízható adat.
+ *
+ * UGYANAZ A SZABÁLY MIND A HÁROMRA, és ez szándékos: https, engedélyezett
+ * gazdagép, hitelesítő adat nélkül. Külön-külön megírva a három közül
+ * előbb-utóbb az egyik egy esettel kevesebbet tudna.
  *
  * MIÉRT SAJÁT MODUL. Ha ez az adapter belsejében ülne, egyetlen módon
  * lehetne tesztelni: élő hálózattal. Így a szabályok önmagukban mérhetők —
@@ -17,24 +21,24 @@
  */
 
 /**
- * Elfogadható-e a cím `iframe`-be.
+ * Elfogadható-e a cím ahhoz, hogy a nézőhöz adjuk.
  *
  * @param raw amit a szolgáltató adott — tetszőleges, nem megbízható érték
  * @param allowedHosts engedélyezett gazdagépek; üres lista = semmi nem megy át
  * @returns a normalizált cím, vagy `null` az elutasítás okával a hívó felé
  */
-export function safeEmbedUrl (raw: unknown, allowedHosts: readonly string[]): string | null {
-  return checkEmbedUrl(raw, allowedHosts).url
+export function safeUpstreamUrl (raw: unknown, allowedHosts: readonly string[]): string | null {
+  return checkUpstreamUrl(raw, allowedHosts).url
 }
 
-export interface EmbedCheck {
+export interface UrlCheck {
   url: string | null
   /** Miért nem felelt meg. Naplóba való, a válaszba NEM. */
   reason: string | null
 }
 
-export function checkEmbedUrl (raw: unknown, allowedHosts: readonly string[]): EmbedCheck {
-  const nem = (reason: string): EmbedCheck => ({ url: null, reason })
+export function checkUpstreamUrl (raw: unknown, allowedHosts: readonly string[]): UrlCheck {
+  const nem = (reason: string): UrlCheck => ({ url: null, reason })
 
   if (typeof raw !== 'string' || raw.trim() === '') return nem('nincs cím')
   const text = raw.trim()

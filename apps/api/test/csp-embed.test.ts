@@ -24,12 +24,12 @@ process.env.JWT_SECRET ??= 'csp-embed-test-secret-long-enough-0123456789'
 
 let app: Awaited<ReturnType<typeof import('../src/app.ts')['buildApp']>>
 let hosts: typeof import('../src/modules/providers/embed-hosts.ts')
-let embedUrl: typeof import('../src/modules/providers/embed-url.ts')
+let embedUrl: typeof import('../src/modules/providers/upstream-url.ts')
 
 describe('a CSP és a beágyazás', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
   before(async () => {
     hosts = await import('../src/modules/providers/embed-hosts.ts')
-    embedUrl = await import('../src/modules/providers/embed-url.ts')
+    embedUrl = await import('../src/modules/providers/upstream-url.ts')
     const { buildApp } = await import('../src/app.ts')
     app = await buildApp()
     await app.ready()
@@ -42,11 +42,29 @@ describe('a CSP és a beágyazás', { skip: HAS_DB ? false : 'no DATABASE_URL' }
     return /frame-src ([^;]+)/.exec(csp)?.[1] ?? ''
   }
 
-  it('a beágyazó gazdagépek benne vannak a frame-src-ben', async () => {
+  /*
+   * A `frame-src` PONTOSAN azt tartalmazza, amit az engedélylista mond.
+   *
+   * NEM elég végigmenni a listán és megnézni, hogy benne van-e: ha a lista
+   * üres (ma az, mert nincs beágyazó szolgáltató), az a ciklus NULLA
+   * állítást tenne, és a teszt üresjáratban zöld lenne. Ezért a halmazok
+   * EGYEZÉSÉT mérjük — így az üres lista is valódi állítás: akkor egyetlen
+   * beágyazó gazdagép sem lóghat bent.
+   */
+  it('a frame-src pontosan az engedélylistát tükrözi', async () => {
     const fs = await frameSrc()
-    for (const host of hosts.embedHosts()) {
-      assert.ok(fs.includes(`https://${host}`),
-        `a(z) ${host} hiányzik a frame-src-ből — a böngésző eldobná a keretet: ${fs}`)
+    const vart = hosts.frameSrcEntries()
+    for (const bejegyzes of vart) {
+      assert.ok(fs.includes(bejegyzes), `hiányzik a frame-src-ből: ${bejegyzes} — ${fs}`)
+    }
+    // És semmi más beágyazó gazdagép nincs bent. A YouTube és a Turnstile
+    // nem beágyazó szolgáltató: azok külön, nevesített engedélyek.
+    const ismertek = ['https://www.youtube-nocookie.com', 'https://www.youtube.com',
+      'https://challenges.cloudflare.com', ...vart]
+    for (const darab of fs.trim().split(/\s+/)) {
+      if (darab === 'frame-src') continue
+      assert.ok(ismertek.includes(darab),
+        `ismeretlen gazdagép a frame-src-ben: ${darab} — a CSP tágabb, mint az engedélylista`)
     }
   })
 
@@ -60,7 +78,7 @@ describe('a CSP és a beágyazás', { skip: HAS_DB ? false : 'no DATABASE_URL' }
     for (const host of hosts.embedHosts()) {
       assert.ok(fs.includes(`https://*.${host}`), `hiányzik a *.${host}: ${fs}`)
       // és az ellenőrzés tényleg elfogadja az altartományt
-      assert.ok(embedUrl.safeEmbedUrl(`https://cdn.${host}/x`, hosts.embedHosts()),
+      assert.ok(embedUrl.safeUpstreamUrl(`https://cdn.${host}/x`, hosts.embedHosts()),
         `az ellenőrzés elutasítja a cdn.${host}-ot, a CSP viszont engedi`)
     }
   })
@@ -76,7 +94,7 @@ describe('a CSP és a beágyazás', { skip: HAS_DB ? false : 'no DATABASE_URL' }
     const fs = await frameSrc()
     for (const host of hosts.embedHosts()) {
       const cim = `https://${host}/stream/s-2/169846/sub`
-      assert.ok(embedUrl.safeEmbedUrl(cim, hosts.embedHosts()), `az ellenőrzés elutasítja: ${cim}`)
+      assert.ok(embedUrl.safeUpstreamUrl(cim, hosts.embedHosts()), `az ellenőrzés elutasítja: ${cim}`)
       assert.ok(fs.includes(`https://${host}`), `a CSP nem engedi: ${cim}`)
     }
   })
@@ -84,7 +102,7 @@ describe('a CSP és a beágyazás', { skip: HAS_DB ? false : 'no DATABASE_URL' }
   it('amit az ellenőrzés elutasít, az nem kap külön CSP-engedélyt', async () => {
     const fs = await frameSrc()
     // Egy tetszőleges idegen gazdagép sem az ellenőrzésen, sem a CSP-n.
-    assert.equal(embedUrl.safeEmbedUrl('https://tamado.pelda/x', hosts.embedHosts()), null)
+    assert.equal(embedUrl.safeUpstreamUrl('https://tamado.pelda/x', hosts.embedHosts()), null)
     assert.ok(!fs.includes('tamado.pelda'))
   })
 

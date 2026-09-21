@@ -1,4 +1,4 @@
-// A beágyazó cím ellenőrzése.
+// Szolgáltatótól kapott címek ellenőrzése.
 //
 // EZ EGY BIZTONSÁGI HATÁR, és önállóan mérhető — hálózat nélkül. Amit ez a
 // függvény átenged, azt a böngésző egy `iframe` `src`-jébe teszi: onnantól
@@ -11,30 +11,30 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { checkEmbedUrl, safeEmbedUrl } from '../src/modules/providers/embed-url.ts'
+import { checkUpstreamUrl, safeUpstreamUrl } from '../src/modules/providers/upstream-url.ts'
 
 const HOSTOK = ['megaplay.buzz', 'pelda.hu']
 
 describe('a beágyazó cím ellenőrzése', () => {
   it('átengedi az engedélyezett gazdagépet https-en', () => {
     const cim = 'https://megaplay.buzz/stream/s-2/169846/sub'
-    assert.equal(safeEmbedUrl(cim, HOSTOK), cim)
+    assert.equal(safeUpstreamUrl(cim, HOSTOK), cim)
   })
 
   it('átengedi az altartományt', () => {
-    assert.ok(safeEmbedUrl('https://cdn.megaplay.buzz/x', HOSTOK))
+    assert.ok(safeUpstreamUrl('https://cdn.megaplay.buzz/x', HOSTOK))
   })
 
   it('a lekérdezés és a horgony megmarad', () => {
     // Az idegen lejátszó ezekben hordozhatja a beállításait; egy
     // „megtisztított" cím néma hibát okozna.
     const cim = 'https://megaplay.buzz/stream/1?autoplay=1#t=30'
-    assert.equal(safeEmbedUrl(cim, HOSTOK), cim)
+    assert.equal(safeUpstreamUrl(cim, HOSTOK), cim)
   })
 
   it('a gazdagép kis-nagybetűtől független', () => {
-    assert.ok(safeEmbedUrl('https://MegaPlay.Buzz/x', HOSTOK))
-    assert.ok(safeEmbedUrl('https://megaplay.buzz/x', ['MEGAPLAY.BUZZ']))
+    assert.ok(safeUpstreamUrl('https://MegaPlay.Buzz/x', HOSTOK))
+    assert.ok(safeUpstreamUrl('https://megaplay.buzz/x', ['MEGAPLAY.BUZZ']))
   })
 
   /*
@@ -44,7 +44,7 @@ describe('a beágyazó cím ellenőrzése', () => {
    * lenne ezzel az egy karakterrel.
    */
   it('a záró pontot normalizálja', () => {
-    assert.ok(safeEmbedUrl('https://megaplay.buzz./x', HOSTOK))
+    assert.ok(safeUpstreamUrl('https://megaplay.buzz./x', HOSTOK))
   })
 
   describe('elutasítja', () => {
@@ -71,27 +71,27 @@ describe('a beágyazó cím ellenőrzése', () => {
 
     for (const [nev, ertek] of ROSSZ) {
       it(nev, () => {
-        assert.equal(safeEmbedUrl(ertek, HOSTOK), null, `átengedte: ${String(ertek)}`)
+        assert.equal(safeUpstreamUrl(ertek, HOSTOK), null, `átengedte: ${String(ertek)}`)
       })
     }
   })
 
   it('üres engedélylistával semmit nem enged át', () => {
-    assert.equal(safeEmbedUrl('https://megaplay.buzz/x', []), null)
+    assert.equal(safeUpstreamUrl('https://megaplay.buzz/x', []), null)
   })
 
   it('az üres és a hibás listaelemeket kihagyja, nem engedi át tőlük', () => {
     // Egy elgépelt beállítás (`"megaplay.buzz,,"`) ne váljon átjáróvá.
-    assert.equal(safeEmbedUrl('https://barmi.hu/x', ['', '  ', '.']), null)
+    assert.equal(safeUpstreamUrl('https://barmi.hu/x', ['', '  ', '.']), null)
   })
 
   it('a pontokkal kezdődő listaelem is működik (".pelda.hu")', () => {
-    assert.ok(safeEmbedUrl('https://a.pelda.hu/x', ['.pelda.hu']))
+    assert.ok(safeUpstreamUrl('https://a.pelda.hu/x', ['.pelda.hu']))
   })
 
   it('megmondja az elutasítás okát — a naplónak, nem a válasznak', () => {
-    assert.match(String(checkEmbedUrl('http://megaplay.buzz/x', HOSTOK).reason), /https/)
-    assert.match(String(checkEmbedUrl('https://tamado.hu/x', HOSTOK).reason), /gazdagép/)
-    assert.equal(checkEmbedUrl('https://megaplay.buzz/x', HOSTOK).reason, null)
+    assert.match(String(checkUpstreamUrl('http://megaplay.buzz/x', HOSTOK).reason), /https/)
+    assert.match(String(checkUpstreamUrl('https://tamado.hu/x', HOSTOK).reason), /gazdagép/)
+    assert.equal(checkUpstreamUrl('https://megaplay.buzz/x', HOSTOK).reason, null)
   })
 })

@@ -22,14 +22,20 @@
  */
 
 /**
- * A mai beágyazó gazdagép, MÉRVE (2026-09-21, `/series/8717`):
- *   `https://megaplay.buzz/stream/s-2/169846/sub`
+ * ÜRES AZ ALAPÉRTELMEZÉS, mert jelenleg EGYETLEN beágyazó szolgáltató sincs.
  *
- * Nem vakon beírt érték, és nem is végleges: a `YUME_EMBED_HOSTS` környezeti
- * változó felülírja. Ha a szolgáltató másik lejátszóra vált, egy beállítás
- * igazítja — nem egy kiadás.
+ * Az Anikoto adapter kikerült a rendszerből, és vele az egyetlen `embed`
+ * fajtájú forrás. A `frame-src` egy CSP-tágítás: amíg nincs, aki használja,
+ * NEM tartjuk nyitva. Egy engedély, aminek nincs jogosultja, csak
+ * támadási felület.
+ *
+ * A beágyazás GÉPEZETE megmarad (`embed-url.ts`, `embed-frame.js`, a
+ * `kind: 'embed'` a szerződésben), mert a következő beágyazó szolgáltatónak
+ * pontosan ez kell — és mert mérve van. Csak a lista üres.
+ *
+ * Bekapcsolás egy új szolgáltatóhoz: `YUME_EMBED_HOSTS=pelda.hu,masik.hu`.
  */
-export const DEFAULT_EMBED_HOSTS: readonly string[] = ['megaplay.buzz']
+export const DEFAULT_EMBED_HOSTS: readonly string[] = []
 
 /**
  * A ténylegesen érvényes lista.

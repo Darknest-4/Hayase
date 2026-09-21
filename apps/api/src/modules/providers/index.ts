@@ -9,7 +9,7 @@
 // kikapcsolás az adminfelületen, ami nem igényel telepítést.
 
 import { httpFeedProvider } from './adapters/http-feed.ts'
-import { anikotoProvider } from './adapters/anikoto.ts'
+import { animeparadiseProvider } from './adapters/animeparadise.ts'
 import { localProvider } from './adapters/local.ts'
 import { register } from './registry.ts'
 
@@ -27,7 +27,7 @@ export * from './types.ts'
  * kérés nélkül), tehát ártalmatlan bekapcsolva hagyni: az adminfelületen
  * látszik, és ott lehet ráállítani egy címre.
  */
-const BUILT_IN = [localProvider, anikotoProvider, httpFeedProvider]
+const BUILT_IN = [localProvider, animeparadiseProvider, httpFeedProvider]
 
 let done = false
 
