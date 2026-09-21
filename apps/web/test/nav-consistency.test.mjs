@@ -108,3 +108,31 @@ describe('a három navigációs felület', () => {
     assert.equal(App._gateExempt, GATE_EXEMPT, 'a router saját másolatot tart')
   })
 })
+
+// ---------------------------------------------------------------------------
+// HOL VAN AZ API — az APP/API szétválasztás kliensoldala
+// ---------------------------------------------------------------------------
+//
+// A kliens ma az azonos origóból indul ki, és ez egyetlen konténeres
+// telepítésen helyes. Amint az APP külön gépre kerül, ez a feltevés a SAJÁT
+// origójára mutatna, ahol nincs API. A kiszolgáló ezért beírhatja a lapba,
+// hogy hol az API — de csak ha kérték.
+
+describe('az API címének feloldása', () => {
+  const forras = readFileSync(join(here, '..', 'src', 'shared', 'api', 'yume.js'), 'utf8')
+  const fn = forras.slice(forras.indexOf('  base () {'), forras.indexOf('  setBase ('))
+
+  it('a néző saját beállítása a legerősebb', () => {
+    assert.ok(fn.indexOf("localStorage.getItem('yume-api')") < fn.indexOf('yume:api-base'))
+  })
+
+  it('utána a kiszolgáló által a lapba írt cím', () => {
+    assert.match(fn, /meta\[name="yume:api-base"\]/)
+    assert.ok(fn.indexOf('yume:api-base') < fn.indexOf('window.location.origin'),
+      'az azonos origó megelőzi a kiszolgáló által megadott címet')
+  })
+
+  it('és csak utána az azonos origó — a mai telepítés esete', () => {
+    assert.match(fn, /window\.location\.origin/)
+  })
+})

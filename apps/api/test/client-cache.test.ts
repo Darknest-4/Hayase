@@ -24,7 +24,7 @@ import { join } from 'node:path'
 import { after, before, beforeEach, describe, test } from 'node:test'
 
 import {
-  STAMP_PREFIX, clientVersion, forgetClientVersion, stampAssets, unstamp
+  STAMP_PREFIX, apiBaseUrl, clientVersion, forgetClientVersion, stampApiBase, stampAssets, unstamp
 } from '../src/infrastructure/http/client-version.ts'
 
 let root: string
@@ -304,5 +304,78 @@ describe('a kiszolgált kliens', { skip: HAS_DB ? false : 'no DATABASE_URL' }, (
   test('a képek a bélyegzett úton nem érhetők el', async () => {
     const res = await app.inject({ method: 'GET', url: `/b/${verzio}/assets/yume.svg` })
     assert.notEqual(res.statusCode, 200)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// AZ API CÍME A LAPBAN — az APP/API szétválasztás előkészítése
+// ---------------------------------------------------------------------------
+//
+// A webkliens ma az azonos origóból indul ki (`window.location.origin`), és ez
+// egyetlen konténeres telepítésen helyes. Amint az APP külön gépre kerül, ez a
+// feltevés a SAJÁT origójára mutatna, ahol nincs API — tehát a kliensnek meg
+// kell tudnia, hol az API.
+//
+// A lap már a kiszolgálón készül, tehát van hova beírni: nem kell sem építési
+// lépés, sem routercsere. Ez a suite azt méri, hogy a beírás csak akkor
+// történik meg, amikor tényleg kérték, és hogy egy elrontott érték nem visz
+// idegen gazdára.
+
+describe('az API címe a lapban', () => {
+  const eredeti = process.env.API_PUBLIC_URL
+
+  after(() => {
+    if (eredeti === undefined) delete process.env.API_PUBLIC_URL
+    else process.env.API_PUBLIC_URL = eredeti
+  })
+
+  test('beállítás nélkül nem ír bele semmit', () => {
+    delete process.env.API_PUBLIC_URL
+    assert.equal(apiBaseUrl(), null)
+    assert.equal(stampApiBase('<head></head>', null), '<head></head>')
+  })
+
+  test('beállítva a fejlécbe kerül, adatként', () => {
+    process.env.API_PUBLIC_URL = 'https://api.pelda.hu'
+    const html = stampApiBase('<head><title>x</title></head>', apiBaseUrl())
+    assert.match(html, /<meta name="yume:api-base" content="https:\/\/api\.pelda\.hu">/)
+    // Adat, nem szkript: a `script-src 'self'` a beágyazott szkriptet
+    // megfogná, és az néma hiba lenne.
+    assert.doesNotMatch(html, /<script/)
+  })
+
+  test('a záró perjel nem duplázódik', () => {
+    process.env.API_PUBLIC_URL = 'https://api.pelda.hu/'
+    assert.equal(apiBaseUrl(), 'https://api.pelda.hu')
+  })
+
+  /*
+   * IDE A HITELESÍTÉSI KÉRÉSEK MENNÉNEK. Egy elgépelt cím nem vihet idegen
+   * gazdára — ugyanaz a szabály, mint a médiaalapnál, és ugyanaz a séma
+   * nélküli `//idegen/` csapda: abszolút útvonalnak látszik, a böngésző
+   * viszont idegen gazdának olvassa.
+   */
+  test('az érvénytelen érték ugyanaz, mint a hiányzó', () => {
+    for (const rossz of [
+      '//idegen.example',
+      'http://nem-tls.example',
+      'javascript:alert(1)',
+      'https://a b.hu',
+      'https://api.pelda.hu/utvonal?q=1',
+      '   '
+    ]) {
+      process.env.API_PUBLIC_URL = rossz
+      assert.equal(apiBaseUrl(), null, rossz)
+    }
+  })
+
+  test('saját útvonal is megadható', () => {
+    process.env.API_PUBLIC_URL = '/api'
+    assert.equal(apiBaseUrl(), '/api')
+  })
+
+  test('a tartalom HTML-kódolva megy ki', () => {
+    const html = stampApiBase('<head></head>', 'https://a.hu/"><script>alert(1)</script>')
+    assert.doesNotMatch(html, /<script>alert/)
   })
 })

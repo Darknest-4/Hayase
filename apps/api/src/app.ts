@@ -57,7 +57,7 @@ import translationRoutes from './modules/translations/routes.ts'
 
 import type { FastifyError, FastifyInstance, FastifyReply } from 'fastify'
 import { renderStatusPage, wantsHtml } from './infrastructure/http/status-page.ts'
-import { STAMP_PREFIX, clientVersion, stampAssets, unstamp } from './infrastructure/http/client-version.ts'
+import { STAMP_PREFIX, apiBaseUrl, clientVersion, stampApiBase, stampAssets, unstamp } from './infrastructure/http/client-version.ts'
 import { guard as maintenanceGuard } from './modules/maintenance/middleware.ts'
 import { watch as watchMaintenance } from './modules/maintenance/cache.ts'
 import { stopListener } from './infrastructure/queue/wake.ts'
@@ -667,7 +667,20 @@ export async function buildApp (): Promise<FastifyInstance> {
   // Serve the static web client from the same origin so the whole app runs as
   // one container/port (WEB_ROOT overrides; defaults to the repo's web/).
   const webRoot = process.env.WEB_ROOT ?? join(dirname(fileURLToPath(import.meta.url)), '../../web')
-  if (existsSync(webRoot)) {
+
+  /*
+   * KISZOLGÁLJA-E EZ A FOLYAMAT A WEBKLIENST?
+   *
+   * Ma igen: egy konténer adja a lapot és az API-t, és ez ennél a méretnél
+   * helyes — egy kérés, egy origó, nincs CORS.
+   *
+   * Amikor az APP külön gépre kerül, ugyanez a kép fut majd ott is, csak
+   * `SERVE_WEB=false`-szal az API oldalon: onnantól az API CSAK API. A
+   * kapcsoló azért van, hogy ez a lépés egy környezeti változó legyen, ne
+   * kódvágás — és hogy a mostani viselkedés az alapértelmezés maradjon.
+   */
+  const serveWeb = process.env.SERVE_WEB !== 'false'
+  if (serveWeb && existsSync(webRoot)) {
     /*
      * A KLIENS VERZIÓJA, és az `index.html` vele bélyegezve.
      *
@@ -843,7 +856,11 @@ export async function buildApp (): Promise<FastifyInstance> {
       const path = join(webRoot, 'index.html')
       const { mtimeMs } = await stat(path)
       if (page?.mtimeMs !== mtimeMs) {
-        page = { mtimeMs, html: stampAssets(await readFile(path, 'utf8'), stamp) }
+        // Előbb a hivatkozások verziója, utána az API címe. A második csak
+        // akkor ír bele, ha az `API_PUBLIC_URL` be van állítva — egyetlen
+        // gépen futó telepítés lapja változatlan marad.
+        const html = stampApiBase(stampAssets(await readFile(path, 'utf8'), stamp), apiBaseUrl())
+        page = { mtimeMs, html }
       }
       return page.html
     }

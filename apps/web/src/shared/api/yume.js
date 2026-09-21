@@ -1,4 +1,4 @@
-/* global window, fetch, localStorage, WebSocket */
+/* global window, document, fetch, localStorage, WebSocket */
 // Yume backend adapter. The client works standalone (AniList/Jikan direct),
 // but when a Yume API is reachable it powers platform features: accounts,
 // comments/community, themes and playback data.
@@ -8,11 +8,30 @@
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export const YumeAPI = {
+  /**
+   * Hol van az API.
+   *
+   * A sorrend a leghatározottabbtól a leggyengébb felé megy:
+   *
+   *   1. amit a NÉZŐ állított be (`setBase`) — fejlesztéshez, hibakereséshez;
+   *   2. amit a KISZOLGÁLÓ írt a lapba (`<meta name="yume:api-base">`). Ez a
+   *      kapcsoló ahhoz, hogy az APP külön gépre kerülhessen: onnantól a lapot
+   *      egy gép adja, az API-t egy másik, és a kliensnek tudnia kell, melyik
+   *      hova. Egyetlen gépen futó telepítésen a kiszolgáló nem ír bele
+   *      semmit, tehát ez a lépés kimarad;
+   *   3. AZONOS ORIGÓ — a mai, egy konténeres telepítés esete;
+   *   4. `file://`-ról megnyitva egy helyi fejlesztői API.
+   *
+   * A 2. pont adat, nem szkript: a lap ezen a ponton szándékosan szkriptmentes
+   * marad, mert a `script-src 'self'` a beágyazott szkriptet megfogná.
+   */
   base () {
     const saved = localStorage.getItem('yume-api')
     if (saved) return saved
-    // served over http(s) → the API is same-origin (single-container deploy);
-    // opened from file:// → assume a local dev API on :4000
+
+    const declared = document.querySelector('meta[name="yume:api-base"]')?.content?.trim()
+    if (declared) return declared.replace(/\/+$/, '')
+
     if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
       return window.location.origin
     }

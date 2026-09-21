@@ -132,3 +132,48 @@ export function unstamp (url: string): string | null {
   if (top === undefined || !STAMPED_DIRS.includes(top)) return null
   return rest
 }
+
+
+/**
+ * Az API nyilvános alapcíme, amit a kliens használjon.
+ *
+ * MIÉRT VAN ERRE SZÜKSÉG. A webkliens ma az azonos origóból indul ki
+ * (`window.location.origin`), és ez egyetlen konténeres telepítésen helyes: a
+ * lapot és az API-t ugyanaz a folyamat szolgálja ki. Amint az APP külön gépre
+ * kerül, ez a feltevés a saját origójára mutatna, ahol nincs API.
+ *
+ * A LAP MÁR A KISZOLGÁLÓN KÉSZÜL (a hivatkozásokat verzióval bélyegezzük),
+ * tehát van hova beírni a címet — nem kell sem építési lépés, sem
+ * routercsere. Üres beállításnál a kliens az eddigi viselkedést tartja.
+ *
+ * Az ELLENŐRZÉS ugyanaz, mint a médiaalapnál: csak `https://` cím vagy saját
+ * útvonal fogadható el. A `//idegen/` alakú, séma nélküli cím abszolút
+ * útvonalnak LÁTSZIK, a böngésző viszont idegen gazdának olvassa — és ide a
+ * hitelesítési kérések mennének.
+ */
+export function apiBaseUrl (): string | null {
+  const raw = (process.env.API_PUBLIC_URL ?? '').trim()
+  if (!raw) return null
+  const absolute = /^https:\/\/[a-z0-9.-]{1,253}(:\d{1,5})?(\/[a-z0-9._~/-]{0,120})?$/i.test(raw)
+  const relative = /^\/(?!\/)[a-z0-9._~/-]{0,120}$/i.test(raw)
+  if (!absolute && !relative) return null
+  return raw.replace(/\/+$/, '')
+}
+
+/**
+ * Az API címének beírása a lapba.
+ *
+ * `<meta name="yume:api-base">` — adat, nem szkript. A lap szándékosan
+ * szkriptmentes marad ezen a ponton: a `script-src 'self'` a beágyazott
+ * szkriptet megfogná, és ezt egy hibaoldalon már megtanultuk.
+ *
+ * A jelölő a `<head>` elejére kerül, a stíluslapok elé — a kliens a
+ * modulbetöltés után olvassa ki, tehát a sorrend csak annyit számít, hogy
+ * legyen ott, mire a JavaScript fut.
+ */
+export function stampApiBase (html: string, base: string | null): string {
+  if (!base) return html
+  const tag = `<meta name="yume:api-base" content="${base.replace(/[&<>"]/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c)}">`
+  return html.includes('<head>') ? html.replace('<head>', `<head>\n  ${tag}`) : html
+}
