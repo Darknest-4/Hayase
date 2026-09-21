@@ -5049,4 +5049,67 @@ body.login-route .page { padding-bottom: 0; }
     margin-inline-start: auto;
   }
   .sidebar-profile { justify-content: flex-start; }
+
+  /* ---- összecsukható sáv ----
+   *
+   * Feliratokkal a sáv 13rem-et vesz el, és ez nem mindenkinek éri meg: aki
+   * ismeri az ikonokat, annak a hely többet ér. Eddig nem volt mit tenni —
+   * a kinyitás KÉNYSZER volt, a `.nav-collapse` kapcsoló pedig `display:
+   * none`-nal állt, és csak a telefonos alsó sáv média-lekérdezésében kapott
+   * megjelenést. Asztali nézetben tehát se összecsukott állapot, se kapcsoló
+   * nem létezett.
+   *
+   * Az összecsukott alak nem új tervezés: pontosan az, ami 1280px ALATT
+   * amúgy is van — keskeny ikonsáv, feliratok nélkül. Itt csak visszavesszük
+   * a kinyitást.
+   */
+  .sidebar.nav-collapsed {
+    width: var(--sidebar-w);
+    align-items: center;
+    padding: var(--space-3) 0;
+  }
+  .sidebar.nav-collapsed .sidebar-logo {
+    width: 2.6rem;
+    justify-content: center;
+    gap: 0;
+    padding: 0;
+  }
+  .sidebar.nav-collapsed .sidebar-logo-text { display: none; }
+  .sidebar.nav-collapsed .sidebar-btn {
+    width: 2.6rem;
+    justify-content: center;
+    gap: 0;
+    padding: 0;
+  }
+  .sidebar.nav-collapsed .sidebar-btn span { display: none; }
+  /* A jelvény visszaköltözik az ikon sarkába: nincs mellette felirat, aminek
+     a végére kerülhetne. */
+  .sidebar.nav-collapsed .sidebar-btn .notif-badge {
+    position: absolute;
+    margin-inline-start: 0;
+  }
+  .sidebar.nav-collapsed .sidebar-profile { justify-content: center; }
+
+  /* A kapcsoló a sáv alján, a profil alatt. Csak itt látszik: keskenyebb
+     képernyőn a sáv úgyis ikonsáv, tehát nincs mit összecsukni. */
+  .nav-collapse {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.6rem;
+    height: 2rem;
+    margin-top: var(--space-1);
+    padding: 0;
+    color: var(--fg-faint);
+    background: none;
+    border: 0;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  }
+  .nav-collapse:hover { background: var(--bg-raised); color: var(--fg); }
+  .nav-collapse:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* A nyíl a sáv irányába mutat: kinyitva befelé, összecsukva kifelé. */
+  .nav-collapse svg { transition: transform var(--dur) var(--ease); transform: rotate(90deg); }
+  .sidebar.nav-collapsed .nav-collapse svg { transform: rotate(-90deg); }
 }

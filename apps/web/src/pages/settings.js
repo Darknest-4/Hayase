@@ -3,7 +3,7 @@
 // Notifications, Data, About) with a left-hand tab rail, Netflix/Discord
 // style. Each section is a builder that returns its content node.
 
-import { afterAuth, navigate, refreshChrome, refreshNotifications } from '../shared/lib/shell.js'
+import { afterAuth, applyNavCollapsed, navigate, refreshChrome, refreshNotifications } from '../shared/lib/shell.js'
 import { configure, featureOn, flagDeclared, site } from '../shared/lib/site-config.js'
 import { T } from '../shared/i18n/i18n.js'
 import { LibrarySync } from '../features/library-sync/library-sync.js'
@@ -371,6 +371,38 @@ export const PageSettings = {
 
     wrap.append(this._group('Titles', [
       this._row('Title language', 'How anime titles are displayed across the app.', langSelect)
+    ]))
+
+    /*
+     * AZ OLDALSÁV ÁLLAPOTA.
+     *
+     * Ugyanaz a beállítás, amit a sávon lévő nyíl is állít — nem külön
+     * másolat. A választás a profil beállításai közt él, tehát profilonként
+     * külön, és az adatmentés is viszi.
+     *
+     * Az érvényesítést a shellre bízzuk: ha ez a képernyő maga igazgatná a sáv
+     * DOM-ját, a nyíl felirata és az `aria` állapot előbb-utóbb széttartana
+     * attól, amit a sáv mutat.
+     */
+    const navSelect = U.el('select', {
+      class: 'select',
+      onchange: e => {
+        Store.saveSettings({ navCollapsed: e.target.value === 'collapsed' })
+        applyNavCollapsed()
+      }
+    }, [
+      ['expanded', 'Expanded'],
+      ['collapsed', 'Collapsed']
+    ].map(([value, label]) => U.el('option', {
+      value,
+      text: T(label),
+      ...((settings.navCollapsed === true ? 'collapsed' : 'expanded') === value ? { selected: '' } : {})
+    })))
+
+    wrap.append(this._group('Navigation', [
+      this._row('Sidebar',
+        'Whether the side navigation shows its labels. The arrow at the bottom of the rail does the same thing. On a narrow screen the rail is replaced by the bottom bar, so this has no effect there.',
+        navSelect)
     ]))
     return wrap
   },

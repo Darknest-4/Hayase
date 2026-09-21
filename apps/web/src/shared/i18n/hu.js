@@ -401,6 +401,14 @@ I18n.register('hu', {
     'A listád, az előzményeid és a beállításaid veled tartanak.',
   'It takes a moment, and nothing but an email address.':
     'Egy pillanat, és nem kell hozzá más, csak egy e-mail-cím.',
+  // ----------------------------------------------------------- oldalsáv
+  Navigation: 'Navigáció',
+  Sidebar: 'Oldalsáv',
+  Expanded: 'Nyitva',
+  Collapsed: 'Összecsukva',
+  'Whether the side navigation shows its labels. The arrow at the bottom of the rail does the same thing. On a narrow screen the rail is replaced by the bottom bar, so this has no effect there.':
+    'Kiírja-e az oldalsáv a feliratokat. A sáv alján lévő nyíl ugyanezt állítja. Keskeny képernyőn a sáv helyett az alsó sáv navigál, ott ennek nincs hatása.',
+
   // ---------------------------------------------------------- hozzászólások
   'Delete this comment? This cannot be undone.':
     'Törlöd ezt a hozzászólást? Nem vonható vissza.',

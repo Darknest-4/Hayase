@@ -48,7 +48,8 @@ provideShell({
     App.applyNavVisibility()
     App.refreshAdminNav()
   },
-  afterAuth: () => App.afterAuth()
+  afterAuth: () => App.afterAuth(),
+  applyNavCollapsed: () => App.applyNavCollapsed()
 })
 
 // The store reports what changed; these decide what that means. Registering

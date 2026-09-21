@@ -964,31 +964,67 @@ export const App = {
    * control the desktop never shows has no business in the served markup where
    * a screen reader on a wide window would still announce it.
    */
+  /**
+   * Az oldalsáv összecsukása — gomb és beállítás, egy állapotra.
+   *
+   * A választás a PROFIL beállításai közt él (`Store.settings().navCollapsed`),
+   * nem külön `localStorage` kulcson. Így a beállítások lapról is állítható,
+   * profilonként külön, és az adatmentés is viszi. A sávon lévő gomb ugyanoda
+   * ír — két kapcsoló, egy igazság.
+   *
+   * Keskeny képernyőn az oldalsáv nem látszik (ott az alsó sáv navigál), tehát
+   * a beállításnak ott nincs hatása; ezt a beállítások lap ki is mondja.
+   */
   initNavCollapse () {
     const sidebar = document.getElementById('sidebar')
     if (!sidebar || sidebar.querySelector('.nav-collapse')) return
-
-    const apply = collapsed => {
-      sidebar.classList.toggle('nav-collapsed', collapsed)
-      tab.setAttribute('aria-expanded', String(!collapsed))
-      tab.setAttribute('aria-label', collapsed ? T('Feliratok mutatása') : T('Feliratok elrejtése'))
-    }
 
     const tab = U.el('button', {
       class: 'nav-collapse',
       type: 'button',
       'aria-controls': 'sidebar',
       onclick: () => {
-        const collapsed = !sidebar.classList.contains('nav-collapsed')
-        apply(collapsed)
-        try { window.localStorage.setItem('yume-nav-collapsed', collapsed ? '1' : '0') } catch { /* storage blocked: the choice just does not persist */ }
+        Store.saveSettings({ navCollapsed: !Store.settings().navCollapsed })
+        this.applyNavCollapsed()
       }
     }, [U.svg('<polyline points="6 9 12 15 18 9"/>', 16)])
 
     sidebar.append(tab)
-    let remembered = false
-    try { remembered = window.localStorage.getItem('yume-nav-collapsed') === '1' } catch { /* see above */ }
-    apply(remembered)
+
+    /*
+     * ÁTKÖLTÖZTETÉS a régi kulcsról, egyszer.
+     *
+     * Aki már összecsukta a sávot, annak a választása a `yume-nav-collapsed`
+     * kulcsban ül. Enélkül az első betöltésnél visszaugrana nyitottra — egy
+     * csendes „elfelejtettük, amit beállítottál".
+     */
+    try {
+      const regi = window.localStorage.getItem('yume-nav-collapsed')
+      if (regi !== null) {
+        Store.saveSettings({ navCollapsed: regi === '1' })
+        window.localStorage.removeItem('yume-nav-collapsed')
+      }
+    } catch { /* a tárolás tiltva: nincs mit átköltöztetni */ }
+
+    this.applyNavCollapsed()
+  },
+
+  /**
+   * Az összecsukott állapot érvényesítése a beállításból.
+   *
+   * Külön metódus, mert KÉT helyről kell: a sávon lévő gombtól és a
+   * beállítások lapról. Az utóbbi a `shell.js`-en át hívja — egy képernyő ne
+   * a DOM-ot igazgassa a router helyett, mert akkor a gomb felirata és az
+   * `aria` állapot előbb-utóbb széttart attól, amit a sáv mutat.
+   */
+  applyNavCollapsed () {
+    const sidebar = document.getElementById('sidebar')
+    const tab = sidebar?.querySelector('.nav-collapse')
+    if (!sidebar || !tab) return
+    const collapsed = Store.settings().navCollapsed === true
+    sidebar.classList.toggle('nav-collapsed', collapsed)
+    tab.setAttribute('aria-expanded', String(!collapsed))
+    tab.setAttribute('aria-label', collapsed ? T('Feliratok mutatása') : T('Feliratok elrejtése'))
   },
 
   openMoreSheet () {

@@ -157,7 +157,22 @@ export const Store = {
   // ---- settings ----
 
   settings () {
-    return this._read(this._profileKey('settings'), { theme: 'default', nsfw: false, titleLang: 'userPreferred' })
+    return this._read(this._profileKey('settings'), {
+      theme: 'default',
+      nsfw: false,
+      titleLang: 'userPreferred',
+      /*
+       * Az oldalsáv összecsukott állapota.
+       *
+       * ITT, ÉS NEM SAJÁT `localStorage` KULCSON. Korábban a router írta
+       * közvetlenül egy `yume-nav-collapsed` nevű kulcsba, és ennek három ára
+       * volt: a beállítások lapról nem lehetett állítani, nem volt
+       * PROFILONKÉNTI (egy gépen több profil ugyanazt az értéket látta), és
+       * az „Adatok mentése" sem vitte magával. Itt mindhárom megoldódik,
+       * mert ez a doboz eleve profilhoz kötött és exportálható.
+       */
+      navCollapsed: false
+    })
   },
 
   saveSettings (patch) {

@@ -37,7 +37,16 @@ const shell = {
    * beállítások), és az alternatíva az lenne, hogy mindkettő behúzza a
    * routert — pont az, ami ellen ez a modul van.
    */
-  afterAuth: async () => {}
+  afterAuth: async () => {},
+  /**
+   * Az oldalsáv összecsukott állapotának érvényesítése a beállításból.
+   *
+   * Azért kerül a listára, mert a beállítások lapon is állítható, és az
+   * alternatíva az lenne, hogy az a képernyő maga igazgatja a sáv DOM-ját —
+   * onnantól a gomb felirata és az `aria` állapot széttartana attól, amit a
+   * sáv mutat.
+   */
+  applyNavCollapsed: () => {}
 }
 
 export function provideShell (implementation) {
@@ -50,3 +59,4 @@ export const setTitle = (...args) => shell.setTitle(...args)
 export const refreshNotifications = (...args) => shell.refreshNotifications(...args)
 export const refreshChrome = (...args) => shell.refreshChrome(...args)
 export const afterAuth = (...args) => shell.afterAuth(...args)
+export const applyNavCollapsed = (...args) => shell.applyNavCollapsed(...args)
