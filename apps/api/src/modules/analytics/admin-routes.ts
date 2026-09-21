@@ -503,6 +503,120 @@ const routes: FastifyPluginAsync = async fastify => {
     return /[",\n;]/.test(text) ? '"' + text.replaceAll('"', '""') + '"' : text
   }
 
+  // ---- szolgáltatók ------------------------------------------------------
+
+  /**
+   * A szolgáltatólánc mérőszámai.
+   *
+   * KÉT TÁBLÁBÓL, ÉS A KETTŐ MÁST MOND. A `provider_metrics_daily` a
+   * KÉRÉSEKET összesíti (hány kísérlet, mennyi hiba, milyen gyorsan); a
+   * `provider_events` az ÁLLAPOTVÁLTOZÁSOKAT naplózza („leesett",
+   * „visszajött"). A panelen mindkettő kell: a számok megmondják, mennyire
+   * rossz, az események azt, hogy mikor romlott el.
+   *
+   * A HIBAARÁNY SZÁMLÁLÓJÁBAN nincs benne az `empty` és a `skipped`. Az
+   * `empty` a lánc szerint SIKER — a szolgáltató felelt, csak nincs nála ez a
+   * cím —, a `skipped` pedig azt jelenti, hogy meg sem kérdeztük, mert a
+   * megszakító kizárta. Egy ritka címet keresgélő néző nem tehet úgy, mintha
+   * a szolgáltató romlana.
+   */
+  fastify.get('/providers', {
+    onRequest: fastify.requirePermission('analytics.view'),
+    schema: { querystring: RANGE_QUERY }
+  }, async request => {
+    const w = windowOf(request)
+
+    const [totals, days, events] = await Promise.all([
+      query(
+        `SELECT slug,
+                coalesce(sum(attempts), 0)::int AS attempts,
+                coalesce(sum(attempts) FILTER (WHERE outcome = 'ok'), 0)::int AS ok,
+                coalesce(sum(attempts) FILTER (WHERE outcome = 'empty'), 0)::int AS empty,
+                coalesce(sum(attempts) FILTER (WHERE outcome = 'error'), 0)::int AS errors,
+                coalesce(sum(attempts) FILTER (WHERE outcome = 'timeout'), 0)::int AS timeouts,
+                coalesce(sum(attempts) FILTER (WHERE outcome = 'skipped'), 0)::int AS skipped,
+                coalesce(sum(sources), 0)::int AS sources,
+                coalesce(max(latency_ms_max), 0)::int AS latency_max,
+                -- Az átlag az ÖSSZEGBŐL és a DARABSZÁMBÓL, nem napi átlagok
+                -- átlagából: az utóbbi egy forgalmas napot ugyanannyit
+                -- számítana, mint egy üreset.
+                CASE WHEN sum(attempts) FILTER (WHERE outcome IN ('ok','empty','error','timeout')) > 0
+                     THEN round(
+                       sum(latency_ms_sum) FILTER (WHERE outcome IN ('ok','empty','error','timeout'))::numeric
+                       / sum(attempts) FILTER (WHERE outcome IN ('ok','empty','error','timeout')))::int
+                     ELSE 0 END AS latency_avg
+           FROM provider_metrics_daily
+          WHERE day BETWEEN $1::date AND $2::date
+          GROUP BY slug
+          ORDER BY attempts DESC, slug`,
+        [w.from, w.to]),
+      query(
+        `SELECT day, slug,
+                coalesce(sum(attempts), 0)::int AS attempts,
+                coalesce(sum(attempts) FILTER (WHERE outcome = 'ok'), 0)::int AS ok,
+                coalesce(sum(attempts) FILTER (WHERE outcome IN ('error','timeout')), 0)::int AS failures
+           FROM provider_metrics_daily
+          WHERE day BETWEEN $1::date AND $2::date
+          GROUP BY day, slug
+          ORDER BY day, slug`,
+        [w.from, w.to]),
+      query(
+        // Az esemény `detail` mezője a szolgáltató hibaüzenete. Ez a panel
+        // üzemeltetőnek szól, és a mező már a forrásnál meg van tisztítva
+        // (lásd `providers/scrub.ts`), de a hosszát itt is korlátozzuk.
+        `SELECT slug, event, left(detail, 300) AS detail, latency_ms, sources, at
+           FROM provider_events
+          WHERE at >= now() - ($1::int || ' days')::interval
+          ORDER BY at DESC
+          LIMIT 50`,
+        [w.days])
+    ])
+
+    return { window: w, totals, days, events }
+  })
+
+  // ---- rendszerállapot ---------------------------------------------------
+
+  /**
+   * Komponensenkénti állapot, a KISZOLGÁLÓ tényleges ellenőrzéseiből.
+   *
+   * A `service_status` táblát a `infrastructure/observability` írja; ez a
+   * végpont csak olvassa. A panel semmit nem talál ki: ami itt nincs, az
+   * `unknown`, nem „healthy".
+   *
+   * A `not_configured` NEM HIBA, és ezt külön ki kell mondani. Ma négy
+   * komponens áll így (redis, rabbitmq, opensearch, minio) — ezek a
+   * telepítésben szándékosan nincsenek bekapcsolva. Pirosra festeni őket
+   * annyit tenne, hogy a panel folyamatosan hibát jelez egy működő
+   * rendszerre, és onnantól senki nem nézi.
+   */
+  fastify.get('/system-health', {
+    onRequest: fastify.requirePermission('analytics.view')
+  }, async () => {
+    const services = await query(
+      `SELECT service, status, latency_ms, left(detail, 200) AS detail, checked_at, since,
+              extract(epoch FROM (now() - since))::bigint AS since_seconds
+         FROM service_status
+        ORDER BY service`)
+
+    const recent = await query(
+      `SELECT service, status, checked_at
+         FROM service_status
+        WHERE checked_at < now() - interval '10 minutes'
+        ORDER BY service`)
+
+    return {
+      services,
+      /*
+       * ELAVULT ELLENŐRZÉS. Egy tíz perce nem frissült sor nem „zöld" — azt
+       * jelenti, hogy az ellenőrző maga nem fut. A panel ezt külön mutatja,
+       * mert különben egy leállt megfigyelő a legjobb állapotnak látszik.
+       */
+      stale: recent.map(r => r.service),
+      checkedAt: new Date().toISOString()
+    }
+  })
+
   fastify.get('/export', {
     onRequest: fastify.requirePermission('analytics.export', { hide: true }),
     schema: {

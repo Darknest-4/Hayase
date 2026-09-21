@@ -21,6 +21,7 @@
 import { noResult } from './types.ts'
 import { ranked } from './registry.ts'
 import * as health from './health.ts'
+import { recordAttempts } from './metrics.ts'
 
 import type { EpisodeRef, ProviderResult, ProviderSource } from './types.ts'
 import { scrubHeaders } from './scrub.ts'
@@ -180,6 +181,9 @@ export async function resolveEpisode (ref: EpisodeRef): Promise<Resolution> {
           attempts
         }
         cache.set(key, { at: now, until: expiryOf(result.sources, Date.now()), value })
+        // A MÉRÉS A VÁLASZ ELŐTT, de nem a válasz ÁRÁN: memóriába gyűl,
+        // kötegben megy ki. Lásd `metrics.ts`.
+        recordAttempts(attempts)
         return value
       }
 
@@ -206,5 +210,6 @@ export async function resolveEpisode (ref: EpisodeRef): Promise<Resolution> {
    * múlva egy szolgáltató helyreáll, a néző még mindig azt látja, hogy nincs
    * forrás. A hiányt olcsóbb újrakérdezni, mint tévesen fenntartani.
    */
+  recordAttempts(attempts)
   return { ...noResult(), provider: null, fromCache: false, attempts }
 }
