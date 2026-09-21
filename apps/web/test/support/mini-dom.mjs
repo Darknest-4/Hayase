@@ -107,16 +107,48 @@ class MiniNode {
     return payload
   }
 
+  /**
+   * A NEM-CSOMÓPONT ARGUMENTUM SZÖVEGGÉ VÁLIK — ahogy a böngészőben.
+   *
+   * A csonk korábban `if (kid == null) continue`-val ELNYELTE a `null`-t. Ez
+   * kényelmesnek tűnt, és pontosan az ellenkezője annak, amit a valódi DOM
+   * csinál: a `ParentNode.append()` és a `replaceChildren()` minden nem-Node
+   * argumentumot sztringgé alakít, tehát a `null`-ból egy „null" feliratú
+   * szövegcsomópont lesz.
+   *
+   * Ettől a csonktól egy egész hibaosztály LÁTHATATLAN volt: az éles
+   * belépőlapon hónapokig ott állt egy „null" a jelszómező alatt, a mini-DOM
+   * pedig ugyanarra a kódra tiszta lapot mutatott. A csonk hazudott, és a
+   * teszt elhitte.
+   *
+   * Innentől ami a böngészőben kiíródik, az itt is kiíródik.
+   */
+  _beszur (kid) {
+    /*
+     * A HATÁR A PRIMITÍVNÉL VAN, nem a „Node-nak látszik"-nál.
+     *
+     * Első nekifutásra azt néztem, van-e a kapott dolognak `nodeType`-ja vagy
+     * `children`-je — és a lejátszó tesztje azonnal elhasalt tőle, mert ott a
+     * videóelem egy DUCK-TYPED sima objektum, aminek egyik sincs. A csonkba
+     * kerülő hamis elemek pont ilyenek.
+     *
+     * Objektum tehát mindig csomópont. Ami primitív — `null`, `undefined`,
+     * szám, sztring —, abból szövegcsomópont lesz, ahogy a böngészőben.
+     */
+    if (kid !== null && typeof kid === 'object') return kid
+    return { nodeType: 3, textContent: String(kid), parentNode: null, children: [] }
+  }
+
   append (...kids) {
-    for (const kid of kids) {
-      if (kid == null) continue
+    for (const raw of kids) {
+      const kid = this._beszur(raw)
       kid.parentNode = this
       this.children.push(kid)
     }
   }
 
   prepend (...kids) {
-    const real = kids.filter(Boolean)
+    const real = kids.map(k => this._beszur(k))
     for (const kid of real) kid.parentNode = this
     this.children.unshift(...real)
   }

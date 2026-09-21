@@ -380,7 +380,24 @@ export async function buildApp (): Promise<FastifyInstance> {
    * The setting is read through the cached reader, so the common case — a
    * public instance — costs one map lookup per request, not a query.
    */
-  const loginExempt = /^\/v1\/(health|config|auth|status)\b/
+  /*
+   * AMI A ZÁRT PÉLDÁNYON IS ÁTMEHET.
+   *
+   * Az `analytics/view` PONTOSAN ez az egy útvonal, nem az egész `analytics`
+   * előtag — a kimutatások a `/v1/admin/analytics` alatt élnek, és azokhoz
+   * továbbra is jogosultság kell.
+   *
+   * Miért kell kivétel: a beérkezésmérő végpontja kimondottan a be nem
+   * jelentkezett látogatóra készült („a látogatók többsége nincs
+   * bejelentkezve"), a kapu viszont 401-gyel utasította vissza. Zárt
+   * példányon tehát a bejelentkezés előtti forgalomról — vagyis arról,
+   * hányan álltak meg az ajtóban — NEM keletkezett adat, és közben minden
+   * kijelentkezett látogató konzoljában ott volt egy 401.
+   *
+   * Ez nem tágítja a támadási felületet: nyitott példányon ez a végpont
+   * amúgy is hitelesítés nélkül hívható, és írási sebességkorlát alatt van.
+   */
+  const loginExempt = /^\/v1\/(health|config|auth|status|analytics\/view)\b/
   app.addHook('onRequest', async (request, reply) => {
     if (!/^\/(v1|graphql)\b/.test(request.url)) return
     if (loginExempt.test(request.url)) return

@@ -98,7 +98,18 @@ export function createAuthForm ({
             P.field(T('Username'), username, { hint: T('3–32 characters, letters and numbers.') }),
             P.field(T('Password'), password, { hint: T('At least 8 characters.') })
           ]),
-      turnstile ? turnstile.node : null
+      /*
+       * `.filter(Boolean)`, MERT A `null` KIÍRÓDIK.
+       *
+       * A `replaceChildren(null)` nem hagyja ki az argumentumot, hanem
+       * szöveggé alakítja: a belépőlapon ott állt egy „null" felirat a
+       * jelszómező alatt, végig, minden látogatónak — pontosan addig, amíg
+       * az emberpróba ki van kapcsolva, tehát MOST.
+       *
+       * Ugyanez a hiba `append`-tel már megvolt egyszer máshol. Ezért van
+       * rá teszt.
+       */
+      ...[turnstile ? turnstile.node : null].filter(Boolean)
     )
 
     submit.textContent = mode === 'login' ? T('Sign in') : T('Create account')

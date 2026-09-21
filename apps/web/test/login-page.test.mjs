@@ -66,6 +66,32 @@ function render ({ arg, next = null, user = null } = {}) {
 
 const szoveg = node => node.textContent
 
+/**
+ * A fa SZÖVEGCSOMÓPONTJAI, amiknek a tartalma „null" vagy „undefined".
+ *
+ * SZÓRA BONTANI NEM LEHET, és ez az első próbálkozásom hibája volt: a
+ * `replaceChildren(null)` szövegcsomópontja ODARAGAD az előzőhöz, tehát a
+ * kiolvasott szöveg „Passwordnull" — egy `split(/\s+/)` sosem találja meg
+ * benne a „null" szót, és a teszt zölden jelentett egy olyan hibát, ami ott
+ * volt az éles lapon.
+ *
+ * Csomópontonként viszont pontosan látszik: egy nem szándékos `null` mindig
+ * a SAJÁT szövegcsomópontja, és annak a tartalma pontosan „null".
+ */
+function szemet (root) {
+  const talalat = []
+  const bejar = node => {
+    for (const kid of node.children ?? []) {
+      if (kid.nodeType === 3) {
+        const t = String(kid.textContent)
+        if (t === 'null' || t === 'undefined') talalat.push(t)
+      } else bejar(kid)
+    }
+  }
+  bejar(root)
+  return talalat
+}
+
 describe('a következő cím ellenőrzése', () => {
   it('egy sima útvonalnevet átenged', () => {
     assert.equal(safeNext('list'), 'list')
@@ -157,6 +183,45 @@ describe('a lap', () => {
     const hiba = root.querySelector('.field-error')
     assert.equal(hiba.getAttribute('role'), 'alert')
     assert.equal(hiba.hidden, true, 'induláskor nincs mit mondani')
+  })
+
+  /*
+   * A `replaceChildren(null)` NEM hagyja ki az argumentumot, hanem szöveggé
+   * alakítja. Az űrlap az emberpróba widgetjét adta át így, és amikor az ki
+   * van kapcsolva — vagyis most —, a jelszómező alatt ott állt egy „null"
+   * felirat, minden látogatónak, az éles belépőlapon.
+   *
+   * Ez a teszt a SZÖVEGRE megy rá, nem a hívásra: ha valaki holnap egy másik
+   * feltételes gyereket ad hozzá ugyanígy, az is fennakad.
+   */
+  it('nem ír ki „null"-t, amikor nincs emberpróba', () => {
+    assert.deepEqual(szemet(render()), [],
+      'a lapon ott egy nem szándékos „null"/„undefined" felirat')
+  })
+
+  it('regisztrációs fülön sem ír ki „null"-t', () => {
+    assert.deepEqual(szemet(render({ arg: 'register' })), [])
+  })
+
+  /*
+   * A `#/home` a kapu MÖGÖTT van. Zárt példányon egy ki nem lépett látogatót
+   * a kapu azonnal visszadobna ide — a link egy kört futott volna, és
+   * ugyanitt köt ki.
+   */
+  it('a kijárat a kezdőképernyőre visz, nem a kapu mögé', () => {
+    const root = render()
+    assert.equal(root.querySelector('.auth-back').getAttribute('href'), '#/landing')
+  })
+
+  /*
+   * A bal hasáb díszítés: a márkanév a lap címéből is megvan, a három pont
+   * pedig ismétlés. Aki hanggal navigál, annak az űrlap az első dolog.
+   */
+  it('a bemutató hasáb nem szólal meg a képernyőolvasóban', () => {
+    const root = render()
+    const oldal = root.querySelector('.auth-aside')
+    assert.ok(oldal, 'nincs bemutató hasáb')
+    assert.equal(oldal.getAttribute('aria-hidden'), 'true')
   })
 
   it('a lap leszereli magát, amikor kikerül a dokumentumból', () => {

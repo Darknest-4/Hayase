@@ -99,10 +99,20 @@ export function createTurnstile (action) {
     widgetId = api.render(node, {
       sitekey: siteKey(),
       action,
-      // A világos/sötét témát a widget a rendszerbeállításból veszi. Az
-      // oldalé ettől eltérhet, de a `auto` rosszabb esetben is olvasható
-      // marad — egy rögzített téma viszont egy sötét lapon fehér téglalap.
-      theme: 'auto',
+      /*
+       * A TÉMA AZ OLDALÉ, NEM AZ OPERÁCIÓS RENDSZERÉ.
+       *
+       * Itt eddig `auto` állt, azzal az indoklással, hogy egy rögzített téma
+       * „egy sötét lapon fehér téglalap" lenne. Pont az lett belőle: az
+       * `auto` a RENDSZER beállítását követi, a YUME viszont alapból sötét,
+       * a világos témát pedig egy `data-theme='light'` kapcsolja. Akinek a
+       * gépe világos módban van — és ez a többség —, annak a sötét
+       * belépőkártyán ott ült egy vakító fehér doboz. Lemérve, telefonos
+       * nézetben.
+       *
+       * Innentől azt kérdezzük meg, ami tényleg számít: mi van a lapra írva.
+       */
+      theme: document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark',
       callback: token => { held = token; failure = null; settle() },
       'expired-callback': () => { held = null },
       'timeout-callback': () => { held = null },
