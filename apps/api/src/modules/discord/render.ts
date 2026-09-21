@@ -9,6 +9,16 @@
  * üzenetben — csak ujjlenyomatot képez belőle és elküldi. Ez a szétválasztás
  * teszi lehetővé, hogy a motort valós Discord és valós adat nélkül is
  * végigmérjük.
+ *
+ * NINCS RENDERELÉSKORI IDŐBÉLYEG AZ EMBEDBEN, ÉS EZ EGY MÉRT HIBA JAVÍTÁSA.
+ * Eredetileg minden embed `timestamp: new Date()` mezőt kapott — amitől a
+ * tartalom ujjlenyomata MINDEN renderelésnél más lett, és a motor minden
+ * körben módosítást küldött. Élesben mérve: három üzenet, percenkénti kör,
+ * csupa `edited` és egyetlen `skipped` sem — naponta 4320 fölösleges
+ * Discord-hívás, pontosan az a forgalom, ami ellen az ujjlenyomat készült.
+ *
+ * A frissesség így sem vész el: a Discord maga jelzi a „szerkesztve"
+ * bélyeggel, mikor módosult utoljára az üzenet.
  */
 
 import { query, queryOne } from '../../infrastructure/database/index.ts'
@@ -69,8 +79,7 @@ async function yumeStatistics (): Promise<unknown> {
         mezo('Oldalletöltés (ma)', ma?.page_views ?? null),
         mezo('Regisztráció (tegnap)', tegnap?.registrations ?? null)
       ],
-      footer: { text: 'A számok a YUME saját adatbázisából származnak.' },
-      timestamp: new Date().toISOString()
+      footer: { text: 'A számok a YUME saját adatbázisából származnak. A frissítés idejét a Discord „szerkesztve" jelzése mutatja.' }
     }]
   }
 }
@@ -90,8 +99,7 @@ async function latestReleases (config: Record<string, unknown>): Promise<unknown
       color: SZIN,
       description: rows.length
         ? rows.map(r => `• **${r.title}** — ${r.number}. rész`).join('\n')
-        : 'Még nincs publikus epizód a katalógusban.',
-      timestamp: new Date().toISOString()
+        : 'Még nincs publikus epizód a katalógusban.'
     }]
   }
 }
@@ -118,8 +126,7 @@ async function providerStatus (): Promise<unknown> {
       color: SZIN,
       description: rows.length
         ? rows.map(r => `${r.failures > 0 ? '⚠️' : '✅'} **${r.slug}** — ${r.ok}/${r.attempts} · ${r.latency_avg} ms`).join('\n')
-        : 'Ebben az időszakban egyetlen szolgáltatói kérés sem futott.',
-      timestamp: new Date().toISOString()
+        : 'Ebben az időszakban egyetlen szolgáltatói kérés sem futott.'
     }]
   }
 }
@@ -139,8 +146,7 @@ async function systemHealth (): Promise<unknown> {
       description: rows.length
         ? rows.map(r => `${jel(r.status)} **${r.service}**${r.latency_ms ? ` — ${Number(r.latency_ms).toFixed(1)} ms` : ''}`).join('\n')
         : 'Nincs állapotadat.',
-      footer: { text: '➖ = szándékosan nincs bekapcsolva' },
-      timestamp: new Date().toISOString()
+      footer: { text: '➖ = szándékosan nincs bekapcsolva' }
     }]
   }
 }
