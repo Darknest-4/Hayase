@@ -168,7 +168,28 @@ services:
       # MONITOR_INTERVAL_MS: '60000'      # collection cadence
       # METRICS_RETENTION_DAYS: '7'       # raw sample retention
     volumes:
-      - /:/host:ro
+      # A LEMEZMÉRÉS CSATOLÁSA — egy üres könyvtár, nem a gazdagép gyökere.
+      #
+      # A `/proc` alatti mérőszámokat a Docker nem szeparálja, tehát a CPU, a
+      # memória, a lemez-I/O és a hálózat a konténerből is a GÉPET mutatja. A
+      # kivétel a fájlrendszer telítettsége: a `statfs('/')` a konténeren
+      # belül az overlay-t méri, nem a gazdagépet. Ezért kell egy csatolt út.
+      #
+      # ITT KORÁBBAN A TELJES GYÖKÉR ÁLLT (`/:/host:ro`). Egyetlen `statfs`
+      # hívás kedvéért a worker folyamat olvashatta a gép MINDEN fájlját — a
+      # gépen futó másik két projekt `.env`-jét és az SSH-kulcsokat is. Egy
+      # olvasási jog, amit senki nem használ, csak kockázat.
+      #
+      # A `statfs` a FÁJLRENDSZERT méri, nem az utat: egy üres könyvtár
+      # ugyanarról a fájlrendszerről bitre ugyanazt adja. Mérve, ugyanazon a
+      # gépen: teljes gyökérrel 53 GB / 20 GB szabad, ezzel a csatolással
+      # 53 GB / 20 GB szabad — a konténer viszont üres könyvtárat lát.
+      #
+      # A könyvtárat a Docker létrehozza, ha nincs. Ha a gazdagépen a
+      # `/var/lib` KÜLÖN fájlrendszeren van, ez a mérés arra vonatkozna —
+      # ilyenkor a `DISK_PATH`-nak a mérendő fájlrendszeren lévő utat kell
+      # adni. Ezen a gépen mindkettő `/dev/sda2`, ellenőrizve `df`-fel.
+      - /var/lib/yume/diskprobe:/host:ro
     command: ['npm', 'run', 'worker']
     healthcheck:
       # The worker has no port, so liveness is "the process can still reach the
@@ -323,10 +344,30 @@ services:
       - ./scripts/database:/db:ro
       - backups:/backups
     working_dir: /
+    # A MENTÉSEKET ÍRÓ SZOLGÁLTATÁS IS MEGKEMÉNYÍTVE.
+    #
+    # Ez a konténer fér hozzá a teljes adatbázis-tartalomhoz — kiírja, és
+    # feltölti az R2-be. Épp ezért nem maradhat az egyetlen, ami a Docker
+    # teljes alapértelmezett képességkészletével fut.
+    security_opt: ['no-new-privileges:true']
+    cap_drop: ['ALL']
+    # `DAC_OVERRIDE` és `CHOWN`: a `pg_dump` a csatolt kötetbe ír, és a
+    # `cron` a saját állományait állítja.
+    cap_add: ['CHOWN', 'SETUID', 'SETGID', 'DAC_OVERRIDE']
     command: ['/db/backup-cron.sh']
 
   postgres:
     image: postgres:16-alpine
+    # LEGKISEBB JOGOSULTSÁG — ugyanaz, amit az `app` és a `worker` kap.
+    #
+    # Ez korábban lemaradt, pedig ez a szolgáltatás őrzi az egész rendszer
+    # adatát. A Postgres a saját felhasználójára vált induláskor, és egyik
+    # képességre sincs szüksége abból a tizennégyből, amit a Docker
+    # alapértelmezésben ad — a `CHOWN`, `SETUID`, `SETGID` és `FOWNER`
+    # kivételével, amiket az `initdb` és a jogosultságváltás használ.
+    security_opt: ['no-new-privileges:true']
+    cap_drop: ['ALL']
+    cap_add: ['CHOWN', 'SETUID', 'SETGID', 'FOWNER', 'DAC_OVERRIDE']
     # `unless-stopped`, mint minden másnak. A hiánya nem elméleti hiba volt:
     # app, worker, caddy és backup mind újraindul magától, a Postgres viszont
     # nem — egy újraindítás vagy egy Docker-daemon-frissítés után a YUME
