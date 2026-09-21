@@ -1,5 +1,6 @@
 import { noResult, type AnimeProvider, type EpisodeRef, type ProviderEpisode, type ProviderMatch, type ProviderResult, type ProviderSource, type SourceVariant } from '../types.ts'
 import { checkEmbedUrl } from '../embed-url.ts'
+import { embedHosts as kozosEmbedHosts } from '../embed-hosts.ts'
 import { buildIndex, getIndex, peekIndex, type CatalogueIndex, type IndexEntry } from './anikoto-index.ts'
 /*
  * A katalógus rekordja — az ÉLŐ válasz alapján, nem feltételezésből.
@@ -74,21 +75,15 @@ interface Config {
 }
 
 /**
- * A mai gazdagép, MÉRVE (2026-09-21, `/series/8717`):
- *   `https://megaplay.buzz/stream/s-2/169846/sub`
+ * Az engedélyezett beágyazó gazdagépek.
  *
- * Nem vakon beírt érték: a `Config.embedHosts` és a
- * `YUME_ANIKOTO_EMBED_HOSTS` környezeti változó egyaránt felülírja.
+ * A LISTA NEM ITT ÉL, hanem az `embed-hosts.ts`-ben — mert ugyanennek a
+ * listának a saját CSP-nk `frame-src` irányelvébe is be kell kerülnie. Mérve:
+ * amíg a kettő szétcsúszott, a szerver forrást adott, a böngésző pedig
+ * csendben eldobta a keretet.
  */
-const ALAP_EMBED_HOSTOK: readonly string[] = ['megaplay.buzz']
-
-function embedHosts (config: Config): readonly string[] {
-  if (config.embedHosts) return config.embedHosts
-  const kornyezet = process.env.YUME_ANIKOTO_EMBED_HOSTS
-  if (kornyezet && kornyezet.trim() !== '') {
-    return kornyezet.split(',').map(x => x.trim()).filter(Boolean)
-  }
-  return ALAP_EMBED_HOSTOK
+function embedHostsFor (config: Config): readonly string[] {
+  return config.embedHosts ?? kozosEmbedHosts()
 }
 function asString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0
@@ -651,7 +646,7 @@ export const anikotoProvider: AnimeProvider = {
      * lapján `iframe`-ben fut, ezért minden cím átmegy a `checkEmbedUrl`
      * határon — https, engedélyezett gazdagép, hitelesítő adat nélkül.
      */
-    const hostok = embedHosts(config)
+    const hostok = embedHostsFor(config)
     const sources: ProviderSource[] = []
 
     for (const variant of elerheto) {
