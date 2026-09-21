@@ -165,11 +165,36 @@ describe('a jogosultsági állás', { skip: HAS_DB ? false : 'no DATABASE_URL' }
    * Egy rossz azonosító a KÉRÉS hibája. Az 500 nemcsak pontatlan válasz:
    * elrejti a valódi üzemzavart is, mert a hibakövetőben elvegyül a
    * szemét között.
+   *
+   * A 503 EGY DOLOGRA MENTESÜL: a külső szolgáltatáshoz kötött végpontok
+   * (Discord OAuth) beállítatlan környezetben — és a tesztkörnyezet ilyen —
+   * jogosan mondják, hogy nincs mit kiszolgálniuk. Ez nem általános „az 5xx
+   * rendben van" engedmény: a mentesség útvonalhoz kötött, és alább külön
+   * megköveteljük, hogy a válasz szabályos, szándékos hibatest legyen — egy
+   * elhasalt kérésből sosem lesz olyan.
    */
+  const KULSO_FUGGES = new Set(['POST /v1/discord/oauth/start'])
+
   it('egy elrontott azonosítótól egyetlen végpont sem hasal el', () => {
     const elhasalt = [...nevtelen, ...felhasznalo]
       .filter(p => p.status >= 500)
+      .filter(p => !(p.status === 503 && KULSO_FUGGES.has(`${p.method} ${p.url}`)))
       .map(p => `${p.method} ${p.url} → ${p.status}`)
     assert.deepEqual([...new Set(elhasalt)], [])
+  })
+
+  it('a mentesített 503 szándékos, és nem egy elhasalt kérés', () => {
+    const mentesitett = [...nevtelen, ...felhasznalo]
+      .filter(p => p.status === 503 && KULSO_FUGGES.has(`${p.method} ${p.url}`))
+    // Beállítatlan környezetben a mentesség tényleg megszólal — enélkül ez az
+    // állítás üresen is átmenne, és nem mérne semmit.
+    if (process.env.DISCORD_CLIENT_SECRET === undefined) {
+      assert.ok(mentesitett.length > 0, 'a mentesség nem szólalt meg: üresen mérnénk')
+    }
+    for (const p of mentesitett) {
+      const test = JSON.parse(p.body) as { status?: number, detail?: string }
+      assert.equal(test.status, 503, `${p.method} ${p.url}: nem szabályos hibatest`)
+      assert.ok((test.detail ?? '').length > 0, `${p.method} ${p.url}: nincs indoklás`)
+    }
   })
 })

@@ -21,6 +21,7 @@
 import { createRestClient, isConfigured } from './rest-client.ts'
 import { due, syncMessage } from './persistent-messages.ts'
 import { renderMessage } from './render.ts'
+import { pruneStates } from './oauth.ts'
 import { query } from '../../infrastructure/database/index.ts'
 
 import type { Job } from '../../infrastructure/queue/index.ts'
@@ -93,6 +94,10 @@ export async function handleDiscordJob (job: Job): Promise<void> {
   if (job.payload.prune === true) {
     const n = await pruneEvents()
     if (n > 0) console.info(`[discord] ${n} régi frissítési esemény törölve`)
+    // A lejárt OAuth-állapotok beváltása már úgyis lehetetlen; a sorok
+    // csak a táblát hizlalnák. Ez nem függ a bot-tokentől.
+    const s = await pruneStates()
+    if (s > 0) console.info(`[discord] ${s} lejárt OAuth-állapot törölve`)
     return
   }
   const summary = await syncDueMessages()

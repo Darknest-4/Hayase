@@ -18,6 +18,8 @@ import { guildAccess } from './guild-access.ts'
 import { createRestClient, diagnoseChannel, isConfigured } from './rest-client.ts'
 import { findById, listForGuild, syncMessage, type PersistentMessage } from './persistent-messages.ts'
 import { renderMessage, MESSAGE_TYPES } from './render.ts'
+import * as oauth from './oauth.ts'
+import { can, parsePermissions } from './permissions.ts'
 
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 
@@ -125,6 +127,120 @@ const routes: FastifyPluginAsync = async fastify => {
     configured: isConfigured(),
     messageTypes: MESSAGE_TYPES
   }))
+
+  // ---- OAuth --------------------------------------------------------------
+
+  /**
+   * A folyamat indítása.
+   *
+   * A FELHASZNÁLÓ MÁR BE VAN JELENTKEZVE A YUME-BA — ez nem bejelentkezés,
+   * hanem fiók-összekötés. Ezért kell hitelesítés MÁR ITT: tudnunk kell,
+   * KINEK a fiókjához kötjük a Discordot.
+   */
+  fastify.post('/oauth/start', { onRequest: fastify.authenticate }, async (request, reply) => {
+    if (!oauth.isConfigured()) {
+      return await reply.code(503).send({
+        type: 'about:blank', title: 'Service Unavailable', status: 503,
+        detail: 'nincs beállítva Discord OAuth'
+      })
+    }
+    const userId = (request.user as { sub: string }).sub
+    const state = await oauth.createState(userId)
+    return { url: oauth.authorizeUrl(state) }
+  })
+
+  /**
+   * A visszairányítás.
+   *
+   * NINCS `onRequest: authenticate`, ÉS EZ SZÁNDÉKOS. A Discord egy
+   * átirányítással hozza ide a böngészőt; a kérésben nincs `Authorization`
+   * fejléc, mert nem a mi kliensünk küldi. A hívót a `state` azonosítja —
+   * azt mi adtuk ki, egy bejelentkezett felhasználónak, és egyszer
+   * használható.
+   *
+   * A VÁLASZ ÁTIRÁNYÍTÁS, NEM JSON: a böngésző van a vonal végén, nem egy
+   * program. A hiba is átirányítás, mert egy JSON-hibalap a felhasználónak
+   * zsákutca.
+   */
+  fastify.get('/oauth/callback', {
+    schema: {
+      querystring: {
+        type: 'object',
+        additionalProperties: true,
+        properties: {
+          code: { type: 'string', maxLength: 512 },
+          state: { type: 'string', maxLength: 512 },
+          error: { type: 'string', maxLength: 128 }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const q = request.query as { code?: string, state?: string, error?: string }
+    const vissza = (allapot: string): void => {
+      // A cél a vezérlőpult, nem egy API-válasz.
+      void reply.redirect(`/#/admin/discord?link=${encodeURIComponent(allapot)}`)
+    }
+
+    // A felhasználó elutasította az engedélyt. Ez nem hiba, csak nem igen.
+    if (q.error) return vissza('cancelled')
+    if (!q.code || !q.state) return vissza('invalid')
+
+    const userId = await oauth.consumeState(q.state)
+    if (!userId) {
+      /*
+       * ISMERETLEN VAGY LEJÁRT ÁLLAPOT. Nem mondjuk meg, melyik: egy
+       * támadónak a kettő megkülönböztetése is információ.
+       */
+      return vissza('expired')
+    }
+
+    try {
+      const account = await oauth.completeLink(userId, q.code)
+      await audit(userId, 'discord.account.link', 'user', userId, null,
+        // A Discord-azonosító nem titok, a token igen — az utóbbi ide sem kerül.
+        { discordUserId: account.discordUserId, guilds: account.guilds })
+      return vissza('ok')
+    } catch (error) {
+      const uzenet = String((error as Error)?.message ?? '')
+      // A „már más fiókhoz van kötve" eset a felhasználónak érthető üzenet.
+      return vissza(uzenet.includes('másik YUME-fiókhoz') ? 'taken' : 'failed')
+    }
+  })
+
+  /** Az összekötés állapota — a felület ebből tudja, mit mutasson. */
+  fastify.get('/oauth/link', { onRequest: fastify.authenticate }, async request => {
+    const userId = (request.user as { sub: string }).sub
+    const link = await oauth.linkOf(userId)
+    if (!link) return { linked: false, configured: oauth.isConfigured() }
+
+    const guilds = await query<{ guild_id: string, guild_name: string | null, owner: boolean, permissions: string, fetched_at: Date }>(
+      `SELECT guild_id, guild_name, owner, permissions, fetched_at
+         FROM discord_guild_members WHERE discord_user_id = $1 ORDER BY guild_name NULLS LAST`,
+      [link.discordUserId])
+
+    return {
+      linked: true,
+      configured: oauth.isConfigured(),
+      username: link.username,
+      linkedAt: link.linkedAt,
+      /*
+       * CSAK AZOK A GUILDEK, AMIKHEZ TÉNYLEG VAN JOGA. Egy teljes lista
+       * megmondaná, mely szervereknek tagja — az a vezérlőpultnak nem kell,
+       * és más felhasználók előtt sem tartozik ránk.
+       */
+      guilds: guilds
+        .filter(g => can({ owner: g.owner, permissions: parsePermissions(g.permissions) }, 'view_stats'))
+        .map(g => ({ id: g.guild_id, name: g.guild_name, owner: g.owner, fetchedAt: g.fetched_at }))
+    }
+  })
+
+  /** Az összekötés bontása. */
+  fastify.delete('/oauth/link', { onRequest: fastify.authenticate }, async (request, reply) => {
+    const userId = (request.user as { sub: string }).sub
+    const volt = await oauth.unlink(userId)
+    if (volt) await audit(userId, 'discord.account.unlink', 'user', userId, null, null)
+    return await reply.code(volt ? 204 : 404).send()
+  })
 
   // ---- tartós üzenetek ----------------------------------------------------
 

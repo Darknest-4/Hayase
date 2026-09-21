@@ -52,6 +52,16 @@ export type AuditAction =
   | 'discord.persistent_message.delete'
   | 'discord.persistent_message.resync'
   /*
+   * A Discord-fiók összekötése és bontása.
+   *
+   * Azért naplózott, mert ez DÖNTI EL, ki mely guildek adataihoz fér hozzá.
+   * „Ki kötötte ehhez a fiókhoz ezt a Discord-azonosítót" utólag
+   * megválaszolhatatlan kérdés lenne — és pont ez az a lépés, amivel valaki
+   * jogosultságot szerez.
+   */
+  | 'discord.account.link'
+  | 'discord.account.unlink'
+  /*
    * Forrásszolgáltató ki- vagy bekapcsolása, sorrendjének átállítása.
    *
    * Azért naplózott, mert egy kikapcsolt szolgáltató első TÜNETE az, hogy
