@@ -1216,6 +1216,24 @@ a.chip:hover { filter: brightness(.85); }
 
 svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
 svg.chart .chart-tick { font-size: var(--text-xs); fill: var(--fg-faint); }
+/*
+ * A RÁCSVONAL ÉS A TENGELYFELIRAT — visszatéve.
+ *
+ * A `charts.js` háromszor ad ki `chart-grid` és `chart-axis` osztályt, de a
+ * `9d8b2f93` („admin: one design system for the panel") kitörölte mindkét
+ * szabályt, és nem tett a helyükre semmit. Azóta:
+ *
+ *   `chart-grid`  az SVG alapértelmezett `stroke`-ja `none`, tehát a
+ *                 rácsvonalak egyszerűen NEM LÁTSZOTTAK;
+ *   `chart-axis`  szabály híján a böngésző 16 képpontos alapértelmezésén
+ *                 rajzolódott a ~11 helyett, alapértelmezett kitöltéssel —
+ *                 ezért tűnt úgy, mintha a dátumok ráfutnának a görbére.
+ *
+ * `svg.chart` alá kötve, mint a testvérei: a szabály csak a diagramokra
+ * vonatkozik, nem bármire, ami történetesen ilyen osztályt kap.
+ */
+svg.chart .chart-grid { stroke: var(--border); stroke-width: 1; }
+svg.chart .chart-axis { fill: var(--fg-faint); font-size: var(--text-xs); font-family: var(--font-mono); }
 svg.chart .chart-value { font-size: var(--text-xs); font-weight: 700; fill: var(--fg-muted); }
 svg.chart .chart-name { font-size: var(--text-xs); fill: var(--fg); dominant-baseline: middle; }
 

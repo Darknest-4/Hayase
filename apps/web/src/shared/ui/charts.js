@@ -132,7 +132,19 @@ export const Charts = {
         y2: yy.toFixed(1),
         class: 'chart-grid'
       }))
-      const text = this._el('text', { x: padL - 5, y: (yy + 3).toFixed(1), 'text-anchor': 'end', class: 'chart-axis' })
+      /*
+       * A KÉT TENGELY KÉT KÜLÖN OSZTÁLYT KAP.
+       *
+       * Eddig mindkettő csak `chart-axis` volt, és a tesztek a `text-anchor`
+       * alapján válogatták szét őket — az y-feliratok igazítása „end". Ez
+       * addig működött, amíg az x-feliratok mind középre igazodtak; abban a
+       * pillanatban, hogy a szélső x-felirat is „end" lett, a teszt
+       * y-feliratnak nézte, és egy „b"-ből `NaN` lett.
+       *
+       * A stílust továbbra is a közös `chart-axis` adja; a második osztály
+       * csak megnevezi, melyik tengelyről van szó.
+       */
+      const text = this._el('text', { x: padL - 5, y: (yy + 3).toFixed(1), 'text-anchor': 'end', class: 'chart-axis chart-axis-y' })
       text.textContent = value >= 1000 ? (value / 1000) + 'k' : String(Math.round(value))
       children.push(text)
     }
@@ -141,7 +153,22 @@ export const Charts = {
     const every = Math.ceil(labels.length / 6)
     labels.forEach((name, i) => {
       if (i % every !== 0 && i !== labels.length - 1) return
-      const text = this._el('text', { x: x(i).toFixed(1), y: H - 7, 'text-anchor': 'middle', class: 'chart-axis' })
+      /*
+       * A SZÉLSŐ FELIRATOK BEFELÉ IGAZODNAK.
+       *
+       * Középre igazítva a felirat FELE a rajzterületen kívülre esik: az
+       * utolsó felirat az `x = padL + plotW` ponton áll, tehát a jobb széle
+       * `viewBox`-on túlra ér. Mérve, az adminpanel áttekintésén: a
+       * „szept. 21." jobb széle 408 volt egy 380 széles dobozban — huszonnyolc
+       * képpont a kártya belső margójába lógva.
+       *
+       * Nem vágódott le (`svg.chart { overflow: visible }`), csak kicsúszott,
+       * és emiatt a diagram jobb oldala zsúfoltnak látszott. Az első és az
+       * utolsó felirat ezért befelé igazodik; a köztesek maradnak középen,
+       * mert azok a saját osztásukat jelölik.
+       */
+      const anchor = i === 0 ? 'start' : (i === labels.length - 1 ? 'end' : 'middle')
+      const text = this._el('text', { x: x(i).toFixed(1), y: H - 7, 'text-anchor': anchor, class: 'chart-axis chart-axis-x' })
       text.textContent = name
       children.push(text)
     })
