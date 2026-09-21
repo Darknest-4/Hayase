@@ -123,7 +123,18 @@ describe('a forrásvégpont a láncon át', { skip: HAS_DB ? false : 'no DATABAS
       const body = await get()
       assert.deepEqual(body.data, [])
       assert.equal(body.provider, null)
-      assert.deepEqual(body.attempts, [], 'a kikapcsolt szolgáltató még a láncban is szerepel')
+      /*
+       * A KIKAPCSOLT SZOLGÁLTATÓ NEVE NEM JELENIK MEG A LÁNCBAN.
+       *
+       * Eddig azt állítottam, hogy a lánc ÜRES — az egy olyan világ volt,
+       * amiben egyetlen szolgáltató létezett. A `http-feed` megjelenésével a
+       * lánc jogosan tartalmaz egy másik lépést, és a teszt elbukott rajta.
+       *
+       * Amit valóban őrizni kell, az nem a lánc hossza, hanem hogy a
+       * kikapcsoltat MEG SEM KÉRDEZTÜK.
+       */
+      assert.ok(!body.attempts.some(a => a.provider === 'yume-local'),
+        'a kikapcsolt szolgáltató szerepel a láncban: ' + JSON.stringify(body.attempts))
 
       const { rows } = await pool.query('SELECT count(*) AS n FROM video_sources WHERE episode_id = $1', [episodeId])
       assert.ok(Number(rows[0]!.n) >= 2, 'a kikapcsolás törölte a sorokat — nem ezt kértük')

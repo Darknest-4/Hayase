@@ -8,6 +8,7 @@
 // eltávolítása: kivenni a listából — de a MINDENNAPI művelet nem ez, hanem a
 // kikapcsolás az adminfelületen, ami nem igényel telepítést.
 
+import { httpFeedProvider } from './adapters/http-feed.ts'
 import { localProvider } from './adapters/local.ts'
 import { register } from './registry.ts'
 
@@ -18,7 +19,14 @@ export type { Attempt, Resolution } from './resolve.ts'
 export * from './types.ts'
 
 /** A beépített adapterek. A sorrend itt nem számít — azt a prioritás adja. */
-const BUILT_IN = [localProvider]
+/*
+ * A beépített adapterek. A sorrend itt nem számít — azt a prioritás adja.
+ *
+ * A `http-feed` BEÁLLÍTÁS NÉLKÜL nem csinál semmit (üres eredmény, egyetlen
+ * kérés nélkül), tehát ártalmatlan bekapcsolva hagyni: az adminfelületen
+ * látszik, és ott lehet ráállítani egy címre.
+ */
+const BUILT_IN = [localProvider, httpFeedProvider]
 
 let done = false
 

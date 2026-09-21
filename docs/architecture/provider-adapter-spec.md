@@ -580,6 +580,56 @@ kerülhet észrevétlenül a láncba.
 
 ---
 
+## 16b. A kész HTTP-adapter — `http-feed`
+
+`apps/api/src/modules/providers/adapters/http-feed.ts` — **a `BUILT_IN`
+listában van, és működik.** Kétféle egyszerre:
+
+* **használható adapter**: beállítod, honnan kérdezzen, és onnantól valódi
+  forrásokat szolgál;
+* **másolható váz**: minden vízvezeték kész benne — időkorlát, 4xx/5xx
+  megkülönböztetés, üres eredmény kontra kivétel, fejlécek, lejárat,
+  feliratok. Ha a szolgáltatásod más alakban felel, **egyetlen függvényt** kell
+  kicserélni: a `normalize`-t.
+
+### Beállítás (`providers.config`, adminfelületről)
+
+```json
+{
+  "urlTemplate": "https://sajat.pelda/api/forras/{anilistId}/{episode}",
+  "timeoutMs": 6000,
+  "headers": { "X-Client": "yume" }
+}
+```
+
+Helyőrzők: `{anilistId}` `{malId}` `{kitsuId}` `{anidbId}` `{episode}`
+`{variant}` — az értékük URL-kódolva kerül be.
+
+**Beállítás nélkül nem csinál semmit**: nincs `urlTemplate` → üres eredmény,
+egyetlen kérés nélkül. Ezért ártalmatlan bekapcsolva hagyni.
+
+### A várt válasz
+
+```json
+{
+  "sources":   [ { "url": "…", "kind": "hls", "variant": "sub",
+                   "label": "1. kiszolgáló", "quality": "1080p",
+                   "language": "ja", "headers": { "Referer": "…" },
+                   "expiresAt": "2026-09-21T12:00:00Z" } ],
+  "subtitles": [ { "url": "…", "language": "en", "format": "vtt",
+                   "isDefault": true } ]
+}
+```
+
+Amit nem ismer fel, azt **kihagyja, nem találgatja**: egy `variant` nélküli
+forrás nem „valószínűleg sub", és egy ismeretlen `kind` nem „valószínűleg
+mp4" — abból néma lejátszó lenne.
+
+**Titok nem mehet a `config`-ba** (az adminfelület megjeleníti), és nem mehet
+a `headers`-be sem (az kimegy a böngészőnek).
+
+---
+
 ## 17. A minta-adapter
 
 `apps/api/src/modules/providers/adapters/mock.ts`
