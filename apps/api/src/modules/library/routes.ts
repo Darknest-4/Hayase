@@ -11,6 +11,7 @@ import { requireProfile } from '../../middleware/profile.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
 import { imageUrlSql } from '../media/public-url.ts'
+import { uuidParams } from '../../infrastructure/http/params.ts'
 
 const LIBRARY_STATUSES = ['WATCHING', 'PLANNING', 'COMPLETED', 'PAUSED', 'DROPPED', 'REWATCHING'] as const
 
@@ -145,7 +146,7 @@ const routes: FastifyPluginAsync = async fastify => {
     return entry
   })
 
-  fastify.delete('/library/:animeId', { config: WRITE_LIMIT }, async (request, reply) => {
+  fastify.delete('/library/:animeId', { config: WRITE_LIMIT, schema: uuidParams('animeId') }, async (request, reply) => {
     const profileId = await requireProfile(request, reply)
     if (!profileId) return
     const { animeId } = request.params as { animeId: string }

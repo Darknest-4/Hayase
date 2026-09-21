@@ -17,6 +17,7 @@ import type { SearchFilters } from '../search/search.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
 import { profileOf } from '../../middleware/profile.ts'
+import { uuidParams } from '../../infrastructure/http/params.ts'
 
 /**
  * Browse orderings, as keyset components rather than raw ORDER BY strings.
@@ -32,6 +33,7 @@ import { profileOf } from '../../middleware/profile.ts'
  * exist (date < text).
  */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 
 /**
  * Which language this request wants, and how it wants titles written.
@@ -433,9 +435,7 @@ const routes: FastifyPluginAsync = async fastify => {
     return created
   })
 
-  fastify.get('/:id', {
-    schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } }
-  }, async (request, reply) => {
+  fastify.get('/:id', { schema: uuidParams() }, async (request, reply) => {
     const { id } = request.params as { id: string }
     const anime = await animeDetail(id, localeOf(request))
     if (!anime) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
@@ -461,9 +461,7 @@ const routes: FastifyPluginAsync = async fastify => {
    * Without the distinction, hiding every episode would make the client fetch
    * them from ani.zip and show them anyway — the feature would defeat itself.
    */
-  fastify.get('/:id/episodes', {
-    schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } }
-  }, async (request, reply) => {
+  fastify.get('/:id/episodes', { schema: uuidParams() }, async (request, reply) => {
     const { id } = request.params as { id: string }
     if (!await animeRepo.isVisible(id)) {
       return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
@@ -499,7 +497,7 @@ const routes: FastifyPluginAsync = async fastify => {
     return { data: await episodeRepo.sourcesFor(eid) }
   })
 
-  fastify.get('/:id/relations', async (request, reply) => {
+  fastify.get('/:id/relations', { schema: uuidParams() }, async (request, reply) => {
     const { id } = request.params as { id: string }
     return { data: await animeRepo.relations(id) }
   })
@@ -554,9 +552,8 @@ const routes: FastifyPluginAsync = async fastify => {
    * neither sequel nor prequel — the films, the specials — has no place in
    * that order at all. A date is a total order and is what a viewer means.
    */
-  fastify.get('/:id/franchise', async (request, reply) => {
+  fastify.get('/:id/franchise', { schema: uuidParams() }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    if (!UUID.test(id)) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
 
     const data = await animeRepo.franchise(id)
     if (!data.length) return { data: [], truncated: false }
@@ -576,7 +573,7 @@ const routes: FastifyPluginAsync = async fastify => {
    * draws them in separate tabs and most visits open none of them.
    */
 
-  fastify.get('/:id/characters', async request => {
+  fastify.get('/:id/characters', { schema: uuidParams() }, async request => {
     const { id } = request.params as { id: string }
     // Voices are aggregated per character rather than joined flat: a character
     // with a Japanese and a Hungarian actor is one card with two credits, and
@@ -584,13 +581,14 @@ const routes: FastifyPluginAsync = async fastify => {
     return { data: await animeRepo.characters(id) }
   })
 
-  fastify.get('/:id/staff', async request => {
+  fastify.get('/:id/staff', { schema: uuidParams() }, async request => {
     const { id } = request.params as { id: string }
     return { data: await animeRepo.staff(id) }
   })
 
   fastify.get('/:id/recommendations', {
     schema: {
+      ...uuidParams(),
       querystring: {
         type: 'object',
         properties: { limit: { type: 'integer', minimum: 1, maximum: 50, default: 20 } }

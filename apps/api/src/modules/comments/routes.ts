@@ -9,6 +9,7 @@ import { notify } from '../notifications/worker.ts'
 
 import type { FastifyPluginAsync, FastifyReply } from 'fastify'
 import { WRITE_LIMIT } from '../../middleware/security.ts'
+import { uuidParams } from '../../infrastructure/http/params.ts'
 
 const SUBJECT_TYPES = ['anime', 'episode', 'post', 'review'] as const
 
@@ -241,7 +242,7 @@ const routes: FastifyPluginAsync = async fastify => {
     return reply.code(204).send()
   })
 
-  fastify.post('/:id/like', { preHandler: fastify.authenticate, config: WRITE_LIMIT }, async (request, reply) => {
+  fastify.post('/:id/like', { preHandler: fastify.authenticate, config: WRITE_LIMIT, schema: uuidParams() }, async (request, reply) => {
     const { id } = request.params as { id: string }
     const exists = await queryOne('SELECT 1 FROM comments WHERE id = $1 AND hidden_at IS NULL', [id])
     if (!exists) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })

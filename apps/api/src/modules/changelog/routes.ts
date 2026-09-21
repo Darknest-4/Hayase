@@ -14,6 +14,7 @@ import { query, queryOne, transaction } from '../../infrastructure/database/inde
 
 import type { FastifyPluginAsync } from 'fastify'
 import type pg from 'pg'
+import { uuidParams } from '../../infrastructure/http/params.ts'
 
 const STATUSES = ['planned', 'in_progress', 'released'] as const
 const KINDS = ['added', 'changed', 'fixed', 'removed', 'security'] as const
@@ -211,6 +212,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.delete('/:id', {
+    schema: uuidParams(),
     onRequest: fastify.requirePermission('changelog.manage')
   }, async (request, reply) => {
     const { id } = request.params as { id: string }

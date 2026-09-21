@@ -142,9 +142,27 @@ describe('franchise / watch order', { skip: HAS_DB ? false : 'no DATABASE_URL' }
     assert.equal(data.length, 1)
   })
 
-  test('an unknown or malformed id is a 404, not a 500', async () => {
+  /*
+   * A KÉT ESET KÉT VÁLASZ, és ez a teszt korábban egybemosta őket.
+   *
+   * Az eredeti állítás az volt, hogy egy ELRONTOTT azonosító is 404 — akkor
+   * ez volt a viselkedés, mert az útvonal kézzel nézte meg egy regexszel, és
+   * „nem található"-t adott rá. Azóta a `:id` ellenőrzése sémába került (lásd
+   * `infrastructure/http/params.ts`), és a séma a helyes választ adja:
+   *
+   *   `not-a-uuid`   a KÉRÉS hibás          → 400
+   *   érvényes, de nem létező azonosító     → 200, üres lista
+   *
+   * A második nem elírás: egy franchise-lekérdezésnek az üres halmaz
+   * értelmes válasz, nem hiány.
+   *
+   * A régi 404 nem volt „rossz", csak összemosta a hibás kérést a hiányzó
+   * erőforrással — és a katalógus többi útvonala közben 400-at adott
+   * ugyanarra. A teszt az egységesítést rögzíti.
+   */
+  test('az elrontott azonosító 400, az ismeretlen viszont üres lista', async () => {
     const bad = await app.inject({ url: '/v1/anime/not-a-uuid/franchise' })
-    assert.equal(bad.statusCode, 404)
+    assert.equal(bad.statusCode, 400, 'egy elrontott azonosító a kérés hibája')
     const missing = await app.inject({ url: '/v1/anime/00000000-0000-4000-8000-000000000000/franchise' })
     assert.equal(missing.statusCode, 200)
     assert.deepEqual((missing.json() as { data: unknown[] }).data, [])
