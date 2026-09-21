@@ -12,7 +12,7 @@
 import net from 'node:net'
 
 import { config } from '../../config.ts'
-import { query } from '../database/index.ts'
+import { query, queryOne } from '../database/index.ts'
 
 export type ServiceStatus = 'green' | 'yellow' | 'red' | 'not_configured'
 
@@ -30,12 +30,32 @@ const SLOW_MS = Number(process.env.PROBE_SLOW_MS ?? 500)
 const notConfigured = (service: string): ProbeResult =>
   ({ service, status: 'not_configured', latencyMs: null, detail: 'not configured' })
 
-/** Strip anything that could carry a credential out of an error message. */
+/**
+ * Strip anything that could carry a credential out of an error message.
+ *
+ * A HITELESÍTŐ JELSOR IS IDE TARTOZIK, és ez egy MÉRT hiány volt. A címeket
+ * és az IP-ket eddig is kimaszkolta, de egy `Bot <token>` vagy
+ * `Bearer <token>` alakú részlet SÉRTETLENÜL átment — és ez a szöveg a
+ * `service_status.detail` mezőbe, onnan az adminfelületre és a
+ * Discord-embedbe is kimegy.
+ *
+ * Nem elméleti eset: egy `fetch` hibája gyakran visszaadja a kérés
+ * fejlécének egy darabját, és egy könyvtár, ami „hasznos" hibaüzenetet ír,
+ * pont ezt teszi.
+ *
+ * A hosszú, elválasztó nélküli jelsorokat is levágjuk: egy 32 karakternél
+ * hosszabb, szóköz nélküli `A-Za-z0-9._-` blokk gyakorlatilag mindig kulcs
+ * vagy azonosító, és egy hibaüzenetben semmi dolga.
+ */
 export function safeDetail (error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
   return message
     .replace(/[a-z]+:\/\/[^\s]*/gi, '<url>')   // scheme://user:pass@host
     .replace(/\b\d{1,3}(\.\d{1,3}){3}\b/g, '<ip>')
+    // `Bot xxx`, `Bearer xxx`, `token=xxx`, `authorization: xxx`
+    .replace(/\b(bot|bearer|token|authorization|apikey|api[_-]?key)\b\s*[:=]?\s*\S+/gi, '$1 <titok>')
+    // minden hosszú, összefüggő jelsor
+    .replace(/\b[A-Za-z0-9._-]{32,}\b/g, '<titok>')
     .slice(0, 120)
 }
 
@@ -171,10 +191,83 @@ export async function probeWorker (staleAfterMs = 180_000): Promise<ProbeResult>
 }
 
 /** Every probe, in parallel. Order is stable for the dashboard. */
+/**
+ * A Discord API elérhetősége — csak ha van bot token.
+ *
+ * TOKEN NÉLKÜL `not_configured`, NEM `red`. Ez ugyanaz az elv, ami a Redisre
+ * és a RabbitMQ-ra is áll: egy szándékosan be nem kapcsolt függőség nem
+ * hiba. Pirosra festve a panel folyamatosan riasztana egy működő rendszerre,
+ * és onnantól senki nem nézné.
+ *
+ * A `/users/@me` a legolcsóbb hitelesített végpont: egyetlen rekordot ad, és
+ * pontosan azt méri, ami érdekel — él-e a Discord, és érvényes-e a tokenünk.
+ *
+ * A TOKEN SOHA NEM KERÜL A `detail`-BE. A `safeDetail` a címeket kimaszkolja,
+ * de a fejlécet eleve nem is hivatkozzuk: a hibaág csak a HTTP-állapotot
+ * adja tovább.
+ */
+async function probeDiscord (): Promise<ProbeResult> {
+  const token = process.env.DISCORD_BOT_TOKEN
+  if (!token || token.trim() === '') return notConfigured('discord')
+
+  return await timed('discord', async () => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+    try {
+      const res = await fetch('https://discord.com/api/v10/users/@me', {
+        headers: { authorization: `Bot ${token.trim()}` },
+        signal: controller.signal
+      })
+      if (res.status === 401) {
+        // ÉRVÉNYTELEN TOKEN KÜLÖN ESET. Ez nem „a Discord nem elérhető",
+        // hanem „a mi tokenünk rossz" — és az üzemeltetőnek más a teendője.
+        return { status: 'red' as const, detail: 'a bot tokenje érvénytelen' }
+      }
+      if (res.status === 429) return { status: 'yellow' as const, detail: 'a Discord korlátoz' }
+      if (!res.ok) return { status: 'red' as const, detail: `HTTP ${res.status}` }
+      return
+    } finally {
+      clearTimeout(timer)
+    }
+  })
+}
+
+/**
+ * A tartós üzenetek állapota — a mi oldalunkon.
+ *
+ * MÁST MÉR, MINT A `discord` SZONDA. Az azt mondja meg, hogy a Discord él; ez
+ * azt, hogy a MI üzeneteink mennek-e ki. A kettő külön romlik el: a Discord
+ * lehet tökéletesen elérhető, miközben minden üzenetünk jogosultsági hibán
+ * áll.
+ *
+ * A kimerült kudarcszámlálójú rekordok száma a jel: azok már fel is adták.
+ */
+async function probePersistentMessages (): Promise<ProbeResult> {
+  if (!process.env.DISCORD_BOT_TOKEN) return notConfigured('discord-messages')
+
+  return await timed('discord-messages', async () => {
+    const row = await queryOne<{ total: number, elakadt: number, sikeres: number }>(
+      `SELECT count(*)::int AS total,
+              count(*) FILTER (WHERE failure_count >= 5)::int AS elakadt,
+              count(*) FILTER (WHERE last_success_at > now() - interval '1 hour')::int AS sikeres
+         FROM persistent_messages WHERE enabled`)
+    const total = row?.total ?? 0
+    if (total === 0) return { status: 'not_configured' as const, detail: 'nincs beállított üzenet' }
+    if ((row?.elakadt ?? 0) > 0) {
+      return { status: 'red' as const, detail: `${row!.elakadt} üzenet elakadt` }
+    }
+    if ((row?.sikeres ?? 0) < total) {
+      return { status: 'yellow' as const, detail: `${total - (row?.sikeres ?? 0)} üzenet egy órája nem frissült` }
+    }
+    return
+  })
+}
+
 export async function probeAll (): Promise<ProbeResult[]> {
   return Promise.all([
     probePostgres(), probeRedis(), probeRabbit(),
-    probeOpenSearch(), probeMinio(), probeApi(), probeWorker()
+    probeOpenSearch(), probeMinio(), probeApi(), probeWorker(),
+    probeDiscord(), probePersistentMessages()
   ])
 }
 
