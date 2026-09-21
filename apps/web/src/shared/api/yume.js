@@ -876,6 +876,8 @@ export const YumeAPI = {
 
     analytics: {
       visitors: range => YumeAPI._request(`/v1/admin/analytics/visitors?range=${range}`, { auth: true }),
+      providers: range => YumeAPI._request(`/v1/admin/analytics/providers?range=${range}`, { auth: true }),
+      systemHealth: () => YumeAPI._request('/v1/admin/analytics/system-health', { auth: true }),
       breakdown: (dimension, range, limit = 20) =>
         YumeAPI._request(`/v1/admin/analytics/breakdown?dimension=${dimension}&range=${range}&limit=${limit}`, { auth: true }),
       realtime: () => YumeAPI._request('/v1/admin/analytics/realtime', { auth: true }),

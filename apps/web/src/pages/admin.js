@@ -945,7 +945,9 @@ export const PageAdmin = {
     ['search', 'Keresés'],
     ['users', 'Fiókok'],
     ['devices', 'Eszközök'],
-    ['performance', 'Teljesítmény']
+    ['performance', 'Teljesítmény'],
+    ['providers', 'Szolgáltatók'],
+    ['health', 'Rendszer']
   ],
 
   ANALYTICS_RANGES: [
@@ -999,7 +1001,16 @@ export const PageAdmin = {
   },
 
   /** Egy szám és az előző, azonos hosszú időszak ugyanaz a száma. */
-  analyticsKpi (label, value, previous, { tone = 'blue', icon = '<circle cx="12" cy="12" r="10"/>', suffix = '' } = {}) {
+  /**
+   * @param display ha meg van adva, EZ jelenik meg a szám helyett.
+   *
+   * MIÉRT KELL. A `Number(value) || 0` egy „—" jelet NULLÁRA alakít, és a
+   * kártya „0"-t ír ki. Egy hibaaránynál ez a legrosszabb lehetséges
+   * hazugság: a „0%" azt állítja, hogy mérünk és minden rendben, pedig
+   * nincs adat. Mérve: ha a megszakító minden szolgáltatót kizárt, minden
+   * kísérlet `skipped`, és a kártya „0%"-ot mutatott.
+   */
+  analyticsKpi (label, value, previous, { tone = 'blue', icon = '<circle cx="12" cy="12" r="10"/>', suffix = '', display = null } = {}) {
     const now = Number(value) || 0
     const before = Number(previous)
     // Nincs összehasonlítás ≠ nulla változás. Egy friss telepítésen az előző
@@ -1010,7 +1021,10 @@ export const PageAdmin = {
     return U.el('div', { class: 'dash-kpi' }, [
       U.el('span', { class: 'dash-kpi-icon tone-' + tone }, [U.svg(icon, 17)]),
       U.el('div', { class: 'dash-kpi-body' }, [
-        U.el('div', { class: 'dash-kpi-value', text: now.toLocaleString(I18n.locale()) + suffix }),
+        U.el('div', {
+          class: 'dash-kpi-value',
+          text: display != null ? String(display) : now.toLocaleString(I18n.locale()) + suffix
+        }),
         U.el('div', { class: 'dash-kpi-label', text: label }),
         U.el('div', { class: 'dash-kpi-delta dash-kpi-' + dir }, [
           U.el('span', { class: 'dash-kpi-arrow', text: delta == null ? '—' : (delta > 0 ? '+' : '') + delta + '%' }),
@@ -1050,6 +1064,36 @@ export const PageAdmin = {
       ]))
     }
     return U.el('div', {}, [U.el('div', { class: 'dash-panel-subhead', text: head[0] }), wrap])
+  },
+
+  /**
+   * Állapotlista — címke, állapotjelölő, és egy tördelhető részletsor.
+   *
+   * MIÉRT NEM AZ `analyticsTable`. Az rangsorol: számot vár, és abból
+   * százalékos sávot rajzol. Egy komponens állapotának nincs ilyen száma, és
+   * egy szolgáltató kimenet-bontásának sincs. A kettőt egy sablonba
+   * kényszerítve `NaN` lett belőle a panelen.
+   *
+   * A RÉSZLETSOR TÖRDELHETŐ. A rangsoros lista jobb oszlopa `nowrap`, és egy
+   * hosszabb felsorolás ott szétfeszíti a sort — mérve, 390 képpontos
+   * telefonon 623 képpontig ért.
+   */
+  statusList (items, empty = 'Nincs adat.') {
+    if (!items.length) return P.emptyState(empty)
+    const wrap = U.el('div', { class: 'meta-rows' })
+    for (const item of items) {
+      wrap.append(U.el('div', { class: 'meta-row backup-row', style: 'align-items:flex-start;' }, [
+        U.el('div', { class: 'meta-row-main', style: 'min-width:0;' }, [
+          AP.tag(item.label, item.tone ?? ''),
+          U.el('div', {
+            class: 'meta-row-sub',
+            style: 'margin-top:4px;white-space:normal;overflow-wrap:anywhere;',
+            text: item.detail ?? ''
+          })
+        ])
+      ]))
+    }
+    return wrap
   },
 
   async analyticsVisitors (body, range) {
@@ -1290,6 +1334,166 @@ export const PageAdmin = {
         { head: ['Végpont'], empty: 'Nincs végpontonkénti mérés.' })
     }))
     body.append(lower)
+  },
+
+  /**
+   * A szolgáltatólánc.
+   *
+   * A SORREND AZ, AHOGY EGY ÜZEMELTETŐ VÉGIGMEGY RAJTA: „mennyire rossz?",
+   * „melyik szolgáltatónál?", „mikor romlott el?". Ezért van elöl a hibaarány,
+   * utána a szolgáltatónkénti bontás, és leghátul az eseménynapló.
+   */
+  async analyticsProviders (body, range) {
+    const data = await YumeAPI.admin.analytics.providers(range)
+    body.replaceChildren()
+
+    const totals = data.totals ?? []
+    if (!totals.length) {
+      /*
+       * ÜRES ÁLLAPOT, NEM NULLÁK. A mérés a szolgáltatói lánc első
+       * használatakor indul; addig a „0% hiba" azt sugallná, hogy minden
+       * rendben — pedig egyszerűen nincs adat.
+       */
+      body.append(P.emptyState(
+        'Ebben az időszakban egyetlen szolgáltatói kérés sem futott. ' +
+        'A mérés az első feloldásnál indul.'))
+      return
+    }
+
+    // Összesített fejszámok. A hibaarányba SEM az `empty`, SEM a `skipped`
+    // nem számít bele — lásd a végpont megjegyzését.
+    const sum = (k) => totals.reduce((a, t) => a + (Number(t[k]) || 0), 0)
+    const kerdezett = sum('ok') + sum('empty') + sum('errors') + sum('timeouts')
+    const hibas = sum('errors') + sum('timeouts')
+    const arany = kerdezett > 0 ? (hibas / kerdezett) * 100 : null
+
+    body.append(U.el('div', { class: 'dash-cards' }, [
+      this.analyticsKpi('Kérések', kerdezett, null, { tone: 'blue', icon: '<path d="M4 12h16"/><path d="M12 4v16"/>' }),
+      this.analyticsKpi('Forrást adott', sum('ok'), null, { tone: 'green', icon: '<path d="M20 6 9 17l-5-5"/>' }),
+      this.analyticsKpi('Hiba és időtúllépés', hibas, null, { tone: 'red', icon: '<path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="10"/>' }),
+      /*
+       * A hibaarány NULLA KÉRDEZETT KÉRÉSNÉL nem nulla százalék, hanem
+       * „nincs adat". Egy 0%-os kártya azt állítaná, hogy mérünk, és
+       * minden rendben.
+       */
+      // EGY TIZEDES. A `toLocaleString` különben teljes pontossággal ír ki
+      // (`4,278%`), ami egy arányszámnál álpontosság.
+      this.analyticsKpi('Hibaarány', arany === null ? 0 : Math.round(arany * 10) / 10, null, {
+        tone: arany !== null && arany > 20 ? 'red' : 'amber',
+        suffix: '%',
+        // Nulla KÉRDEZETT kérésnél nincs értelmezhető arány. Ilyenkor nem
+        // „0%", hanem „nincs adat" — lásd `analyticsKpi` megjegyzését.
+        ...(arany === null ? { display: 'nincs adat' } : {}),
+        icon: '<path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>'
+      })
+    ]))
+
+    const lower = U.el('div', { class: 'dash-lower' })
+    lower.append(this.dashPanel({
+      title: 'Szolgáltatók',
+      sub: 'kérésszám szerint',
+      body: this.analyticsTable(
+        /*
+         * A KIEGÉSZÍTŐ SZÖVEG RÖVID, és ez nem stílus. Az `analyticsTable`
+         * jobb oszlopa `white-space: nowrap` — mérve, egy hosszú
+         * felsorolással a sor 623 képpontig ért egy 390-es telefonon, és
+         * levágódott. A részletes bontás a lenti panelbe került.
+         */
+        totals.map(t => {
+          const kerdezve = (t.ok || 0) + (t.empty || 0) + (t.errors || 0) + (t.timeouts || 0)
+          const hiba = (t.errors || 0) + (t.timeouts || 0)
+          const pct = kerdezve > 0 ? ((hiba / kerdezve) * 100).toFixed(1) + '%' : '—'
+          return [t.slug, String(t.attempts), `${pct} hiba · ${t.latency_avg} ms`]
+        }),
+        { head: ['Szolgáltató', 'Kísérlet'], empty: 'Nincs mérés ebben az időszakban.' })
+    }))
+
+    lower.append(this.dashPanel({
+      title: 'Kimenetek',
+      sub: 'szolgáltatónként, a lánc saját szótárával',
+      body: this.statusList(totals.map(t => ({
+        label: t.slug,
+        tone: (t.errors || 0) + (t.timeouts || 0) > 0 ? 'warn' : 'ok',
+        detail: `forrást adott ${t.ok} · üres ${t.empty} · hiba ${t.errors} · ` +
+                `időtúllépés ${t.timeouts} · kihagyva ${t.skipped} · ` +
+                `${t.sources} forrás · csúcs ${t.latency_max} ms`
+      })), 'Nincs mérés ebben az időszakban.')
+    }))
+
+    lower.append(this.dashPanel({
+      title: 'Állapotváltozások',
+      sub: 'mikor esett le és mikor jött vissza',
+      body: this.analyticsTable(
+        (data.events ?? []).map(e => [
+          e.slug,
+          e.event,
+          [new Date(e.at).toLocaleString('hu-HU'),
+            e.latency_ms ? `${e.latency_ms} ms` : null,
+            e.detail || null].filter(Boolean).join(' · ')
+        ]),
+        { head: ['Szolgáltató', 'Esemény'], empty: 'Nem volt állapotváltozás ebben az időszakban.' })
+    }))
+    body.append(lower)
+  },
+
+  /** A rendszerállapot színei. A `not_configured` SZÜRKE, nem piros. */
+  HEALTH_TONES: {
+    green: ['ok', 'működik'],
+    degraded: ['warn', 'akadozik'],
+    yellow: ['warn', 'akadozik'],
+    red: ['bad', 'nem elérhető'],
+    offline: ['bad', 'nem elérhető'],
+    not_configured: ['', 'nincs bekapcsolva'],
+    unknown: ['', 'ismeretlen']
+  },
+
+  /**
+   * Komponensenkénti rendszerállapot.
+   *
+   * A PANEL SEMMIT NEM TALÁL KI: amit a kiszolgáló nem ellenőrzött, az
+   * „ismeretlen", nem „működik". És a be nem kapcsolt komponens nem hiba —
+   * ma négy ilyen van (redis, rabbitmq, opensearch, minio), és pirosra festve
+   * a panel folyamatosan hibát jelezne egy működő rendszerre.
+   */
+  async analyticsHealth (body) {
+    const data = await YumeAPI.admin.analytics.systemHealth()
+    body.replaceChildren()
+
+    const services = data.services ?? []
+    const stale = new Set(data.stale ?? [])
+
+    const sorok = services.map(s => {
+      const [tone, szoveg] = this.HEALTH_TONES[s.status] ?? ['', s.status]
+      const reszletek = [
+        szoveg,
+        s.latency_ms != null ? `${Number(s.latency_ms).toFixed(1)} ms` : null,
+        s.checked_at ? `ellenőrizve ${new Date(s.checked_at).toLocaleString('hu-HU')}` : null,
+        /*
+         * AZ ELAVULT ELLENŐRZÉS KÜLÖN SZÓL. Egy tíz perce nem frissült sor
+         * nem „zöld" — azt jelenti, hogy maga az ellenőrző nem fut. Enélkül
+         * egy leállt megfigyelő a legjobb állapotnak látszik.
+         */
+        stale.has(s.service) ? '⚠ az ellenőrzés elavult' : null,
+        s.detail || null
+      ].filter(Boolean).join(' · ')
+      return { label: s.service, tone, detail: reszletek }
+    })
+
+    /*
+     * SAJÁT RENDERELŐ, NEM AZ `analyticsTable`.
+     *
+     * Az egy RANGSOROLT, SÁVOS lista: számot vár a második oszlopban, és abból
+     * arányt számol. Egy állapotlistának nincs ilyen száma — mérve, ez `NaN`-t
+     * és `[object HTMLSpanElement]`-et írt ki a panelre. A 16. pont ezt
+     * kifejezetten tiltja, és joggal: egy `NaN` a rendszerállapotban rosszabb,
+     * mint ha ott sem lenne semmi.
+     */
+    body.append(this.dashPanel({
+      title: 'Komponensek',
+      sub: `frissítve ${new Date(data.checkedAt).toLocaleTimeString('hu-HU')}`,
+      wide: true,
+      body: this.statusList(sorok, 'Nincs állapotadat.')
+    }))
   },
 
   // ---- él -------------------------------------------------------------------
