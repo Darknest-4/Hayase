@@ -48,6 +48,29 @@ export const PageWatch = {
       root.replaceChildren(P.errorState(T('Failed to load anime: ') + e.message))
       return
     }
+
+    /*
+     * NINCS ILYEN CÍM — és ezt ki is kell mondani.
+     *
+     * A `Catalogue.media()` egy ismeretlen azonosítóra `null`-t AD VISSZA, nem
+     * dob: „a uuid-nek nincs hová mennie". A fenti `catch` tehát nem fogja
+     * meg, és a következő sor a `null`-on dolgozott tovább — a látogató egy
+     * nyers JavaScript-kivételt kapott üzenetként:
+     *
+     *     Cannot read properties of null (reading 'episodes')
+     *
+     * Éles oldalon lemérve, egy elrontott `#/watch/…` címmel. Egy elavult
+     * könyvjelző, egy törölt cím vagy egy elgépelt link mind ide fut.
+     *
+     * A RÉSZLETOLDAL EZT MÁR TUDTA: ugyanez a hívás, ugyanez a `null`, és ott
+     * áll mellette egy `if (!media)`. Ugyanaz a kérdés, két külön válasz —
+     * ezért van itt most ugyanaz az ág.
+     */
+    if (!media) {
+      root.replaceChildren(P.emptyState(T('Anime not found.')))
+      return
+    }
+
     // Van-e egyáltalán miből lejátszani ezt a részt?
     //
     // Eddig a lejátszóoldal felépült, a motor végigpróbálta a nulla jelöltet,
