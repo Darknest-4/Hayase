@@ -86,7 +86,24 @@ const ALWAYS_OPEN = [
   '/v1/health',
   '/v1/status',
   '/v1/config',
-  '/v1/maintenance'
+  '/v1/maintenance',
+  /*
+   * A KARBANTARTÁSI OLDAL SAJÁT MÉDIÁJA.
+   *
+   * A fenti indoklás — „a karbantartási oldal maga sem tudná megkérdezni,
+   * hogy vége van-e már" — pontosan ugyanígy áll a lap MÉDIÁJÁRA is, csak
+   * eddig nem alkalmaztuk rá. A lap egy `<video>` lejátszót rajzol
+   * `/assets/videos/...` forrással, a kapu viszont azt is 503-mal utasította
+   * vissza: a látogató egy vezérlőkkel ellátott, de soha meg nem szólaló
+   * fekete dobozt kapott.
+   *
+   * Böngészőben lemérve: a videó kérésének státusza 503 volt.
+   *
+   * Az `/assets` alatt nincs semmi érzékeny — a két arculati SVG és a videó —,
+   * és ezek amúgy is nyilvános, hitelesítés nélkül kérhető állományok. Nem
+   * tágít tehát semmit: azt engedi át, amit a saját hibaoldalunk kér.
+   */
+  '/assets'
 ]
 
 function alwaysOpen (url: string): boolean {

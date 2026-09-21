@@ -200,6 +200,27 @@ describe('a döntés', () => {
     }
   })
 
+  /*
+   * A LAP SAJÁT MÉDIÁJA IS NYITVA MARAD.
+   *
+   * A karbantartási oldal egy `<video>` lejátszót rajzol `/assets/videos/...`
+   * forrással. A kapu viszont azt is 503-mal utasította vissza — böngészőben
+   * lemérve —, tehát a látogató egy vezérlőkkel ellátott, de soha meg nem
+   * szólaló fekete dobozt kapott. A hibaoldal nem kérhet olyat, amit a saját
+   * kapunk visszautasít.
+   */
+  it('a karbantartási oldal médiája nem akad fenn a saját kapuján', () => {
+    for (const url of ['/assets/videos/amv-counting-stars.mp4', '/assets/yume.svg', '/assets']) {
+      assert.equal(ask({ url }).kind, DECISION.ALLOW, url)
+    }
+  })
+
+  it('de az `/assets`-re hasonlító útvonal nem nyílik ki', () => {
+    // Előtagegyezés, nem „tartalmazza": egy `/v1/assets-export` nem média.
+    assert.equal(ask({ url: '/assetsmuhely' }).kind, DECISION.BLOCK)
+    assert.equal(ask({ url: '/v1/assets-export' }).kind, DECISION.BLOCK)
+  })
+
   it('a saját rendszerünket soha nem zárja ki', () => {
     const decision = ask({ internal: true })
     assert.equal(decision.kind, DECISION.ALLOW)

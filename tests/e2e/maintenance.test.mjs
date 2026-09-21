@@ -144,38 +144,83 @@ describe('karbantartási oldal böngészőben', { skip: REASON }, () => {
     page.removeAllListeners('request')
   })
 
-  it('a videó tényleg megjelenik a karbantartási oldalon', async () => {
+  /*
+   * A VIDEÓ LEJÁTSZÓ LETT, NEM HÁTTÉRRÉTEG — és ezek a tesztek eddig a régi
+   * szerződést mérték.
+   *
+   * Korábban `video.bg` volt: `position: fixed`, 22%-os átlátszóság,
+   * `aria-hidden`, `pointer-events: none` — tehát se megállítani, se
+   * hangosítani, se teljes képernyőre tenni nem lehetett, és a felolvasó
+   * számára nem is létezett. A kártya SZÖVEGE mögött futott.
+   *
+   * Az új szerződést kilenc állítással a `maintenance-video-player.test.ts`
+   * fedi, a KISZOLGÁLT HTML-en. Ez a két teszt ezért nem ismétli meg: azt
+   * méri, amit csak valódi böngésző tud megmondani — hogy az elem tényleg
+   * megjelenik, van mérhető mérete, és a forrás betöltődik.
+   */
+  it('a videó valódi, látható lejátszóként jelenik meg', async () => {
     await setMode('ACTIVE')
+    const videoKeresek = []
+    page.on('response', r => { if (/\/assets\/videos\//.test(r.url())) videoKeresek.push(r.status()) })
     await page.goto(`${base}/v1/anime`, { waitUntil: 'load' })
+
     const video = await page.evaluate(() => {
-      const node = document.querySelector('video.bg')
+      const node = document.querySelector('video.video')
       if (!node) return null
+      const doboz = node.getBoundingClientRect()
+      const cs = window.getComputedStyle(node)
       return {
-        muted: node.muted,
-        loop: node.loop,
-        hidden: node.getAttribute('aria-hidden'),
+        hatterreteg: Boolean(document.querySelector('video.bg')),
+        vezerlok: node.controls,
+        rejtve: node.getAttribute('aria-hidden'),
+        szeles: Math.round(doboz.width),
+        magas: Math.round(doboz.height),
+        pozicio: cs.position,
+        kattinthato: cs.pointerEvents,
         src: node.querySelector('source')?.getAttribute('src') ?? null
       }
     })
-    // Van videó az `assets/videos`-ban, tehát meg KELL találnia.
-    assert.ok(video, 'a felismerő nem talált videót')
-    assert.equal(video.muted, true, 'a háttérvideó nem néma')
-    assert.equal(video.loop, true)
-    assert.equal(video.hidden, 'true', 'a háttérvideó nincs elrejtve a felolvasó elől')
+
+    assert.ok(video, 'nincs lejátszó a karbantartási oldalon')
+    assert.equal(video.hatterreteg, false, 'visszakerült a háttérréteg')
+    assert.equal(video.vezerlok, true, 'a lejátszónak nincsenek vezérlői')
+    assert.equal(video.rejtve, null, 'a lejátszó el van rejtve a felolvasó elől')
+    assert.equal(video.pozicio, 'static', 'a videó kikerült a tartalom folyamából')
+    assert.notEqual(video.kattinthato, 'none', 'a videóra nem lehet rákattintani')
     assert.match(String(video.src), /^\/assets\/videos\//)
+
+    // MÉRHETŐ MÉRET: egy nulla magas elem technikailag ott van, de nem látszik.
+    assert.ok(video.szeles > 200, `a lejátszó ${video.szeles} képpont széles`)
+    assert.ok(video.magas > 100, `a lejátszó ${video.magas} képpont magas`)
+
+    // A forrás tényleg kiszolgálható — egy 404-es videó néma fekete doboz.
+    page.removeAllListeners('response')
+    assert.ok(videoKeresek.length > 0, 'a böngésző el sem kérte a videót')
+    assert.ok(videoKeresek.every(s => s < 400), `a videó kérése: ${videoKeresek.join(', ')}`)
   })
 
-  it('mozgásmentes módban a háttérvideó eltűnik', async () => {
-    // A 19. pont. Egy hurokban futó mozgókép pont az, amitől valakinek
-    // rosszul lehet.
+  it('mozgásmentes módban sem indul el magától', async () => {
+    /*
+     * A 19. pont. A régi háttérvideó hurokban futó mozgókép volt, amit
+     * mozgásmentes módban el KELLETT rejteni — most viszont a lejátszó nem
+     * indul magától, tehát a lapon betöltéskor semmi nem mozog. Nem elrejtjük
+     * tehát, hanem megmutatjuk, hogy nincs mit elrejteni: aki meg akarja
+     * nézni, elindítja.
+     */
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await setMode('ACTIVE')
     await page.goto(`${base}/v1/anime`, { waitUntil: 'load' })
-    const display = await page.evaluate(() => {
-      const node = document.querySelector('video.bg')
-      return node ? window.getComputedStyle(node).display : 'nincs elem'
+    const allapot = await page.evaluate(() => {
+      const node = document.querySelector('video.video')
+      if (!node) return null
+      return { all: node.paused, autoplay: node.autoplay, loop: node.loop, lathato: window.getComputedStyle(node).display }
     })
-    assert.equal(display, 'none', 'mozgásmentes módban is megy a háttérvideó')
+    assert.ok(allapot, 'nincs lejátszó')
+    assert.equal(allapot.autoplay, false, 'a videó magától indul')
+    assert.equal(allapot.loop, false, 'a videó hurokban jár')
+    assert.equal(allapot.all, true, 'a videó mozgásmentes módban is játszik')
+    assert.notEqual(allapot.lathato, 'none',
+      'a lejátszó mozgásmentes módban eltűnt — nincs mit elrejteni rajta, mert nem indul magától')
     await page.emulateMedia({ reducedMotion: 'no-preference' })
   })
 
