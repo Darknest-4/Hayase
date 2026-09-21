@@ -12,7 +12,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import { attachEmbed, createEmbedFrame, sandboxFor, ALLOW, SANDBOX, UNSANDBOXED_FLAG } from '../src/features/player/embed-frame.js'
-import { classify, normalise, SOURCE_KIND } from '../src/features/player2/engine/source-ranking.js'
+import { classify, declaredKind, normalise, SOURCE_KIND } from '../src/features/player2/engine/source-ranking.js'
 import { engineFor, embedEngine, nativeEngine, hlsEngine } from '../src/features/player2/engine/engines.js'
 import { createSourceManager } from '../src/features/player2/engine/source-manager.js'
 import { createPlayer } from '../src/features/player2/core/player.js'
@@ -223,6 +223,66 @@ describe('a beágyazás felismerése', () => {
     const beillesztett = normalise({ url: CIM, title: 'Manual source' })
     assert.notEqual(beillesztett.kind, SOURCE_KIND.EMBED)
     assert.ok(!embedEngine.canPlay(beillesztett))
+  })
+})
+
+/*
+ * A SZERVER BEJELENTETT FAJTÁJA — EGY MÉRT, ÉLES HIBA.
+ *
+ * Mérve valódi Firefoxban, élő AnimeParadise manifeszten
+ * (`https://stream.animeparadise.moe/m3u8?url=<token>` — NINCS `.m3u8`
+ * kiterjesztés):
+ *
+ *   a mai út:   kind=direct → natív motor → SOURCE_UNSUPPORTED
+ *   HLS motorral ugyanaz: sikeres, 1556 mp
+ *
+ * Vagyis egy tökéletesen lejátszható folyam bukott el azon, hogy a címéből
+ * nem látszott, mi az.
+ */
+describe('a szerver által bejelentett fajta', () => {
+  const HLS_CIM = 'https://stream.animeparadise.moe/m3u8?url=Pg4I1_qqoha8MBE2cFg6'
+
+  it('a kiterjesztés nélküli HLS-cím a CÍMBŐL direct-nek látszik', () => {
+    assert.equal(classify(HLS_CIM), SOURCE_KIND.DIRECT, 'a fixtúra elavult')
+  })
+
+  it('a bejelentés HLS-motorhoz irányítja, nem a natívhoz', () => {
+    const jelolt = normalise({ url: HLS_CIM, kind: 'hls' })
+    assert.equal(jelolt.kind, SOURCE_KIND.HLS)
+    assert.equal(engineFor(jelolt), hlsEngine)
+    assert.ok(!nativeEngine.canPlay(jelolt), 'a natív motor vinné el a HLS-t')
+  })
+
+  it('minden bejelentett fajtát a helyes fajtára képez', () => {
+    assert.equal(declaredKind('hls'), SOURCE_KIND.HLS)
+    assert.equal(declaredKind('dash'), SOURCE_KIND.DASH)
+    assert.equal(declaredKind('mp4'), SOURCE_KIND.DIRECT)
+    assert.equal(declaredKind('embed'), SOURCE_KIND.EMBED)
+  })
+
+  it('ismeretlen bejelentésre a címből való felismerés dönt', () => {
+    for (const rossz of ['valami', '', 'HLS', 'magnet', 42, null, undefined, {}]) {
+      assert.equal(declaredKind(rossz), null, `elfogadta: ${String(rossz)}`)
+    }
+    // és a normalise ilyenkor a címre esik vissza
+    assert.equal(normalise({ url: 'https://a.hu/x.m3u8', kind: 'valami' }).kind, SOURCE_KIND.HLS)
+    assert.equal(normalise({ url: HLS_CIM, kind: 'valami' }).kind, SOURCE_KIND.DIRECT)
+  })
+
+  /*
+   * A NÉZŐ BEILLESZTETT CÍME NEM VÁLASZTHAT MOTORT. A beillesztett rekord a
+   * `watch.js`-ben `{ url, title, source }` alakú — `kind` mező nélkül.
+   */
+  it('a puszta cím nem tud fajtát bejelenteni', () => {
+    const beillesztett = normalise({ url: HLS_CIM, title: 'Manual source' })
+    assert.equal(beillesztett.kind, SOURCE_KIND.DIRECT)
+  })
+
+  it('a .m3u8 végű címek továbbra is a régi úton mennek', () => {
+    assert.equal(normalise({ url: 'https://a.hu/x.m3u8' }).kind, SOURCE_KIND.HLS)
+    assert.equal(normalise({ url: 'https://a.hu/x.mp4' }).kind, SOURCE_KIND.DIRECT)
+    assert.equal(normalise({ url: 'https://a.hu/x.mpd' }).kind, SOURCE_KIND.DASH)
+    assert.equal(normalise({ url: 'magnet:?xt=urn:btih:abc' }).kind, SOURCE_KIND.MAGNET)
   })
 })
 

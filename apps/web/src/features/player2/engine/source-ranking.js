@@ -51,6 +51,23 @@ export function classify (url) {
   return SOURCE_KIND.UNKNOWN
 }
 
+/**
+ * A szerver által bejelentett fajta → a lejátszó fajtája.
+ *
+ * ZÁRT LEKÉPEZÉS, szándékosan: ami nincs a táblában, az `null`, és akkor a
+ * címből való felismerés dönt. Egy ismeretlen név nem tud motort választani.
+ */
+const DECLARED = Object.freeze({
+  hls: 'hls',
+  dash: 'dash',
+  mp4: 'direct',
+  embed: 'embed'
+})
+
+export function declaredKind (value) {
+  return typeof value === 'string' ? (DECLARED[value] ?? null) : null
+}
+
 /** Felbontás a címből vagy a megadott mezőből. `null`, ha nem tudjuk. */
 export function detectQuality (raw) {
   const declared = Number(raw?.quality ?? raw?.resolution)
@@ -75,17 +92,24 @@ export function normalise (raw, source = {}) {
   if (!url) return null
 
   /*
-   * A BEJELENTETT `embed` FELÜLÍRJA A CÍMBŐL VALÓ FELISMERÉST.
+   * A SZERVER BEJELENTÉSE ERŐSEBB, MINT A CÍMBŐL VALÓ TALÁLGATÁS.
    *
-   * A `classify()` egy `https://...` címet `direct`-nek vesz, és a natív
-   * motor egy HTML-lapot töltene a `<video>`-ba — néma fekete doboz. A
-   * beágyazás tényét csak a szerver tudja, tehát tőle fogadjuk el.
+   * A `classify()` a kiterjesztésből dolgozik, és ez sok címnél egyszerűen
+   * NEM MŰKÖDIK. Mérve, valódi Firefoxban, egy élő AnimeParadise
+   * manifeszten (`…/m3u8?url=<token>` — nincs `.m3u8` kiterjesztés):
    *
-   * CSAK EZ AZ EGY FAJTA JÖHET KÍVÜLRŐL. A néző által beillesztett rekord
-   * nem hordoz `kind` mezőt, tehát ezen az úton nem lehet tetszőleges címet
-   * `iframe`-be juttatni; a tényleges kapu a szerver `embed-url.ts`-e.
+   *   a mai út:  kind=direct → natív motor → SOURCE_UNSUPPORTED
+   *   a HLS motorral ugyanaz a cím: sikeres, 1556 mp
+   *
+   * Vagyis egy tökéletesen lejátszható folyam bukott el azon, hogy a
+   * címéből nem látszott, mi az. A szerver viszont TUDJA — a szolgáltató
+   * szerződése mondja meg —, ezért tőle fogadjuk el.
+   *
+   * CSAK A SZERVERTŐL. A néző által beillesztett rekord nem hordoz `kind`
+   * mezőt (lásd a `watch.js` `manual` ágát), tehát ezen az úton nem lehet
+   * sem `iframe`-et, sem motorválasztást kikényszeríteni.
    */
-  const kind = raw.kind === SOURCE_KIND.EMBED ? SOURCE_KIND.EMBED : classify(url)
+  const kind = declaredKind(raw.kind) ?? classify(url)
   return {
     id: raw.id ?? `cand-${++autoId}`,
     url,

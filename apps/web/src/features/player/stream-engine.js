@@ -207,20 +207,21 @@ export const StreamEngine = {
     const url = String(raw?.url || raw?.link || '')
     if (!url) return null
     /*
-     * A BEÁGYAZÁST NEM LEHET A CÍMBŐL FELISMERNI, ezért a szerver mondja meg.
+     * A SZERVER BEJELENTÉSE ERŐSEBB, MINT A CÍMBŐL VALÓ TALÁLGATÁS.
      *
-     * Egy `https://megaplay.buzz/stream/s-2/169846/sub` cím semmiben nem
-     * különbözik egy közvetlen videófájltól — a `classify()` `direct`-nek
-     * venné, a natív út pedig egy HTML-lapot töltene a `<video>`-ba: néma
-     * fekete doboz, hibaüzenet nélkül. A fajtát tehát az adja, aki tudja.
+     * A `classify()` a kiterjesztésből dolgozik, és ez sok címnél nem
+     * működik. Mérve, valódi Firefoxban, egy élő AnimeParadise manifeszten
+     * (`…/m3u8?url=<token>` — nincs `.m3u8` kiterjesztés): a cím `direct`-nek
+     * minősült, a natív motorhoz került, és `SOURCE_UNSUPPORTED`-del
+     * elbukott — miközben ugyanazt a címet a HLS motor hibátlanul
+     * lejátszotta.
      *
-     * CSAK AZ `embed` JÖHET KÍVÜLRŐL, és csak ez az egy. A néző által
-     * beillesztett rekord nem hordoz `kind` mezőt (lásd a `watch.js`
-     * `manual` ágát), tehát ezen az úton nem lehet tetszőleges címet
-     * `iframe`-be juttatni. A tényleges kapu a szerveren van: az
-     * engedélyezett gazdagépek listáját az `embed-url.ts` őrzi.
+     * CSAK A SZERVERTŐL fogadjuk el. A néző által beillesztett rekord nem
+     * hordoz `kind` mezőt (lásd a `watch.js` `manual` ágát), tehát ezen az
+     * úton nem lehet motort választatni vagy `iframe`-et kikényszeríteni.
      */
-    const kind = raw?.kind === 'embed' ? 'embed' : this.classify(url)
+    const DECLARED = { hls: 'hls', dash: 'dash', mp4: 'direct', embed: 'embed' }
+    const kind = (typeof raw?.kind === 'string' && DECLARED[raw.kind]) || this.classify(url)
     const container = raw?.container ? String(raw.container).slice(0, 60) : null
     const { playable, reason } = this.playability(kind, container)
 
