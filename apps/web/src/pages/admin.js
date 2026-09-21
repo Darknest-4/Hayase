@@ -1420,18 +1420,24 @@ export const PageAdmin = {
       })), 'Nincs mérés ebben az időszakban.')
     }))
 
+    /*
+     * ÁLLAPOTLISTA, NEM RANGSOR — ugyanaz a hiba, mint a Rendszer fülön.
+     *
+     * Az `analyticsTable` számot vár a második oszlopban, és abból arányt
+     * számol. Az esemény neve („down", „up") szöveg, tehát `NaN` lett belőle
+     * a képernyőn. Mérve: amíg nem volt állapotváltozás, a tábla üres volt,
+     * és a hiba nem látszott — az első esemény hozta elő.
+     */
     lower.append(this.dashPanel({
       title: 'Állapotváltozások',
       sub: 'mikor esett le és mikor jött vissza',
-      body: this.analyticsTable(
-        (data.events ?? []).map(e => [
-          e.slug,
-          e.event,
-          [new Date(e.at).toLocaleString('hu-HU'),
-            e.latency_ms ? `${e.latency_ms} ms` : null,
-            e.detail || null].filter(Boolean).join(' · ')
-        ]),
-        { head: ['Szolgáltató', 'Esemény'], empty: 'Nem volt állapotváltozás ebben az időszakban.' })
+      body: this.statusList((data.events ?? []).map(e => ({
+        label: `${e.slug} — ${e.event}`,
+        tone: /down|fail|error/i.test(String(e.event)) ? 'bad' : 'ok',
+        detail: [new Date(e.at).toLocaleString('hu-HU'),
+          e.latency_ms ? `${e.latency_ms} ms` : null,
+          e.detail || null].filter(Boolean).join(' · ')
+      })), 'Nem volt állapotváltozás ebben az időszakban.')
     }))
     body.append(lower)
   },

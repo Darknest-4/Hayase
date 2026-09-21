@@ -195,6 +195,32 @@ describe('a statisztikai panel új füljei', { skip: REASON }, () => {
   })
 
   /*
+   * AZ ÁLLAPOTVÁLTOZÁSOK PANELJE SZÖVEGET MUTAT, NEM SZÁMOT.
+   *
+   * Ez a hiba sokáig REJTVE VOLT: amíg egyetlen szolgáltató sem esett le, a
+   * panel üres volt, és a NaN nem látszott. Az első állapotváltozás hozta
+   * elő. Ezért a teszt maga vet be egy eseményt — a rejtett hibát nem
+   * szabad a véletlenre bízni.
+   */
+  it('az állapotváltozások panelje nem ír NaN-t', async () => {
+    await adat()
+    await pool.query('DELETE FROM provider_events WHERE slug = $1', [SLUG])
+    await pool.query(
+      `INSERT INTO provider_events (slug, event, detail, latency_ms, at)
+       VALUES ($1, 'down', 'Missing Permissions', 8000, now() - interval '2 hours'),
+              ($1, 'up', NULL, 120, now() - interval '1 hour')`, [SLUG])
+    try {
+      await nyitFul('Szolgáltatók')
+      const k = await kepernyo()
+      assert.match(k.szoveg, /down|up/, 'nem jelenik meg az állapotváltozás')
+      assert.ok(!/NaN/.test(k.szoveg), `NaN az állapotváltozásoknál: ${k.szoveg.slice(0, 200)}`)
+      assert.ok(!/\[object /.test(k.szoveg), 'objektum szövegként')
+    } finally {
+      await pool.query('DELETE FROM provider_events WHERE slug = $1', [SLUG])
+    }
+  })
+
+  /*
    * NULLA KÉRÉSNÉL NINCS SZÁZALÉK. Egy „0% hiba" kártya azt állítaná, hogy
    * mérünk és minden rendben — pedig egyszerűen nincs adat.
    */
