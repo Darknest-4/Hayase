@@ -138,13 +138,28 @@ body::before {
 
 /* ===== main page area ===== */
 
+/*
+ * A LAP OSZLOP, HOGY A LÁBLÉC LE TUDJON MENNI AZ ALJÁRA.
+ *
+ * Eddig a lábléc egyszerűen a tartalom után jött, és egy rövid oldalon — egy
+ * hozzáférési kapun, egy üres listán, egy hibaüzeneten — a képernyő közepén
+ * lógott, alatta egy tenyérnyi üres feketeséggel. Nem hiba volt, de pontosan
+ * úgy néz ki, mint egy félig betöltött oldal.
+ *
+ * `min-height: 100%` a belső tartóra, `margin-top: auto` a láblécre: hosszú
+ * oldalon semmi nem változik, rövid oldalon a lábléc leül az aljára.
+ */
 .page {
+  display: flex;
+  flex-direction: column;
   flex-grow: 1;
   overflow-y: auto;
   overflow-x: clip;
   min-width: 0;
   scroll-behavior: smooth;
 }
+
+.page > .site-footer { margin-top: auto; }
 
 .page-pad { padding: var(--space-5) var(--space-6) var(--space-8); }
 

@@ -82,11 +82,9 @@ export const Onboarding = {
 
   // ---------------------------------------------------------------- trigger
 
-  /** Should the wizard run? Called once after boot. */
+  /** Should the wizard run? Called once after boot. (Jelenleg kikapcsolva) */
   due () {
-    if (this._open) return false
-    if (!Prefs) return false
-    return !Prefs.onboarded()
+    return false
   },
 
   /** Run it if it is due. Safe to call unconditionally. */

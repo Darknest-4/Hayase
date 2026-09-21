@@ -312,6 +312,19 @@ export function createDocument () {
     listeners: new Map(),
     createElement (tag) { return new MiniNode(tag, doc) },
     /*
+     * KERESÉS A DOKUMENTUMBAN.
+     *
+     * Az ELEMEKNEK volt `querySelector`-uk, a `document`-nek nem — az pedig
+     * egy külön objektum, nem `MiniNode`. Minden kód, ami
+     * `document.querySelectorAll(...)`-t hív (a router több helyen), ettől
+     * „is not a function"-nel hasalt el a csonkban, és a hiba nem is abban a
+     * modulban volt, amit épp teszteltünk.
+     *
+     * A `body`-ra delegálunk: a dokumentumban keresni annyi, mint a törzsben.
+     */
+    querySelector (selector) { return doc.body.querySelector(selector) },
+    querySelectorAll (selector) { return doc.body.querySelectorAll(selector) },
+    /*
      * Szövegcsomópont.
      *
      * A felület sok helyen `document.createTextNode(...)`-dal tesz szöveget

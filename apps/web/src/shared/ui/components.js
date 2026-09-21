@@ -204,7 +204,13 @@ export const C = {
         U.el('div', { class: 'footer-brand' }, [
           U.el('div', { class: 'footer-logo' }, [
             U.svg('<path d="M18 3.5A10 10 0 1 0 21 16 8 8 0 0 1 18 3.5Z" fill="currentColor" stroke="none"/>', 22),
-            U.el('span', { text: T('yume') })
+            /*
+             * A PÉLDÁNY NEVE, nem a designrendszeré. Bedrótozott „yume" volt
+             * — az oldalsáv logója közben a beállított nevet írja ki (lásd
+             * `router.init`, `.sidebar-logo-text`), tehát ugyanazon a
+             * képernyőn fent „animehub" állt, lent „yume".
+             */
+            U.el('span', { text: (site()?.name ?? 'Yume').toLowerCase() })
           ]),
           // The operator's tagline, if they set one in the admin panel — the
           // setting existed and was rendered nowhere, so the field silently did
@@ -245,7 +251,15 @@ export const C = {
             ['nav.community', '#/community', 'community'],
             ['nav.w2g', '#/w2g', 'w2g']
           ]],
-          ['footer.yume', [
+          /*
+           * AZ OSZLOP A PÉLDÁNY NEVÉT VISELI, nem a designrendszerét.
+           *
+           * A `footer.yume` kulcs a „Yume" szót adta, mert tulajdonnév, és a
+           * fordító szándékosan nem fordítja. Az animehub.hu-n viszont ettől
+           * a fejlécben „animehub" állt, a láblécben meg „Yume" — ugyanazon a
+           * képernyőn, két név.
+           */
+          [site()?.name ?? 'Yume', [
             ['nav.settings', '#/settings', 'settings'],
             ['nav.notifications', '#/notifications', 'notifications'],
             ['nav.themes', '#/themes', 'themes']
@@ -257,7 +271,15 @@ export const C = {
       ]),
       U.el('div', { class: 'footer-bottom' }, [
         U.el('span', { text: `© ${year} ${Copy?.footer?.brand ?? (site()?.name ?? 'Yume')} · ${T('footer.colophon')}` }),
-        U.el('span', { class: 'footer-credits', html: 'Anime data from <a href="https://anilist.co" target="_blank" rel="noopener">AniList</a>, <a href="https://jikan.moe" target="_blank" rel="noopener">Jikan</a> &amp; <a href="https://api.ani.zip" target="_blank" rel="noopener">ani.zip</a>' })
+        /*
+         * A FORRÁSMEGJELÖLÉS IS MAGYARUL. Ez a sor bedrótozott angol HTML
+         * volt egy magyar nyelvű oldal alján. A szolgáltatások NEVE marad
+         * (tulajdonnév), csak a köré írt mondat fordul.
+         */
+        U.el('span', {
+          class: 'footer-credits',
+          html: `${T('Anime data from')} <a href="https://anilist.co" target="_blank" rel="noopener">AniList</a>, <a href="https://jikan.moe" target="_blank" rel="noopener">Jikan</a> &amp; <a href="https://api.ani.zip" target="_blank" rel="noopener">ani.zip</a>`
+        })
       ])
     ])
   },

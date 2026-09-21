@@ -644,6 +644,11 @@ I18n.register('hu', {
   'Track, discover and watch anime — your list, your way.':
     'Kövesd, fedezd fel és nézd az animéket — a te listád, a te profiljaid, a te módodon.',
   'built on the Yume design system': 'a Yume designrendszerére építve',
+  // A kapu címének előtagja. Összefűzve kapja a szakasz nevét: „Belépés
+  // ehhez: Beállítások". Magyarul a kettőspont természetesebb, mint az
+  // angol elöljáró tükörfordítása.
+  'Sign in for': 'Belépés ehhez:',
+  'Anime data from': 'Az anime-adatok forrása:',
 
   // ---------------------------------------------------------------- varázsló
   'Welcome to Yume': 'Üdv a Yumén',

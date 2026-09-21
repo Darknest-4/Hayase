@@ -300,9 +300,21 @@ describe('egy űrlap van, nem három', () => {
       'a kártya megint saját regisztrációt csinál — ez volt a néma 403 forrása')
   })
 
+  /*
+   * AZ ÁGHOZ VÁGUNK, NEM KARAKTERSZÁMHOZ.
+   *
+   * Eddig egy fix 1800 karakteres ablak volt. Ez a fajta állítás azt méri,
+   * hogy milyen HOSSZÚ a kód, nem azt, hogy mit csinál: amikor a kapu címébe
+   * bekerült egy magyarázó megjegyzés, a keresett sor kicsúszott az ablakból,
+   * és a teszt egy tökéletesen helyes kódra bukott el.
+   */
   it('a hozzáférési kapu is a belépőlapra visz', () => {
     const s = forras('app/router.js')
-    const kapu = s.slice(s.indexOf("gate.kind === 'auth'"), s.indexOf("gate.kind === 'auth'") + 1800)
+    const kezd = s.indexOf("gate.kind === 'auth'")
+    assert.ok(kezd > 0, 'a kapu `auth` ága eltűnt a routerből')
+    // Az ág vége: a következő testvérág, vagy ha nincs, a fájl vége.
+    const veg = s.indexOf('} else if (', kezd + 1)
+    const kapu = s.slice(kezd, veg > 0 ? veg : s.length)
     assert.match(kapu, /#\/login\?next=/)
     assert.doesNotMatch(kapu, /C\.authCard/)
   })

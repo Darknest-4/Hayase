@@ -32,6 +32,22 @@ before(async () => {
   ;({ App } = await import('../src/app/router.js'))
 })
 
+/**
+ * Egy metódus TÖRZSE a forrásból — nem egy fix méretű ablak.
+ *
+ * A fix karakterszám azt méri, milyen HOSSZÚ a kód, nem azt, hogy mit
+ * csinál: amikor a láblécbe bekerült két magyarázó megjegyzés, a keresett
+ * hívás kicsúszott a 4000 karakteres ablakból, és a teszt egy tökéletesen
+ * helyes kódra bukott el. A metódus törzse a záró `  },` sorig tart — ez a
+ * behúzás a fájl egészében következetes.
+ */
+function torzs (src, fej) {
+  const kezd = src.indexOf(fej)
+  if (kezd < 0) throw new Error(`nincs ilyen metódus a forrásban: ${fej}`)
+  const veg = src.indexOf('\n  },', kezd)
+  return src.slice(kezd, veg > 0 ? veg : src.length)
+}
+
 const setup = ({ flags = {}, requireLogin = false, signedIn = true, perms = [] } = {}) => {
   mock.restoreAll()
   configure({
@@ -86,7 +102,7 @@ describe('a három navigációs felület', () => {
 
   it('a fejléc a közös predikátumot kérdezi, nem saját szabályt', () => {
     const router = forras('app/router.js')
-    const fn = router.slice(router.indexOf('applyNavVisibility ()'), router.indexOf('applyNavVisibility ()') + 900)
+    const fn = torzs(router, 'applyNavVisibility ()')
     assert.match(fn, /pageAvailable\(route\)/)
     assert.doesNotMatch(fn, /cfg\.flags\[/, 'megint maga olvassa a kapcsolótáblát')
     assert.doesNotMatch(fn, /requireLogin/, 'megint maga dönt a privát példányról')
@@ -94,7 +110,7 @@ describe('a három navigációs felület', () => {
 
   it('a lábléc is azt kérdezi, és nincs bedrótozott listája', () => {
     const components = forras('shared/ui/components.js')
-    const footer = components.slice(components.indexOf('  footer () {'), components.indexOf('  footer () {') + 4000)
+    const footer = torzs(components, '  footer () {')
     assert.match(footer, /pageAvailable\(route\)/)
     assert.doesNotMatch(footer, /col\(T\('footer\.discover'\), \[\[/,
       'visszakerült a bedrótozott linklista')

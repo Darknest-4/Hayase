@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>AnimeHub</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: #08090d;
+      color: #fff;
+      font-family: Arial, sans-serif;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+
+      height: 70px;
+
+      display: flex;
+      align-items: center;
+
+      padding: 0 30px;
+
+      background: rgba(8, 9, 13, .92);
+      border-bottom: 1px solid #20232d;
+
+      backdrop-filter: blur(15px);
+    }
+
+    .logo {
+      font-size: 24px;
+      font-weight: 900;
+      color: #fff;
+    }
+
+    main {
+      width: min(1500px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 40px 0 80px;
+    }
+
+    h1 {
+      margin: 0 0 30px;
+      font-size: 32px;
+    }
+
+    #status {
+      margin-bottom: 25px;
+      padding: 14px 16px;
+
+      border-radius: 10px;
+
+      background: #11131a;
+      border: 1px solid #242733;
+
+      color: #9ca3b5;
+    }
+
+    #status.error {
+      color: #ff8f8f;
+      border-color: #5b2727;
+    }
+
+    .grid {
+      display: grid;
+
+      grid-template-columns:
+        repeat(6, minmax(0, 1fr));
+
+      gap: 18px;
+    }
+
+    .card {
+      min-width: 0;
+
+      overflow: hidden;
+
+      cursor: pointer;
+
+      background: #11131a;
+
+      border: 1px solid #20232d;
+      border-radius: 14px;
+
+      transition:
+        transform .2s,
+        border-color .2s;
+    }
+
+    .card:hover {
+      transform: translateY(-5px);
+      border-color: #454b60;
+    }
+
+    .cover {
+      position: relative;
+
+      width: 100%;
+      aspect-ratio: 2 / 3;
+
+      background: #181b24;
+    }
+
+    .cover img {
+      width: 100%;
+      height: 100%;
+
+      display: block;
+
+      object-fit: cover;
+    }
+
+    .score {
+      position: absolute;
+
+      top: 8px;
+      right: 8px;
+
+      padding: 5px 7px;
+
+      border-radius: 7px;
+
+      background: rgba(0, 0, 0, .8);
+
+      color: #ffd86b;
+
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .content {
+      padding: 12px;
+    }
+
+    .title {
+      margin: 0;
+
+      font-size: 14px;
+      line-height: 1.4;
+
+      font-weight: 700;
+
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+
+      overflow: hidden;
+    }
+
+    .meta {
+      display: flex;
+      gap: 7px;
+
+      margin-top: 8px;
+
+      color: #818898;
+
+      font-size: 11px;
+    }
+
+    .load-more {
+      display: flex;
+      justify-content: center;
+
+      margin-top: 35px;
+    }
+
+    button {
+      padding: 12px 20px;
+
+      border: 0;
+      border-radius: 10px;
+
+      background: #7857ff;
+      color: #fff;
+
+      font-weight: 700;
+
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #896cff;
+    }
+
+    button:disabled {
+      opacity: .5;
+      cursor: default;
+    }
+
+    @media (max-width: 1200px) {
+      .grid {
+        grid-template-columns:
+          repeat(5, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 950px) {
+      .grid {
+        grid-template-columns:
+          repeat(4, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 700px) {
+      main {
+        width: calc(100% - 24px);
+        padding-top: 25px;
+      }
+
+      header {
+        padding: 0 15px;
+      }
+
+      .grid {
+        grid-template-columns:
+          repeat(2, minmax(0, 1fr));
+
+        gap: 12px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+<header>
+  <div class="logo">
+    AnimeHub
+  </div>
+</header>
+
+<main>
+
+  <h1>Animek</h1>
+
+  <div id="status">
+    API kapcsolat létrehozása...
+  </div>
+
+  <div
+    id="grid"
+    class="grid"
+  ></div>
+
+  <div class="load-more">
+    <button
+      id="loadMore"
+      type="button"
+    >
+      További animék
+    </button>
+  </div>
+
+</main>
+
+<script>
+"use strict";
+
+/*
+|--------------------------------------------------------------------------
+| AnimeHub API
+|--------------------------------------------------------------------------
+*/
+
+const API = "https://animehub.hu/v1/anime";
+
+
+/*
+|--------------------------------------------------------------------------
+| State
+|--------------------------------------------------------------------------
+*/
+
+let nextCursor = null;
+let loading = false;
+
+
+/*
+|--------------------------------------------------------------------------
+| DOM
+|--------------------------------------------------------------------------
+*/
+
+const grid =
+  document.getElementById("grid");
+
+const status =
+  document.getElementById("status");
+
+const loadMoreButton =
+  document.getElementById("loadMore");
+
+
+/*
+|--------------------------------------------------------------------------
+| Escape HTML
+|--------------------------------------------------------------------------
+*/
+
+function escapeHTML(value) {
+
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| API
+|--------------------------------------------------------------------------
+*/
+
+async function getAnime(cursor = null) {
+
+  let url =
+    `${API}?limit=30&nsfw=false`;
+
+  if (cursor) {
+
+    url +=
+      `&cursor=${encodeURIComponent(cursor)}`;
+  }
+
+  console.log(
+    "[AnimeHub] GET",
+    url
+  );
+
+  const response =
+    await fetch(url, {
+      method: "GET",
+
+      headers: {
+        "Accept": "application/json"
+      }
+    });
+
+  console.log(
+    "[AnimeHub] HTTP",
+    response.status
+  );
+
+  const json =
+    await response.json();
+
+  console.log(
+    "[AnimeHub] Response",
+    json
+  );
+
+  if (!response.ok) {
+
+    throw new Error(
+      json?.detail ||
+      json?.title ||
+      `HTTP ${response.status}`
+    );
+  }
+
+  return json;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Render
+|--------------------------------------------------------------------------
+*/
+
+function renderAnime(anime) {
+
+  if (!anime) {
+    return "";
+  }
+
+  /*
+   * Az API valódi mezői:
+   *
+   * id
+   * canonical_title
+   * average_score
+   * popularity
+   * cover_key
+   * banner_key
+   * format
+   * status
+   * season_year
+   * episode_count
+   */
+
+  const id =
+    anime.id;
+
+  const title =
+    anime.canonical_title ||
+    "Ismeretlen anime";
+
+  const cover =
+    anime.cover_key;
+
+  const score =
+    anime.average_score;
+
+  const year =
+    anime.season_year;
+
+  const format =
+    anime.format;
+
+  const episodes =
+    anime.episode_count;
+
+
+  /*
+   * Ha nincs UUID, ne rendereljük.
+   */
+
+  if (!id) {
+
+    console.warn(
+      "Anime ID hiányzik:",
+      anime
+    );
+
+    return "";
+  }
+
+
+  return `
+    <article
+      class="card"
+      data-id="${escapeHTML(id)}"
+    >
+
+      <div class="cover">
+
+        <img
+          src="${escapeHTML(cover || "")}"
+          alt="${escapeHTML(title)}"
+          loading="lazy"
+        >
+
+        ${
+          score
+            ? `
+              <div class="score">
+                ★ ${escapeHTML(score)}
+              </div>
+            `
+            : ""
+        }
+
+      </div>
+
+      <div class="content">
+
+        <h2 class="title">
+          ${escapeHTML(title)}
+        </h2>
+
+        <div class="meta">
+
+          ${
+            year
+              ? `<span>${escapeHTML(year)}</span>`
+              : ""
+          }
+
+          ${
+            format
+              ? `<span>${escapeHTML(format)}</span>`
+              : ""
+          }
+
+          ${
+            episodes
+              ? `<span>${escapeHTML(episodes)} ep.</span>`
+              : ""
+          }
+
+        </div>
+
+      </div>
+
+    </article>
+  `;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Load
+|--------------------------------------------------------------------------
+*/
+
+async function loadAnime() {
+
+  if (loading) {
+    return;
+  }
+
+  loading = true;
+
+  loadMoreButton.disabled =
+    true;
+
+  status.className = "";
+
+  status.textContent =
+    "Animék betöltése...";
+
+
+  try {
+
+    const result =
+      await getAnime(
+        nextCursor
+      );
+
+
+    /*
+     * A TE API-D konkrét response-a:
+     *
+     * {
+     *   data: [...],
+     *   nextCursor: "..."
+     * }
+     */
+
+    const animeList =
+      Array.isArray(result.data)
+        ? result.data
+        : [];
+
+
+    console.log(
+      "[AnimeHub] Anime count:",
+      animeList.length
+    );
+
+
+    if (
+      !animeList.length &&
+      !nextCursor
+    ) {
+
+      status.textContent =
+        "Az API sikeresen válaszolt, de nincs anime a data tömbben.";
+
+      return;
+    }
+
+
+    /*
+     * Kártyák létrehozása.
+     */
+
+    const html =
+      animeList
+        .map(renderAnime)
+        .join("");
+
+
+    /*
+     * Első oldal
+     */
+
+    if (!nextCursor) {
+
+      grid.innerHTML =
+        html;
+
+    } else {
+
+      grid.insertAdjacentHTML(
+        "beforeend",
+        html
+      );
+    }
+
+
+    /*
+     * Cursor mentése.
+     */
+
+    nextCursor =
+      result.nextCursor ||
+      null;
+
+
+    status.textContent =
+      `${document.querySelectorAll(".card").length} anime betöltve.`;
+
+
+    /*
+     * Ha nincs következő oldal,
+     * kikapcsoljuk a gombot.
+     */
+
+    if (!nextCursor) {
+
+      loadMoreButton.disabled =
+        true;
+
+      loadMoreButton.textContent =
+        "Nincs több anime";
+
+    } else {
+
+      loadMoreButton.disabled =
+        false;
+
+      loadMoreButton.textContent =
+        "További animék";
+    }
+
+
+  } catch (error) {
+
+    console.error(
+      "[AnimeHub] API ERROR",
+      error
+    );
+
+    status.className =
+      "error";
+
+    status.innerHTML = `
+      API hiba:
+      <strong>
+        ${escapeHTML(error.message)}
+      </strong>
+    `;
+
+  } finally {
+
+    loading = false;
+
+    if (nextCursor) {
+      loadMoreButton.disabled =
+        false;
+    }
+  }
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Card click
+|--------------------------------------------------------------------------
+*/
+
+grid.addEventListener(
+  "click",
+  event => {
+
+    const card =
+      event.target.closest(".card");
+
+    if (!card) {
+      return;
+    }
+
+    const id =
+      card.dataset.id;
+
+    /*
+     * Itt már biztosan a valódi UUID
+     * kerül felhasználásra.
+     */
+
+    console.log(
+      "[AnimeHub] Selected anime:",
+      id
+    );
+
+    /*
+     * A detail endpoint:
+     *
+     * /v1/anime/{UUID}
+     */
+
+    if (!id) {
+      return;
+    }
+
+    window.location.href =
+      `/anime/${encodeURIComponent(id)}`;
+  }
+);
+
+
+/*
+|--------------------------------------------------------------------------
+| Load more
+|--------------------------------------------------------------------------
+*/
+
+loadMoreButton.addEventListener(
+  "click",
+  () => {
+
+    loadAnime();
+
+  }
+);
+
+
+/*
+|--------------------------------------------------------------------------
+| START
+|--------------------------------------------------------------------------
+*/
+
+loadAnime();
+
+</script>
+
+</body>
+</html>

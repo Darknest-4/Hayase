@@ -216,7 +216,47 @@ export const App = {
     document.getElementById('page')?.prepend(banner)
   },
 
+  /**
+   * A KRITIKUS BOOTSTRAP ÁLLAPOTA.
+   *
+   *   'pending'  a konfiguráció még úton van — útvonalat feloldani MÉG NEM
+   *              szabad, mert a kapu nem tud dönteni;
+   *   'ready'    megjött;
+   *   'failed'   nem jött meg, és nem is fog — a lap ettől még működjön.
+   *
+   * MIÉRT KELL. A `_gateCheck` eddig egyetlen `if (!cfg)` ággal kezelte a
+   * „nincs még meg" és a „nem érhető el" esetet, és mindkettőre átengedett.
+   * A második szándék volt (egy elérhetetlen háttértől ne álljon meg az
+   * egész oldal), az elsőt viszont MINDEN indulás eltalálja — és az
+   * eredménye mérhető volt:
+   *
+   *   kijelentkezve a `#/home`-ra érkezve a kezdőlap lefutott, elindított
+   *   TIZENEGY `/v1/anime/` lekérdezést, mind a tizenegy 401-gyel jött
+   *   vissza, aztán a konfiguráció megérkezett, a kapu döntött, és a
+   *   kezdőképernyő kicserélte az egészet
+   *
+   * Vagyis: dupla renderelés, tizenegy fölösleges és jogosulatlan kérés, és
+   * a végén a cím `#/home` maradt, miközben a látogató a kezdőképernyőt
+   * nézte — egy frissítés, egy könyvjelző vagy egy megosztott link mind
+   * rossz helyre mutatott.
+   */
+  _boot: 'pending',
+
   async navigate () {
+    /*
+     * ELŐBB A KRITIKUS BOOTSTRAP, UTÁNA AZ ELSŐ ÚTVONAL.
+     *
+     * Az `init()` több olyat is elindít, ami navigálni akar, mielőtt a
+     * konfiguráció megjönne — a karbantartás-figyelő első válasza, egy
+     * nyelvváltás, egy `hashchange`. Amíg a bootstrap tart, ezek nem
+     * rajzolnak: a `booting` váz marad a képen, és az `init()` végén egyetlen
+     * navigáció rajzol egyszer, a helyes kerettel.
+     *
+     * Ez nem késleltetés: ugyanaz a `loadConfig()` fut, ugyanannyi ideig. A
+     * különbség az, hogy nem rajzolunk ki egy oldalt, amit utána eldobunk.
+     */
+    if (this._boot === 'pending') return
+
     const gen = ++this._navGen
     const { route, arg, params } = this.parseHash()
     if (this.REDIRECTS[route]) { window.location.replace(this.REDIRECTS[route]); return }
@@ -300,6 +340,28 @@ export const App = {
       return
     }
 
+    /*
+     * A NEM LÉTEZŐ CÍM ELŐBB VAN, MINT A KAPU.
+     *
+     * A router lentebb ki is mondja, miért: egy holt hivatkozásnak meg kell
+     * mondania, hogy holt — különben minden elírás, minden átnevezett
+     * útvonal, minden elavult könyvjelző úgy fest, mintha működött volna.
+     *
+     * A sorrend viszont visszahozta ugyanezt a hibát: zárt példányon a kapu
+     * ELŐBB döntött, és a `#/nincs-ilyen-oldal` a KEZDŐKÉPERNYŐT kapta, nem
+     * egy hibát. Élesben lemérve.
+     *
+     * Ez nem szivárogtat: az útvonalak listája a kliens kódjában amúgy is
+     * ott van, tehát attól, hogy egy nem létező címre „nincs ilyen"-t
+     * mondunk, senki nem tud meg semmit, amit ne tudhatna.
+     */
+    if (!this.routes[route]) {
+      this.applyLayout(route, { reveal: true })
+      this._renderGate(page, { kind: 'not-found' }, route, arg)
+      if (!this.CHROMELESS.includes(route)) page.append(C.footer())
+      return
+    }
+
     // feature-flag / access gate (DB-driven site config)
     const gate = this._gateCheck(route)
     if (!gate.ok) {
@@ -324,6 +386,8 @@ export const App = {
      */
     this.applyLayout(route, { reveal: true })
 
+    // A nem létező címet fent már elkaptuk, a kapu ELŐTT — ez itt csak az
+    // öv a nadrágtartó mellé.
     const handler = this.routes[route]
     if (!handler) {
       this._renderGate(page, { kind: 'not-found' }, route, arg)
@@ -460,8 +524,14 @@ export const App = {
       }
     }
 
-    // Backend unreachable: the rest of the site stays usable, the privileged
-    // routes above have already been refused.
+    /*
+     * A HÁTTÉR NEM ÉRHETŐ EL: a lap többi része maradjon használható — a
+     * jogosultsághoz kötött útvonalakat fent már visszautasítottuk.
+     *
+     * Ez az ág MOSTANTÓL CSAK EZT JELENTI. Korábban a „még nem töltődött be"
+     * állapot is ide esett, és ugyanezt a választ kapta; azt most a
+     * `navigate()` bootstrap-őre fogja meg, tehát ide már nem juthat el.
+     */
     if (!cfg) return privileged ? { ok: false, kind: 'permission' } : { ok: true }
 
     if (cfg.site.requireLogin && !signedIn && !this._gateExempt.includes(route)) {
@@ -556,7 +626,21 @@ export const App = {
         // `gate.flag?.label` rather than `gate.flag.label`: a kind that
         // arrives without a flag must degrade to a plainer sentence, not throw
         // inside the renderer and leave the viewer a blank page.
-        U.el('h1', { class: 'gate-title', text: gate.flag ? `Sign in for ${gate.flag.label}` : T('Sign in to continue') }),
+        /*
+         * EZ A SOR SOSEM MENT ÁT A FORDÍTÓN.
+         *
+         * Sablonszöveg volt — `` `Sign in for ${...}` `` —, tehát a `T()` meg
+         * sem látta, és egy magyar nyelvű példányon angolul jelent meg:
+         * „Sign in for Beállítások". A másik ág ugyanebben a sorban rendesen
+         * fordítva volt, tehát a hiba pont ott ült, ahol a kettő találkozik.
+         *
+         * Összefűzés, nem behelyettesítés: a `T()` nem tud helyőrzőt, és egy
+         * kétszavas előtag nem indokol új fordítómotort.
+         */
+        U.el('h1', {
+          class: 'gate-title',
+          text: gate.flag ? `${T('Sign in for')} ${gate.flag.label}` : T('Sign in to continue')
+        }),
         U.el('p', { class: 'gate-sub', text: T('This section needs a signed-in account.') }),
         U.el('div', { class: 'gate-actions' }, [
           U.el('a', { class: 'btn btn-primary', href: `#/login?next=${encodeURIComponent(back)}` },
@@ -657,7 +741,21 @@ export const App = {
   },
 
   async loadConfig () {
-    this.config = await YumeAPI.config()
+    /*
+     * A HIBA ITT ÁLL MEG, nem az `init()`-ben.
+     *
+     * Eddig egy elhasalt kérés kidobta az `init()` egészét, tehát a
+     * `navigate()` a végén SOSEM futott le — a lapot csak az menthette meg,
+     * hogy egy korábbi, kapu nélküli navigáció már rajzolt valamit. Ez a
+     * fordítottja annak, amit akartunk: a védelem múlott a véletlenen.
+     */
+    try {
+      this.config = await YumeAPI.config()
+      this._boot = 'ready'
+    } catch (error) {
+      this._boot = 'failed'
+      console.error('a példány beállítása nem tölthető be; a lap korlátozottan működik', error)
+    }
     this.applyLanguagePolicy()
     // The account's own profile row, which is where the picture lives. Best
     // effort: a viewer who is signed out, or an instance that cannot answer,
