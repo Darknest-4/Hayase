@@ -221,6 +221,39 @@ describe('a karbantartási oldal', () => {
     page.destroy()
   })
 
+  /*
+   * A LEJÁTSZÓ A KÁRTYA TARTALMA, ÉS A SZÖVEG UTÁN JÖN.
+   *
+   * Korábban két külön `append` töltötte ugyanazt a kártyát: a lejátszó
+   * feljebb került be, mint a fejléc és a cím, tehát a videó állt legfelül, a
+   * „Karbantartás alatt vagyunk" pedig alatta. A néző előbb azt akarja tudni,
+   * mi történik.
+   */
+  it('a lejátszó a kártyában van, a cím és az üzenet után', () => {
+    const page = createMaintenancePage(
+      { ...status, video: { url: '/x.mp4', type: 'video/mp4' } }, {})
+    const card = page.node.querySelector('.mnt-card')
+    const order = card.children.map(child => child.className)
+
+    assert.ok(order.includes('mnt-player mnt-maintenance-player'),
+      `a lejátszó nincs a kártyában: ${order.join(', ')}`)
+    const player = order.findIndex(name => name.startsWith('mnt-player'))
+    assert.ok(player > order.indexOf('mnt-title'), 'a lejátszó megelőzi a címet')
+    assert.ok(player > order.indexOf('mnt-message'), 'a lejátszó megelőzi az üzenetet')
+    page.destroy()
+  })
+
+  /*
+   * A lejátszó a kártyán BELÜL van, nem a lap gyökerén — utóbbi a
+   * háttérréteg helye lenne.
+   */
+  it('a lap gyökerének egyetlen gyereke a kártya', () => {
+    const page = createMaintenancePage(
+      { ...status, video: { url: '/x.mp4', type: 'video/mp4' } }, {})
+    assert.deepEqual(page.node.children.map(child => child.className), ['mnt-card'])
+    page.destroy()
+  })
+
   it('a szétbontás nem hagy időzítőt', () => {
     const before = process.getActiveResourcesInfo().filter(name => name === 'Timeout').length
     const page = createMaintenancePage(status, {})
@@ -264,14 +297,27 @@ describe('a karbantartás-lejátszó', () => {
     assert.equal(createMaintenancePlayer(asset, { enabled: false }).node, null)
   })
 
-  it('háttérmódban néma, ismétlő, és a felolvasó elől rejtett', () => {
+  /*
+   * NINCS HÁTTÉRMÓD — és ez a teszt a korábbi ellentéte.
+   *
+   * A lejátszónak volt egy `mode: 'background'` ága: csupasz `<video>`,
+   * némán, hurokban, `aria-hidden`-nel. A karbantartási videó azóta TARTALOM:
+   * a kártyában áll, saját vezérlőkkel, és a néző indítja.
+   *
+   * A régi módot kérve sem kaphat vissza senki háttérréteget: ez a vizsgálat
+   * pont azzal a beállítással megy, ami korábban azt adta.
+   */
+  it('háttérmódot kérve is előtérbeli lejátszót kapunk', () => {
     const player = createMaintenancePlayer(asset, { mode: 'background' })
-    const video = player.node
-    assert.equal(video.tagName, 'VIDEO')
-    assert.equal(video.muted, true)
-    assert.equal(video.loop, true)
-    assert.equal(video.playsInline, true)
-    assert.equal(video.getAttribute('aria-hidden'), 'true')
+    assert.notEqual(player.node.tagName, 'VIDEO', 'csupasz videóelem = háttérréteg')
+    assert.ok(player.node.classList.contains('mnt-player'))
+
+    const video = player.node.querySelector('video')
+    assert.ok(video, 'nincs videóelem a lejátszóban')
+    assert.notEqual(video.getAttribute('aria-hidden'), 'true',
+      'a videó tartalom, nem dekoráció — a felolvasó elől nem rejtjük el')
+    assert.notEqual(video.loop, true, 'a hurok a háttérvideók sajátja')
+    assert.ok(player.node.querySelector('.mnt-controls'), 'nincsenek vezérlők')
     player.destroy()
   })
 
@@ -304,8 +350,8 @@ describe('a karbantartás-lejátszó', () => {
 
   it('a forrás típusa is kimegy, nem csak a cím', () => {
     // Enélkül a böngészőnek találgatnia kell, és néha nem is próbálkozik.
-    const player = createMaintenancePlayer({ url: '/x.webm', type: 'video/webm' }, { mode: 'background' })
-    const source = player.node.children.find(child => child.tagName === 'SOURCE')
+    const player = createMaintenancePlayer({ url: '/x.webm', type: 'video/webm' })
+    const source = player.node.querySelector('source')
     assert.equal(source.type, 'video/webm')
     player.destroy()
   })

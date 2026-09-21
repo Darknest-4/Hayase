@@ -130,6 +130,29 @@ export function renderStatusPage (page: StatusPage): string {
     : null
   const autoRetry = page.autoRetry !== false && retrySeconds !== null
 
+  /*
+   * A VIDEÓ LEJÁTSZÓ — natív vezérlőkkel, szándékosan.
+   *
+   * Ez az oldal SZKRIPT NÉLKÜLI, és nem véletlenül: a `script-src 'self'`
+   * megfogja a beágyazott szkriptet, és ez a lap pont akkor megy ki, amikor a
+   * kiszolgáló bajban van — egy külön JS-fájlra sem támaszkodhat. Saját
+   * vezérlősáv tehát nincs mivel megépíteni.
+   *
+   * A `controls` viszont mindent hoz, amit egy néző kér, és minden
+   * böngészőben ugyanúgy: indítás/szünet, tekerés, hangerő és némítás, teljes
+   * képernyő, és ahol van, kép a képben. Egy PS5 vagy egy régebbi mobil
+   * böngészőben ez az EGYETLEN, ami biztosan működik.
+   *
+   * Amit szándékosan NEM teszünk rá: `autoplay`, `loop`, `muted`,
+   * `aria-hidden`. A videó tartalom — a néző indítja, ha akarja.
+   */
+  const video = page.video
+    ? '<video class="video" controls playsinline preload="metadata"' +
+      (page.video.poster ? ` poster="${escape(page.video.poster)}"` : '') +
+      `><source src="${escape(page.video.url)}" type="${escape(page.video.type)}">` +
+      'A böngésződ nem tudja lejátszani ezt a videót.</video>'
+    : ''
+
   return `<!doctype html>
 <html lang="hu">
 <head>
@@ -161,16 +184,25 @@ ${autoRetry ? `<meta http-equiv="refresh" content="${retrySeconds}">` : ''}
     pointer-events: none;
   }
   main { position: relative; max-width: 34rem; width: 100%; }
-  /* A HÁTTÉRVIDEÓ nem tartalom: elsötétítve, a szöveg mögött, és a
-     felolvasó elől elrejtve. Ha nem indul el, semmi nem hiányzik. */
-  .bg {
-    position: fixed; inset: 0; width: 100%; height: 100%;
-    object-fit: cover; opacity: .22; filter: saturate(.75);
-    pointer-events: none; z-index: 0;
+  /* A VIDEO TARTALOM, NEM DEKORACIO.
+   *
+   * Korabban egy "position: fixed; inset: 0" hatterreteg volt, 22%-os
+   * atlatszosaggal, aria-hidden-nel es pointer-events: none-nal - tehat se
+   * megallitani, se hangositani, se teljes kepernyore tenni nem lehetett, es
+   * a felolvaso szamara nem is letezett. A kartya SZOVEGE mogott futott.
+   *
+   * Itt semmi nem pozicional: a video a kartya normal tartalmi folyamaban
+   * all, a sajat savaranyaban. Nincs position, nincs z-index, nincs inset,
+   * nincs transform - tehat nem is nyit kulon retegzesi kornyezetet.
+   *
+   * (Ekezet nelkul: ez a blokk egy sablonliteralon belul all, es a
+   * visszafele idezojel lezarna.)
+   */
+  .video {
+    display: block; width: 100%; aspect-ratio: 16 / 9;
+    margin: 0 0 20px; background: #000;
+    border: 1px solid var(--border); border-radius: 12px;
   }
-  /* Mozgásmentes módban EGYÁLTALÁN NEM jelenik meg. A 19. pont kéri, és egy
-     hurokban futó háttérvideó pont az, amitől valakinek rosszul lehet. */
-  @media (prefers-reduced-motion: reduce) { .bg { display: none; } }
   .logo {
     font-size: clamp(1.6rem, 6vw, 2.2rem); font-weight: 900;
     letter-spacing: .24em; margin: 0 0 28px; color: var(--fg);
@@ -207,16 +239,12 @@ ${autoRetry ? `<meta http-equiv="refresh" content="${retrySeconds}">` : ''}
 </style>
 </head>
 <body>
-${page.video
-  ? `<video class="bg" autoplay muted loop playsinline preload="metadata" aria-hidden="true" tabindex="-1"${
-      page.video.poster ? ` poster="${escape(page.video.poster)}"` : ''
-    }><source src="${escape(page.video.url)}" type="${escape(page.video.type)}"></video>`
-  : ''}
 <main>
   <p class="logo">YUME</p>
   <div class="card">
     <h1>${escape(page.title)}</h1>
     <p>${escape(page.message)}</p>
+    ${video}
     ${delay ? `<p class="when">Próbáld újra <b>${escape(delay)}</b> múlva</p>` : ''}
     <p><a class="retry" href="${escape(page.retryHref ?? '')}" rel="nofollow">Újratöltés</a></p>
     ${page.requestId ? `<p class="rid">Kérésazonosító: ${escape(page.requestId)}</p>` : ''}

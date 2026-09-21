@@ -17,18 +17,6 @@
   overflow: hidden;
 }
 
-/* ---- háttérvideó ---- */
-.mnt-video-bg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 0.2;
-  filter: saturate(0.7);
-  pointer-events: none;
-}
-
 .mnt-card {
   position: relative;
   width: 100%;
@@ -119,14 +107,27 @@
 .mnt-retry:disabled { opacity: 0.6; cursor: default; }
 .mnt-retry:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
 
-/* ---- a karbantartás-lejátszó ---- */
+/* ---- a karbantartás-lejátszó ----
+ *
+ * A KÁRTYA TARTALMA, NEM HÁTTÉR. Itt korábban egy `.mnt-video-bg` szabály is
+ * állt — `position: absolute; inset: 0; opacity: .2` —, ami háttérréteggé
+ * tette volna a videót. A lejátszó soha nem tette fel ezt az osztályt, tehát
+ * halott szabály volt; kikerült, mert egy ilyen szabály puszta létezése
+ * is azt sugallja, hogy a videónak háttérként is van értelme.
+ *
+ * A `position: relative` a vezérlősáv és a teljes képernyő miatt kell (a
+ * `requestFullscreen` ezen az elemen fut), nem rétegzés miatt: nincs
+ * `z-index`, nincs `inset`, és semmi nem lóg ki a folyamból.
+ */
 .mnt-player {
   position: relative;
-  margin-top: var(--space-5);
+  margin: var(--space-5) 0;
   overflow: hidden;
   background: var(--ink-black);
   border-radius: var(--radius-md);
 }
+/* A videó tartója. Saját sor a folyamban, nem réteg a szöveg mögött. */
+.mnt-player-video { display: block; width: 100%; }
 .mnt-player-failed .mnt-controls { display: none; }
 
 .mnt-video { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; }
@@ -241,7 +242,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mnt-video-bg { display: none; }
   .mnt-progress-fill { transition: none; }
 }
 
