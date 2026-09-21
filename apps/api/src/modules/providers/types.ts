@@ -17,7 +17,24 @@
  * `.mp4` közvetlen fájl. A lejátszónak ez dönti el, melyik motort indítja, és
  * ez az EGYETLEN dolog, amit tudnia kell a forrás eredetéről.
  */
-export type SourceKind = 'hls' | 'dash' | 'mp4'
+export type SourceKind = 'hls' | 'dash' | 'mp4' | 'embed'
+
+/*
+ * AZ `embed` NEM FOLYAM, HANEM EGY IDEGEN LEJÁTSZÓ LAPJA.
+ *
+ * A többi fajta egy médiafájlra mutat, amit a saját lejátszónk dekódol. Az
+ * `embed` egy HTML-lap címe, amit `iframe`-be teszünk — a videót a harmadik
+ * fél lejátszója viszi, mi csak helyet adunk neki.
+ *
+ * KÜLÖN FAJTA KELL RÁ, mert a különbség a lejátszóban ÉLETBEVÁGÓ. Ha egy
+ * beágyazó lap címe `mp4`-ként jönne, a `<video>` egy HTML-lapot próbálna
+ * dekódolni: néma fekete doboz, a naplóban „sikeres feloldás" felirattal.
+ *
+ * AMI AZ `embed`-re NEM IGAZ, és amire a hívóknak figyelniük kell:
+ *   * nincs felbontása (`quality`) — azt az idegen lejátszó dönti el,
+ *   * a `headers` értelmetlen: az `iframe` kérését a böngésző küldi, nem mi,
+ *   * nem lehet rá minőségváltás, feliratbetöltés vagy haladásmérés.
+ */
 
 /** Szinkron/felirat változat. `raw` = nincs se felirat, se szinkron. */
 export type SourceVariant = 'sub' | 'dub' | 'raw'

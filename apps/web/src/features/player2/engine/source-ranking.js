@@ -18,6 +18,14 @@ export const SOURCE_KIND = Object.freeze({
   HLS: 'hls',
   DASH: 'dash',
   MAGNET: 'magnet',
+  /**
+   * IDEGEN LEJÁTSZÓ EGY KERETBEN — nem folyam.
+   *
+   * Nem a `classify()` adja: egy beágyazó lap címe semmiben nem különbözik
+   * egy videófájlétól, tehát a címből nem látszik. A szerver mondja meg, és
+   * a `normalise()` fogadja el tőle.
+   */
+  EMBED: 'embed',
   UNKNOWN: 'unknown'
 })
 
@@ -66,7 +74,18 @@ export function normalise (raw, source = {}) {
   const url = String(raw.url || raw.link || raw.ref || '').trim()
   if (!url) return null
 
-  const kind = classify(url)
+  /*
+   * A BEJELENTETT `embed` FELÜLÍRJA A CÍMBŐL VALÓ FELISMERÉST.
+   *
+   * A `classify()` egy `https://...` címet `direct`-nek vesz, és a natív
+   * motor egy HTML-lapot töltene a `<video>`-ba — néma fekete doboz. A
+   * beágyazás tényét csak a szerver tudja, tehát tőle fogadjuk el.
+   *
+   * CSAK EZ AZ EGY FAJTA JÖHET KÍVÜLRŐL. A néző által beillesztett rekord
+   * nem hordoz `kind` mezőt, tehát ezen az úton nem lehet tetszőleges címet
+   * `iframe`-be juttatni; a tényleges kapu a szerver `embed-url.ts`-e.
+   */
+  const kind = raw.kind === SOURCE_KIND.EMBED ? SOURCE_KIND.EMBED : classify(url)
   return {
     id: raw.id ?? `cand-${++autoId}`,
     url,

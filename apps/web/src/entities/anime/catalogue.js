@@ -254,6 +254,18 @@ export const Catalogue = {
       // The engine's own shape: `url` is what it normalises from, and the
       // source block is what the player shows as the provider's name.
       url: row.ref,
+      /*
+       * A FAJTÁT A SZERVERTŐL VESSZÜK ÁT, nem a címből találjuk ki.
+       *
+       * Egy beágyazó lap címe (`https://.../stream/169846/sub`) semmiben
+       * nem különbözik egy közvetlen videófájlétól, tehát a motor
+       * `classify()`-a `direct`-nek venné, és egy HTML-lapot töltene a
+       * `<video>`-ba: néma fekete doboz, hibaüzenet nélkül.
+       *
+       * Ez a mező KORÁBBAN ELVESZETT itt — a szerver küldte, a leképezés
+       * nem adta tovább.
+       */
+      kind: row.kind ?? null,
       title: row.title ?? row.provider ?? 'Registered source',
       quality: row.resolution ? Number(row.resolution) : null,
       variant: row.variant ?? null,

@@ -10,6 +10,8 @@
 
 import { PlayerError } from '../core/player-errors.js'
 import { SOURCE_KIND } from './source-ranking.js'
+import { attachEmbed, sandboxFor } from '../../player/embed-frame.js'
+import { featureOn, flagDeclared } from '../../../shared/lib/site-config.js'
 
 /**
  * Mi számít bizonyítéknak arra, hogy egy forrás MŰKÖDIK.
@@ -153,6 +155,36 @@ export const dashEngine = {
   }
 }
 
+/**
+ * Beágyazás: a videót az idegen lejátszó viszi, mi keretet adunk neki.
+ *
+ * NEM HASZNÁLJA AZ `awaitReady`-t, és ez a lényeg. Az a `<video>` elem
+ * `loadedmetadata`/`canplay` eseményére vár — egy `iframe`-nél ezek soha nem
+ * következnek be, mert a videó nem a mi elemünkben van. Ha ez a motor arra
+ * épülne, minden beágyazás az időtúllépésbe futna, és a néző azt olvasná,
+ * hogy „a folyam nem indult el időben", miközben a kép mellette megy.
+ */
+export const embedEngine = {
+  name: 'embed',
+  canPlay: (candidate) => candidate.kind === SOURCE_KIND.EMBED,
+  attach: async (video, candidate, ctx = {}) => {
+    try {
+      // A homokozó feloldása KAPCSOLÓ MÖGÖTT van: alapból homokozunk.
+      const sandbox = sandboxFor({ flagDeclared, featureOn })
+      return await attachEmbed(
+        video,
+        candidate.url,
+        ctx.timeoutMs ? { timeoutMs: ctx.timeoutMs, sandbox } : { sandbox }
+      )
+    } catch (error) {
+      // A beágyazás bukása ÚJRAPRÓBÁLHATÓ hiba: a keret nem töltődött be
+      // időben, ami hálózati zavar is lehet. Nem `SOURCE_UNSUPPORTED` —
+      // az véglegesen letiltaná ezt a forrást.
+      throw new PlayerError('SOURCE_TIMEOUT', String(error?.message ?? error))
+    }
+  }
+}
+
 /** A magnet nem böngészőbe való, és ezt ki is mondjuk. */
 export const magnetEngine = {
   name: 'magnet',
@@ -162,7 +194,7 @@ export const magnetEngine = {
   }
 }
 
-const REGISTRY = [nativeEngine, hlsEngine, dashEngine, magnetEngine]
+const REGISTRY = [nativeEngine, hlsEngine, dashEngine, embedEngine, magnetEngine]
 
 /** Melyik motor viszi ezt a jelöltet. `null`, ha egyik sem. */
 export function engineFor (candidate, registry = REGISTRY) {

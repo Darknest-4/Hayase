@@ -21,7 +21,7 @@ import type {
 } from '../../src/modules/providers/types.ts'
 
 /** A `types.ts` zárt halmazai, EGY helyen kiírva. */
-export const SOURCE_KINDS = ['hls', 'dash', 'mp4'] as const
+export const SOURCE_KINDS = ['hls', 'dash', 'mp4', 'embed'] as const
 export const SOURCE_VARIANTS = ['sub', 'dub', 'raw'] as const
 export const SUBTITLE_KINDS = ['subtitles', 'captions'] as const
 export const SUBTITLE_FORMATS = ['vtt', 'ass', 'srt'] as const

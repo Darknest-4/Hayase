@@ -104,7 +104,21 @@ describe('a teljes lánc', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
     health.reset()
     resolveMod.clearCache()
     kapott = { ref: null, config: undefined }
-    await pool.query('DELETE FROM providers')
+    /*
+     * CSAK A SAJÁT SORAINKAT TÖRÖLJÜK.
+     *
+     * Itt `DELETE FROM providers` állt, és ez MÉRHETŐEN elrontott egy másik
+     * fájlt: a `provider-sources-endpoint` kikapcsolja a `yume-local`-t, majd
+     * azt várja, hogy ne jöjjön forrás. A sor hiánya viszont nem
+     * „kikapcsolva", hanem „alapértelmezés szerint BEkapcsolva" (lásd
+     * `setState` megjegyzését) — vagyis ez a törlés visszakapcsolta, és a
+     * másik teszt forrásokat kapott.
+     *
+     * A tesztfájlok külön folyamatban, de KÖZÖS ADATBÁZISON futnak. Egy
+     * globális tábla kiürítése ezért nem takarítás, hanem beavatkozás valaki
+     * más mérésébe.
+     */
+    await pool.query("DELETE FROM providers WHERE slug IN ('megfigyelo','jo','hibas')")
     registry.forget()
   })
 
@@ -200,7 +214,7 @@ describe('a teljes lánc', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
   it('hibás alakú beállítás nem dönti össze a láncot', async () => {
     registry.register(megfigyelo as never)
     for (const ertek of ['"csak egy szöveg"', '42', 'true', '[1,2,3]', 'null']) {
-      await pool.query('DELETE FROM providers')
+      await pool.query("DELETE FROM providers WHERE slug = 'megfigyelo'")
       await pool.query(
         `INSERT INTO providers (slug, enabled, priority, config) VALUES ('megfigyelo', true, 1, '${ertek}'::jsonb)`
       )

@@ -392,6 +392,24 @@ export const PageWatch = {
     const wanted = Prefs?.get('playback.variant') ?? 'any'
     const row = []
 
+    /*
+     * MEGMONDJUK A NÉZŐNEK, HA IDEGEN LEJÁTSZÓT LÁT.
+     *
+     * Nem apróság: a beágyazott lejátszóban a MI vezérlőink nem működnek —
+     * a billentyűparancsok, a minőségváltás, a feliratkapcsoló és a
+     * haladásmentés mind a saját `<video>`-nkra épül, ami ilyenkor nincs
+     * képen. Enélkül a néző azt hinné, hogy a lejátszó romlott el.
+     */
+    if (active?.kind === 'embed') {
+      row.push(U.el('div', { class: 'vbar-group' }, [
+        U.el('span', { class: 'vbar-label', text: T('Player') }),
+        U.el('span', {
+          class: 'vbar-note',
+          title: T('This episode plays in the provider\u2019s own player. The site\u2019s playback controls do not apply to it.')
+        }, [document.createTextNode(T('Embedded player'))])
+      ]))
+    }
+
     if (variants.length > 1) {
       row.push(U.el('div', { class: 'vbar-group' }, [
         U.el('span', { class: 'vbar-label', text: T('Version') }),

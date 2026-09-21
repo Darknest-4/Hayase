@@ -1,4 +1,5 @@
-import { noResult, type AnimeProvider, type EpisodeRef, type ProviderEpisode, type ProviderMatch, type ProviderResult, type SourceVariant } from '../types.ts'
+import { noResult, type AnimeProvider, type EpisodeRef, type ProviderEpisode, type ProviderMatch, type ProviderResult, type ProviderSource, type SourceVariant } from '../types.ts'
+import { checkEmbedUrl } from '../embed-url.ts'
 /*
  * A katalógus rekordja — az ÉLŐ válasz alapján, nem feltételezésből.
  *
@@ -51,6 +52,36 @@ interface Config {
   timeoutMs?: number
   searchPages?: number
   perPage?: number
+  /**
+   * Mely gazdagépek beágyazását fogadjuk el.
+   *
+   * BEÁLLÍTÁS, NEM KÓDBA ÉGETETT LISTA. A szolgáltató API-ja nem hirdeti
+   * meg, melyik lejátszót fogja használni — ma a `megaplay.buzz`-ra mutat,
+   * és ezt MÉRTÜK, nem feltételeztük. Ha holnap másikra vált, egy
+   * beállítás igazítja, nem egy kiadás.
+   *
+   * Az alapérték a ma ténylegesen visszaadott gazdagép. Üres lista esetén
+   * egyetlen beágyazás sem megy át — a szigorúbb irány a biztonságos.
+   */
+  embedHosts?: readonly string[]
+}
+
+/**
+ * A mai gazdagép, MÉRVE (2026-09-21, `/series/8717`):
+ *   `https://megaplay.buzz/stream/s-2/169846/sub`
+ *
+ * Nem vakon beírt érték: a `Config.embedHosts` és a
+ * `YUME_ANIKOTO_EMBED_HOSTS` környezeti változó egyaránt felülírja.
+ */
+const ALAP_EMBED_HOSTOK: readonly string[] = ['megaplay.buzz']
+
+function embedHosts (config: Config): readonly string[] {
+  if (config.embedHosts) return config.embedHosts
+  const kornyezet = process.env.YUME_ANIKOTO_EMBED_HOSTS
+  if (kornyezet && kornyezet.trim() !== '') {
+    return kornyezet.split(',').map(x => x.trim()).filter(Boolean)
+  }
+  return ALAP_EMBED_HOSTOK
 }
 function asString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0
@@ -230,12 +261,22 @@ function matchScore(
  * Nem azt mondja meg, hogy LEJÁTSZHATÓ — azt, hogy a szolgáltató szerint
  * létezik. A kettő különbsége a `resolve()` végén dől el.
  */
-function availableVariants(episode: AnikotoEpisode): SourceVariant[] {
+/**
+ * A BEÁGYAZHATÓ VÁLTOZATOK ZÁRT HALMAZA: `sub` és `dub`.
+ *
+ * Szűkebb, mint a `SourceVariant`, és ez szándékos. Az `embed_url`-nek nincs
+ * `raw` kulcsa, tehát ha ez `SourceVariant`-ot adna vissza, a fordító
+ * kénytelen lenne elhinni, hogy a `raw` is kiolvasható belőle — és a hiba
+ * futásidőben, `undefined` címként bukna ki.
+ */
+type EmbedVariant = 'sub' | 'dub'
+
+function availableVariants(episode: AnikotoEpisode): EmbedVariant[] {
   const embed = episode.embed_url
   if (!embed || typeof embed !== 'object') return []
-  const out: SourceVariant[] = []
+  const out: EmbedVariant[] = []
   for (const variant of ['sub', 'dub'] as const) {
-    if (asString((embed as Record<string, unknown>)[variant])) out.push(variant)
+    if (asString(embed[variant])) out.push(variant)
   }
   return out
 }
@@ -450,28 +491,61 @@ export const anikotoProvider: AnimeProvider = {
     }
 
     /*
-     * ITT ÁLL MEG, ÉS EZ NEM HIÁNYOSSÁG, HANEM A HELYES VÁLASZ.
+     * BEÁGYAZÁS, NEM FOLYAM — és a különbséget a `kind` mondja ki.
      *
-     * A szolgáltató API-ja — a saját dokumentációja szerint is — KÉT
-     * végpontot ismer (`/recent-anime`, `/series/{id}`), és egyik sem ad
-     * közvetlenül lejátszható címet: az `embed_url.sub` és `embed_url.dub`
-     * egy HARMADIK FÉL beágyazó LAPJÁRA mutat, nem `.m3u8`/`.mpd`/`.mp4`
-     * fájlra.
+     * A szolgáltató API-ja két végpontot ismer (`/recent-anime`,
+     * `/series/{id}`), és egyik sem ad `.m3u8`/`.mpd`/`.mp4` címet: az
+     * `embed_url` egy harmadik fél LEJÁTSZÓ LAPJÁRA mutat. Ezt a lapot
+     * `iframe`-be tesszük, ahogy a szolgáltató szánta.
      *
-     * Egy beágyazó lap címét `kind: 'mp4'`-ként visszaadni azt jelentené,
-     * hogy a lejátszó egy HTML-lapot próbál videóként dekódolni: néma fekete
-     * doboz, és a naplóban „sikeres feloldás". A stream kinyerése a
-     * beágyazásból viszont a harmadik fél védelmének megkerülése lenne —
-     * azt nem csináljuk.
+     * A `kind: 'embed'` nem formalitás. Nélküle — bármelyik folyam-fajta
+     * nevén — a lejátszó a `<video>`-ba töltené a HTML-lapot: néma fekete
+     * doboz, a naplóban „sikeres feloldás" felirattal. A stream kinyerése a
+     * lapból pedig a harmadik fél védelmének megkerülése lenne, azt nem
+     * csináljuk: a cím marad beágyazó cím.
      *
-     * Az üres eredmény a szerződés szerint SIKER („megkérdeztem, és nincs
-     * mit adnom"), tehát a megszakítót sem nyitja ki, és a lánc szabályosan
-     * továbblép a következő szolgáltatóra.
+     * A VÁLASZ NEM MEGBÍZHATÓ ADAT. Ami ide bekerül, az a felhasználó
+     * lapján `iframe`-ben fut, ezért minden cím átmegy a `checkEmbedUrl`
+     * határon — https, engedélyezett gazdagép, hitelesítő adat nélkül.
      */
-    diagnose(
-      `a(z) ${seriesId}/${ref.number}. részhez csak beágyazó cím van ` +
-      `(${elerheto.join(', ')}) — az nem lejátszható forrás, ezért üres eredmény`
-    )
-    return noResult()
+    const hostok = embedHosts(config)
+    const sources: ProviderSource[] = []
+
+    for (const variant of elerheto) {
+      // A kért változaton kívül semmit nem adunk vissza: ha a néző `dub`-ot
+      // kért, egy `sub` forrás a listában csendben elindulhatna helyette.
+      if (kert !== null && variant !== kert) continue
+
+      const nyers = (episode.embed_url ?? {})[variant]
+      const ellenorzes = checkEmbedUrl(nyers, hostok)
+      if (!ellenorzes.url) {
+        // A CÍMET NEM NAPLÓZZUK, csak az okot: egy elutasított cím
+        // tetszőleges tartalom, és a napló nem a helye.
+        diagnose(`a(z) ${seriesId}/${ref.number}. rész „${variant}" beágyazása elutasítva (${ellenorzes.reason})`)
+        continue
+      }
+
+      sources.push({
+        kind: 'embed',
+        url: ellenorzes.url,
+        variant,
+        label: 'Anikoto',
+        /*
+         * A FELBONTÁS SZÁNDÉKOSAN `null`. Az idegen lejátszó dönti el,
+         * milyen minőséget ad; egy kitalált `1080p` a forrásválasztóban
+         * hazugság lenne, amit semmi nem vált be.
+         */
+        quality: null,
+        language: variant === 'dub' ? 'en' : 'ja'
+      })
+    }
+
+    if (!sources.length) {
+      diagnose(`a(z) ${seriesId}/${ref.number}. részhez egyetlen beágyazás sem ment át az ellenőrzésen`)
+      return noResult()
+    }
+
+    diagnose(`a(z) ${seriesId}/${ref.number}. részhez ${sources.length} beágyazás (${sources.map(s => s.variant).join(', ')})`)
+    return { sources, subtitles: [] }
   }
 }

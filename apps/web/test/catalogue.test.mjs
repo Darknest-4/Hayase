@@ -483,6 +483,29 @@ describe('episode sources', () => {
     })
   })
 
+  /*
+   * A `kind` ÁTADÁSA — EZ EGY MÉRT, NÉMA HIBA JAVÍTÁSA.
+   *
+   * Ez a leképezés korábban eldobta a mezőt. A folyamforrásoknál ez nem
+   * látszott (a motor a címből is felismeri az `.m3u8`-at), a beágyazásnál
+   * viszont végzetes: egy `https://.../stream/169846/sub` cím semmiben nem
+   * különbözik egy videófájlétól, tehát `direct`-nek minősült, és a
+   * böngésző egy HTML-lapot próbált volna videóként dekódolni — néma fekete
+   * doboz, hibaüzenet nélkül.
+   */
+  it('passes the server-declared kind through to the engine', async () => {
+    const c = load({ episodeSources: () => [{ ...ROWS[0], kind: 'embed' }] })
+    const [s] = plain(await c.episodeSources('ep-1'))
+    assert.equal(s.kind, 'embed', 'the declared kind was dropped in the mapping')
+  })
+
+  it('leaves kind null when the server does not declare one', async () => {
+    const { kind, ...kindNelkul } = ROWS[0]
+    const c = load({ episodeSources: () => [kindNelkul] })
+    const [s] = plain(await c.episodeSources('ep-1'))
+    assert.equal(s.kind, null)
+  })
+
   it('falls back to the provider name when the source has no title', () => {
     const c = load({ episodeSources: () => ROWS })
     return c.episodeSources('ep-1').then(sources => {
