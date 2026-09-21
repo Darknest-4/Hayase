@@ -253,6 +253,8 @@ export const App = {
     // úgysem juthat el.
     // A jelölést a `_renderGate` és a `landing` útvonal is átírhatja: a kapu a
     // kezdőképernyőt rajzolja olyan útvonalon, amit még máshogy hívnak.
+    // Tipp a címből: a keret osztálya már most a helyére kerül, de a krómot
+    // még nem mutatjuk meg — a kapu felülbírálhatja. Lásd `applyLayout`.
     this.applyLayout(route)
 
     /*
@@ -293,6 +295,7 @@ export const App = {
      */
     const maintenancePage = this._maintenanceGate(route)
     if (maintenancePage) {
+      this.applyLayout(route, { reveal: true })
       page.replaceChildren(maintenancePage)
       return
     }
@@ -300,6 +303,12 @@ export const App = {
     // feature-flag / access gate (DB-driven site config)
     const gate = this._gateCheck(route)
     if (!gate.ok) {
+      /*
+       * A KAPU DÖNTÖTT, tehát most már tudjuk, milyen keret jár. A
+       * `site-login` ág a kezdőképernyőt rajzolja — a keret is az övé, bármi
+       * is volt a címben.
+       */
+      this.applyLayout(gate.kind === 'site-login' ? 'landing' : route, { reveal: true })
       this._renderGate(page, gate, route, arg)
       if (!this.CHROMELESS.includes(route)) page.append(C.footer())
       return
@@ -313,6 +322,8 @@ export const App = {
      * else — look like it had worked. The viewer got the landing page and no
      * reason to think they had not arrived where they meant to.
      */
+    this.applyLayout(route, { reveal: true })
+
     const handler = this.routes[route]
     if (!handler) {
       this._renderGate(page, { kind: 'not-found' }, route, arg)
@@ -683,10 +694,21 @@ export const App = {
    * címből eldől — nem kell hozzá se konfiguráció, se munkamenet. Tehát nem is
    * várunk rá.
    */
-  applyLayout (route) {
-    // A váz `booting` jelölése: amíg ez rajta van, nem látszik króm. Az első
-    // döntéssel lekerül — innentől a keret a címhez tartozik.
-    document.body.classList.remove('booting')
+  applyLayout (route, { reveal = false } = {}) {
+    /*
+     * A `booting` CSAK AKKOR KERÜL LE, AMIKOR A KERET VÉGLEGES.
+     *
+     * A cím alapján meg lehet tippelni a keretet, de a KAPU felülbírálhatja:
+     * egy privát példányon a `#/home` is a kezdőképernyőt rajzolja. Ha a
+     * krómot már a tipp alapján megmutatnánk, a sorrend ez lenne:
+     *
+     *     ikonsáv megjelenik → a kapu dönt → ikonsáv eltűnik
+     *
+     * — vagyis pont az a villanás, ami ellen ez az egész van. Éles oldalon
+     * mérve is látszott: `#/home`-on négy egymást követő mintavétel fogta
+     * meg. A `reveal` ezért a `navigate()` kezében van, a kapu UTÁN.
+     */
+    if (reveal) document.body.classList.remove('booting')
     // A kezdőképernyőnek saját fejléce van, és telefonon nem kér alsó sávot:
     // aki még nem lépett be, annak a lebegő pill öt olyan helyre mutat, ahová
     // úgysem juthat el. A `_renderGate` is átírhatja: a kapu a
