@@ -65,6 +65,7 @@ import { adminMaintenance, publicStatus } from './modules/maintenance/routes.ts'
 import { verifyMediaBase } from './modules/media/public-url.ts'
 import { verifyVideoBase } from './modules/maintenance/video-resolver.ts'
 import providerAdmin from './modules/providers/admin-routes.ts'
+import discordRoutes from './modules/discord/routes.ts'
 import { registerBuiltInProviders } from './modules/providers/index.ts'
 
 /**
@@ -643,6 +644,16 @@ export async function buildApp (): Promise<FastifyInstance> {
    */
   registerBuiltInProviders()
   await app.register(providerAdmin, { prefix: '/v1/admin/providers' })
+  /*
+   * A DISCORD VEZÉRLŐPULT VÉGPONTJAI.
+   *
+   * `/v1/discord`, nem `/v1/admin/discord`: a hozzáférést nem a YUME
+   * adminisztrátori szerepe adja, hanem a Discord guild-jogosultsága — egy
+   * szerver tulajdonosa a saját guildjét kezelheti anélkül, hogy a YUME-ban
+   * bármilyen adminisztrátori joga lenne. A kaput a `guild-access.ts` őrzi,
+   * minden kérésnél.
+   */
+  await app.register(discordRoutes, { prefix: '/v1/discord' })
   await app.register(publicReadiness, { prefix: '/v1/health' })
   await app.register(adminMonitoring, { prefix: '/v1/admin/monitoring' })
 

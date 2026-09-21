@@ -38,6 +38,20 @@ export type AuditAction =
   | 'anime.translation.create' | 'anime.translation.update' | 'anime.translation.delete'
   | 'config.flag' | 'config.setting'
   /*
+   * Tartós Discord-üzenetek.
+   *
+   * Azért naplózott, mert egy ilyen üzenet EGY IDEGEN SZERVER csatornájába
+   * ír a nevünkben, és a beállítását olyan is módosíthatja, aki a YUME-ban
+   * nem adminisztrátor — csak a Discord guildjében van joga. „Ki állította
+   * be, hogy ide írjon a bot" utólag megválaszolhatatlan kérdés lenne.
+   *
+   * A `resync` is szerepel: az kézzel indított KÜLDÉS, nem olvasás.
+   */
+  | 'discord.persistent_message.create'
+  | 'discord.persistent_message.update'
+  | 'discord.persistent_message.delete'
+  | 'discord.persistent_message.resync'
+  /*
    * Forrásszolgáltató ki- vagy bekapcsolása, sorrendjének átállítása.
    *
    * Azért naplózott, mert egy kikapcsolt szolgáltató első TÜNETE az, hogy
