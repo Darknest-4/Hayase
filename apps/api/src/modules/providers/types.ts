@@ -184,6 +184,20 @@ export interface AnimeProvider {
    */
   readonly defaultPriority?: number
 
+  /**
+   * Bekapcsolva legyen-e, amíg NINCS sor a táblában.
+   *
+   * Alapértelmezés: igen — egy frissen telepített adapter működjön anélkül,
+   * hogy valaki kézzel felvenné.
+   *
+   * A KIVÉTEL A KÜLSŐ HÁLÓZATI SZOLGÁLTATÓ. Aki minden feloldásnál idegen
+   * kiszolgálót hív, annak a bekapcsolása KIFEJEZETT DÖNTÉS legyen. Enélkül
+   * minden telepítés — és minden tesztfuttatás — azonnal forgalmat küld egy
+   * harmadik félnek, pusztán attól, hogy a kód frissült.
+   */
+  readonly defaultEnabled?: boolean
+
+
   /** Cím keresése a szolgáltatónál. */
   search (query: string, hint?: { anilistId?: number | null, year?: number | null }): Promise<ProviderMatch[]>
 

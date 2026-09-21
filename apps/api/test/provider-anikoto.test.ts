@@ -19,12 +19,22 @@ import { before, beforeEach, describe, it, mock } from 'node:test'
 import { checkResult, checkShape } from './support/provider-contract.ts'
 
 let anikoto: typeof import('../src/modules/providers/adapters/anikoto.ts')
+let index: typeof import('../src/modules/providers/adapters/anikoto-index.ts')
 
 before(async () => {
   anikoto = await import('../src/modules/providers/adapters/anikoto.ts')
+  index = await import('../src/modules/providers/adapters/anikoto-index.ts')
 })
 
-beforeEach(() => { mock.restoreAll() })
+/*
+ * AZ INDEX MODULSZINTŰ ÁLLAPOT, tehát a tesztek KÖZÖTT IS megmaradna.
+ * Enélkül a második teszt az elsőnek épített indexét látná, és a saját
+ * hálózati fixtúrája néma lenne — a mérés nem azt mérné, amit állít.
+ */
+beforeEach(() => {
+  mock.restoreAll()
+  index.clearIndex()
+})
 
 /** Egy katalógusrekord az ÉLŐ válasz alakjában: `id` szám, `ani_id` sztring. */
 const KATALOGUS = {
@@ -63,8 +73,21 @@ function halozat (valasz: (url: string) => { status: number, body?: unknown } | 
   return { cimek }
 }
 
+/**
+ * A VALÓDI API LAPOZÁSÁT UTÁNOZZA.
+ *
+ * Az első lap adja a katalógust, a többi ÜRES — a bejárás ebből tudja, hogy
+ * a végére ért. Ha minden lap ugyanazt adná (ahogy egy hanyag csonk tenné),
+ * az index négyszáz lapig menne, és a teszt azt mérné, hogy mennyi ideig
+ * bírja a ciklus.
+ */
+function katalogusLap (url: string) {
+  const page = Number(new URL(url, 'https://x.invalid').searchParams.get('page') ?? '1')
+  return { status: 200, body: page <= 1 ? KATALOGUS : { ok: true, data: [] } }
+}
+
 const rendes = (url: string) =>
-  url.includes('/series/') ? { status: 200, body: SOROZAT } : { status: 200, body: KATALOGUS }
+  url.includes('/series/') ? { status: 200, body: SOROZAT } : katalogusLap(url)
 
 /**
  * A FIXTÚRA GAZDAGÉPE ENGEDÉLYEZVE.
@@ -111,6 +134,61 @@ describe('az Anikoto adapter', () => {
     halozat(rendes)
     const r = await anikoto.anikotoProvider.search('Liar Game', { year: 1999 })
     assert.equal(r[0]?.id, '8717', 'egy téves évszám elvette a jó találatot')
+  })
+
+  /*
+   * EZ A KÉSZLET LEGFONTOSABB TESZTJE — EGY MÉRT, ÉLES HIBA.
+   *
+   * Az adapter egyetlen lapot kért le, és abban keresett. A szolgáltató
+   * katalógusa 180 lap: a Shingeki no Kyojin, a Kimetsu no Yaiba és a Death
+   * Note BENNE VAN, csak nem az első ötvenben. A nézőnek ez „ezt a részt
+   * egyik forrásból sem sikerült lejátszani"-ként jelent meg — vagyis a hiba
+   * pont úgy nézett ki, mint egy hiányzó cím.
+   */
+  it('a HARMADIK lapon lévő címet is megtalálja', async () => {
+    const melyKatalogus = (url: string) => {
+      const page = Number(new URL(url, 'https://x.invalid').searchParams.get('page') ?? '1')
+      if (page === 3) {
+        return { status: 200, body: { ok: true, data: [{ id: 3303, title: 'Shingeki no Kyojin', ani_id: '16498', year: 2013, episodes: '25' }] } }
+      }
+      if (page <= 4) return { status: 200, body: KATALOGUS }
+      return { status: 200, body: { ok: true, data: [] } }
+    }
+    halozat((url) => url.includes('/series/') ? { status: 200, body: SOROZAT } : melyKatalogus(url))
+
+    const r = await anikoto.anikotoProvider.search('Shingeki no Kyojin', { anilistId: 16498 })
+    assert.equal(r[0]?.id, '3303', 'csak az első lapot nézte — ez volt az éles hiba')
+  })
+
+  it('a mélyebb lapon lévő címre a feloldás is talál forrást', async () => {
+    const melyKatalogus = (url: string) => {
+      const page = Number(new URL(url, 'https://x.invalid').searchParams.get('page') ?? '1')
+      if (page === 3) {
+        return { status: 200, body: { ok: true, data: [{ id: 8717, title: 'Shingeki no Kyojin', ani_id: '16498', year: 2013, episodes: '25' }] } }
+      }
+      if (page <= 4) return { status: 200, body: KATALOGUS }
+      return { status: 200, body: { ok: true, data: [] } }
+    }
+    halozat((url) => url.includes('/series/') ? { status: 200, body: SOROZAT } : melyKatalogus(url))
+
+    const r = await anikoto.anikotoProvider.resolve({
+      ...REF, title: 'Shingeki no Kyojin', anilistId: 16498, year: 2013, variant: 'sub'
+    }, CFG)
+    assert.equal(r.sources.length, 1, 'a mélyebb lapon lévő címhez nem talált forrást')
+    assert.equal(r.sources[0]?.kind, 'embed')
+  })
+
+  it('MAL-azonosító szerint is párosít', async () => {
+    const lap = (url: string) => {
+      const page = Number(new URL(url, 'https://x.invalid').searchParams.get('page') ?? '1')
+      return { status: 200, body: page <= 1
+        ? { ok: true, data: [{ id: 4242, title: 'Egészen más cím', mal_id: '62331', year: 2026, episodes: '26' }] }
+        : { ok: true, data: [] } }
+    }
+    halozat((url) => url.includes('/series/') ? { status: 200, body: SOROZAT } : lap(url))
+
+    const r = await anikoto.anikotoProvider.search('semmi köze', { malId: 62331 } as never)
+    assert.equal(r[0]?.id, '4242', 'a MAL-azonosítót nem használta párosításra')
   })
 
   it('ismeretlen címre üres lista', async () => {
@@ -278,7 +356,7 @@ describe('az Anikoto adapter', () => {
     it(`elutasítja: ${nev}`, async () => {
       halozat((url) => url.includes('/series/')
         ? { status: 200, body: sorozatCimmel(cim) }
-        : { status: 200, body: KATALOGUS })
+        : katalogusLap(url))
 
       const r = await anikoto.anikotoProvider.resolve({ ...REF, variant: 'sub' }, CFG)
       assert.deepEqual(r.sources, [], `átengedte: ${String(cim)}`)
@@ -294,7 +372,7 @@ describe('az Anikoto adapter', () => {
   it('az altartomány átmegy, az álcázott tartomány nem', async () => {
     halozat((url) => url.includes('/series/')
       ? { status: 200, body: sorozatCimmel('https://cdn.beagyazo.pelda/stream/1/sub') }
-      : { status: 200, body: KATALOGUS })
+      : katalogusLap(url))
     const jo = await anikoto.anikotoProvider.resolve({ ...REF, variant: 'sub' }, CFG)
     assert.equal(jo.sources.length, 1, 'az altartományt elutasította')
   })
@@ -321,7 +399,7 @@ describe('az Anikoto adapter', () => {
     mock.method(console, 'info', (...a: unknown[]) => { naplo.push(a.join(' ')) })
     halozat((url) => url.includes('/series/')
       ? { status: 200, body: sorozatCimmel('https://tamado.pelda/titkos/utvonal?token=abc123') }
-      : { status: 200, body: KATALOGUS })
+      : katalogusLap(url))
 
     await anikoto.anikotoProvider.resolve({ ...REF, variant: 'sub' }, CFG)
 

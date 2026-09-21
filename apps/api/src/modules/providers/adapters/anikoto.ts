@@ -1,5 +1,6 @@
 import { noResult, type AnimeProvider, type EpisodeRef, type ProviderEpisode, type ProviderMatch, type ProviderResult, type ProviderSource, type SourceVariant } from '../types.ts'
 import { checkEmbedUrl } from '../embed-url.ts'
+import { buildIndex, getIndex, peekIndex, type CatalogueIndex, type IndexEntry } from './anikoto-index.ts'
 /*
  * A katalógus rekordja — az ÉLŐ válasz alapján, nem feltételezésből.
  *
@@ -64,6 +65,12 @@ interface Config {
    * egyetlen beágyazás sem megy át — a szigorúbb irány a biztonságos.
    */
   embedHosts?: readonly string[]
+  /** Hány lapot kérünk egyszerre az index építésekor. */
+  indexConcurrency?: number
+  /** Felső korlát a bejárt lapokra — a végtelen lapozás ellen. */
+  indexMaxPages?: number
+  /** Meddig várhat egy kérés a hideg index felépülésére. */
+  indexBudgetMs?: number
 }
 
 /**
@@ -282,6 +289,139 @@ function availableVariants(episode: AnikotoEpisode): EmbedVariant[] {
 }
 
 /**
+ * Lapkérő az indexnek. Ugyanazt az utat használja, mint a többi hívás.
+ */
+function pageFetcher (config: Config, timeoutMs: number) {
+  return async (page: number, perPage: number): Promise<unknown> =>
+    await requestJson<unknown>(
+      apiUrl(config, `/recent-anime?page=${page}&per_page=${perPage}`),
+      timeoutMs
+    )
+}
+
+/**
+ * A katalógusindex — de csak addig várunk rá, ameddig szabad.
+ *
+ * A HIDEG INDULÁS A KOCKÁZAT. Az első kérés még építi az indexet (mérve 1,6
+ * másodperc), de ha a szolgáltató épp lassú, az építés elvihetné az egész
+ * időkeretet, és a feloldás időtúllépéssel bukna — ami a megszakítót is
+ * kinyitná, pedig a szolgáltatóval semmi baj.
+ *
+ * Ezért a várakozás KORLÁTOS. Ha az index nem készül el időben, ez a kérés
+ * index nélkül megy tovább (az első lapra szűkülve), az építés viszont fut
+ * tovább a háttérben — a következő kérés már a teljes katalógust látja.
+ */
+async function indexWithin (config: Config, timeoutMs: number, budgetMs: number): Promise<CatalogueIndex | null> {
+  const kesz = peekIndex()
+  if (kesz) return kesz
+
+  const epul = getIndex(pageFetcher(config, timeoutMs), {
+    ...(config.indexConcurrency !== undefined ? { concurrency: config.indexConcurrency } : {}),
+    ...(config.indexMaxPages !== undefined ? { maxPages: config.indexMaxPages } : {})
+  })
+  // A háttérben futó építés hibáját itt nyeljük el: a hívó az index
+  // hiányát látja, nem egy kivételt.
+  epul.catch(() => {})
+
+  let timer: NodeJS.Timeout | undefined
+  try {
+    return await Promise.race([
+      epul,
+      new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), budgetMs) })
+    ])
+  } catch {
+    return null
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+/**
+ * A legjobb katalógustétel egy kereséshez.
+ *
+ * A JELEK SÚLYA — azonosító, cím, évszám, ebben a sorrendben. Az azonosító a
+ * legerősebb, mert ez az EGYETLEN, ami két azonos című évadot biztosan
+ * szétválaszt; az évszám csak kiegészítő, és sosem zár ki: a katalógusok
+ * évszáma gyakran a premier és nem a gyártás éve.
+ */
+function scoreEntry (
+  entry: IndexEntry,
+  wanted: string,
+  hint: { anilistId?: number | null, malId?: number | null, year?: number | null }
+): number {
+  let score = 0
+  if (hint.anilistId != null && entry.anilistId != null && entry.anilistId === hint.anilistId) score += 100
+  if (hint.malId != null && entry.malId != null && entry.malId === hint.malId) score += 90
+
+  if (wanted) {
+    for (const cim of entry.titles) {
+      const n = normalizeTitle(cim)
+      if (!n) continue
+      if (n === wanted) { score += 50; break }
+      if (n.includes(wanted) || wanted.includes(n)) { score += 20; break }
+    }
+  }
+
+  if (hint.year != null && entry.year === hint.year && score > 0) score += 5
+  return score
+}
+
+/**
+ * Keresés az indexben.
+ *
+ * A JELÖLTEK KÖRE SZŰKÍTETT, nem a teljes katalógus: az azonosító- és
+ * címkulcsok szerint kiszedett tételeket pontozzuk. Enélkül minden kérés
+ * végigpontozná mind a nyolcezret — működne, de fölöslegesen.
+ */
+function searchIndex (
+  index: CatalogueIndex,
+  query: string,
+  hint: { anilistId?: number | null, malId?: number | null, year?: number | null }
+): IndexEntry[] {
+  const wanted = normalizeTitle(query)
+  const jeloltek = new Set<IndexEntry>()
+
+  if (hint.anilistId != null) for (const e of index.byAnilist.get(hint.anilistId) ?? []) jeloltek.add(e)
+  if (hint.malId != null) for (const e of index.byMal.get(hint.malId) ?? []) jeloltek.add(e)
+  if (wanted) {
+    for (const e of index.byTitle.get(wanted) ?? []) jeloltek.add(e)
+    /*
+     * RÉSZLEGES CÍMEGYEZÉS. A kulcs szerinti keresés csak a pontos címet
+     * találja meg; egy „Attack on Titan" kérés nem találná meg az „Attack on
+     * Titan Season 2"-t. Ez a menet végigmegy a címkulcsokon — nyolcezer
+     * rövid sztring, ezredmásodperc nagyságrend.
+     */
+    for (const [kulcs, lista] of index.byTitle) {
+      if (kulcs.includes(wanted) || wanted.includes(kulcs)) {
+        for (const e of lista) jeloltek.add(e)
+      }
+    }
+  }
+
+  return [...jeloltek]
+    .map(entry => ({ entry, score: scoreEntry(entry, wanted, hint) }))
+    .filter(x => x.score > 0)
+    .sort((a, b) => b.score - a.score || a.entry.id.localeCompare(b.entry.id))
+    .map(x => x.entry)
+}
+
+/** Katalógustétel → a szerződés szerinti találat. */
+function toMatch (entry: IndexEntry): ProviderMatch {
+  return {
+    id: entry.id,
+    title: entry.title,
+    anilistId: entry.anilistId,
+    year: entry.year,
+    episodeCount: entry.episodeCount
+  }
+}
+
+/** Egy lapnyi nyers tételből index — az építés alatti sekély útnak. */
+function buildIndexFromItems (items: AnikotoAnime[]): CatalogueIndex {
+  return buildIndex(items as Array<Record<string, unknown>>)
+}
+
+/**
  * Diagnosztika — a naplóba, nem a nézőnek.
  *
  * A „nincs forrás" válasz leggyakoribb kérdése az, hogy MIÉRT, és arra egy
@@ -294,83 +434,81 @@ function diagnose(message: string): void {
   console.info(`[anikoto] ${message}`)
 }
 
+/**
+ * A katalógusindex felépítése ELŐRE, a háttérben.
+ *
+ * MIÉRT NEM ELÉG A LUSTA ÉPÍTÉS. Az első kérés elindítja az építést, de csak
+ * korlátozott ideig vár rá — így az újraindítás utáni ELSŐ néző a sekély
+ * úton megy, és egy régebbi címre üres eredményt kap. Ez pontosan az a hiba,
+ * amit javítunk, csak ritkábban.
+ *
+ * SZÁNDÉKOSAN NEM A `buildApp()`-BÓL HÍVJUK. Azt a tesztek is meghívják, és
+ * egy tesztfuttatás nem indíthat el százhetven HTTP-kérést egy idegen
+ * kiszolgáló felé. A hely a szerver belépési pontja: ott a folyamat
+ * tényleg kiszolgálni indul.
+ *
+ * A hibát elnyeli: ha a szolgáltató épp nem elérhető, az indulás nem
+ * bukhat el rajta — a lusta út úgyis megpróbálja majd újra.
+ */
+export function warmUpAnikoto (config: Config = {}): void {
+  const timeoutMs = config.timeoutMs ?? 8000
+  void getIndex(pageFetcher(config, timeoutMs), {
+    ...(config.indexConcurrency !== undefined ? { concurrency: config.indexConcurrency } : {}),
+    ...(config.indexMaxPages !== undefined ? { maxPages: config.indexMaxPages } : {})
+  }).then(
+    index => { diagnose(`katalógusindex kész: ${index.all.length} tétel`) },
+    error => { diagnose(`a katalógusindex nem épült fel: ${String((error as Error)?.message ?? error)}`) }
+  )
+}
+
 export const anikotoProvider: AnimeProvider = {
   id: 'anikoto',
   label: 'Anikoto',
   defaultPriority: 700,
+  /*
+   * ALAPBÓL KIKAPCSOLVA — mert ez az adapter minden feloldásnál IDEGEN
+   * KISZOLGÁLÓT hív, és a katalógusindexhez 180 lapot kér le.
+   *
+   * Enélkül minden telepítés és minden TESZTFUTTATÁS azonnal forgalmat
+   * küldene a szolgáltatónak, pusztán attól, hogy a kód frissült — mérve: a
+   * teljes API-készlet élő kéréseket indított az anikotoapi.site felé.
+   *
+   * Az éles bekapcsolást a 0064-es áttérés végzi, kifejezett sorral.
+   */
+  defaultEnabled: false,
   async search(
     query: string,
-    hint?: { anilistId?: number | null; year?: number | null }
+    hint?: { anilistId?: number | null; malId?: number | null; year?: number | null }
   ): Promise<ProviderMatch[]> {
     const config: Config = {}
-    const perPage = 50
-    const payload = await requestJson<unknown>(
-      apiUrl(config, `/recent-anime?page=1&per_page=${perPage}`),
-      8000
-    )
-
-    const anime = unwrapAnimeList(payload)
-    const wanted = normalizeTitle(query)
-
     /*
-     * PONTOZÁS, NEM SZŰRÉS.
+     * AZ EGÉSZ KATALÓGUSBAN KERESÜNK, NEM AZ ELSŐ LAPON.
      *
-     * A régi változat egyetlen `filter`-rel döntött, és a sorrenddel nem
-     * foglalkozott — így egy részleges egyezés megelőzhette a pontosat, a
-     * hívó pedig az első elemet veszi. A pontszám rendezi is őket.
+     * Itt korábban egyetlen `/recent-anime?page=1&per_page=50` hívás állt. Az
+     * API-nak nincs kereső végpontja — ezt megmértük: a `/search` 404, a
+     * `q`/`search`/`keyword`/`title` paramétert pedig a `/recent-anime`
+     * figyelmen kívül hagyja. Egy lap tehát a legfrissebb ötven címet
+     * jelentette, és MINDEN MÁSRA üres eredményt adott: a Shingeki no Kyojin
+     * és a Kimetsu no Yaiba benne van a katalógusban, csak nem az első lapon.
      *
-     * A JELEK SÚLYA:
-     *   AniList-azonosító  a legerősebb — ez az egyetlen, ami két hasonló
-     *                      című évadot biztosan szétválaszt;
-     *   pontos cím         erős;
-     *   részleges cím      gyenge, de elég a megtaláláshoz;
-     *   évszám             CSAK KIEGÉSZÍTŐ. Sosem zár ki: a katalógusok
-     *                      évszáma gyakran a premier és nem a gyártás éve,
-     *                      és egy téves év nem érhet annyit, hogy elvegye a
-     *                      jó találatot.
+     * A nézőnek ez „ezt a részt egyik forrásból sem sikerült lejátszani"-ként
+     * jelent meg — vagyis a hiba pont úgy nézett ki, mint egy hiányzó cím.
      */
-    const scored: Array<{ match: ProviderMatch, score: number }> = []
+    const index = await indexWithin(config, config.timeoutMs ?? 8000, config.indexBudgetMs ?? 6000)
 
-    for (const item of anime) {
-      const id = asId(item.id)
-      if (!id) continue
-
-      const title = titleOf(item)
-      const anilistId = asNumber(item.ani_id ?? item.anilist_id)
-
-      let score = 0
-
-      if (hint?.anilistId != null && anilistId != null && anilistId === hint.anilistId) {
-        score += 100
-      }
-
-      for (const jelolt of titleCandidates(item)) {
-        const normalized = normalizeTitle(jelolt)
-        if (!normalized) continue
-        if (normalized === wanted) { score = Math.max(score, score + 50); break }
-        if (normalized.includes(wanted) || wanted.includes(normalized)) score = Math.max(score, score + 20)
-      }
-
-      // Kiegészítő jel — hozzáad, de önmagában sosem elég, és nem is vesz el.
-      if (hint?.year != null && asNumber(item.year) === hint.year && score > 0) score += 5
-
-      if (score === 0) continue
-
-      scored.push({
-        score,
-        match: {
-          id,
-          title: title ?? '',
-          anilistId,
-          year: asNumber(item.year),
-          episodeCount: asNumber(item.episodes)
-        }
-      })
+    if (!index) {
+      // Az index még épül. Ez a kérés a régi, sekély úton megy — jobb egy
+      // szűkebb találat, mint egy elhasalt kérés.
+      diagnose('a katalógusindex még épül — ez a keresés csak az első lapot látja')
+      const payload = await requestJson<unknown>(
+        apiUrl(config, `/recent-anime?page=1&per_page=50`),
+        config.timeoutMs ?? 8000
+      )
+      const sekely = buildIndexFromItems(unwrapAnimeList(payload))
+      return searchIndex(sekely, query, hint ?? {}).map(toMatch)
     }
 
-    return scored
-      .sort((a, b) => b.score - a.score)
-      .map(entry => entry.match)
+    return searchIndex(index, query, hint ?? {}).map(toMatch)
   },
   async episodes(matchId: string): Promise<ProviderEpisode[]> {
     if (!matchId.trim()) return []
@@ -418,38 +556,43 @@ export const anikotoProvider: AnimeProvider = {
     const config = (configInput ?? {}) as Config
     const timeoutMs = config.timeoutMs ?? 8000
     const perPage = Math.min(Math.max(config.perPage ?? 50, 1), 50)
-    const searchPages = Math.min(Math.max(config.searchPages ?? 1, 1), 3)
-    const wanted = normalizeTitle(ref.title)
-    const candidates: AnikotoAnime[] = []
-    for (let page = 1; page <= searchPages; page++) {
+    /*
+     * UGYANAZ AZ INDEX, MINT A `search()`-NÉL — és ez a lényeg.
+     *
+     * Itt korábban egy saját, egy-három lapos bejárás állt, külön
+     * pontozással. Két baja volt: ugyanazt a hiányt hozta, mint a `search()`
+     * (a katalógus 180 lapjából hármat látott), és külön kódúton — vagyis a
+     * lejátszó és a keresés MÁS eredményt adhatott ugyanarra a címre.
+     */
+    const index = await indexWithin(config, timeoutMs, config.indexBudgetMs ?? 6000)
+
+    let talalatok: IndexEntry[]
+    if (index) {
+      talalatok = searchIndex(index, ref.title, {
+        anilistId: ref.anilistId,
+        ...(ref.malId !== undefined ? { malId: ref.malId } : {}),
+        ...(ref.year !== undefined ? { year: ref.year } : {})
+      })
+    } else {
+      diagnose('a katalógusindex még épül — ez a feloldás csak az első lapot látja')
       const payload = await requestJson<unknown>(
-        apiUrl(config, `/recent-anime?page=${page}&per_page=${perPage}`),
+        apiUrl(config, `/recent-anime?page=1&per_page=${perPage}`),
         timeoutMs
       )
-      candidates.push(...unwrapAnimeList(payload))
+      talalatok = searchIndex(buildIndexFromItems(unwrapAnimeList(payload)), ref.title, {
+        anilistId: ref.anilistId,
+        ...(ref.malId !== undefined ? { malId: ref.malId } : {}),
+        ...(ref.year !== undefined ? { year: ref.year } : {})
+      })
     }
-    const ranked = candidates
-      .filter(item => titleOf(item))
-      .map(item => ({
-        item,
-        score: matchScore(item, ref, {
-          anilistId: ref.anilistId,
-          ...(ref.year !== undefined ? { year: ref.year } : {})
-        })
-      }))
-      .sort((a, b) => b.score - a.score)
-    const best = ranked[0]
-    if (!best || best.score <= 0) {
+
+    const best = talalatok[0]
+    if (!best) {
+      diagnose(`nincs katalógustalálat: „${ref.title}" (anilist=${ref.anilistId ?? '-'}, mal=${ref.malId ?? '-'})`)
       return noResult()
     }
-    /*
-     * `asId`, NEM `asString`. A katalógus `id` mezője SZÁM (`8717`), és az
-     * `asString()` arra `null`-t ad — vagyis ez az ág eddig MINDIG itt lépett
-     * ki, még a sorozat lekérése előtt. Ugyanaz a hiba, ami a `search()`-öt
-     * is megbuktatta.
-     */
-    const seriesId = asId(best.item.id)
-    if (!seriesId) return noResult()
+
+    const seriesId = best.id
 
     const seriesPayload = await requestJson<unknown>(
       apiUrl(config, `/series/${encodeURIComponent(seriesId)}`),
