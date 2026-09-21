@@ -22,6 +22,7 @@
     "seed": "npm run seed --workspace @yume/api"
   },
   "devDependencies": {
+    "playwright": "^1.63.0",
     "standard": "^17.1.2"
   }
 }
