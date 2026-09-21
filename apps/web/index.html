@@ -46,7 +46,19 @@
   <link rel="stylesheet" href="/css/admin.css">
 </head>
 
-<body>
+<!--
+  `booting`: amíg a router el nem dönti, MELYIK keret jár ehhez a címhez,
+  az alkalmazás krómja nem látszik.
+
+  Enélkül a statikus váz ikonsávja végigvillan a kezdőképernyő és a belépőlap
+  előtt: a HTML azonnal fest, a döntés viszont csak a modulgráf betöltése után
+  születik meg. A címet ide beágyazott szkripttel lehetne beolvasni, de a
+  `script-src 'self'` azt megfogja — és egy hibaoldalon tanultuk meg, hogy
+  ilyenkor nincs hibaüzenet, csak néma hiány.
+
+  A jelölést az `App.applyLayout()` veszi le, még a hálózat előtt.
+-->
+<body class="booting">
   <!-- Keyboard users land here first: the sidebar is a dozen links before any
        content, and without this every page starts by tabbing through it. -->
   <a class="skip-link" href="#page">Ugrás a tartalomra</a>

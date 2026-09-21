@@ -401,6 +401,12 @@ I18n.register('hu', {
     'A listád, az előzményeid és a beállításaid veled tartanak.',
   'It takes a moment, and nothing but an email address.':
     'Egy pillanat, és nem kell hozzá más, csak egy e-mail-cím.',
+  // ---------------------------------------------------------- hozzászólások
+  'Delete this comment? This cannot be undone.':
+    'Törlöd ezt a hozzászólást? Nem vonható vissza.',
+  'Comment deleted': 'A hozzászólás törölve',
+  'This comment was deleted.': 'Ezt a hozzászólást törölték.',
+
   // ------------------------------------------------------------ beállítások
   //
   // A lap fele angolul állt egy magyar felületen — nem azért, mert hiányzott

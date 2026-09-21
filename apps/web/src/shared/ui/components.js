@@ -2,7 +2,7 @@
 // Reusable render helpers: cards, horizontal sections, skeletons, modals.
 
 import { Copy } from '../i18n/copy.js'
-import { featureOn, playbackAvailable, site } from '../lib/site-config.js'
+import { featureOn, pageAvailable, permissionsHeld, playbackAvailable, site } from '../lib/site-config.js'
 import { T } from '../i18n/i18n.js'
 import { Store } from '../state/store.js'
 import { P } from '../ui/primitives.js'
@@ -212,10 +212,48 @@ export const C = {
           // than leaving a blank line.
           U.el('p', { class: 'footer-tagline', text: site()?.tagline?.trim() || T('footer.tagline') })
         ]),
-        col(T('footer.discover'), [[T('nav.home'), '#/home'], [T('nav.search'), '#/search'], [T('nav.schedule'), '#/schedule'], [T('nav.dashboard'), '#/dashboard']]),
-        col(T('footer.library'), [[T('footer.myLibrary'), '#/list'], [T('footer.profile'), '#/profile'], [T('footer.watchHistory'), '#/profile?tab=history'], [T('footer.analytics'), '#/profile?tab=analytics']]),
-        col(T('footer.community'), [[T('nav.community'), '#/community'], [T('nav.w2g'), '#/w2g']]),
-        col(T('footer.yume'), [[T('nav.settings'), '#/settings'], [T('nav.notifications'), '#/notifications'], [T('nav.themes'), '#/themes']])
+        /*
+         * A LÁBLÉC UGYANAZT KÉRDEZI, AMIT A FEJLÉC.
+         *
+         * Ez a lista korábban BEDRÓTOZVA állt itt, és minden rendereléskor
+         * újraépült — miközben a fejléc futásidőben szűrt a kapcsolótáblából.
+         * Egy adminban kikapcsolt oldal ezért eltűnt fent, és itt lent ott
+         * maradt: ugyanaz a kérdés, két külön válasz. A harmadik fogyasztó, a
+         * mobil sáv, a fejléc elemeit használja, tehát az együtt mozgott vele.
+         *
+         * Ahol egy hivatkozás egy oldal FÜLÉRE mutat (`#/profile?tab=history`),
+         * ott is az OLDAL elérhetősége dönt — egy letiltott profiloldal füle
+         * sem jár.
+         *
+         * Üresre fogyott oszlop nem jelenik meg: egy cím alatt semmi rosszabb,
+         * mint a hiányzó cím.
+         */
+        ...[
+          ['footer.discover', [
+            ['nav.home', '#/home', 'home'],
+            ['nav.search', '#/search', 'search'],
+            ['nav.schedule', '#/schedule', 'schedule'],
+            ['nav.dashboard', '#/dashboard', 'dashboard']
+          ]],
+          ['footer.library', [
+            ['footer.myLibrary', '#/list', 'list'],
+            ['footer.profile', '#/profile', 'profile'],
+            ['footer.watchHistory', '#/profile?tab=history', 'profile'],
+            ['footer.analytics', '#/profile?tab=analytics', 'profile']
+          ]],
+          ['footer.community', [
+            ['nav.community', '#/community', 'community'],
+            ['nav.w2g', '#/w2g', 'w2g']
+          ]],
+          ['footer.yume', [
+            ['nav.settings', '#/settings', 'settings'],
+            ['nav.notifications', '#/notifications', 'notifications'],
+            ['nav.themes', '#/themes', 'themes']
+          ]]
+        ].map(([title, links]) => {
+          const shown = links.filter(([, , route]) => pageAvailable(route))
+          return shown.length ? col(T(title), shown.map(([label, href]) => [T(label), href])) : null
+        })
       ]),
       U.el('div', { class: 'footer-bottom' }, [
         U.el('span', { text: `© ${year} ${Copy?.footer?.brand ?? (site()?.name ?? 'Yume')} · ${T('footer.colophon')}` }),
@@ -581,48 +619,103 @@ export const C = {
             if (!byParent.has(key)) byParent.set(key, [])
             byParent.get(key).push(c)
           }
+          const viewer = YumeAPI.user()
+          const canModerate = permissionsHeld().includes('comment.moderate') ||
+            permissionsHeld().includes('community.moderate')
+
           const renderThread = (comment, depth) => {
-            const node = U.el('div', { class: 'comment', style: depth ? `margin-left:${Math.min(depth, 4) * 1.5}rem;` : null }, [
+            /*
+             * A SÍRKŐ a szál alakját tartja, nem tartalmat.
+             *
+             * Egy szálindító törlésekor a sor megmarad — különben a
+             * `parent_id` cascade-je MÁSOK válaszait is elvinné —, de a
+             * törzse elveszett. Ilyenkor nincs mit lájkolni, jelenteni vagy
+             * újra törölni; csak a hely marad meg, ahová a válaszok
+             * kapcsolódnak.
+             */
+            const deleted = Boolean(comment.deleted_at)
+            /*
+             * A GOMB ELREJTÉSE NEM VÉDELEM. A kiszolgáló a szerzőt és a
+             * jogosultságot maga nézi meg, és idegen kommentre 404-gyel felel.
+             * Ez csak annyi, hogy ne kínáljunk olyat, ami úgysem sikerülne.
+             */
+            const mayDelete = !deleted && Boolean(viewer) &&
+              (comment.author_id === viewer.id || canModerate)
+
+            const node = U.el('div', { class: deleted ? 'comment comment-deleted' : 'comment', style: depth ? `margin-left:${Math.min(depth, 4) * 1.5}rem;` : null }, [
               U.el('div', { class: 'comment-head' }, [
                 C.avatar(comment),
                 U.el('span', { class: 'comment-author', text: comment.author }),
                 U.el('span', { class: 'comment-time', text: U.relTime(new Date(comment.created_at)) })
               ]),
-              this.commentBody(comment),
-              U.el('div', { class: 'comment-actions' }, [
-                U.el('button', {
-                  class: 'comment-action',
-                  text: `♥ ${comment.like_count}`,
-                  onclick: async e => {
-                    try {
-                      const { liked } = await YumeAPI.likeComment(comment.id)
-                      comment.like_count += liked ? 1 : -1
-                      e.target.textContent = `♥ ${comment.like_count}`
-                    } catch (err) { U.toast(err.message, 'error') }
-                  }
-                }),
-                U.el('button', {
-                  class: 'comment-action',
-                  text: T('Reply'),
-                  onclick: () => {
-                    if (node.querySelector('.comment-form')) return
-                    node.append(form(comment.id, () => load()))
-                  }
-                }),
-                U.el('button', {
-                  class: 'comment-action',
-                  text: T('Report'),
-                  onclick: async () => {
-                    const reason = window.prompt('Reason (spam / harassment / nsfw / spoiler / illegal / other):', 'spam')
-                    if (!reason) return
-                    try {
-                      await YumeAPI.report('comment', comment.id, ['spam', 'harassment', 'nsfw', 'spoiler', 'illegal'].includes(reason) ? reason : 'other', reason)
-                      U.toast(T('Report submitted — thank you'))
-                    } catch (err) { U.toast(err.message, 'error') }
-                  }
-                })
-              ])
-            ])
+              deleted
+                ? U.el('p', { class: 'comment-body comment-body-deleted', text: T('This comment was deleted.') })
+                : this.commentBody(comment),
+              deleted
+                ? null
+                : U.el('div', { class: 'comment-actions' }, [
+                  U.el('button', {
+                    class: 'comment-action',
+                    text: `♥ ${comment.like_count}`,
+                    onclick: async e => {
+                      try {
+                        const { liked } = await YumeAPI.likeComment(comment.id)
+                        comment.like_count += liked ? 1 : -1
+                        e.target.textContent = `♥ ${comment.like_count}`
+                      } catch (err) { U.toast(err.message, 'error') }
+                    }
+                  }),
+                  U.el('button', {
+                    class: 'comment-action',
+                    text: T('Reply'),
+                    onclick: () => {
+                      if (node.querySelector('.comment-form')) return
+                      node.append(form(comment.id, () => load()))
+                    }
+                  }),
+                  U.el('button', {
+                    class: 'comment-action',
+                    text: T('Report'),
+                    onclick: async () => {
+                      const reason = window.prompt('Reason (spam / harassment / nsfw / spoiler / illegal / other):', 'spam')
+                      if (!reason) return
+                      try {
+                        await YumeAPI.report('comment', comment.id, ['spam', 'harassment', 'nsfw', 'spoiler', 'illegal'].includes(reason) ? reason : 'other', reason)
+                        U.toast(T('Report submitted — thank you'))
+                      } catch (err) { U.toast(err.message, 'error') }
+                    }
+                  }),
+                  /*
+                 * A TÖRLÉS MEGERŐSÍTÉST KÉR. Visszavonhatatlan, és a
+                 * „Válasz" meg a „Jelentés" mellett egy ujjnyira van.
+                 *
+                 * Sikeres törlés után a szálat ÚJRAOLVASSUK, nem a helyi
+                 * másolatot igazgatjuk: a kiszolgáló dönti el, hogy a sor
+                 * eltűnt-e vagy sírkő lett belőle, és a szülő
+                 * válaszszámlálója is ott változott meg. Egy kézzel
+                 * összerakott helyi állapot ettől csendben eltérne.
+                 */
+                  mayDelete
+                    ? U.el('button', {
+                      class: 'comment-action comment-action-danger',
+                      text: T('Delete'),
+                      onclick: async e => {
+                        if (!window.confirm(T('Delete this comment? This cannot be undone.'))) return
+                        const button = e.target
+                        button.disabled = true
+                        try {
+                          await YumeAPI.deleteComment(comment.id)
+                          U.toast(T('Comment deleted'))
+                          await load()
+                        } catch (err) {
+                          button.disabled = false
+                          U.toast(err.message, 'error')
+                        }
+                      }
+                    })
+                    : null
+                ])
+            ].filter(Boolean))
             list.append(node)
             for (const child of byParent.get(comment.id) ?? []) renderThread(child, depth + 1)
           }

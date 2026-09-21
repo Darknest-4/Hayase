@@ -698,6 +698,20 @@ export const YumeAPI = {
     return this._request(`/v1/comments/${id}/like`, { method: 'POST', auth: true })
   },
 
+  /**
+   * Egy hozzászólás törlése.
+   *
+   * A JOGOSULTSÁGOT A KISZOLGÁLÓ DÖNTI EL — a saját kommentet a szerzője, a
+   * másét a moderátori jog. A kliens azt rejti el, aminek nincs értelme
+   * megmutatni; ami nem jár, azt a kiszolgáló utasítja vissza.
+   *
+   * 204-et ad vissza, tehát a `_request` `null`-t: a hívónak nincs mit
+   * kiolvasnia belőle, csak azt, hogy nem dobott.
+   */
+  deleteComment (id) {
+    return this._request(`/v1/comments/${id}`, { method: 'DELETE', auth: true })
+  },
+
   /** Public readiness aggregate — safe for any signed-in view. */
   async readiness () {
     try {

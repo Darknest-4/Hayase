@@ -5,7 +5,7 @@
 import { Copy } from '../shared/i18n/copy.js'
 import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
-import { configure as configureFeatures, featureOn, permissionsHeld } from '../shared/lib/site-config.js'
+import { GATE_EXEMPT, pageAvailable, configure as configureFeatures, featureOn, permissionsHeld } from '../shared/lib/site-config.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
 import { Announcements } from '../features/announcements/announcements.js'
 import { Landing } from '../features/landing/landing.js'
@@ -87,6 +87,24 @@ export const App = {
     const [route, arg] = String(window.location.pathname || '/').replace(/^\/+/, '').split('/')
     const params = new URLSearchParams(window.location.search ?? '')
     if (route && this.routes[route]) return { route, arg, params }
+
+    /*
+     * A CSUPASZ GYÖKÉR A KEZDŐKÉPERNYŐ.
+     *
+     * Aki a domaint írja be, az nem a könyvtárát jött megnézni — ő még nem
+     * tudja, mi ez. A `#/home` a visszatérő látogató címe, és az is marad:
+     * ide csak az esik, ahol se útvonalnév, se fragmentum nincs.
+     *
+     * Belépve is a kezdőképernyő jön, és ez szándékos: a lap nekik is szól, és
+     * egy automatikus átirányítás elvenné tőlük a lehetőséget, hogy
+     * megnézzék. Az onnan induló gomb viszont tudja, hogy be vannak lépve, és
+     * a főoldalra visz.
+     *
+     * Ismeretlen ÚTVONALNÉV továbbra is a `home`: azt a `navigate()` a
+     * „nincs ilyen oldal" kapuval kezeli, és egy elgépelt cím ne a
+     * marketinglapra essen.
+     */
+    if (!route) return { route: 'landing', arg: undefined, params }
     return { route: 'home', arg: undefined, params }
   },
 
@@ -118,7 +136,12 @@ export const App = {
   normalisePath () {
     if (window.location.hash) return
     const { route, arg, params } = this.parseHash()
-    if (route === 'home' && !arg) return
+    /*
+     * A tiszta gyökeret békén hagyjuk. A `/` a kezdőképernyő címe, és nem
+     * nyer semmit azzal, ha `/#/landing`-re írjuk át — csak csúnyább lesz egy
+     * megosztott linkben.
+     */
+    if ((route === 'home' || route === 'landing') && !arg) return
     const query = params.toString()
     const target = `/#/${route}${arg ? '/' + arg : ''}${query ? '?' + query : ''}`
     window.history?.replaceState?.(null, '', target)
@@ -230,10 +253,7 @@ export const App = {
     // úgysem juthat el.
     // A jelölést a `_renderGate` és a `landing` útvonal is átírhatja: a kapu a
     // kezdőképernyőt rajzolja olyan útvonalon, amit még máshogy hívnak.
-    document.body.classList.toggle('landing-route', route === 'landing')
-    // Ugyanaz a megfontolás a belépőlapon: az ikonsáv olyan helyekre mutatna,
-    // ahová a látogató épp most próbál eljutni.
-    document.body.classList.toggle('login-route', route === 'login')
+    this.applyLayout(route)
 
     /*
      * Jelezzük, hogy megnyílt egy oldal.
@@ -363,9 +383,13 @@ export const App = {
   CHROMELESS: ['watch', 'w2g', 'admin', 'landing', 'login'],
 
   // routes always reachable so users can configure the server / sign in
-  // A `login` KÜLÖN FONTOS: ha a kapu elzárná, egy privát példányon a
-  // belépőlap maga is kapu mögé kerülne, és nem lenne mód bejutni.
-  _gateExempt: ['settings', 'landing', 'login'],
+  /*
+   * A kapu alól mentes útvonalak — a `site-config.js`-ből, nem külön
+   * másolatban. A `login` KÜLÖN FONTOS: ha a kapu elzárná, egy privát
+   * példányon a belépőlap maga is kapu mögé kerülne, és nem lenne mód
+   * bejutni. Ugyanebből a listából dolgozik a menük láthatósága is.
+   */
+  _gateExempt: GATE_EXEMPT,
 
   /**
    * Routes that must never be reachable by accident.
@@ -632,18 +656,53 @@ export const App = {
   },
 
   // hide nav entries that are disabled or permission-gated-and-unavailable
+  /**
+   * A navigációs elemek elrejtése.
+   *
+   * A DÖNTÉS NEM ITT VAN, hanem a `pageAvailable`-ben — ugyanott, ahonnan a
+   * lábléc is kérdezi. Korábban ez a függvény maga olvasta a kapcsolótáblát,
+   * a lábléc pedig egy bedrótozott linklistát épített: egy adminban
+   * kikapcsolt oldal eltűnt innen, és ott maradt lent. Itt már csak az van,
+   * ami DOM-munka.
+   */
+  /**
+   * A LAYOUT KIVÁLASZTÁSA — tisztán a címből, hálózat nélkül.
+   *
+   * Ez a metódus azért van külön, mert KÉT helyről kell: a `navigate()`-ből
+   * minden útvonalváltáskor, és az `init()`-ből MÉG A KONFIGURÁCIÓ BETÖLTÉSE
+   * ELŐTT.
+   *
+   * A második a lényeg. Az `init()` megvárja a `loadConfig()` hálózati körét,
+   * és korábban csak utána futott az első `navigate()` — addig viszont az
+   * `index.html` statikus váza, az ikonsávval együtt, teljes egészében
+   * látszott. Lassú kapcsolaton ez több száz ezredmásodpercnyi ROSSZ keret a
+   * kezdőképernyő vagy a belépőlap előtt, amit aztán egy csapásra lecserél a
+   * helyes.
+   *
+   * Márpedig az, hogy egy útvonal az alkalmazás krómját kéri-e, tisztán a
+   * címből eldől — nem kell hozzá se konfiguráció, se munkamenet. Tehát nem is
+   * várunk rá.
+   */
+  applyLayout (route) {
+    // A váz `booting` jelölése: amíg ez rajta van, nem látszik króm. Az első
+    // döntéssel lekerül — innentől a keret a címhez tartozik.
+    document.body.classList.remove('booting')
+    // A kezdőképernyőnek saját fejléce van, és telefonon nem kér alsó sávot:
+    // aki még nem lépett be, annak a lebegő pill öt olyan helyre mutat, ahová
+    // úgysem juthat el. A `_renderGate` is átírhatja: a kapu a
+    // kezdőképernyőt rajzolja olyan útvonalon, amit még máshogy hívnak.
+    document.body.classList.toggle('landing-route', route === 'landing')
+    // Ugyanaz a megfontolás a belépőlapon: az ikonsáv olyan helyekre mutatna,
+    // ahová a látogató épp most próbál eljutni.
+    document.body.classList.toggle('login-route', route === 'login')
+  },
+
   applyNavVisibility () {
-    const cfg = this.config
-    if (!cfg) return
-    const signedIn = !!YumeAPI.user()
+    if (!this.config) return
     document.querySelectorAll('.sidebar-btn[data-route]').forEach(btn => {
       const route = btn.dataset.route
       if (route === 'admin') return // handled by refreshAdminNav
-      let hide = false
-      if (cfg.site.requireLogin && !signedIn && !this._gateExempt.includes(route)) hide = true
-      const flag = cfg.flags['page.' + route]
-      if (flag && (!flag.enabled || (flag.access === 'permission' && !this.perms.includes(flag.permission)))) hide = true
-      btn.classList.toggle('nav-flag-hidden', hide)
+      btn.classList.toggle('nav-flag-hidden', !pageAvailable(route))
     })
   },
 
@@ -1005,6 +1064,12 @@ export const App = {
     this.refreshNotifBadge()
     this.initAccountMenu()
     this.normalisePath()
+    /*
+     * A KERET ELŐBB, MINT A HÁLÓZAT. Lásd `applyLayout`: enélkül a statikus
+     * váz ikonsávja végigvillan a kezdőképernyő és a belépőlap előtt, amíg a
+     * `loadConfig()` válasza megjön.
+     */
+    this.applyLayout(this.parseHash().route)
     this.applyNavLabels()
     this.initSearchModal()
     this.initMobileMore()

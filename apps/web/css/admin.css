@@ -306,6 +306,11 @@
 .admin-content-body {
   width: 100%; max-width: var(--ap-max); margin-inline: auto; padding-inline: var(--ap-gutter);
 }
+/* A szekció saját tartója. Sima blokk — a szélességet és a margót fölötte a
+   `.admin-content-body` adja; ez azért létezik, hogy a szekcióváltás valódi
+   LEVÁLASZTÁS legyen, és a magukat frissítő szekciók észrevegyék, hogy
+   elmentek. Lásd a `select()` melletti magyarázatot. */
+.admin-pane { min-width: 0; }
 .admin-content-head {
   padding-block: var(--ap-5) var(--ap-4);
   margin-bottom: var(--ap-5);

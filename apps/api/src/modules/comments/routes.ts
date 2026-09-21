@@ -4,9 +4,10 @@
 
 import { query, queryOne, transaction } from '../../infrastructure/database/index.ts'
 import { emitEvent } from '../webhooks/delivery.ts'
+import { loadPermissions } from '../../middleware/auth.ts'
 import { notify } from '../notifications/worker.ts'
 
-import type { FastifyPluginAsync } from 'fastify'
+import type { FastifyPluginAsync, FastifyReply } from 'fastify'
 import { WRITE_LIMIT } from '../../middleware/security.ts'
 
 const SUBJECT_TYPES = ['anime', 'episode', 'post', 'review'] as const
@@ -33,7 +34,8 @@ const routes: FastifyPluginAsync = async fastify => {
     const { subjectType, subjectId, limit } = request.query as { subjectType: string, subjectId: string, limit?: number }
     const data = await query(
       `SELECT c.id, c.parent_id, c.body, c.spoiler, c.like_count, c.reply_count,
-              c.created_at, c.edited_at, u.username AS author,
+              c.created_at, c.edited_at, c.deleted_at, c.author_id,
+              u.username AS author,
               ap.avatar_key AS author_avatar
        FROM comments c
        JOIN users u ON u.id = c.author_id
@@ -65,7 +67,7 @@ const routes: FastifyPluginAsync = async fastify => {
        LEFT JOIN user_profiles ap ON ap.user_id = u.id
        LEFT JOIN anime a ON c.subject_type = 'anime' AND a.id = c.subject_id
        LEFT JOIN anime_mappings m ON m.anime_id = a.id
-       WHERE c.hidden_at IS NULL AND c.parent_id IS NULL
+       WHERE c.hidden_at IS NULL AND c.deleted_at IS NULL AND c.parent_id IS NULL
        ORDER BY c.created_at DESC
        LIMIT $1`,
       [limit ?? 25]
@@ -141,6 +143,102 @@ const routes: FastifyPluginAsync = async fastify => {
     })
 
     return reply.code(201).send({ ...comment, author: request.user.username })
+  })
+
+  /**
+   * A komment törlése.
+   *
+   * KI TÖRÖLHET. A szerző a sajátját, és aki `comment.moderate` jogot tart, a
+   * másokét. A döntés a KISZOLGÁLÓN dől el: a kliens elrejtheti a gombot, de
+   * az nem védelem — ezért kérdezzük le a szerzőt a törlés előtt, és ezért
+   * felel 404-gyel az idegen komment, nem 403-mal (a 403 megerősítené, hogy a
+   * megtippelt azonosító létezik).
+   *
+   * MI TÖRTÉNIK A VÁLASZOKKAL. A `parent_id` idegen kulcsa `ON DELETE
+   * CASCADE`: egy szálindító puszta eldobása MÁSOK hozzászólásait is elvinné.
+   * Ezért két eset van, és a különbség a válaszok száma:
+   *
+   *   * levél komment (nincs válasza) → a sor tényleg eltűnik, a lájkjaival
+   *     együtt (azok is cascade-elnek);
+   *   * szálindító → SÍRKŐ marad: a törzs helyére rövid jelölő kerül, a
+   *     `deleted_at` beáll, a szál alakja megmarad. Az eredeti szöveg elvész.
+   *
+   * A szülő `reply_count`-ját egy levél törlésekor vissza kell venni, különben
+   * a szál fejlécében ott marad egy válasz, ami nincs. Tranzakcióban, mert a
+   * két írás együtt igaz vagy együtt hamis.
+   */
+  fastify.delete('/:id', {
+    preHandler: fastify.authenticate,
+    config: WRITE_LIMIT,
+    schema: { params: { type: 'object', required: ['id'], properties: { id: { type: 'string', format: 'uuid' } } } }
+  }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+
+    const comment = await queryOne<{ author_id: string, parent_id: string | null, reply_count: number, deleted_at: Date | null }>(
+      'SELECT author_id, parent_id, reply_count, deleted_at FROM comments WHERE id = $1',
+      [id]
+    )
+    const missing = (): FastifyReply =>
+      reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404, detail: 'Nincs ilyen hozzászólás' })
+
+    if (!comment) return missing()
+
+    const own = comment.author_id === request.user.sub
+    /*
+     * A JOGOSULTSÁGOT A KISZOLGÁLÓ OLVASSA KI, nem a token. A hozzáférési
+     * token nem hordozza a jogosultságokat — ha hordozná, egy visszavont
+     * moderátori jog a token lejártáig érvényben maradna. A `loadPermissions`
+     * kérésenként memoizált, tehát ez nem lekérdezés minden törlésnél.
+     *
+     * Csak akkor kérdezzük meg, ha nem a sajátját törli: a hétköznapi eset ne
+     * fizessen a ritkáért.
+     */
+    const moderator = own
+      ? false
+      : await loadPermissions(request.user.sub).then(
+        held => held.has('comment.moderate') || held.has('community.moderate'))
+    // Idegen komment jog nélkül: ugyanaz a válasz, mint a nem létezőre. Egy
+    // 403 megerősítené, hogy a megtippelt azonosító mögött van valami.
+    if (!own && !moderator) return missing()
+
+    // Már törölve: a kívánt állapot áll fenn. Nem hiba, és nem is írunk újra.
+    if (comment.deleted_at) return reply.code(204).send()
+
+    const tombstone = comment.reply_count > 0
+
+    await transaction(async client => {
+      if (tombstone) {
+        await client.query(
+          `UPDATE comments
+              SET body = $2, deleted_at = now(), spoiler = false, edited_at = NULL
+            WHERE id = $1`,
+          [id, '[törölve]']
+        )
+        return
+      }
+      await client.query('DELETE FROM comments WHERE id = $1', [id])
+      if (comment.parent_id) {
+        await client.query(
+          'UPDATE comments SET reply_count = greatest(reply_count - 1, 0) WHERE id = $1',
+          [comment.parent_id]
+        )
+      }
+    })
+
+    /*
+     * A NAPLÓ A MODERÁLÁSRÓL SZÓL, nem a szerzőről. Aki a sajátját veszi le,
+     * arról nem készül biztonsági bejegyzés — ez hétköznapi művelet. Ha egy
+     * moderátor törli valaki másét, az viszont számon kérhető kell legyen.
+     */
+    if (!own) {
+      await query(
+        `INSERT INTO security_logs (user_id, event, severity, metadata)
+         VALUES ($1, 'comment_deleted_by_moderator', 'low', $2::jsonb)`,
+        [request.user.sub, JSON.stringify({ commentId: id, authorId: comment.author_id, tombstone })]
+      ).catch(() => { /* a naplózás hibája nem vonhatja vissza a törlést */ })
+    }
+
+    return reply.code(204).send()
   })
 
   fastify.post('/:id/like', { preHandler: fastify.authenticate, config: WRITE_LIMIT }, async (request, reply) => {

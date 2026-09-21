@@ -451,8 +451,33 @@ export const PageAdmin = {
           this._headActions
         ])
       )
-      body.replaceChildren(P.spinner())
-      this[s.render](body)
+      /*
+       * MINDEN SZEKCIÓ SAJÁT TARTÓT KAP — és ez a javítás lényege.
+       *
+       * Korábban minden renderelő UGYANAZT a `body` elemet kapta, és csak a
+       * tartalmát cserélte. Három szekció — Áttekintés, Metaadatok,
+       * Infrastruktúra — viszont `setInterval`-lal frissíti magát, és így
+       * védekezik:
+       *
+       *     if (!document.body.contains(content)) { clearInterval(...); return }
+       *
+       * Ez az őr azt feltételezi, hogy a tartó a navigációkor KIKERÜL a
+       * dokumentumból. A `body` viszont sosem került ki — csak a gyerekei
+       * cserélődtek —, tehát a feltétel SOHA nem lett igaz. Az időzítő ment
+       * tovább, és öt, harminc, illetve `DASH_REFRESH_MS` másodpercenként
+       * rárajzolta a régi szekció felületét arra, amit az üzemeltető épp
+       * nézett. Pontosan ez volt a bejelentett hiba: „egy idő után visszajön
+       * a kezdőlap UI-ja". A lap frissítése azért segített, mert az időzítőt
+       * is eldobta — az első visszalátogatásig.
+       *
+       * Egy friss tartóval a csere valódi leválasztás: a régi elem kikerül a
+       * dokumentumból, az őr a következő ébredésekor igazzá válik, és az
+       * időzítő leállítja magát. A három szekció kódjához nem kell nyúlni —
+       * a feltevésük innentől igaz.
+       */
+      const pane = U.el('div', { class: 'admin-pane' }, [P.spinner()])
+      body.replaceChildren(pane)
+      this[s.render](pane)
     }
     select(state.section)
   },

@@ -3323,6 +3323,18 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
   padding: 0;
 }
 .comment-action:hover { color: var(--accent); }
+
+/* A törölt hozzászólás sírköve: ott van, de nem tartalom. A szál alakját
+   tartja — a `parent_id` cascade-je miatt egy szálindító eldobása mások
+   válaszait is elvinné. */
+.comment-deleted .comment-author,
+.comment-deleted .comment-time { opacity: .6; }
+.comment-body-deleted { color: var(--fg-faint); font-style: italic; margin: 0; }
+
+/* A törlés visszavonhatatlan, és a „Válasz" mellett egy ujjnyira van. */
+.comment-action-danger { color: var(--danger); }
+.comment-action-danger:hover:not(:disabled) { color: var(--danger); text-decoration: underline; }
+.comment-action-danger:disabled { opacity: .5; cursor: default; }
 .comment-form { margin-top: var(--space-3); max-width: 52rem; }
 
 /* The library grows a screenful at a time — a full catalogue is 25,703 rows
@@ -4005,7 +4017,10 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
 /* A belépőlap ugyanezért: aki még nem lépett be, annak az ikonsáv öt olyan
    helyre mutat, ahová csak belépés után juthat el — és épp azt csinálja. */
 body.landing-route .sidebar,
-body.login-route .sidebar { display: none; }
+body.login-route .sidebar,
+/* Bootolás közben SEMMILYEN krómot nem mutatunk: rossz keretet villantani
+   rosszabb, mint egy pillanatig nem mutatni semmit. */
+body.booting .sidebar { display: none; }
 body.landing-route .page,
 body.login-route .page { padding-bottom: 0; }
 
