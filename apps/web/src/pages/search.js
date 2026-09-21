@@ -95,6 +95,20 @@ export const PageSearch = {
       }
     }
 
+    /*
+     * A KAPCSOLÓT ITT KELL MEGKÉRDEZNI, NEM LENTEBB.
+     *
+     * A kép-keresés a böngészőből tölt fel egy KÜLSŐ szolgáltatásra
+     * (`api.trace.moe`) — nincs saját végpontunk, tehát nincs is mit
+     * őrizni a kiszolgálón: itt a gomb elrejtése MAGA a funkció kikapcsolása.
+     *
+     * Csakhogy a beillesztés- és ejtésfigyelők feltétel nélkül kerültek fel a
+     * dokumentumra, a kapcsoló pedig csak lentebb dőlt el. Kikapcsolt
+     * funkció mellett a gomb eltűnt, de aki a keresőlapon beillesztett egy
+     * képet a vágólapról, annak a képe ATTÓL MÉG elment egy harmadik félhez.
+     */
+    const imageOn = featureOn('image_search')
+
     const filePick = U.el('input', { type: 'file', accept: 'image/*', style: 'display:none;', 'aria-label': 'Kép feltöltése kereséshez' })
     filePick.addEventListener('change', () => { if (filePick.files[0]) imageSearch(filePick.files[0]) })
     const imageBtn = U.el('button', { class: 'btn btn-ghost', title: T('Search by image (or paste/drop a frame)'), onclick: () => filePick.click() }, [document.createTextNode(T('Upload a frame'))])
@@ -103,24 +117,32 @@ export const PageSearch = {
       const item = [...(e.clipboardData?.items ?? [])].find(i => i.type.startsWith('image/'))
       if (item) imageSearch(item.getAsFile())
     }
+    const onDragOver = e => e.preventDefault()
     const onDrop = e => {
       e.preventDefault()
       const file = [...(e.dataTransfer?.files ?? [])].find(f => f.type.startsWith('image/'))
       if (file) imageSearch(file)
     }
-    document.addEventListener('paste', onPaste)
-    document.addEventListener('dragover', e => e.preventDefault())
-    document.addEventListener('drop', onDrop)
+    if (imageOn) {
+      document.addEventListener('paste', onPaste)
+      document.addEventListener('dragover', onDragOver)
+      document.addEventListener('drop', onDrop)
+    }
+    /*
+     * A `dragover` figyelője is NEVESÍTVE van, nem névtelen függvényként.
+     * Egy névtelen `e => e.preventDefault()`-ot nem lehet leszedni, tehát a
+     * lap elhagyása után is ott maradt volna a dokumentumon — minden
+     * keresőlap-látogatás hagyott egyet.
+     */
     const cleanup = new MutationObserver(() => {
       if (!document.body.contains(pad)) {
         document.removeEventListener('paste', onPaste)
+        document.removeEventListener('dragover', onDragOver)
         document.removeEventListener('drop', onDrop)
         cleanup.disconnect()
       }
     })
     cleanup.observe(document.getElementById('page'), { childList: true })
-
-    const imageOn = featureOn('image_search')
 
     /**
      * The filter panel is collapsible, and starts collapsed on a phone.
