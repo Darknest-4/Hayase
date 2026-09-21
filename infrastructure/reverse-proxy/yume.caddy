@@ -94,6 +94,57 @@ animehub.hu, www.animehub.hu {
 	}
 }
 
+# ---------------------------------------------------------------------------
+# discord.animehub.hu — a Discord vezérlőpult
+# ---------------------------------------------------------------------------
+#
+# UGYANAZ AZ ALKALMAZÁS, MÁS NÉVEN — és ez tudatos, nem lustaság.
+#
+# A vezérlőpult a YUME meglévő bejelentkezését, munkamenetét és API-ját
+# használja. Egy külön alkalmazás külön munkamenetet jelentene, és a
+# felhasználónak kétszer kellene bejelentkeznie ugyanahhoz a fiókhoz.
+#
+# A KÜLÖN NÉV MÉGIS INDOKOLT: a Discord OAuth `redirect_uri`-ja rögzített
+# cím, és a vezérlőpultnak saját belépési pontja van. A szétválasztás később
+# külön gépre költöztethető anélkül, hogy a cím megváltozna.
+#
+# MÉRVE, MIELŐTT EZ A BLOKK LÉTREJÖTT: a DNS már be volt állítva — ugyanazok
+# a Cloudflare-címek, mint az animehub.hu-nál —, de a Caddy nem ismerte ezt a
+# nevet, ezért nem tudott tanúsítványt adni. A Cloudflare emiatt `HTTP 525`-öt
+# (SSL handshake failed) adott vissza. Nem DNS-hiba volt, hanem origin-oldali.
+
+discord.animehub.hu {
+	# A CLOUDFLARE MEGKERÜLÉSE ITT IS KIZÁRVA. Ugyanaz a lista, mint a fő
+	# néven: egy vezérlőpult, ami az él megkerülésével is elérhető, pont
+	# annyit ér, mint a leggyengébb útja.
+	#
+	# A lista generálva: scripts/cloudflare/trust-proxy.sh --caddy <ez a fájl>
+	@nem_cloudflare not remote_ip 172.16.0.0/12 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+	handle @nem_cloudflare {
+		respond "Ez a kiszolgáló a Cloudflare-en keresztül érhető el." 403 {
+			close
+		}
+	}
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	handle {
+		# Ugyanaz a beállítás, mint a többi néven: a telepítés ne legyen kiesés.
+		reverse_proxy yume-app-1:4000 {
+			health_uri /v1/health
+			health_interval 5s
+			health_timeout 3s
+			lb_try_duration 20s
+			lb_try_interval 500ms
+		}
+	}
+}
+
 yumee.duckdns.org {
 	encode zstd gzip
 
