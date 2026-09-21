@@ -89,8 +89,25 @@ export function createEpisodePlayer (options = {}) {
     // A `<track>` DEFAULT NÉLKÜL LETILTVA töltődik be. A sáv ott van a
     // DOM-ban, és láthatatlan marad — ez a régi lejátszó egyik valódi hibája
     // volt. A `mode` az, ami tényleg kapcsol.
+    /*
+     * `hidden`, NEM `showing` — ÉS EZ EGY MÉRT HIBA JAVÍTÁSA.
+     *
+     * A `showing` azt jelenti, hogy a FELIRATOT A BÖNGÉSZŐ RAJZOLJA, a saját
+     * elhelyezésével és a saját stílusával. Két következménye volt, és
+     * mindkettő látszott a telefonos mérésen:
+     *
+     *   1. a szöveg a videó aljára került — vagyis PONT A VEZÉRLŐSÁVBA: a
+     *      képen a „845年 シガンシナ区" felirat az idő és a gombok között ült;
+     *   2. a lejátszó egész feliratstílus-rendszere (`--yp-sub-*`: méret,
+     *      szín, háttér, vastagság) HATÁSTALAN volt, mert a `.yp-subtitles`
+     *      réteget semmi nem töltötte fel. A beállítás ott volt a menüben, és
+     *      nem csinált semmit.
+     *
+     * A `hidden` mód ugyanúgy betölti a sávot és ugyanúgy küld `cuechange`
+     * eseményt — csak nem rajzol. A rajzolás innentől a miénk.
+     */
     for (const track of video.textTracks ?? []) {
-      track.mode = chosen && track.language === (chosen.language ?? chosen.lang) ? 'showing' : 'disabled'
+      track.mode = chosen && track.language === (chosen.language ?? chosen.lang) ? 'hidden' : 'disabled'
     }
     if (chosen) attachTrack(chosen)
     return chosen
@@ -124,11 +141,53 @@ export function createEpisodePlayer (options = {}) {
       video.append(element)
       // A `default` attribútum csak a KEZDETI állapotot adja meg; egy már
       // betöltött videóhoz utólag hozzáadott sávot a `mode` kapcsol be.
-      if (element.track) element.track.mode = 'showing'
+      // `hidden`: betölt és eseményt küld, de nem rajzol — lásd fent.
+      if (element.track) {
+        element.track.mode = 'hidden'
+        watchCues(element.track)
+      }
     } catch (error) {
       player.logger?.warn?.('a felirat nem tölthető be:', error.message)
       player.state.patch({ subtitles: { enabled: false } })
     }
+  }
+
+  /**
+   * A felirat kirajzolása a SAJÁT rétegünkbe.
+   *
+   * `getCueAsHTML()`-lel, nem `innerHTML`-lel: a VTT megengedi a `<b>`, `<i>`
+   * és `<c>` jelöléseket, és a szöveg egy IDEGEN kiszolgálóról jön. A
+   * `getCueAsHTML` a böngésző saját, a VTT nyelvtanára szorított értelmezője
+   * — abból nem lesz `<script>`, akármit is tartalmaz a fájl.
+   *
+   * Több egyidejű sor is lehet (párbeszéd, felirattábla), ezért mindegyik
+   * saját dobozt kap: a stílus (`--yp-sub-*`) soronként érvényesül.
+   */
+  function renderCues (track) {
+    const layer = ui.subtitleLayer
+    if (!layer) return
+    layer.replaceChildren()
+    for (const cue of track.activeCues ?? []) {
+      const sor = video.ownerDocument.createElement('div')
+      try {
+        sor.append(cue.getCueAsHTML())
+      } catch {
+        // Ha a böngésző nem adja HTML-ként, a nyers szöveg is jobb a semminél.
+        sor.textContent = String(cue.text ?? '')
+      }
+      layer.append(sor)
+    }
+  }
+
+  /** Egy sáv figyelése. A takarítás a lejátszó nyilvántartásán megy. */
+  function watchCues (track) {
+    const kezelo = () => renderCues(track)
+    track.addEventListener('cuechange', kezelo)
+    player.own(() => {
+      track.removeEventListener('cuechange', kezelo)
+      ui.subtitleLayer?.replaceChildren()
+    })
+    kezelo()
   }
 
   // ---- átugrás, haladás, folytatás ----

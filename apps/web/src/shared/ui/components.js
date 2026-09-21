@@ -616,7 +616,15 @@ export const C = {
 
   // ---- per-anime comment section (detail page) ----
   commentsSection (media) {
-    const wrap = U.el('div')
+    /*
+     * OSZTÁLYNÉV, hogy az elrendezés meg tudja fogni.
+     *
+     * Osztály nélkül a szakaszt CSS-ből nem lehetett megcélozni, és emiatt
+     * telefonon nem lehetett a helyére tenni: a lejátszóoldalon az
+     * epizódlista a lejátszó FÖLÉ került, mert a hozzászólásokat nem lehetett
+     * a lista mögé rendezni. Mérve: a videó a hajtás alá csúszott.
+     */
+    const wrap = U.el('div', { class: 'comments-section' })
     // The switch is enforced on the server too now — routes/comments.ts refuses
     // every endpoint when the flag is off — so this says so rather than
     // drawing a thread whose requests would 404.
