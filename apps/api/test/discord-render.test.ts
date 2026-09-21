@@ -22,6 +22,26 @@ let pm: typeof import('../src/modules/discord/persistent-messages.ts')
 
 const CTX = { guildId: '100000000000000001', configuration: {} }
 
+/*
+ * A `server_statistics` AZ EGYETLEN TÍPUS, AMI HÁLÓZATRA MENNE — a
+ * taglétszám nem a mi adatunk. Token nélkül meg sem próbálja, és ez a
+ * készlet pontosan ezt az állást méri: a tesztek nem hívják a Discordot.
+ */
+delete process.env.DISCORD_BOT_TOKEN
+
+/**
+ * A NYOLC TÍPUS KÉZZEL FELSOROLVA, ÉS EZ SZÁNDÉKOS.
+ *
+ * A lista a `before()` előtt kell, hogy a `describe` törzse ciklust
+ * írhasson rá — de ha csak a modul listáját másolnánk, egy elfelejtett
+ * renderelő is „átmenne", mert magával a hibás listával hasonlítanánk. A két
+ * lista egyezését ezért külön állítás méri, lent.
+ */
+const TIPUSOK = [
+  'yume_statistics', 'latest_releases', 'provider_status', 'system_health',
+  'server_statistics', 'anime_schedule', 'popular_anime', 'bot_status'
+] as const
+
 describe('a tartós üzenetek tartalma', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
   before(async () => {
     render = await import('../src/modules/discord/render.ts')
@@ -33,7 +53,7 @@ describe('a tartós üzenetek tartalma', { skip: HAS_DB ? false : 'no DATABASE_U
    * ujjlenyomatot ad, a motor minden körben módosítást küld — és a hash
    * összehasonlítás semmit nem ér.
    */
-  for (const type of ['yume_statistics', 'latest_releases', 'provider_status', 'system_health'] as const) {
+  for (const type of TIPUSOK) {
     it(`a(z) ${type} két renderelése AZONOS ujjlenyomatot ad`, async () => {
       const a = await render.renderMessage(type, CTX)
       const b = await render.renderMessage(type, CTX)
@@ -83,5 +103,41 @@ describe('a tartós üzenetek tartalma', { skip: HAS_DB ? false : 'no DATABASE_U
     for (const type of render.MESSAGE_TYPES) {
       await render.renderMessage(type, CTX) // nem dobhat
     }
+  })
+
+  it('a készlet minden típust mér, nem csak a régieket', () => {
+    assert.deepEqual([...render.MESSAGE_TYPES].sort(), [...TIPUSOK].sort(),
+      'új üzenettípus került a rendszerbe, de ez a készlet nem méri')
+  })
+
+  /*
+   * A TAGLÉTSZÁM NEM TALÁLHATÓ KI. Token nélkül a Discordtól semmit nem
+   * tudunk — ilyenkor „—" jár, nem nulla. A nulla azt állítaná, hogy a
+   * szervernek nincs egyetlen tagja sem.
+   */
+  it('a szerverstatisztika token nélkül „—"-t ír, nem nullát', async () => {
+    const p = await render.renderMessage('server_statistics', CTX) as {
+      embeds: Array<{ fields: Array<{ name: string, value: string }>, footer: { text: string } }>
+    }
+    const tagok = p.embeds[0]!.fields.find(f => f.name === 'Tagok')
+    assert.equal(tagok?.value, '—')
+    assert.match(p.embeds[0]!.footer.text, /nem érhetők el/)
+  })
+
+  /*
+   * A BOT ÁLLAPOTA A SAJÁT FRISSÍTÉSEIRŐL SZÁMOL BE. Ha kiírná, mikor
+   * frissült utoljára, a tartalma minden körben megváltozna — az üzenet
+   * önmagát hajtaná, percenként, örökké.
+   */
+  it('a bot állapota nem tartalmaz időpontot', async () => {
+    const szoveg = JSON.stringify(await render.renderMessage('bot_status', CTX))
+    assert.ok(!/\d{4}-\d{2}-\d{2}T\d{2}:/.test(szoveg), 'időbélyeg került a bot-állapotba')
+  })
+
+  it('a beállítás korlátozza a lista hosszát', async () => {
+    const sok = await render.renderMessage('anime_schedule',
+      { ...CTX, configuration: { limit: 999 } }) as { embeds: Array<{ description: string }> }
+    const sorok = sok.embeds[0]!.description.split('\n').filter(s => s.startsWith('•'))
+    assert.ok(sorok.length <= 15, `a felső korlát nem érvényesült: ${sorok.length} sor`)
   })
 })

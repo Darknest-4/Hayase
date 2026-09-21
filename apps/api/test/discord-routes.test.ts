@@ -306,6 +306,40 @@ describe('a Discord vezérlőpult végpontjai', { skip: HAS_DB ? false : 'no DAT
     }
   })
 
+  it('bot token nélkül az újraküldés sem hazudik sikert', async () => {
+    const elozo = process.env.DISCORD_BOT_TOKEN
+    delete process.env.DISCORD_BOT_TOKEN
+    try {
+      const letre = (await letrehoz(MIENK, adminToken)).json()
+      await pool.query("UPDATE persistent_messages SET message_id = '300000000000000002' WHERE id = $1", [letre.id])
+      const res = await hivas('POST', `/v1/discord/guilds/${MIENK}/persistent-messages/${letre.id}/recreate`, adminToken)
+      assert.equal(res.statusCode, 503)
+      // ÉS NEM NYÚLT A REKORDHOZ. Egy félbehagyott újraküldés, ami a
+      // nyilvántartást már törölte, de újat nem küldött, rosszabb a
+      // semminél: az üzenet kint marad, és többé senki nem frissíti.
+      const utana = await pool.query<{ message_id: string | null }>(
+        'SELECT message_id FROM persistent_messages WHERE id = $1', [letre.id])
+      assert.equal(utana.rows[0]!.message_id, '300000000000000002',
+        'token nélkül is elengedte a régi üzenetazonosítót')
+    } finally {
+      if (elozo !== undefined) process.env.DISCORD_BOT_TOKEN = elozo
+    }
+  })
+
+  it('másik guild üzenetét NEM lehet újraküldeni', async () => {
+    const idegen = await pool.query<{ id: string }>(
+      `INSERT INTO persistent_messages (guild_id, channel_id, message_type)
+       VALUES ($1, $2, 'bot_status') RETURNING id`, [IDEGEN, CSATORNA])
+    const res = await hivas('POST',
+      `/v1/discord/guilds/${MIENK}/persistent-messages/${idegen.rows[0]!.id}/recreate`, adminToken)
+    // A 404 akkor is 404, ha token sincs: a guild-ellenőrzés ELŐBB fut.
+    assert.ok([404, 503].includes(res.statusCode), `váratlan válasz: ${res.statusCode}`)
+    const utana = await pool.query<{ message_id: string | null }>(
+      'SELECT message_id FROM persistent_messages WHERE id = $1', [idegen.rows[0]!.id])
+    assert.equal(utana.rows.length, 1)
+    assert.equal(utana.rows[0]!.message_id, null)
+  })
+
   it('a státusz megmondja, be van-e kötve a bot', async () => {
     const res = await hivas('GET', '/v1/discord/status', adminToken)
     assert.equal(res.statusCode, 200)

@@ -343,6 +343,70 @@ async function failRecord (row: PersistentMessage, detail: string, now: Date, fo
     [row.id, now.toISOString(), detail.slice(0, 500), forceCount])
 }
 
+// ------------------------------------------------------- újralétrehozás
+
+/**
+ * KÉZI ÚJRALÉTREHOZÁS — a felület „Újra kiküldés" gombja.
+ *
+ * MIÉRT KELL, ha a motor a törölt üzenetet magától visszahozza. Mert az
+ * automatika egyetlen helyzetet kezel: az üzenet MÁR NINCS MEG. Az
+ * üzemeltetőnek viszont van egy másik baja is — az üzenet megvan, csak nem
+ * ott, ahol kellene: lejjebb csúszott ötszáz üzenettel, vagy egy fél
+ * szerkesztés maradt benne. Ilyenkor nem módosítani akar, hanem új üzenetet
+ * a csatorna aljára.
+ *
+ * ELŐBB TÖRÖL, AZTÁN KÜLD, és ez a sorrend a lényeg. Fordítva — vagy a
+ * törlés kihagyásával — pontosan az jönne létre, ami ellen az egész modul
+ * készült: KÉT üzenet ugyanarról. A törlés a saját üzenetünkre vonatkozik,
+ * nem a csatorna tartalmára; másét ez soha nem bántja.
+ *
+ * A TÖRLÉS KUDARCA NEM ÁLLÍTJA MEG A KÜLDÉST, de nem is hallgatjuk el: a
+ * `removedOld` mezőben megy vissza, és a felület kiírja. Egy kézzel már
+ * letörölt üzenetnél ez a normális állapot.
+ */
+export async function recreateMessage (
+  row: PersistentMessage,
+  options: SyncOptions
+): Promise<SyncResult & { removedOld: boolean | null }> {
+  const now = options.now ?? new Date()
+
+  let removedOld: boolean | null = null
+  if (row.message_id) {
+    if (options.client.remove === undefined) {
+      removedOld = null
+    } else {
+      try {
+        await options.client.remove(row.channel_id, row.message_id)
+        removedOld = true
+      } catch (error) {
+        // A „nincs meg" nem kudarc: pont ez a kívánt végállapot.
+        removedOld = classifyError(error).kind === 'message_not_found'
+      }
+    }
+  }
+
+  /*
+   * A NYILVÁNTARTÁS ELŐBB FELEJT. Ha a küldés elhasal, a rekord akkor sem
+   * mutathat a régi — időközben törölt — üzenetre: a következő ciklus egy
+   * nem létező üzenetet próbálna módosítani.
+   */
+  await query(
+    `UPDATE persistent_messages
+        SET message_id = NULL, last_rendered_hash = NULL,
+            failure_count = 0, last_error = NULL, updated_at = now()
+      WHERE id = $1`,
+    [row.id])
+  await logEvent(row.id, 'recreate_requested',
+    removedOld === true ? 'a régi üzenet törölve' : removedOld === false ? 'a régi üzenetet nem sikerült törölni' : null,
+    null)
+
+  const friss = await findById(row.id)
+  if (!friss) return { outcome: 'failed', detail: 'a rekord időközben eltűnt', removedOld }
+
+  const result = await syncMessage(friss, { ...options, now, force: true })
+  return { ...result, removedOld }
+}
+
 // ---------------------------------------------------------------- olvasás
 
 export async function findById (id: string): Promise<PersistentMessage | undefined> {

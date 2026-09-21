@@ -32,6 +32,15 @@ export interface DiscordClient {
   fetch: (channelId: string, messageId: string) => Promise<SentMessage | null>
   /** Van-e a botnak joga írni ebbe a csatornába. */
   canPost: (channelId: string) => Promise<boolean>
+  /**
+   * A SAJÁT üzenetünk törlése — csak az újralétrehozáshoz.
+   *
+   * Nem kötelező: a motor rendes működéséhez nem kell, és a hamis kliensek
+   * túlnyomó része nem is valósítja meg. Ahol hiányzik, ott az
+   * újralétrehozás elhagyja a törlést, és ezt meg is mondja — nem tesz úgy,
+   * mintha megtörtént volna.
+   */
+  remove?: (channelId: string, messageId: string) => Promise<void>
 }
 
 /**

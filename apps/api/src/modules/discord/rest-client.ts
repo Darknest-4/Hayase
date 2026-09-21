@@ -174,6 +174,19 @@ export function createRestClient (): DiscordClient {
       return { id: String((body as { id?: unknown }).id ?? messageId) }
     },
 
+    /*
+     * A SAJÁT ÜZENETÜNK TÖRLÉSE. A Discord 204-gyel felel, üres törzzsel.
+     * A „már nincs meg" itt nem hiba: pont az az állapot, amit el akartunk
+     * érni.
+     */
+    async remove (channelId: string, messageId: string): Promise<void> {
+      const { status, body } = await request(
+        `/channels/${safeId(channelId, 'csatorna')}/messages/${safeId(messageId, 'üzenet')}`,
+        { method: 'DELETE' })
+      if (status === 404 || body.code === 10008) return
+      assertOk(status, body)
+    },
+
     async canPost (channelId: string): Promise<boolean> {
       try {
         const perms = await channelPermissions(channelId)
@@ -187,6 +200,36 @@ export function createRestClient (): DiscordClient {
         return true
       }
     }
+  }
+}
+
+/**
+ * Egy guild adatai — a `server_statistics` üzenethez.
+ *
+ * A `with_counts=true` nélkül a Discord NEM ad taglétszámot: a `guild`
+ * objektum `member_count` mezője csak a gateway-en keresztül érkezik. A
+ * közelítő számok viszont a REST-en is elérhetők, és ehhez pontosan
+ * elegendők — egy statisztikai embedben a ±1 tag nem számít.
+ *
+ * NULL, HA NINCS TOKEN vagy nem érjük el. A hívó ilyenkor „—"-t ír, nem
+ * nullát: a nulla azt állítaná, hogy a szervernek nincs tagja.
+ */
+export async function fetchGuild (guildId: string): Promise<{
+  name: string, memberCount: number | null, onlineCount: number | null
+} | null> {
+  if (!isConfigured()) return null
+  try {
+    const { status, body } = await request(`/guilds/${safeId(guildId, 'guild')}?with_counts=true`)
+    if (status >= 400) return null
+    const b = body as { name?: unknown, approximate_member_count?: unknown, approximate_presence_count?: unknown }
+    const szam = (v: unknown): number | null => typeof v === 'number' ? v : null
+    return {
+      name: typeof b.name === 'string' ? b.name : '',
+      memberCount: szam(b.approximate_member_count),
+      onlineCount: szam(b.approximate_presence_count)
+    }
+  } catch {
+    return null
   }
 }
 

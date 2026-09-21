@@ -883,7 +883,14 @@ export const YumeAPI = {
       resync: (guildId, id) => YumeAPI._request(`/v1/discord/guilds/${guildId}/persistent-messages/${id}/resync`, { method: 'POST', auth: true }),
       preview: (guildId, id) => YumeAPI._request(`/v1/discord/guilds/${guildId}/persistent-messages/${id}/preview`, { auth: true }),
       history: (guildId, id) => YumeAPI._request(`/v1/discord/guilds/${guildId}/persistent-messages/${id}/history`, { auth: true }),
-      diagnose: (guildId, channelId) => YumeAPI._request(`/v1/discord/guilds/${guildId}/channels/${channelId}/diagnose`, { auth: true })
+      recreate: (guildId, id) => YumeAPI._request(`/v1/discord/guilds/${guildId}/persistent-messages/${id}/recreate`, { method: 'POST', auth: true }),
+      diagnose: (guildId, channelId) => YumeAPI._request(`/v1/discord/guilds/${guildId}/channels/${channelId}/diagnose`, { auth: true }),
+      // A fiók-összekötés. A `start` csak a címet adja vissza — az
+      // átirányítást a böngésző végzi, mert a Discord engedélyezési
+      // képernyője nem tölthető be háttérkérésként.
+      linkStatus: () => YumeAPI._request('/v1/discord/oauth/link', { auth: true }),
+      linkStart: () => YumeAPI._request('/v1/discord/oauth/start', { method: 'POST', auth: true }),
+      unlink: () => YumeAPI._request('/v1/discord/oauth/link', { method: 'DELETE', auth: true })
     },
 
     analytics: {

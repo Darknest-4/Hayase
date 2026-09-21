@@ -51,6 +51,7 @@ export type AuditAction =
   | 'discord.persistent_message.update'
   | 'discord.persistent_message.delete'
   | 'discord.persistent_message.resync'
+  | 'discord.persistent_message.recreate'
   /*
    * A Discord-fiók összekötése és bontása.
    *

@@ -16,7 +16,7 @@ import { audit } from '../audit/audit.ts'
 import { query, queryOne } from '../../infrastructure/database/index.ts'
 import { guildAccess } from './guild-access.ts'
 import { createRestClient, diagnoseChannel, isConfigured } from './rest-client.ts'
-import { findById, listForGuild, syncMessage, type PersistentMessage } from './persistent-messages.ts'
+import { findById, listForGuild, recreateMessage, syncMessage, type PersistentMessage } from './persistent-messages.ts'
 import { renderMessage, MESSAGE_TYPES } from './render.ts'
 import * as oauth from './oauth.ts'
 import { can, parsePermissions } from './permissions.ts'
@@ -391,6 +391,38 @@ const routes: FastifyPluginAsync = async fastify => {
     const result = await syncMessage(row, { client: createRestClient(), payload, force: true })
     await audit((request.user as { sub: string }).sub, 'discord.persistent_message.resync',
       'config', `discord:${guildId}:${row.message_type}`, null, { outcome: result.outcome })
+    return result
+  })
+
+  /**
+   * ÚJRA KIKÜLDÉS — a régi üzenet helyett egy új, a csatorna alján.
+   *
+   * Ez nem ugyanaz, mint a „Frissítés most": az módosítja, ami kint van. Ez
+   * eldobja, és újat küld. Lásd `recreateMessage`.
+   */
+  fastify.post('/guilds/:guildId/persistent-messages/:id/recreate', {
+    onRequest: fastify.authenticate,
+    schema: { params: MESSAGE_PARAMS }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'manage_messages')
+    if (!guildId) return
+    if (!isConfigured()) {
+      return await reply.code(503).send({
+        type: 'about:blank', title: 'Service Unavailable', status: 503,
+        detail: 'nincs beállítva Discord bot token'
+      })
+    }
+    const { id } = request.params as { id: string }
+    const row = await findById(id)
+    if (!row || row.guild_id !== guildId) {
+      return await reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    }
+
+    const payload = await renderMessage(row.message_type, { guildId, configuration: row.configuration })
+    const result = await recreateMessage(row, { client: createRestClient(), payload })
+    await audit((request.user as { sub: string }).sub, 'discord.persistent_message.recreate',
+      'config', `discord:${guildId}:${row.message_type}`, null,
+      { outcome: result.outcome, removedOld: result.removedOld })
     return result
   })
 

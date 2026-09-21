@@ -31,6 +31,7 @@ function fakeClient (viselkedes: {
   canPost?: boolean
   /** Ha meg van adva, a `send` MEGVÁRJA ezt — így a hívó benn tartja a zárat. */
   sendGate?: Promise<void>
+  removeFails?: Error
 } = {}) {
   const hivasok: string[] = []
   return {
@@ -51,7 +52,11 @@ function fakeClient (viselkedes: {
         return { id: messageId }
       },
       async fetch () { hivasok.push('fetch'); return null },
-      async canPost () { hivasok.push('canPost'); return viselkedes.canPost !== false }
+      async canPost () { hivasok.push('canPost'); return viselkedes.canPost !== false },
+      async remove (channelId: string, messageId: string) {
+        hivasok.push(`remove:${messageId}`)
+        if (viselkedes.removeFails) throw viselkedes.removeFails
+      }
     }
   }
 }
@@ -350,5 +355,103 @@ describe('a tartós üzenetek motorja', { skip: HAS_DB ? false : 'no DATABASE_UR
     assert.equal(pm.classifyError(new Error('Unknown Channel')).kind, 'channel_not_found')
     assert.equal(pm.classifyError(new Error('Missing Permissions')).kind, 'forbidden')
     assert.equal(pm.classifyError(new Error('valami egészen más')).kind, 'unknown')
+  })
+
+  // ---- kézi újralétrehozás ----
+  //
+  // Ez nem ugyanaz, mint a törölt üzenet automatikus visszahozása. Ott az
+  // üzenet MÁR NINCS MEG; itt megvan, csak rossz helyen — lejjebb csúszott,
+  // vagy elrontott. A kérdés ezért más: marad-e KETTŐ a csatornában.
+
+  it('a régi üzenetet TÖRLI, mielőtt újat küld', async () => {
+    const row = await ujRekord()
+    const f1 = fakeClient()
+    const elso = await pm.syncMessage(row, { client: f1.client as never, payload: { x: 1 }, force: true })
+    const regiId = elso.messageId as string
+
+    const friss = await pm.findById((row as { id: string }).id)
+    const f2 = fakeClient()
+    const r = await pm.recreateMessage(friss as never, { client: f2.client as never, payload: { x: 1 } })
+
+    assert.equal(r.outcome, 'created', 'nem új üzenet jött létre')
+    assert.equal(r.removedOld, true)
+    assert.notEqual(r.messageId, regiId, 'ugyanazt az azonosítót adta vissza')
+    // A SORREND A LÉNYEG: előbb törlés, aztán küldés. Fordítva egy pillanatig
+    // — vagy örökre — két üzenet állna a csatornában.
+    assert.deepEqual(f2.hivasok.filter(h => h.startsWith('remove') || h.startsWith('send')),
+      [`remove:${regiId}`, 'send:csatorna-1'])
+  })
+
+  it('üzenet nélküli rekordnál nincs mit törölni', async () => {
+    const row = await ujRekord()
+    const f = fakeClient()
+    const r = await pm.recreateMessage(row, { client: f.client as never, payload: { x: 1 } })
+    assert.equal(r.outcome, 'created')
+    assert.equal(r.removedOld, null)
+    assert.equal(f.hivasok.filter(h => h.startsWith('remove')).length, 0)
+  })
+
+  /*
+   * A „MÁR NINCS MEG" NEM KUDARC. Pont az a végállapot, amit el akartunk
+   * érni — ha ezt hibának vennénk, egy kézzel letörölt üzenetnél a felület
+   * pánikot jelezne egy sikeres műveletre.
+   */
+  it('a már törölt üzenet törlése sikernek számít', async () => {
+    const row = await ujRekord()
+    const f1 = fakeClient()
+    await pm.syncMessage(row, { client: f1.client as never, payload: { x: 1 }, force: true })
+    const friss = await pm.findById((row as { id: string }).id)
+
+    const f2 = fakeClient({ removeFails: hiba('message_not_found') })
+    const r = await pm.recreateMessage(friss as never, { client: f2.client as never, payload: { x: 1 } })
+    assert.equal(r.removedOld, true)
+    assert.equal(r.outcome, 'created')
+  })
+
+  /*
+   * A NYILVÁNTARTÁS AKKOR IS FELEJT, HA A KÜLDÉS ELHASAL. Enélkül a rekord
+   * egy időközben TÖRÖLT üzenetre mutatna, és a következő kör azt próbálná
+   * módosítani — egy olyan üzenetet, ami már nincs.
+   */
+  it('kudarcnál sem marad benn a régi üzenetazonosító', async () => {
+    const row = await ujRekord()
+    const f1 = fakeClient()
+    await pm.syncMessage(row, { client: f1.client as never, payload: { x: 1 }, force: true })
+    const friss = await pm.findById((row as { id: string }).id)
+
+    const f2 = fakeClient({ sendFails: hiba('forbidden', 'nincs jog') })
+    const r = await pm.recreateMessage(friss as never, { client: f2.client as never, payload: { x: 1 } })
+    assert.equal(r.outcome, 'failed')
+
+    const utana = await pm.findById((row as { id: string }).id)
+    assert.equal((utana as { message_id: string | null }).message_id, null,
+      'a rekord még mindig a törölt üzenetre mutat')
+  })
+
+  /*
+   * A TÖRLÉS NEM KÖTELEZŐ A PORTON. Ahol nincs megvalósítva, ott az
+   * újralétrehozás nem hasal el — de nem is állítja, hogy törölt.
+   */
+  it('törlés nélküli kliensnél nem állít valótlant', async () => {
+    const row = await ujRekord()
+    const f1 = fakeClient()
+    await pm.syncMessage(row, { client: f1.client as never, payload: { x: 1 }, force: true })
+    const friss = await pm.findById((row as { id: string }).id)
+
+    const f2 = fakeClient()
+    const { remove, ...torlesNelkul } = f2.client as Record<string, unknown>
+    const r = await pm.recreateMessage(friss as never, { client: torlesNelkul as never, payload: { x: 1 } })
+    assert.equal(r.outcome, 'created')
+    assert.equal(r.removedOld, null, 'azt állította, hogy törölte, pedig nem tudta')
+  })
+
+  it('az újralétrehozás nyomot hagy az előzményben', async () => {
+    const row = await ujRekord()
+    const f = fakeClient()
+    await pm.recreateMessage(row, { client: f.client as never, payload: { x: 1 } })
+    const sorok = await db.query<{ event: string }>(
+      'SELECT event FROM persistent_message_events WHERE message_id = $1 ORDER BY at',
+      [(row as { id: string }).id])
+    assert.ok(sorok.some(e => e.event === 'recreate_requested'), 'nincs bejegyzés a kézi újraküldésről')
   })
 })
