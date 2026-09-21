@@ -14,6 +14,8 @@
 
 import assert from 'node:assert/strict'
 
+import { isSensitiveHeader } from '../../src/modules/providers/scrub.ts'
+
 import type {
   AnimeProvider, ProviderEpisode, ProviderMatch, ProviderResult, ProviderSubtitle
 } from '../../src/modules/providers/types.ts'
@@ -136,16 +138,27 @@ export function checkResult (
  * naplójában.
  */
 export function checkNoSecretsInHeaders (result: ProviderResult, cim = 'az eredmény'): void {
-  const gyanus = /^(authorization|cookie|x-api-key|api-key|x-auth-token|proxy-authorization)$/i
+  /*
+   * UGYANAZT A SZABÁLYT HASZNÁLJA, AMIT A FUTÁSIDŐ.
+   *
+   * Eddig saját mintája volt — hat név, pontos egyezéssel —, és ez két
+   * dologban tévedett: kimaradt belőle a `Set-Cookie`, és nem fogta meg azt,
+   * ami nem attól titok, hogy `Authorization` a neve (egy
+   * `X-Vendor-Session-Token` éppúgy az). Ráadásul két lista, ami külön
+   * avul el.
+   *
+   * A `scrub.ts` a határ, ez a segéd pedig ugyanazt kérdezi — így egy adapter
+   * tesztje pontosan azt méri, amit a rendszer tényleg kiszűr.
+   */
   for (const [i, s] of result.sources.entries()) {
     for (const k of Object.keys(s.headers ?? {})) {
-      assert.ok(!gyanus.test(k),
+      assert.ok(!isSensitiveHeader(k),
         `${cim}.sources[${i}]: a(z) \`${k}\` fejléc kimenne a böngészőnek — titok nem való a \`headers\`-be`)
     }
   }
   for (const [i, s] of result.subtitles.entries()) {
     for (const k of Object.keys(s.headers ?? {})) {
-      assert.ok(!gyanus.test(k), `${cim}.subtitles[${i}]: a(z) \`${k}\` fejléc titok`)
+      assert.ok(!isSensitiveHeader(k), `${cim}.subtitles[${i}]: a(z) \`${k}\` fejléc titok`)
     }
   }
 }

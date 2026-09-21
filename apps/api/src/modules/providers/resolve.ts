@@ -23,6 +23,7 @@ import { ranked } from './registry.ts'
 import * as health from './health.ts'
 
 import type { EpisodeRef, ProviderResult, ProviderSource } from './types.ts'
+import { scrubHeaders } from './scrub.ts'
 
 /** Ennyi idő után feladjuk egy szolgáltatónál. */
 const TIMEOUT_MS = 8_000
@@ -139,6 +140,36 @@ export async function resolveEpisode (ref: EpisodeRef): Promise<Resolution> {
       const sources = result.sources?.length ?? 0
 
       if (sources > 0) {
+        /*
+         * A FEJLÉCEK MEGTISZTÍTÁSA — itt, a lánc határán.
+         *
+         * A `headers` kimegy a böngészőnek (ez a mező értelme), tehát ami ide
+         * bekerül, azt minden néző látja. Volt rá ellenőrzés, de az TESZT-segéd
+         * volt: csak akkor futott, ha az adapter szerzője megírta hozzá a
+         * tesztet. Itt viszont minden eredmény átmegy rajta.
+         *
+         * Nem csendben: az eltávolított fejléc NEVE a naplóba kerül (az értéke
+         * soha), mert az adapter szerzőjének meg kell tudnia, hogy amit beírt,
+         * nem megy ki.
+         */
+        const eltavolitott = new Set<string>()
+        for (const forras of result.sources) {
+          const { kept, removed } = scrubHeaders(forras.headers)
+          forras.headers = kept
+          for (const nev of removed) eltavolitott.add(nev)
+        }
+        for (const felirat of result.subtitles ?? []) {
+          const { kept, removed } = scrubHeaders(felirat.headers)
+          felirat.headers = kept
+          for (const nev of removed) eltavolitott.add(nev)
+        }
+        if (eltavolitott.size) {
+          console.warn(
+            `a(z) ${provider.id} szolgáltató érzékeny fejlécet adott vissza, ` +
+            `ezért nem megy ki a böngészőnek: ${[...eltavolitott].join(', ')}`
+          )
+        }
+
         health.succeeded(provider.id, ms, sources)
         attempts.push({ provider: provider.id, outcome: 'ok', sources, ms })
         const value: Resolution = {

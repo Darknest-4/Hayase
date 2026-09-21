@@ -43,13 +43,42 @@ describe('minden bejelentkezett adapter', () => {
   })
 
   /*
-   * KÉT ADAPTER NEM VISELHETI UGYANAZT AZ AZONOSÍTÓT. A regiszter `Map`-ben
-   * tárol, tehát a második CSENDBEN felülírná az elsőt — a lista hosszabb
-   * lenne, mint a tényleg meghívható adapterek száma.
+   * EZ AZ ÁLLÍTÁS ELŐSZÖR SEMMIT NEM MÉRT, és ezt megmértem.
+   *
+   * A regiszterből olvastam ki az azonosítókat — csakhogy a regiszter `Map`-ben
+   * tárol, tehát mire idáig érünk, a duplikátum MÁR eltűnt. Két azonos
+   * azonosítójú adapter regisztrálása után a `known()` egyetlen bejegyzést ad
+   * vissza (megmérve: a második marad meg), és az egyediség-ellenőrzés
+   * diadalmasan átmegy. A teszt a `Map` viselkedését igazolta, nem a
+   * rendszerét.
+   *
+   * A duplikátum a FORRÁSLISTÁBAN látszik, nem a regiszterben — ott, ahol
+   * két adapter szerzője nem tudott egymásról.
    */
-  it('egyedi azonosítót visel', () => {
-    const idk = adapterek.map(a => a.id)
-    assert.equal(new Set(idk).size, idk.length, 'ütköző azonosító: ' + idk.join(', '))
+  it('egyedi azonosítót visel — a BUILT_IN listában, nem a regiszterben', async () => {
+    const { readFileSync } = await import('node:fs')
+    const src = readFileSync(new URL('../src/modules/providers/index.ts', import.meta.url), 'utf8')
+    const blokk = /const BUILT_IN = \[([\s\S]*?)\]/.exec(src)
+    assert.ok(blokk, 'nem találom a BUILT_IN listát')
+    const nevek = blokk[1]!.split(',').map(x => x.trim()).filter(Boolean)
+    assert.equal(new Set(nevek).size, nevek.length, 'ugyanaz az adapter kétszer: ' + nevek.join(', '))
+
+    // És a tényleges azonosítók is egyediek — a lista hossza egyezzen azzal,
+    // amit a regiszter ténylegesen tart.
+    assert.equal(adapterek.length, nevek.length,
+      `a BUILT_IN ${nevek.length} adaptert sorol, a regiszter ${adapterek.length}-et tart — ütköző azonosító nyelt el egyet`)
+  })
+
+  /*
+   * A VÉDELEM MAGA. A `registerBuiltInProviders()` ütközésre HIBÁT DOB, nem
+   * felülír — indulási hibaként, mert egy figyelmeztetés elveszne az induláskor
+   * kiírt sorok között.
+   */
+  it('ütköző azonosítóra a bejelentkeztetés elhasal, nem felülír', async () => {
+    const { readFileSync } = await import('node:fs')
+    const src = readFileSync(new URL('../src/modules/providers/index.ts', import.meta.url), 'utf8')
+    assert.match(src, /throw new Error\(/,
+      'a bejelentkeztetés csendben felülírná az ütköző adaptert')
   })
 
   /*
