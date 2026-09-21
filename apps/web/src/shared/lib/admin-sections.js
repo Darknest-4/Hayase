@@ -32,6 +32,19 @@ export const ADMIN_GROUPS = [
   { key: 'content', label: 'Katalógus' },
   { key: 'people', label: 'Közösség' },
   { key: 'ops', label: 'Üzemeltetés' },
+  /*
+   * KIFELÉ MENŐ INTEGRÁCIÓK.
+   *
+   * A webhookok és a Discord tartós üzenetei ugyanaz a család: mindkettő azt
+   * mondja meg, MIT KÜLDÜNK KI a nevünkben egy idegen rendszerbe. Eddig
+   * mindkettő az „Üzemeltetés" alatt volt, ami nyolcra hizlalta azt a
+   * csoportot — a `audit-status` teszt szerint hétnél több szekció már
+   * „lerakat", és igaza van: egy nyolcelemű menüben nem lehet keresni.
+   *
+   * A szétválasztás nem csak számtani: aki azt kérdezi, „mi megy ki a
+   * Discordra", az nem a hibanaplók és a mentések között fogja keresni.
+   */
+  { key: 'integrations', label: 'Integrációk' },
   { key: 'look', label: 'Megjelenés' }
 ]
 
@@ -52,8 +65,15 @@ export const ADMIN_SECTIONS = [
   { key: 'monitoring', group: 'insight', label: 'Infrastruktúra', sub: 'A kiszolgáló állapota és szolgáltatásai', perm: 'system.metrics.view', render: 'renderMonitoring', icon: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>' },
   { key: 'announcements', group: 'people', label: 'Hírek', sub: 'Az egész oldalra szóló üzenetek', perm: 'announcement.manage', render: 'renderAnnouncements', icon: '<path d="M3 11v3a1 1 0 0 0 1 1h3l4 4V6L7 10H4a1 1 0 0 0-1 1z"/><path d="M16 9a4 4 0 0 1 0 6"/><path d="M19.5 6a8 8 0 0 1 0 12"/>' },
   { key: 'changelog', group: 'people', label: 'Fejlesztési napló', sub: 'Kiadások és a bennük lévő sorok', perm: 'changelog.manage', render: 'renderChangelog', icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>' },
+  /*
+   * A Discord tartós üzenetei.
+   *
+   * Az `ops` csoportban, nem a `content`-ben: ez üzemeltetői felület — mi
+   * megy ki egy idegen szerver csatornájába a nevünkben, és mikor hibázott.
+   */
+  { key: 'discord', group: 'integrations', label: 'Discord', sub: 'Tartós üzenetek és állapotuk', perm: 'discord.manage', render: 'renderDiscord', icon: '<path d="M9 12a1 1 0 1 0 2 0 1 1 0 1 0-2 0"/><path d="M13 12a1 1 0 1 0 2 0 1 1 0 1 0-2 0"/><path d="M8.5 17c0 1-1.356 3-1.832 3-1.429 0-2.698-1.667-3.333-3-.635-1.667-.476-5.833 1.428-11.11C5.712 4.462 7.061 4.128 8.5 4l.5 1h2l.5-1c1.439.128 2.788.462 3.737 1.89 1.904 5.277 2.063 9.443 1.428 11.11-.635 1.333-1.904 3-3.333 3-.476 0-1.832-2-1.832-3"/>' },
   { key: 'providers', group: 'content', label: 'Forrásszolgáltatók', sub: 'Honnan játszunk le, és mi romlott el', perm: 'video_source.view', render: 'renderProviders', icon: '<path d="M5 12V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5"/><rect x="2" y="12" width="20" height="8" rx="2"/><path d="M6 16h.01M10 16h.01"/>' },
-  { key: 'webhooks', group: 'ops', label: 'Webhookok', sub: 'Kimenő integrációk', perm: 'admin.webhooks.manage', render: 'renderWebhooks', icon: '<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>' },
+  { key: 'webhooks', group: 'integrations', label: 'Webhookok', sub: 'Kimenő integrációk', perm: 'admin.webhooks.manage', render: 'renderWebhooks', icon: '<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>' },
   { key: 'themes', group: 'look', label: 'Témák', sub: 'Színek, amikből a látogatók választhatnak', perm: 'theme.publish', render: 'renderThemes', icon: '<circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2a10 10 0 0 0 0 20 2 2 0 0 0 2-2v-1a2 2 0 0 1 2-2h2a4 4 0 0 0 4-4 10 10 0 0 0-10-11"/>' },
   { key: 'backups', group: 'ops', label: 'Mentések', sub: 'Mentés, ellenőrzés, visszaállítás', perm: 'backup.manage', render: 'renderBackups', icon: '<path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/>' },
   { key: 'maintenance', group: 'ops', label: 'Karbantartás', sub: 'Ütemezés, hatókör, mentességi jegyek', perm: 'security.manage', render: 'renderMaintenanceSection', icon: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>' },

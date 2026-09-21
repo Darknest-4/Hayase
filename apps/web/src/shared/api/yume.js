@@ -874,6 +874,18 @@ export const YumeAPI = {
       config: body => YumeAPI._request('/v1/admin/edge/config', { method: 'PATCH', auth: true, body })
     },
 
+    discord: {
+      status: () => YumeAPI._request('/v1/discord/status', { auth: true }),
+      list: guildId => YumeAPI._request(`/v1/discord/guilds/${guildId}/persistent-messages`, { auth: true }),
+      create: (guildId, body) => YumeAPI._request(`/v1/discord/guilds/${guildId}/persistent-messages`, { method: 'POST', auth: true, body }),
+      update: (guildId, id, body) => YumeAPI._request(`/v1/discord/guilds/${guildId}/persistent-messages/${id}`, { method: 'PATCH', auth: true, body }),
+      remove: (guildId, id) => YumeAPI._request(`/v1/discord/guilds/${guildId}/persistent-messages/${id}`, { method: 'DELETE', auth: true }),
+      resync: (guildId, id) => YumeAPI._request(`/v1/discord/guilds/${guildId}/persistent-messages/${id}/resync`, { method: 'POST', auth: true }),
+      preview: (guildId, id) => YumeAPI._request(`/v1/discord/guilds/${guildId}/persistent-messages/${id}/preview`, { auth: true }),
+      history: (guildId, id) => YumeAPI._request(`/v1/discord/guilds/${guildId}/persistent-messages/${id}/history`, { auth: true }),
+      diagnose: (guildId, channelId) => YumeAPI._request(`/v1/discord/guilds/${guildId}/channels/${channelId}/diagnose`, { auth: true })
+    },
+
     analytics: {
       visitors: range => YumeAPI._request(`/v1/admin/analytics/visitors?range=${range}`, { auth: true }),
       providers: range => YumeAPI._request(`/v1/admin/analytics/providers?range=${range}`, { auth: true }),

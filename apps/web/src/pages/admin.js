@@ -1,4 +1,4 @@
-/* global confirm, document, history, window */
+/* global confirm, document, history, window, localStorage */
 // Admin dashboard — overview analytics, user management and the
 // moderation queue. Only reachable with the right permissions; the
 // server enforces them regardless.
@@ -1494,6 +1494,177 @@ export const PageAdmin = {
       wide: true,
       body: this.statusList(sorok, 'Nincs állapotadat.')
     }))
+  },
+
+  // ---- Discord --------------------------------------------------------------
+  //
+  // MI VAN EZEN A KÉPERNYŐN, ÉS MIÉRT ABBAN A SORRENDBEN. Egy üzemeltető itt
+  // három kérdésre keres választ, ebben a sorrendben: „megy-e egyáltalán?",
+  // „mi van kint és hol?", „mikor romlott el?". Ezért van elöl a bot
+  // állapota, utána az üzenetek listája, és minden soron belül az utolsó
+  // hiba.
+  //
+  // A GUILD AZONOSÍTÓJÁT A FELÜLET KÉRI BE. Nincs guild-lista végpont: a bot
+  // guildjeit a Discordtól kellene lekérdezni, és az egy külön kör — addig a
+  // felület azt kezeli, amit megadnak neki. Az azonosító a böngészőben
+  // megmarad, hogy ne kelljen újra beírni.
+
+  DISCORD_TYPES: {
+    yume_statistics: 'YUME statisztika',
+    latest_releases: 'Legfrissebb epizódok',
+    provider_status: 'Forrásszolgáltatók',
+    system_health: 'Rendszerállapot'
+  },
+
+  async renderDiscord (content) {
+    const state = { guildId: this._discordGuild ?? localStorage.getItem('yume-discord-guild') ?? '' }
+
+    const draw = async () => {
+      content.replaceChildren(P.spinner())
+      let status
+      try {
+        status = await YumeAPI.admin.discord.status()
+      } catch (error) {
+        content.replaceChildren(P.emptyState('A Discord állapota nem kérdezhető le: ' + error.message))
+        return
+      }
+
+      const fej = U.el('div', { class: 'dash-cards' }, [
+        this.analyticsKpi('Bot', 0, null, {
+          tone: status.configured ? 'green' : 'red',
+          display: status.configured ? 'be van kötve' : 'nincs token',
+          icon: '<circle cx="12" cy="12" r="10"/>'
+        }),
+        this.analyticsKpi('Üzenettípus', (status.messageTypes ?? []).length, null,
+          { tone: 'blue', icon: '<path d="M4 4h16v12H5.17L4 17.17z"/>' })
+      ])
+
+      const guildMezo = U.el('input', {
+        class: 'input',
+        type: 'text',
+        inputmode: 'numeric',
+        placeholder: 'Discord szerver azonosítója',
+        value: state.guildId,
+        'aria-label': 'Discord szerver azonosítója'
+      })
+      const betolt = U.el('button', { class: 'btn btn-primary btn-sm' }, [document.createTextNode('Betöltés')])
+      const lista = U.el('div')
+
+      const listaFrissit = async () => {
+        if (!/^\d{17,20}$/.test(state.guildId)) {
+          lista.replaceChildren(P.emptyState(
+            'Add meg a Discord szerver azonosítóját. A Discordban: Beállítások → Speciális → ' +
+            'Fejlesztői mód, majd a szerver nevére jobb gomb → Azonosító másolása.'))
+          return
+        }
+        lista.replaceChildren(P.spinner())
+        try {
+          const { data } = await YumeAPI.admin.discord.list(state.guildId)
+          lista.replaceChildren(this.discordList(data ?? [], state.guildId, listaFrissit, status))
+        } catch (error) {
+          /*
+           * A 403 ITT NEM „VALAMI HIBA". A szerveroldali kapu pontosan
+           * megmondja, mi hiányzik — összekötött fiók, lejárt jogosultság,
+           * vagy egyszerűen nincs jogod ebben a guildben. Ezt ki is írjuk,
+           * különben az üzemeltető a beállításokat kezdi javítgatni.
+           */
+          const okok = {
+            no_link: 'Ehhez a fiókhoz nincs Discord-fiók kötve.',
+            not_member: 'Ez a fiók nem tagja ennek a szervernek.',
+            stale: 'A tárolt jogosultság elavult — jelentkezz be újra a Discorddal.',
+            insufficient: 'Ebben a szerverben nincs „Szerver kezelése" jogosultságod.'
+          }
+          lista.replaceChildren(P.emptyState(okok[error.detail] ?? ('Nem sikerült betölteni: ' + error.message)))
+        }
+      }
+
+      betolt.addEventListener('click', () => {
+        state.guildId = guildMezo.value.trim()
+        this._discordGuild = state.guildId
+        try { localStorage.setItem('yume-discord-guild', state.guildId) } catch { /* privát ablak */ }
+        listaFrissit().catch(error => U.toast(error.message, 'error'))
+      })
+
+      content.replaceChildren(
+        fej,
+        this.dashPanel({
+          title: 'Tartós üzenetek',
+          sub: 'Egy üzenet, ami frissül — nem szaporodik',
+          wide: true,
+          body: U.el('div', {}, [
+            U.el('div', { class: 'adm-head-row' }, [guildMezo, betolt]),
+            lista
+          ])
+        })
+      )
+      await listaFrissit()
+    }
+
+    await draw()
+  },
+
+  /** Az üzenetek listája — soronként az állapot és a műveletek. */
+  discordList (rows, guildId, frissit, status) {
+    if (!rows.length) {
+      return P.emptyState('Ebben a szerverben még nincs tartós üzenet.')
+    }
+    const wrap = U.el('div', { class: 'meta-rows' })
+    for (const row of rows) {
+      const allapot = row.failureCount > 0
+        ? ['bad', `${row.failureCount} sikertelen kísérlet`]
+        : row.messageId ? ['ok', 'kint van'] : ['warn', 'még nem ment ki']
+
+      const muveletek = U.el('div', { class: 'adm-ann-head' })
+
+      const gomb = (cimke, tone, fn) => {
+        const b = U.el('button', { class: 'btn btn-sm ' + tone }, [document.createTextNode(cimke)])
+        b.addEventListener('click', async () => {
+          b.disabled = true
+          try { await fn() } catch (error) { U.toast(error.message, 'error') } finally {
+            b.disabled = false
+            frissit().catch(error => U.toast(error.message, 'error'))
+          }
+        })
+        return b
+      }
+
+      // A FRISSÍTÉS TOKEN NÉLKÜL ÉRTELMETLEN — a gomb ilyenkor nincs is ott.
+      if (status.configured) {
+        muveletek.append(gomb('Frissítés most', 'btn-secondary', async () => {
+          const r = await YumeAPI.admin.discord.resync(guildId, row.id)
+          U.toast('Eredmény: ' + r.outcome)
+        }))
+      }
+      muveletek.append(gomb('Előnézet', 'btn-ghost', async () => {
+        const r = await YumeAPI.admin.discord.preview(guildId, row.id)
+        // A 11.2. pont: az előnézet NEM küldés, és ezt ki is mondjuk.
+        U.toast('Előnézet — ez NEM ment ki: ' + (r.payload?.embeds?.[0]?.title ?? '(nincs cím)'))
+      }))
+      muveletek.append(gomb(row.enabled ? 'Letiltás' : 'Engedélyezés', 'btn-secondary',
+        async () => { await YumeAPI.admin.discord.update(guildId, row.id, { enabled: !row.enabled }) }))
+
+      const reszletek = [
+        `#${row.channelId}`,
+        row.lastSuccessAt ? `utoljára sikeres: ${new Date(row.lastSuccessAt).toLocaleString('hu-HU')}` : 'még nem volt sikeres',
+        row.lastError ? `hiba: ${row.lastError}` : null
+      ].filter(Boolean).join(' · ')
+
+      wrap.append(U.el('div', { class: 'meta-row backup-row', style: 'align-items:flex-start;flex-wrap:wrap;gap:var(--space-2);' }, [
+        U.el('div', { class: 'meta-row-main', style: 'min-width:0;' }, [
+          U.el('div', {}, [
+            AP.tag(this.DISCORD_TYPES[row.messageType] ?? row.messageType, allapot[0]),
+            row.enabled ? null : AP.tag('letiltva', '')
+          ]),
+          U.el('div', {
+            class: 'meta-row-sub',
+            style: 'margin-top:4px;white-space:normal;overflow-wrap:anywhere;',
+            text: `${allapot[1]} · ${reszletek}`
+          })
+        ]),
+        muveletek
+      ]))
+    }
+    return wrap
   },
 
   // ---- él -------------------------------------------------------------------
