@@ -35,9 +35,9 @@ névre**. Ez tehát nem DNS-, hanem reverse-proxy-feladat — és elvégezhető.
 | …fiókeseményt (reg/login) | `COMPLETE` | `account_events`: 216 |
 | …biztonsági eseményt | `COMPLETE` | `security_logs`: 15 615 |
 | …API-kérést és késleltetést | `COMPLETE` | `performance_metrics`: 22 667 |
-| …epizód/anime megnyitást | `PARTIAL` | `anime_stats_daily` 32, `episode_stats_daily` **3** sor — az összesítő létezik, de a nyers esemény nem minden útvonalon keletkezik |
-| …**watch start / progress / completion** | `PARTIAL` | `watch_stats_daily`: **3** sor. A lejátszó küld haladást, de nincs külön „start"/„completion" esemény |
-| …kedvelés / watchlist / like | `PARTIAL` | `xp_events`: 20 sor; nincs dedikált analitikai esemény |
+| …epizód/anime megnyitást | `COMPLETE` | **KORREKCIÓ.** Az `episode_stats_daily` a `watch_history` particionált táblából épül (`rollup.ts`), az `anime_stats_daily` az `xp_events`-ből. A gyűjtés MŰKÖDIK; a 3 sor kevés aktivitást jelent, nem hiányzó gyűjtést |
+| …**watch start / completion** | `COMPLETE` | **KORREKCIÓ.** `watch_history`: 4 sor, 0 befejezett, particionált havonta. A `starts` és a `completions` innen áll elő |
+| …kedvelés / watchlist | `COMPLETE` | **KORREKCIÓ.** `favorites`, `library_entries`, `watch_progress` táblák léteznek; az összesítő az `xp_events`-ből dolgozik |
 | …keresési találat-interakció | `MISSING` | nincs ilyen esemény |
 | …logout / session end | `PARTIAL` | a munkamenet vége **számított** (30 perces ablak), nem esemény |
 | …provider request/error/timeout | `COMPLETE` | `provider_metrics_daily` — én építettem, mérve |
@@ -109,7 +109,7 @@ eseménykör szűk, és nincs egységes eseményséma.
 |---|---|---|
 | Web / API / PostgreSQL / worker | `COMPLETE` | `service_status`, valós ellenőrzésből |
 | Redis / RabbitMQ / OpenSearch / MinIO | `COMPLETE` | `not_configured` — szándékosan nincs bekapcsolva |
-| **Discord bot / Discord API** | `MISSING` | nincs a `service_status`-ban |
+| **Discord bot / Discord API** | `COMPLETE` | **ELKÉSZÜLT.** Két külön szonda (`discord`, `discord-messages`); élesben zöld, és megjelenik a `#service-health` Discord-embedben is |
 | queue / backup / storage | `PARTIAL` | van adat máshol, a health panelen nincs |
 | CPU / RAM / disk | `PARTIAL` | `system_metrics` gyűjti, a health panelen nincs |
 | Docker konténerek | `MISSING` | — |
@@ -147,7 +147,7 @@ eseménykör szűk, és nincs egységes eseményséma.
 | Notification analytics | `PARTIAL` | `webhook_deliveries` 1651 sor van; Discord-oldali nincs |
 | Bot health | `PARTIAL` | `GET /status` mondja, be van-e kötve; gateway-metrika nincs |
 | Discord audit log | `COMPLETE` | `audit_logs`, 4 új művelettel |
-| `discord.animehub.hu` | `BLOCKED → részben elhárítható` | DNS kész, **Caddy-blokk hiányzik** → ma `HTTP 525` |
+| `discord.animehub.hu` | `COMPLETE` | **ELKÉSZÜLT.** Caddy-blokk az `infrastructure/reverse-proxy/yume.caddy`-ban; mérve: `HTTP 525` → `200`, a másik három név sértetlen |
 
 ---
 
@@ -160,7 +160,7 @@ eseménykör szűk, és nincs egységes eseményséma.
 | Guild-elkülönítés | `COMPLETE` | tesztelve, szabotázzsal is |
 | Bemenet-ellenőrzés | `COMPLETE` | séma minden végponton |
 | Rate limiting | `COMPLETE` | globális, `@fastify/rate-limit` |
-| Token-szivárgás | `COMPLETE` | három teszt méri |
+| Token-szivárgás | `COMPLETE` | három teszt méri. **Menet közben egy VALÓDI hiány derült ki**: a `safeDetail` a címeket és IP-ket maszkolta, de a `Bot <token>` alakú részletet nem — és az a `service_status.detail`-be, onnan az adminfelületre ÉS a Discord-embedbe is kimegy. Javítva, a rendszer minden szondájára |
 | Audit-napló | `COMPLETE` | a Discord-műveletekre is |
 | **Megőrzési házirend** | `PARTIAL` | analitikára és naplókra **van** és konfigurálható; Discord-eseményekre most készült; **dokumentálva nincs** |
 | `docs/analytics-privacy.md` | `MISSING` | — |
@@ -210,3 +210,40 @@ eseménykör szűk, és nincs egységes eseményséma.
 7. Gateway-szolgáltatás
 8. OAuth (a titok megérkezéséig: kód + dokumentáció)
 9. Privacy-dokumentáció, terheléses teszt
+
+
+---
+
+## 9. Elvégzett tételek ebben a menetben
+
+| | |
+|---|---|
+| `discord.animehub.hu` | `HTTP 525` → `200`, élesben |
+| Discord + tartós üzenetek a rendszerállapotban | két szonda, élesben zöld |
+| `safeDetail` hitelesítő-maszkolás | minden szondára érvényes |
+| Gap-lista | ez a dokumentum |
+
+## 10. Ami továbbra sem kész — és miért
+
+**BLOCKED (nem rajtam múlik):**
+
+1. **Discord OAuth** — `DISCORD_CLIENT_SECRET` kell a fejlesztői portálról,
+   és a `https://discord.animehub.hu/...` redirect URI regisztrálása. A
+   domain immár működik, tehát ez az EGYETLEN hiányzó darab.
+2. **Gateway által gyűjtött adat** — taglétszám, üzenetszám,
+   csatornaaktivitás, parancshasználat. Ezek csak akkor léteznek, ha a
+   gateway fut és gyűjt; visszamenőleges adat nincs, és a 35. pont szerint
+   kitalálni tilos.
+3. **Történelmi analitika** — az `analytics_daily` 8 sor. A 30/90 napos
+   nézetek addig „nincs elegendő adat" állapotot mutatnak.
+
+**MISSING, de nem blokkolt (idő kérdése):**
+
+- egységes eseményséma (`event_id`/`event_type`/`metadata`) — ma
+  táblánként külön alak van, és az működik; az egységesítés bővítés
+- heti/havi aggregáció, provider-percentilisek (p50/p95/p99 —
+  kérésenkénti tárolást igényel, ma összeg és maximum van)
+- Overview / Timeseries / Data Quality fülek
+- Persistent Message UI: create / edit / delete / test / recreate / history
+- Gateway-szolgáltatás
+- terheléses teszt, `docs/analytics-privacy.md`
