@@ -897,6 +897,16 @@ export const YumeAPI = {
     // when this account holds no permission over it.
     badges: () => YumeAPI._request('/v1/admin/badges', { auth: true }),
 
+    // ---- forrásszolgáltatók ----
+    // A listában a KIKAPCSOLTAK is benne vannak: a panelnek azt kell
+    // mutatnia, ami VAN, nem azt, ami épp fut — különben pont az a kapcsoló
+    // tűnne el, amivel vissza lehetne kapcsolni.
+    providers: () => YumeAPI._request('/v1/admin/providers', { auth: true }),
+    providerEvents: (slug, limit = 20) =>
+      YumeAPI._request(`/v1/admin/providers/${encodeURIComponent(slug)}/events?limit=${limit}`, { auth: true }),
+    updateProvider: (slug, patch) =>
+      YumeAPI._request(`/v1/admin/providers/${encodeURIComponent(slug)}`, { method: 'PATCH', body: patch, auth: true }),
+
     // Everything the overview screen draws, in one round trip. `days` is the
     // window every comparison on it is measured over, so the captions on the
     // cards are all true of the same period.
