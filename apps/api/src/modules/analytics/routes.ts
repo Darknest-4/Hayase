@@ -25,7 +25,7 @@ const routes: FastifyPluginAsync = async fastify => {
    * for the errors. `authenticate` rather than a permission, so the route
    * answers for anyone already in the panel and decides figure by figure.
    */
-  fastify.get('/badges', { onRequest: fastify.authenticate }, async request => {
+  fastify.get('/badges', { onRequest: fastify.authenticate }, async (request, reply) => {
     const held = await query<{ slug: string }>(
       `SELECT DISTINCT p.slug
          FROM user_roles ur
@@ -44,6 +44,26 @@ const routes: FastifyPluginAsync = async fastify => {
         ? queryOne<{ n: string }>("SELECT count(*) AS n FROM reports WHERE status IN ('open', 'reviewing')")
         : null
     ])
+    /*
+     * AKI EGYIK SZÁMOT SEM LÁTHATJA, AZ 404-ET KAP — mint minden testvére.
+     *
+     * Ez a végpont szándékosan `authenticate`-tel őrzött, nem
+     * jogosultsággal, mert figuránként dönt. A mellékhatása viszont az volt,
+     * hogy MINDEN belépett fióknak 200-zal válaszolt: mérve, egy frissen
+     * regisztrált átlagos felhasználó `{"errors":null,"reports":null}`-t
+     * kapott rá. Adat nem szivárgott — de a 109 testvére `hide: true`-val
+     * pont azért ad 404-et, hogy az adminfelület LÉTE se derüljön ki, és
+     * ez az egy ellentmondott nekik.
+     *
+     * Aki egyik jogosultságot sem tartja, az eddig is két `null`-t kapott,
+     * tehát nem veszít semmit; a panel jelvényrajzolója pedig már eddig is
+     * elviselte a hibát („no badges rather than an error over a working
+     * menu"). Aki a panelen dolgozik, annak legalább az egyik jogosultsága
+     * megvan, és a válasza változatlan.
+     */
+    if (!errors && !reports) {
+      return await reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    }
     return {
       errors: errors ? Number(errors.n) : null,
       reports: reports ? Number(reports.n) : null

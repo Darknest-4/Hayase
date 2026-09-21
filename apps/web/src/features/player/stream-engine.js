@@ -15,6 +15,28 @@
 
 import { Prefs } from '../../shared/state/preferences.js'
 
+/**
+ * Mi bizonyítja, hogy egy forrás MŰKÖDIK.
+ *
+ * A `loadedmetadata` MOBILON ELENGEDHETETLEN, és ennek hiánya egy valódi
+ * hibaként jelentkezett: a telefonon minden forrás „the stream did not start in
+ * time"-mal bukott el, miközben asztali böngészőben ugyanaz a fájl azonnal
+ * elindult.
+ *
+ * Az ok a mobil böngészők automatikus lejátszási szabálya. A videó nem néma,
+ * tehát az `autoplay` tiltott; ilyenkor a böngésző MEGÁLL A METAADATNÁL, és nem
+ * tölt képkocka-adatot felhasználói gesztus nélkül. A `canplay` és a
+ * `loadeddata` viszont mindkettő `readyState >= 2`-t kíván, vagyis tényleges
+ * képkockát — ezek tehát SOHA nem következtek be, és a tizenkét másodperces
+ * határidő minden egyes forrást megbuktatott.
+ *
+ * A `loadedmetadata` pontosan azt bizonyítja, amit ez a szakasz kérdez: a
+ * hivatkozás él, a böngésző érti a formátumot, és tudja a hosszát. Ha a
+ * dekódolás mégis elhasal, az `error` esemény továbbra is megbuktatja a
+ * jelöltet, és a motor továbblép a következőre.
+ */
+const READY_EVENTS = ['canplay', 'loadeddata', 'loadedmetadata']
+
 export const StreamEngine = {
   /** How long a stream gets to produce data before it counts as failed. */
   START_TIMEOUT_MS: 12_000,
@@ -42,6 +64,20 @@ export const StreamEngine = {
     if (path.endsWith('.m3u8')) return 'hls'
     if (path.endsWith('.mpd')) return 'dash'
     if (/^https?:/.test(value)) return 'direct'
+    /*
+     * AZONOS EREDETŰ ÚT. A `/assets/videos/x.mp4` alakú hivatkozás ugyanolyan
+     * közvetlenül lejátszható, mint egy teljes URL — a böngésző a `<video
+     * src>`-ben feloldja az oldal eredetéhez képest.
+     *
+     * Enélkül a saját kiszolgálású videók „unrecognised stream URL"-t kaptak,
+     * és a katalógusba csak abszolút URL-t lehetett volna írni. Az viszont a
+     * TARTOMÁNYNEVET égeti bele minden sorba: egy költözés — például a
+     * duckdns-ről saját domainre — egyszerre tenné tönkre mindet.
+     *
+     * A `//` kezdetű protokoll-relatív alak szándékosan KIMARAD: az más
+     * kiszolgálóra mutat, tehát nem azonos eredetű.
+     */
+    if (value.startsWith('/') && !value.startsWith('//')) return 'direct'
     return 'unknown'
   },
 
@@ -346,8 +382,7 @@ export const StreamEngine = {
       let settled = false
 
       const cleanup = () => {
-        video.removeEventListener('canplay', onCanPlay)
-        video.removeEventListener('loadeddata', onCanPlay)
+        for (const event of READY_EVENTS) video.removeEventListener(event, onCanPlay)
         video.removeEventListener('error', onError)
         clearTimeout(timer)
       }
@@ -363,8 +398,7 @@ export const StreamEngine = {
       const onCanPlay = () => succeed()
       const onError = () => fail(video.error?.message || 'the stream could not be played')
 
-      video.addEventListener('canplay', onCanPlay, { once: true })
-      video.addEventListener('loadeddata', onCanPlay, { once: true })
+      for (const event of READY_EVENTS) video.addEventListener(event, onCanPlay, { once: true })
       video.addEventListener('error', onError)
       const timer = setTimeout(() => fail('the stream did not start in time'), this.START_TIMEOUT_MS)
 

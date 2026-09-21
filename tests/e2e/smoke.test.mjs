@@ -66,6 +66,20 @@ describe('browser smoke', { skip: REASON }, () => {
   before(async () => {
     process.env.WEB_ROOT = WEB_ROOT
     process.env.JWT_SECRET ??= 'e2e-secret-not-used-for-anything-real-0123456789'
+    /*
+     * AZ EMBERPRÓBA KI VAN KAPCSOLVA a böngészős futásokban.
+     *
+     * Ezek a tesztek API-hívással regisztrálnak, tehát nincs widgetjük,
+     * amitől tokent kérhetnének. Ha a futtató héjába be van töltve a `.env`
+     * (és ez a szokásos mód egy szkript futtatásához), a regisztráció
+     * 403-mal hasalna el, mielőtt egy böngésző egyáltalán elindulna — egy
+     * olyan hibával, aminek semmi köze ahhoz, amit a teszt mér.
+     *
+     * A törlésnek az app IMPORTJA ELŐTT kell megtörténnie: a CSP-t a
+     * `security.ts` betöltéskor építi fel.
+     */
+    delete process.env.TURNSTILE_SITE_KEY
+    delete process.env.TURNSTILE_SECRET_KEY
     // Each page load pulls ~40 static files; at debug level the request log
     // buries the test output completely.
     process.env.LOG_LEVEL ??= 'warn'

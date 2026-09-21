@@ -7,7 +7,7 @@
 // (auto)play of the following episode.
 
 import { navigate } from '../shared/lib/shell.js'
-import { featureOn } from '../shared/lib/site-config.js'
+import { featureOn, flagDeclared } from '../shared/lib/site-config.js'
 import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
@@ -15,6 +15,7 @@ import { LibrarySync } from '../features/library-sync/library-sync.js'
 import { Prefs } from '../shared/state/preferences.js'
 import { Store } from '../shared/state/store.js'
 import { StreamEngine } from '../features/player/stream-engine.js'
+import { createEpisodePlayer } from '../features/player2/watch/episode-player.js'
 import { P } from '../shared/ui/primitives.js'
 import { titleTheme } from '../shared/lib/title-theme.js'
 import { U } from '../shared/lib/dom.js'
@@ -47,6 +48,29 @@ export const PageWatch = {
       root.replaceChildren(P.errorState(T('Failed to load anime: ') + e.message))
       return
     }
+
+    /*
+     * NINCS ILYEN CÍM — és ezt ki is kell mondani.
+     *
+     * A `Catalogue.media()` egy ismeretlen azonosítóra `null`-t AD VISSZA, nem
+     * dob: „a uuid-nek nincs hová mennie". A fenti `catch` tehát nem fogja
+     * meg, és a következő sor a `null`-on dolgozott tovább — a látogató egy
+     * nyers JavaScript-kivételt kapott üzenetként:
+     *
+     *     Cannot read properties of null (reading 'episodes')
+     *
+     * Éles oldalon lemérve, egy elrontott `#/watch/…` címmel. Egy elavult
+     * könyvjelző, egy törölt cím vagy egy elgépelt link mind ide fut.
+     *
+     * A RÉSZLETOLDAL EZT MÁR TUDTA: ugyanez a hívás, ugyanez a `null`, és ott
+     * áll mellette egy `if (!media)`. Ugyanaz a kérdés, két külön válasz —
+     * ezért van itt most ugyanaz az ág.
+     */
+    if (!media) {
+      root.replaceChildren(P.emptyState(T('Anime not found.')))
+      return
+    }
+
     // Van-e egyáltalán miből lejátszani ezt a részt?
     //
     // Eddig a lejátszóoldal felépült, a motor végigpróbálta a nulla jelöltet,
@@ -105,8 +129,25 @@ export const PageWatch = {
     const playerBox = U.el('div', { class: 'player-box' })
     col.append(playerBox)
 
-    if (src) {
-      this.mountPlayer(playerBox, media, episode, total, decodeURIComponent(src), w2gCode)
+    /*
+     * A KATALÓGUS SAJÁT FORRÁSAI IS INDÍTJÁK A LEJÁTSZÓT.
+     *
+     * Eddig a feltétel csak `src` volt, vagyis a lejátszó KIZÁRÓLAG akkor épült
+     * fel, ha a látogató kézzel beillesztett egy URL-t. A `registeredSources`
+     * a lejátszón BELÜL kérdezi le a katalógust — tehát amíg a lejátszó nem
+     * indult el, a regisztrált forrásokat soha senki nem kérte le.
+     *
+     * Ez akkor derült ki, amikor mind a 364 064 epizódhoz került forrás: az
+     * epizódlista `source_count: 1`-et adott, a `hasSomethingToPlay` átengedte
+     * az oldalt, és a látogató mégis a kézi beviteli űrlapot kapta. A
+     * `/v1/anime/episodes/:id/sources` végpontot a lap egyszer sem hívta meg.
+     *
+     * A `hasRegisteredSources` szándékosan szigorúbb a `canPlayEpisode`-nál:
+     * csak akkor indítunk lejátszót, ha TUDJUK, hogy van mit lejátszani.
+     * „Talán van" alapján indítva üres lejátszót kapna a néző.
+     */
+    if (src || this.hasRegisteredSources(episode)) {
+      this.mountPlayer(playerBox, media, episode, total, src ? decodeURIComponent(src) : '', w2gCode)
     } else {
       this._video = null
       this.mountSourcePicker(playerBox, media, episode)
@@ -537,6 +578,24 @@ export const PageWatch = {
     return row.sourceCount > 0
   },
 
+  /**
+   * HATÁROZOTTAN tudjuk-e, hogy van regisztrált forrás.
+   *
+   * A `canPlayEpisode` a „nem tudjuk" esetet szándékosan átengedi: egy sosem
+   * importált AniList-címnél nincs epizódsor, amire forrást lehetne akasztani,
+   * és ott a tiltás rossz válasz lenne. Ez a függvény az ELLENKEZŐ irányba
+   * szigorú — csak akkor mond igent, ha a katalógus sora ténylegesen legalább
+   * egy forrást jelent.
+   *
+   * A kettő különbsége az, ami a lejátszó automatikus indítását eldönti:
+   * „talán van" alapján elindítani a lejátszót éppen azt az üres képernyőt
+   * adná vissza, amit a `hasSomethingToPlay` megszüntetett.
+   */
+  hasRegisteredSources (number) {
+    const row = this._episodeRows?.find(e => e.episode === number)
+    return Boolean(row && Number(row.sourceCount) > 0)
+  },
+
   async _episodeId (media, episode) {
     if (!media?.yumeId) return null
     try {
@@ -675,8 +734,89 @@ export const PageWatch = {
 
   // ---- the embedded player ----
 
+  /**
+   * A Player 2.0 felállítása egy részhez.
+   *
+   * Ami itt történik, az ADATGYŰJTÉS, nem lejátszás: a lap tudja, melyik
+   * részt nézzük, honnan jönnek a források, mi a néző beállítása — az új
+   * lejátszó ezekből áll össze, és a huzalozás a saját összeszerelő
+   * moduljában van, nem itt.
+   */
+  async mountPlayer2 (box, media, episode, total, src) {
+    const video = U.el('video', { class: 'player-video', playsinline: '', preload: 'metadata' })
+    this._video = video
+
+    const manual = String(src ?? '')
+      .split('\n').map(url => url.trim()).filter(Boolean)
+      .map((url, index) => ({ id: `manual-${index}`, url, label: T('Manual source'), quality: null }))
+
+    const registered = (await this.registeredSources(media, episode)).map((source, index) => ({
+      id: source.id ?? `registered-${index}`,
+      url: source.url,
+      quality: Number(source.quality) || null,
+      label: source.source?.name ?? source.title ?? null,
+      subtitles: source.subtitles ?? []
+    }))
+
+    const rows = await this.loadEpisodeRows(media).catch(() => [])
+    const has = number => Array.isArray(rows) && rows.some(row => Number(row.number) === number)
+
+    const mounted = createEpisodePlayer({
+      video,
+      sources: [...registered, ...manual],
+      media: { title: U.title(media), logoImage: media.logoImage ?? null },
+      episode: { number: episode },
+      nextEpisode: episode < total && has(episode + 1) ? { number: episode + 1 } : null,
+      previousEpisode: episode > 1 && has(episode - 1) ? { number: episode - 1 } : null,
+      // Az első forrás feliratai: a sávok a RÉSZHEZ tartoznak, nem ahhoz a
+      // tükörhöz, amit a néző éppen kapott.
+      subtitles: registered.find(source => source.subtitles?.length)?.subtitles ?? [],
+      skipSegments: [],
+      prefs: Prefs,
+      featureOn,
+      onNextEpisode: () => navigate(`/watch/${media.id}/${episode + 1}`),
+      onPreviousEpisode: () => navigate(`/watch/${media.id}/${episode - 1}`),
+      onProgress: (seconds, ratio) => WatchTime?.record?.(media, episode, seconds, ratio),
+      onCompleted: () => LibrarySync?.markWatched?.(media, episode)
+    })
+
+    box.append(mounted.node)
+    this._player2 = mounted
+    this._shell = mounted.node
+    return mounted
+  },
+
   mountPlayer (box, media, episode, total, src, w2gCode = null) {
-    const video = U.el('video', { class: 'player-video', autoplay: '', playsinline: '' })
+    /*
+     * A PLAYER 2.0 kapcsoló mögött.
+     *
+     * A `featureOn` NEM ELÉG ÖNMAGÁBAN: egy nem létező kapcsolóra igazat ad
+     * vissza (`if (!flag || !flag.enabled) return !flag`). Ez a többi
+     * funkciónál helyes — egy új gomb ne tűnjön el a régi telepítéseken —,
+     * egy teljes lejátszócserénél viszont azt jelentené, hogy sor nélkül az
+     * ÚJ lejátszó indul el mindenkinél, az első éles kérésnél, mérés nélkül.
+     *
+     * Ezért a kapcsolónak LÉTEZNIE ÉS BEKAPCSOLVA KELL LENNIE. A sort a 0058-as
+     * áttérés hozza létre, kikapcsolva.
+     *
+     * A KETTŐ EGYÜTT ÉL, amíg az új be nem bizonyítja magát éles forgalmon.
+     * Egy visszafordíthatatlan csere azt jelentené, hogy az első meglepetésnél
+     * nincs hova visszalépni.
+     */
+    if (flagDeclared('feature.player2') && featureOn('player2')) {
+      return this.mountPlayer2(box, media, episode, total, src)
+    }
+
+    /*
+     * `preload="metadata"` KIÍRVA, nem a böngészőre bízva.
+     *
+     * Enélkül az alapértelmezés böngészőnként más: asztali Chrome a teljes
+     * fájlt kezdi tölteni, mobilon viszont az automatikus lejátszás tiltása
+     * miatt akár semmi nem történik. A motor a `loadedmetadata`-t is elfogadja
+     * bizonyítéknak (lásd READY_EVENTS), és ez az attribútum garantálja, hogy
+     * a metaadat tényleg megérkezzen — minden eszközön ugyanúgy.
+     */
+    const video = U.el('video', { class: 'player-video', autoplay: '', playsinline: '', preload: 'metadata' })
     this._video = video
 
     const PLAY_ICON = '<polygon points="6 3 20 12 6 21 6 3" fill="currentColor" stroke="none"/>'
@@ -727,20 +867,98 @@ export const PageWatch = {
     back10.addEventListener('click', e => { e.stopPropagation(); video.currentTime = Math.max(0, video.currentTime - 10) })
     fwd10.addEventListener('click', e => { e.stopPropagation(); video.currentTime += 10 })
 
-    // ---- Yume loader (Netflix-style intro + buffering spinner) ----
+    /*
+     * ---- A betöltőképernyő ----
+     *
+     * A cím SAJÁT LOGÓJA áll a közepén, szürkén, és egy színsáv fut át rajta
+     * balról jobbra, újra meg újra, amíg a videó be nem töltődik. Ez nem
+     * díszítés: egy üres fekete négyzet alatt a néző nem tudja, hogy az oldal
+     * dolgozik-e vagy megállt, és pont a lejátszás indulása az a pillanat,
+     * amikor a leghosszabb a várakozás.
+     *
+     * A KATALÓGUS 32 536 CÍMÉBŐL 4 810-NEK VAN LOGÓJA — tehát a tartalék nem
+     * ritka kivétel, hanem a gyakoribb eset. Ilyenkor a YUME szóvédjegy áll
+     * ott, ugyanazzal a mozgással: a betöltőnek egységesnek kell lennie, nem
+     * „van logó / nincs logó" alapján kétféle élménynek.
+     *
+     * A szürkeárnyalat a `filter`-től jön, a színcsík egy maszkolt MÁSODIK
+     * példánytól ugyanarról a képről. Két réteg, egy kép, nulla plusz letöltés.
+     */
+    const logoSrc = media.logoImage ?? null
+    const brandLayer = () => (logoSrc
+      ? U.el('img', { class: 'player-loader-art', src: logoSrc, alt: '', decoding: 'async' })
+      : U.el('div', { class: 'player-loader-art player-loader-wordmark', text: 'YUME' }))
+
     const loader = U.el('div', { class: 'player-loader' }, [
-      U.el('div', { class: 'player-loader-ring' }),
-      U.svg('<path d="M23.5 4.5A13 13 0 1 0 27.5 21 10.5 10.5 0 0 1 23.5 4.5Z" fill="currentColor" stroke="none"/>', 34)
+      U.el('div', { class: 'player-loader-brand' }, [
+        // Az alsó réteg a szürke alap, a felső a színes — ez utóbbit egy
+        // mozgó maszk vágja csíkra, és a csík fut végig a logón.
+        brandLayer(),
+        U.el('div', { class: 'player-loader-sweep' }, [brandLayer()])
+      ]),
+      U.el('div', { class: 'player-loader-ring' })
     ])
-    loader.querySelector('svg').setAttribute('viewBox', '0 0 32 32')
+    /*
+     * A BETÖLTŐT A KÉSZÜLTSÉG REJTI EL, NEM A LEJÁTSZÁS.
+     *
+     * Ez a sor egyetlen eseményre figyelt: `playing`. Az `autoplay` attribútum
+     * ott van a videón, a böngésző viszont HANGGAL NEM ENGEDI az automatikus
+     * indítást, amíg a néző nem lépett kapcsolatba az oldallal — és ez nem
+     * kivétel, hanem az alapeset minden böngészőben és minden telefonon.
+     *
+     * Ilyenkor a `playing` SOHA nem érkezik meg. A videó teljesen betöltött
+     * (`readyState: 4`, megvan a hossz), a betöltőképernyő mégis ott maradt
+     * örökre — és mivel az a felületet takarja, a néző a lejátszás gombot sem
+     * érte el. Kívülről ez pontosan úgy néz ki, mintha „nem indulna el".
+     *
+     * Mérve, éles oldalon, bevezető ablak nélkül:
+     *   asztali Chromium   paused: true, readyState: 4, betöltő: LÁTSZIK
+     *   iPhone 13          paused: true, readyState: 4, betöltő: LÁTSZIK
+     *
+     * A készültség három eseménye közül bármelyik elég. A `loadeddata` azért
+     * kell, mert mobilon gyakran csak odáig jut el a böngésző magától.
+     */
     const mountedAt = Date.now()
-    const MIN_LOADER = 1100 // always show the branded loader at start, like Netflix
+    const MIN_LOADER = 1100 // a márkás betöltő mindig látszódjon egy pillanatig
+    let loaderHideTimer = null
+
     const hideLoader = () => {
+      if (loaderHideTimer) return // már ütemezve
       const wait = Math.max(0, MIN_LOADER - (Date.now() - mountedAt))
-      setTimeout(() => loader.classList.add('hidden'), wait)
+      loaderHideTimer = setTimeout(() => { loader.classList.add('hidden'); loaderHideTimer = null }, wait)
     }
-    video.addEventListener('playing', hideLoader)
-    video.addEventListener('waiting', () => loader.classList.remove('hidden'))
+    const showLoader = () => {
+      if (loaderHideTimer) { clearTimeout(loaderHideTimer); loaderHideTimer = null }
+      loader.classList.remove('hidden')
+    }
+
+    for (const type of ['canplay', 'loadeddata', 'playing']) video.addEventListener(type, hideLoader)
+
+    // A `waiting` CSAK akkor hozza vissza, ha tényleg tölt. Szünetben nincs
+    // mire várni — egy megállított videó fölé tett betöltő ugyanaz a hiba
+    // lenne, csak máskor.
+    video.addEventListener('waiting', () => {
+      if (!video.paused && video.readyState < 3) showLoader()
+    })
+
+    /*
+     * És ha az automatikus indítást elutasították, MONDJUK MEG.
+     *
+     * A középső nagy gomb szünetben magától láthatóvá válik
+     * (`.player-paused .player-center`), de csak akkor, ha a `paused` osztály
+     * tényleg felkerült — ezért kérjük meg rá a felületet, amint kiderül,
+     * hogy a böngésző nemet mondott.
+     */
+    video.addEventListener('loadeddata', () => {
+      const started = video.play?.()
+      if (started && typeof started.catch === 'function') {
+        started.catch(() => {
+          // Nem hiba: a böngésző szabálya. A néző egy koppintással indítja.
+          hideLoader()
+          shell.classList.add('player-paused')
+        })
+      }
+    }, { once: true })
 
     // W2G room badge (shown when a room is active)
     const roomBadge = U.el('button', { class: 'player-room-badge hidden', onclick: () => this.openW2G() })
@@ -1006,8 +1224,31 @@ export const PageWatch = {
     if (!video || this._wiredRoom === code) return
     this._wiredRoom = code
 
-    let applying = false
     const channel = 'w2g:' + code
+
+    /*
+     * A PLAYER 2.0 SAJÁT SZINKRONJA, ha az megy.
+     *
+     * Nem stílus kérdése. Az alábbi régi huzalozás egy LOGIKAI ÉRTÉKKEL és egy
+     * 250 ezredmásodperces időzítővel némítja a visszhangot — két egymásba érő
+     * alkalmazás (egy `seek` közben érkező `pause`) az elsőt befejezve hamisra
+     * állítja, és a második már kiküldi magát. Az új modul számlálót használ,
+     * és az elsodródást is kezeli, nem csak a három eseményt.
+     */
+    if (this._player2?.party) {
+      const party = this._player2.party
+      // A küldés a szobacsatornára megy. Hogy a küldő vezetheti-e a
+      // lejátszást, azt a SZERVER dönti el, és a vendég üzenetét
+      // visszautasítja — ugyanúgy, ahogy a régi lejátszónál is. A kliens nem
+      // tudja biztosan, ki a házigazda (a szoba csak megjelenített nevet ad
+      // vissza), és egy találgatásból eredő hamis „nem vagy házigazda" azt
+      // némítaná el, akinek vezetnie kellene.
+      party.connect({ send: payload => PageW2G.send({ ...payload, channel }) })
+      PageW2G.onMessage(message => party.receive(message))
+      return
+    }
+
+    let applying = false
     const send = (action, position) => { if (!applying) PageW2G.send({ type: 'w2g', channel, action, position }) }
     video.addEventListener('play', () => send('play', video.currentTime))
     video.addEventListener('pause', () => send('pause', video.currentTime))

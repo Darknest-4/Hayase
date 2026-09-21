@@ -2,7 +2,7 @@
 // Reusable render helpers: cards, horizontal sections, skeletons, modals.
 
 import { Copy } from '../i18n/copy.js'
-import { featureOn, playbackAvailable, site } from '../lib/site-config.js'
+import { featureOn, pageAvailable, permissionsHeld, playbackAvailable, site } from '../lib/site-config.js'
 import { T } from '../i18n/i18n.js'
 import { Store } from '../state/store.js'
 import { P } from '../ui/primitives.js'
@@ -204,7 +204,13 @@ export const C = {
         U.el('div', { class: 'footer-brand' }, [
           U.el('div', { class: 'footer-logo' }, [
             U.svg('<path d="M18 3.5A10 10 0 1 0 21 16 8 8 0 0 1 18 3.5Z" fill="currentColor" stroke="none"/>', 22),
-            U.el('span', { text: T('yume') })
+            /*
+             * A PÉLDÁNY NEVE, nem a designrendszeré. Bedrótozott „yume" volt
+             * — az oldalsáv logója közben a beállított nevet írja ki (lásd
+             * `router.init`, `.sidebar-logo-text`), tehát ugyanazon a
+             * képernyőn fent „animehub" állt, lent „yume".
+             */
+            U.el('span', { text: (site()?.name ?? 'Yume').toLowerCase() })
           ]),
           // The operator's tagline, if they set one in the admin panel — the
           // setting existed and was rendered nowhere, so the field silently did
@@ -212,14 +218,68 @@ export const C = {
           // than leaving a blank line.
           U.el('p', { class: 'footer-tagline', text: site()?.tagline?.trim() || T('footer.tagline') })
         ]),
-        col(T('footer.discover'), [[T('nav.home'), '#/home'], [T('nav.search'), '#/search'], [T('nav.schedule'), '#/schedule'], [T('nav.dashboard'), '#/dashboard']]),
-        col(T('footer.library'), [[T('footer.myLibrary'), '#/list'], [T('footer.profile'), '#/profile'], [T('footer.watchHistory'), '#/profile?tab=history'], [T('footer.analytics'), '#/profile?tab=analytics']]),
-        col(T('footer.community'), [[T('nav.community'), '#/community'], [T('nav.w2g'), '#/w2g']]),
-        col(T('footer.yume'), [[T('nav.settings'), '#/settings'], [T('nav.notifications'), '#/notifications'], [T('nav.themes'), '#/themes']])
+        /*
+         * A LÁBLÉC UGYANAZT KÉRDEZI, AMIT A FEJLÉC.
+         *
+         * Ez a lista korábban BEDRÓTOZVA állt itt, és minden rendereléskor
+         * újraépült — miközben a fejléc futásidőben szűrt a kapcsolótáblából.
+         * Egy adminban kikapcsolt oldal ezért eltűnt fent, és itt lent ott
+         * maradt: ugyanaz a kérdés, két külön válasz. A harmadik fogyasztó, a
+         * mobil sáv, a fejléc elemeit használja, tehát az együtt mozgott vele.
+         *
+         * Ahol egy hivatkozás egy oldal FÜLÉRE mutat (`#/profile?tab=history`),
+         * ott is az OLDAL elérhetősége dönt — egy letiltott profiloldal füle
+         * sem jár.
+         *
+         * Üresre fogyott oszlop nem jelenik meg: egy cím alatt semmi rosszabb,
+         * mint a hiányzó cím.
+         */
+        ...[
+          ['footer.discover', [
+            ['nav.home', '#/home', 'home'],
+            ['nav.search', '#/search', 'search'],
+            ['nav.schedule', '#/schedule', 'schedule'],
+            ['nav.dashboard', '#/dashboard', 'dashboard']
+          ]],
+          ['footer.library', [
+            ['footer.myLibrary', '#/list', 'list'],
+            ['footer.profile', '#/profile', 'profile'],
+            ['footer.watchHistory', '#/profile?tab=history', 'profile'],
+            ['footer.analytics', '#/profile?tab=analytics', 'profile']
+          ]],
+          ['footer.community', [
+            ['nav.community', '#/community', 'community'],
+            ['nav.w2g', '#/w2g', 'w2g']
+          ]],
+          /*
+           * AZ OSZLOP A PÉLDÁNY NEVÉT VISELI, nem a designrendszerét.
+           *
+           * A `footer.yume` kulcs a „Yume" szót adta, mert tulajdonnév, és a
+           * fordító szándékosan nem fordítja. Az animehub.hu-n viszont ettől
+           * a fejlécben „animehub" állt, a láblécben meg „Yume" — ugyanazon a
+           * képernyőn, két név.
+           */
+          [site()?.name ?? 'Yume', [
+            ['nav.settings', '#/settings', 'settings'],
+            ['nav.notifications', '#/notifications', 'notifications'],
+            ['nav.themes', '#/themes', 'themes']
+          ]]
+        ].map(([title, links]) => {
+          const shown = links.filter(([, , route]) => pageAvailable(route))
+          return shown.length ? col(T(title), shown.map(([label, href]) => [T(label), href])) : null
+        })
       ]),
       U.el('div', { class: 'footer-bottom' }, [
         U.el('span', { text: `© ${year} ${Copy?.footer?.brand ?? (site()?.name ?? 'Yume')} · ${T('footer.colophon')}` }),
-        U.el('span', { class: 'footer-credits', html: 'Anime data from <a href="https://anilist.co" target="_blank" rel="noopener">AniList</a>, <a href="https://jikan.moe" target="_blank" rel="noopener">Jikan</a> &amp; <a href="https://api.ani.zip" target="_blank" rel="noopener">ani.zip</a>' })
+        /*
+         * A FORRÁSMEGJELÖLÉS IS MAGYARUL. Ez a sor bedrótozott angol HTML
+         * volt egy magyar nyelvű oldal alján. A szolgáltatások NEVE marad
+         * (tulajdonnév), csak a köré írt mondat fordul.
+         */
+        U.el('span', {
+          class: 'footer-credits',
+          html: `${T('Anime data from')} <a href="https://anilist.co" target="_blank" rel="noopener">AniList</a>, <a href="https://jikan.moe" target="_blank" rel="noopener">Jikan</a> &amp; <a href="https://api.ani.zip" target="_blank" rel="noopener">ani.zip</a>`
+        })
       ])
     ])
   },
@@ -511,44 +571,30 @@ export const C = {
         return
       }
 
-      let mode = 'login'
-      const email = U.el('input', { class: 'input', type: 'email', placeholder: T('Email'), autocomplete: 'email' })
-      const identifier = U.el('input', { class: 'input', type: 'text', placeholder: T('Email or username'), autocomplete: 'username' })
-      const username = U.el('input', { class: 'input', type: 'text', placeholder: T('Username'), autocomplete: 'username' })
-      const password = U.el('input', { class: 'input', type: 'password', placeholder: T('Password (min 8 chars)'), autocomplete: 'current-password' })
-      const fields = U.el('div', { style: 'display:flex;flex-direction:column;gap:var(--space-2);max-width:22rem;' })
-      const switchBtn = U.el('button', { class: 'btn btn-ghost btn-sm' })
-      const submitBtn = U.el('button', { class: 'btn btn-primary btn-sm' })
-
-      const renderMode = () => {
-        fields.replaceChildren(...(mode === 'login' ? [identifier, password] : [email, username, password]))
-        submitBtn.textContent = mode === 'login' ? 'Sign in' : 'Create account'
-        switchBtn.textContent = mode === 'login' ? 'New here? Register' : 'Have an account? Sign in'
-      }
-      switchBtn.addEventListener('click', () => { mode = mode === 'login' ? 'register' : 'login'; renderMode() })
-
-      submitBtn.addEventListener('click', async () => {
-        try {
-          submitBtn.disabled = true
-          if (mode === 'login') await YumeAPI.login(identifier.value.trim(), password.value)
-          else await YumeAPI.register(email.value.trim(), username.value.trim(), password.value)
-          U.toast(`Signed in as ${YumeAPI.user().username}`)
-          render()
-          onAuthed()
-        } catch (e) {
-          U.toast(e.message, 'error')
-        } finally {
-          submitBtn.disabled = false
-        }
-      })
-      password.addEventListener('keydown', e => { if (e.key === 'Enter') submitBtn.click() })
-
-      renderMode()
+      /*
+       * KIJELENTKEZVE: ELKÜLDÜNK, NEM ŰRLAPOT RAJZOLUNK.
+       *
+       * Itt korábban egy teljes belépő űrlap állt — a HARMADIK másolat
+       * ugyanabból a logikából, a felugró ablak és a kapu mellett. A
+       * következménye pontosan az lett, ami a másolatoké szokott: amikor az
+       * emberpróba bekerült, ebbe nem került bele, tehát a regisztráció innen
+       * 403-mal hasalt volna el — ráadásul némán, mert ez a kártya a hibát egy
+       * eltűnő toastban mutatta.
+       *
+       * Egy belépőlap van (`#/login`), és ez odavisz. A `next` viszi a
+       * szándékot: aki a közösségi lapról indul, oda tér vissza.
+       */
+      const here = String(window.location.hash || '').replace(/^#\/?/, '').split('?')[0]
+      const next = here ? `?next=${encodeURIComponent(here)}` : ''
       wrap.append(
         U.el('h3', { text: T('Yume account') }),
         U.el('p', { text: T('Sign in to join the discussion and sync with the platform.') }),
-        fields,
-        U.el('div', { style: 'display:flex;gap:var(--space-2);margin-top:var(--space-3);' }, [submitBtn, switchBtn])
+        U.el('div', { style: 'display:flex;gap:var(--space-2);margin-top:var(--space-3);flex-wrap:wrap;' }, [
+          U.el('a', { class: 'btn btn-primary btn-sm', href: `#/login${next}` },
+            [document.createTextNode(T('Sign in'))]),
+          U.el('a', { class: 'btn btn-ghost btn-sm', href: `#/login/register${next}` },
+            [document.createTextNode(T('Create account'))])
+        ])
       )
     }
 
@@ -595,48 +641,103 @@ export const C = {
             if (!byParent.has(key)) byParent.set(key, [])
             byParent.get(key).push(c)
           }
+          const viewer = YumeAPI.user()
+          const canModerate = permissionsHeld().includes('comment.moderate') ||
+            permissionsHeld().includes('community.moderate')
+
           const renderThread = (comment, depth) => {
-            const node = U.el('div', { class: 'comment', style: depth ? `margin-left:${Math.min(depth, 4) * 1.5}rem;` : null }, [
+            /*
+             * A SÍRKŐ a szál alakját tartja, nem tartalmat.
+             *
+             * Egy szálindító törlésekor a sor megmarad — különben a
+             * `parent_id` cascade-je MÁSOK válaszait is elvinné —, de a
+             * törzse elveszett. Ilyenkor nincs mit lájkolni, jelenteni vagy
+             * újra törölni; csak a hely marad meg, ahová a válaszok
+             * kapcsolódnak.
+             */
+            const deleted = Boolean(comment.deleted_at)
+            /*
+             * A GOMB ELREJTÉSE NEM VÉDELEM. A kiszolgáló a szerzőt és a
+             * jogosultságot maga nézi meg, és idegen kommentre 404-gyel felel.
+             * Ez csak annyi, hogy ne kínáljunk olyat, ami úgysem sikerülne.
+             */
+            const mayDelete = !deleted && Boolean(viewer) &&
+              (comment.author_id === viewer.id || canModerate)
+
+            const node = U.el('div', { class: deleted ? 'comment comment-deleted' : 'comment', style: depth ? `margin-left:${Math.min(depth, 4) * 1.5}rem;` : null }, [
               U.el('div', { class: 'comment-head' }, [
                 C.avatar(comment),
                 U.el('span', { class: 'comment-author', text: comment.author }),
                 U.el('span', { class: 'comment-time', text: U.relTime(new Date(comment.created_at)) })
               ]),
-              this.commentBody(comment),
-              U.el('div', { class: 'comment-actions' }, [
-                U.el('button', {
-                  class: 'comment-action',
-                  text: `♥ ${comment.like_count}`,
-                  onclick: async e => {
-                    try {
-                      const { liked } = await YumeAPI.likeComment(comment.id)
-                      comment.like_count += liked ? 1 : -1
-                      e.target.textContent = `♥ ${comment.like_count}`
-                    } catch (err) { U.toast(err.message, 'error') }
-                  }
-                }),
-                U.el('button', {
-                  class: 'comment-action',
-                  text: T('Reply'),
-                  onclick: () => {
-                    if (node.querySelector('.comment-form')) return
-                    node.append(form(comment.id, () => load()))
-                  }
-                }),
-                U.el('button', {
-                  class: 'comment-action',
-                  text: T('Report'),
-                  onclick: async () => {
-                    const reason = window.prompt('Reason (spam / harassment / nsfw / spoiler / illegal / other):', 'spam')
-                    if (!reason) return
-                    try {
-                      await YumeAPI.report('comment', comment.id, ['spam', 'harassment', 'nsfw', 'spoiler', 'illegal'].includes(reason) ? reason : 'other', reason)
-                      U.toast(T('Report submitted — thank you'))
-                    } catch (err) { U.toast(err.message, 'error') }
-                  }
-                })
-              ])
-            ])
+              deleted
+                ? U.el('p', { class: 'comment-body comment-body-deleted', text: T('This comment was deleted.') })
+                : this.commentBody(comment),
+              deleted
+                ? null
+                : U.el('div', { class: 'comment-actions' }, [
+                  U.el('button', {
+                    class: 'comment-action',
+                    text: `♥ ${comment.like_count}`,
+                    onclick: async e => {
+                      try {
+                        const { liked } = await YumeAPI.likeComment(comment.id)
+                        comment.like_count += liked ? 1 : -1
+                        e.target.textContent = `♥ ${comment.like_count}`
+                      } catch (err) { U.toast(err.message, 'error') }
+                    }
+                  }),
+                  U.el('button', {
+                    class: 'comment-action',
+                    text: T('Reply'),
+                    onclick: () => {
+                      if (node.querySelector('.comment-form')) return
+                      node.append(form(comment.id, () => load()))
+                    }
+                  }),
+                  U.el('button', {
+                    class: 'comment-action',
+                    text: T('Report'),
+                    onclick: async () => {
+                      const reason = window.prompt('Reason (spam / harassment / nsfw / spoiler / illegal / other):', 'spam')
+                      if (!reason) return
+                      try {
+                        await YumeAPI.report('comment', comment.id, ['spam', 'harassment', 'nsfw', 'spoiler', 'illegal'].includes(reason) ? reason : 'other', reason)
+                        U.toast(T('Report submitted — thank you'))
+                      } catch (err) { U.toast(err.message, 'error') }
+                    }
+                  }),
+                  /*
+                 * A TÖRLÉS MEGERŐSÍTÉST KÉR. Visszavonhatatlan, és a
+                 * „Válasz" meg a „Jelentés" mellett egy ujjnyira van.
+                 *
+                 * Sikeres törlés után a szálat ÚJRAOLVASSUK, nem a helyi
+                 * másolatot igazgatjuk: a kiszolgáló dönti el, hogy a sor
+                 * eltűnt-e vagy sírkő lett belőle, és a szülő
+                 * válaszszámlálója is ott változott meg. Egy kézzel
+                 * összerakott helyi állapot ettől csendben eltérne.
+                 */
+                  mayDelete
+                    ? U.el('button', {
+                      class: 'comment-action comment-action-danger',
+                      text: T('Delete'),
+                      onclick: async e => {
+                        if (!window.confirm(T('Delete this comment? This cannot be undone.'))) return
+                        const button = e.target
+                        button.disabled = true
+                        try {
+                          await YumeAPI.deleteComment(comment.id)
+                          U.toast(T('Comment deleted'))
+                          await load()
+                        } catch (err) {
+                          button.disabled = false
+                          U.toast(err.message, 'error')
+                        }
+                      }
+                    })
+                    : null
+                ])
+            ].filter(Boolean))
             list.append(node)
             for (const child of byParent.get(comment.id) ?? []) renderThread(child, depth + 1)
           }
@@ -841,7 +942,19 @@ export const C = {
     }, [
       U.el('div', { class: 'search-modal', style: 'padding:var(--space-4);max-width:40rem;width:min(40rem,calc(100vw - 2rem));' }, [
         U.el('h3', { style: 'margin:0 0 var(--space-4);font-size:var(--text-lg);font-weight:800;', text: title }),
-        U.el('div', { style: 'display:flex;flex-direction:column;gap:var(--space-3);max-height:65vh;overflow-y:auto;' }, fields),
+        U.el('div', {
+        /*
+         * `dvh`, nem `vh`.
+         *
+         * A `vh` a TELJES képernyőt jelenti, a böngésző címsávja alattit is —
+         * telefonon tehát nagyobb, mint a látható terület. A `dvh` a ténylegesen
+         * láthatót méri, és így a mezők doboza nem lóghat ki a képernyőről.
+         *
+         * A burkoló amúgy is görgethető (lásd `.modal-backdrop`), ez a korlát
+         * csak azt akadályozza meg, hogy a gombok EGYÁLTALÁN lecsússzanak.
+         */
+          style: 'display:flex;flex-direction:column;gap:var(--space-3);max-height:60dvh;overflow-y:auto;'
+        }, fields),
         U.el('div', { style: 'display:flex;gap:var(--space-2);margin-top:var(--space-4);' }, [
           submit,
           U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => backdrop.close() }, [document.createTextNode(T('Cancel'))])

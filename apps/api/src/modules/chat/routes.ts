@@ -102,6 +102,12 @@ const routes: FastifyPluginAsync = async fastify => {
 
   /** Take a message down. Hidden rather than removed, like a forum post. */
   fastify.delete('/messages/:id', {
+    /*
+     * ITT EGÉSZ SZÁM AZ AZONOSÍTÓ, nem UUID — a kezelő `Number(id)`-t ad a
+     * lekérdezésnek. Séma nélkül egy „abc" `NaN`-ná vált, és azt küldtük el
+     * az adatbázisnak.
+     */
+    schema: { params: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
     onRequest: fastify.requirePermission('chat.moderate')
   }, async (request, reply) => {
     const { id } = request.params as { id: string }

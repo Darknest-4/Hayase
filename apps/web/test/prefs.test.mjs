@@ -214,3 +214,42 @@ describe('first-visit language guess', () => {
     assert.equal(loadPrefs({ languages: ['de-DE', 'fr'] }).Prefs.guessLanguage(), 'hu')
   })
 })
+
+// ---------------------------------------------------------------------------
+// EGY KAPCSOLÓ EGY DOLOGRA
+// ---------------------------------------------------------------------------
+//
+// A kiszolgáló beállításkészletében két olyan kulcs van, aminek a saját fülén
+// már volt kapcsolója: a felnőtt tartalom és az új részekről szóló értesítés.
+// Az új, sorokra bontott beállításlapon ez láthatóvá vált: ugyanaz a felirat
+// két külön fülön, egymástól függetlenül állítva.
+//
+// És csak az EGYIK csinált bármit is. A katalógus szűrése a helyi
+// beállításból kapja az `nsfw` paramétert (`catalogue/public-routes.ts`:
+// `if (!q.nsfw) where.push('NOT a.is_adult')`); ezt a kiszolgálói kulcsot
+// szűrésre senki nem olvassa. Aki a Nyelv fülön kapcsolta ki, annak semmi nem
+// történt.
+
+describe('a kétszer megjelenő beállítások', () => {
+  const forras = readFileSync(
+    new URL('../src/pages/settings.js', import.meta.url), 'utf8')
+
+  it('a nyelvi fül nem rajzolja ki azt, aminek máshol van kapcsolója', () => {
+    assert.match(forras, /const ELSEWHERE = \['content\.adult', 'notifications\.episodes'\]/)
+    assert.match(forras, /\.filter\(item => !ELSEWHERE\.includes\(item\.key\)\)/)
+  })
+
+  /*
+   * A megmaradó kapcsoló MINDKÉT másolatot írja: a helyit, amire a szűrés
+   * megy, és a fiókhoz kötöttet, hogy a kettő ne tudjon széttartani.
+   */
+  it('a felnőtt tartalom kapcsolója a fiókhoz kötött másolatot is írja', () => {
+    const blokk = forras.slice(forras.indexOf("'Show adult content'"), forras.indexOf("'Show adult content'") + 700)
+    assert.match(blokk, /Store\.saveSettings\(\{ nsfw: on \}\)/)
+    assert.match(blokk, /Prefs\.set\(\{ 'content\.adult': on \}\)/)
+  })
+
+  it('az epizódértesítés kapcsolója is', () => {
+    assert.match(forras, /if \(key === 'airing'\) Prefs\.set\(\{ 'notifications\.episodes'/)
+  })
+})

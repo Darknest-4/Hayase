@@ -24,6 +24,7 @@
 // helpers at the top, and apps/api/test/seo.test.ts, which is mostly about them.
 
 import { readFile, stat } from 'node:fs/promises'
+import { clientVersion, stampAssets } from '../../infrastructure/http/client-version.ts'
 import { join } from 'node:path'
 
 import { config } from '../../config.ts'
@@ -168,15 +169,40 @@ export function metaTags (meta: PageMeta): string {
  * a confusing thing to debug. Both are cheap next to the database query the
  * caller has already made.
  */
-let cached: { mtimeMs: number, html: string } | null = null
+/*
+ * A KULCSBAN A VERZIÓ IS BENNE VAN.
+ *
+ * A bélyeg a MODULOKBÓL származik, a gyorsítótár viszont az `index.html`
+ * módosítási idejére figyelt. Egy olyan telepítés után, ahol csak JavaScript
+ * változott — vagyis a szokásos eset —, ez a lap a KORÁBBI bélyeget adta
+ * volna vissza, és a megosztott `/anime/:id` linkről érkezők a régi kódot
+ * kapják. Éles üzemben a folyamat újraindul, tehát nem sülne el; egy
+ * `--watch` fejlesztői futásban viszont igen, és az a fajta hiba, amit
+ * senki nem köt a telepítéshez.
+ */
+let cached: { mtimeMs: number, version: string, html: string } | null = null
 
 export async function template (webRoot: string): Promise<string> {
   const path = join(webRoot, 'index.html')
   const { mtimeMs } = await stat(path)
-  if (cached?.mtimeMs === mtimeMs) return cached.html
+  let version = ''
+  try { version = await clientVersion(webRoot) } catch { /* a bélyeg elmaradhat */ }
+  if (cached?.mtimeMs === mtimeMs && cached.version === version) return cached.html
   const html = await readFile(path, 'utf8')
-  cached = { mtimeMs, html }
-  return html
+  /*
+   * A HIVATKOZÁSOK ITT IS BÉLYEGEZVE.
+   *
+   * Ez az útvonal ugyanazt a lapot adja, csak más `<head>`-del — és aki egy
+   * megosztott `/anime/:id` linkről érkezik, ugyanúgy megérdemli, hogy a
+   * friss kódot kapja. Bélyegzés nélkül pont a legtöbbet megosztott
+   * belépési pont maradna a régi gyorsítótáron.
+   *
+   * Hiba esetén a lap bélyegzés nélkül megy ki: lomhább gyorsítótár, de
+   * működő oldal.
+   */
+  const stamped = stampAssets(html, version)
+  cached = { mtimeMs, version, html: stamped }
+  return stamped
 }
 
 /** Drop the cached template. For tests. */

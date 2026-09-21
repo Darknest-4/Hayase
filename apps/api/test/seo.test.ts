@@ -148,7 +148,13 @@ describe('SEO', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
     // be a second frontend to keep in step with the first.
     const id = await makeAnime()
     const body = (await app.inject({ url: `/anime/${id}` })).body
-    assert.match(body, /<script type="module" src="\/src\/app\/main\.js">/)
+    // A cím a kliens verziójával bélyegezve megy ki (`/b/<verzió>/src/...`),
+    // hogy egy telepítés után ne a gyorsítótárból jöjjön a régi kód. Ami
+    // számít: a lap a BELÉPÉSI PONTOT tölti be, nem egy kiszolgálón rajzolt
+    // helyettesítőt.
+    assert.match(body, /<script type="module" src="(?:\/b\/[0-9a-f]+)?\/src\/app\/main\.js">/)
+    assert.match(body, /src="\/b\/[0-9a-f]{6,}\/src\/app\/main\.js"/,
+      'a hivatkozás nincs bélyegezve — egy megosztott linkről érkező a régi kódot kapná')
     assert.match(body, /id="page"/)
   })
 

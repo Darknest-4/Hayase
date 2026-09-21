@@ -92,11 +92,25 @@ describe('the exemption, wired up', { skip: HAS_DB ? false : 'no DATABASE_URL' }
 
   after(async () => { await app?.close() })
 
-  /** Tíz kérés egy olcsó nyilvános végpontra; hány ment át? */
+  /**
+   * Tíz kérés egy olcsó nyilvános végpontra; hány ment át?
+   *
+   * A TOVÁBBÍTÓFEJLÉC NEM DÍSZ. Az `inject` hurokcímről érkezik, fejléc
+   * nélkül — és a sebességkorlát azt a SAJÁT RENDSZERÜNKNEK tekinti, tehát
+   * nem fojtja (lásd `middleware/internal-request.ts`). Ez a készlet viszont
+   * arról szól, mi történik egy KÍVÜLRŐL jövő kéréssel, és egy külső kérés
+   * mindig a fordított proxyn át jön, tehát mindig van rajta ilyen fejléc.
+   *
+   * Enélkül a készlet nem a mentességet mérte volna, hanem azt, hogy a
+   * tesztfuttató honnan hívja az appot — és zöld lett volna akkor is, ha a
+   * kulcs egyáltalán nem működik.
+   */
+  const OUTSIDE = { 'x-forwarded-for': '203.0.113.50' }
+
   const burst = async (headers: Record<string, string>): Promise<number[]> => {
     const codes: number[] = []
     for (let i = 0; i < 10; i++) {
-      codes.push((await app.inject({ url: '/v1/config', headers })).statusCode)
+      codes.push((await app.inject({ url: '/v1/config', headers: { ...OUTSIDE, ...headers } })).statusCode)
     }
     return codes
   }

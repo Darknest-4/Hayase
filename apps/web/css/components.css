@@ -142,6 +142,31 @@
    Dialog — backdrop plus panel.
    --------------------------------------------------------------------------- */
 
+/*
+ * A PÁRBESZÉDABLAK BURKOLÓJA — ÉS AMIÉRT GÖRGETHETŐ.
+ *
+ * Ez rögzített, a képernyő egészét lefedi, és középre igazít. Ha a benne lévő
+ * ablak MAGASABB a maradék helynél, akkor a túllógó rész — az alja, ahol a
+ * gombok vannak — egyszerűen elérhetetlen: nincs mit görgetni, mert a burkoló
+ * nem görgethető, a lap mögötte pedig nem mozdul.
+ *
+ * Ez élesben elő is fordult, telefonon, az admin tiltás-űrlapján: a mezők
+ * kitöltődtek, a „Mentés" gomb viszont a látható terület ALATT volt, és
+ * semmivel nem lehetett odajutni. Kívülről úgy néz ki, mintha az egész oldal
+ * lefagyott volna — „nem tudok lejjebb görgetni, se létrehozni semmit".
+ *
+ * A számtan iPhone-on: a `vh` a TELJES képernyőt jelenti, a címsáv alattit is.
+ * Egy 844 pontos készüléken a `12vh` ~101 pont, a mezők doboza (`65vh`) ~549,
+ * a cím és a gombok még ~100 — összesen 750, miközben a LÁTHATÓ terület a
+ * címsáv miatt ~660. Kilencven pont a semmibe lóg.
+ *
+ * Két változás oldja meg:
+ *   * a burkoló GÖRGETHETŐ, tehát a túllógó rész elérhető marad;
+ *   * telefonon nem pazarolunk 12%-ot a tetejére.
+ *
+ * Az `overscroll-behavior: contain` azt akadályozza meg, hogy a burkoló
+ * végigérése után a MÖGÖTTE lévő lap kezdjen el görögni.
+ */
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -152,7 +177,14 @@
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-top: 12vh;
+  padding: 12vh var(--space-4) var(--space-4);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 640px) {
+  /* Telefonon a képernyő nyolcada nem dísz, hanem elvett hely. */
+  .modal-backdrop { padding: var(--space-4) var(--space-3) var(--space-5); }
 }
 .modal-backdrop.hidden { display: none; }
 
@@ -241,9 +273,29 @@
 .input[disabled], .select[disabled], .textarea[disabled] {
   opacity: .5; cursor: not-allowed; background: var(--bg);
 }
-.input[aria-invalid='true'], .textarea[aria-invalid='true'] {
+/*
+ * A HIBÁS MEZŐ NE CSAK SZÍNBEN KÜLÖNBÖZZÖN A FÓKUSZÁLTTÓL.
+ *
+ * A `--accent` (rose-500) és a `--danger` (red-500) a képernyőn gyakorlatilag
+ * ugyanaz a piros. A fókuszgyűrű az elsőt használja, a hibajelzés a
+ * másodikat — vagyis egy üres, még meg sem érintett mező fókuszban pontosan
+ * úgy nézett ki, mint egy elrontott. A belépőlapon ez volt az első, ami
+ * szembejött.
+ *
+ * A palettához nem nyúlunk. A megkülönböztetés VASTAGSÁGBAN történik: a
+ * belső árnyék megdupláznja a keret vonalát, tehát a hibás mező akkor is
+ * „megjelöltnek" látszik, ha épp nincs rajta a fókusz — és akkor is, ha
+ * valaki nem látja a két piros közti különbséget. Szín SOSEM lehet az
+ * egyetlen csatorna.
+ *
+ * Belső árnyék, nem vastagabb keret: egy 2 képpontos `border` minden hibánál
+ * egy képponttal arrébb tolná a mező tartalmát.
+ */
+.input[aria-invalid='true'], .textarea[aria-invalid='true'], .select[aria-invalid='true'] {
   border-color: var(--danger);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--danger) 18%, transparent);
+  box-shadow:
+    0 0 0 3px color-mix(in oklab, var(--danger) 18%, transparent),
+    inset 0 0 0 1px var(--danger);
 }
 
 .field { display: flex; flex-direction: column; gap: var(--space-1); }
@@ -678,10 +730,27 @@ a.badge:hover { color: var(--accent); border-color: var(--accent); }
 .lp-account-letter { font-weight: var(--weight-black); font-size: var(--text-sm); }
 
 /* ---- belépő ablak ---- */
-.auth-modal .dialog { width: min(24rem, calc(100vw - 2rem)); }
-.auth-body { display: flex; flex-direction: column; gap: var(--space-4); }
 .auth-fields { display: flex; flex-direction: column; gap: var(--space-3); }
 .auth-fields .input { width: 100%; }
+
+/*
+ * Az emberpróba widgetje.
+ *
+ * A méretét a Cloudflare iframe-e adja (300×65 a normál változaté), és NEM
+ * mi mondjuk meg: egy átméretezett emberpróba-widget gyanús, és a Cloudflare
+ * a torzított beágyazást vissza is utasíthatja. Amit szabályozunk, az a
+ * körülötte lévő hely és a vízszintes igazítás.
+ *
+ * `min-height`: amíg az iframe betölt, a widget helye nulla magas, és az
+ * ablak alja megugrana a látogató szeme előtt — épp akkor, amikor a „Belépés"
+ * gombra célozna.
+ */
+.turnstile {
+  display: flex;
+  justify-content: center;
+  min-height: 65px;
+}
+.turnstile iframe { max-width: 100%; }
 
 .lp-hero {
   position: relative;

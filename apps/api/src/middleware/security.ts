@@ -5,9 +5,11 @@
 // protect — see AUTH_LIMIT / WRITE_LIMIT below.
 
 import rateLimit from '@fastify/rate-limit'
+import { internalTrustEnabled, isInternalRequest } from './internal-request.ts'
 import fp from 'fastify-plugin'
 
 import { config } from '../config.ts'
+import { enabled as turnstileEnabled } from '../modules/auth/turnstile.ts'
 import { isLoadTestRequest, loadTestConfigured } from './load-test.ts'
 import { settings as siteSettings, type RateLimits } from '../modules/settings/site-settings.ts'
 
@@ -21,20 +23,55 @@ import type { FastifyRequest } from 'fastify'
  * Scripts are all separate files, so script-src stays strict — which is the
  * directive that actually blocks XSS payloads.
  */
+/**
+ * A Turnstile origója.
+ *
+ * Innen jön a widget szkriptje ÉS az iframe, amiben fut — tehát két
+ * direktívába kell bekerülnie. Ez az egyetlen idegen eredetű szkript az
+ * oldalon, és CSAK AKKOR kerül a fejlécbe, ha az emberpróba be van állítva:
+ * egy Turnstile nélküli telepítés ne lazítson a `script-src 'self'`-en olyasmi
+ * kedvéért, amit nem is használ.
+ */
+const TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com'
+
+/**
+ * A Cloudflare Web Analytics mérőszkriptje.
+ *
+ * NEM MI TESSZÜK BE: ha a zónán be van kapcsolva a Web Analytics, a Cloudflare
+ * az ÉLEN fűzi bele a HTML-be, a mi kódunk megkerülésével. A CSP viszont a mi
+ * fejlécünk — és az blokkolja. Az eredmény egy tökéletesen néma hiba: a
+ * kapcsoló a felületen be van kapcsolva, a beacon minden oldalbetöltésnél
+ * megpróbál elindulni, és semmilyen adat nem érkezik.
+ *
+ * Mérve, böngészőből:
+ *
+ *   Loading the script 'https://static.cloudflareinsights.com/beacon.min.js/…'
+ *   violates the following Content Security Policy directive: "script-src 'self'…"
+ *
+ * Ezért KAPCSOLÓS: aki bekapcsolta a Cloudflare felületén, az itt is kimondja.
+ * Alapból nincs benne — egy Cloudflare nélküli telepítés ne engedjen be egy
+ * origót, amit sosem fog használni.
+ */
+const ANALYTICS_ORIGIN = 'https://static.cloudflareinsights.com'
+const cloudflareAnalytics = (): boolean => process.env.CLOUDFLARE_ANALYTICS === 'true'
+
 const CSP = [
   "default-src 'self'",
   // No blob: any more. It was there for the extension sandbox, which imported
   // a hash-verified package as a module from an in-memory blob; with the
   // sandbox gone, the allowance is one fewer way for injected script to reach
   // execution and nothing needs it.
-  "script-src 'self'",
+  "script-src 'self'" +
+    (turnstileEnabled() ? ` ${TURNSTILE_ORIGIN}` : '') +
+    (cloudflareAnalytics() ? ` ${ANALYTICS_ORIGIN}` : ''),
   "worker-src 'self'",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: blob: https:",      // artwork comes from AniList/MAL CDNs
   "media-src 'self' blob: https:",          // video sources are external by design
   "connect-src 'self' https:",              // AniList/Jikan/ani.zip are called from the client
-  "frame-src https://www.youtube-nocookie.com https://www.youtube.com", // trailers
+  'frame-src https://www.youtube-nocookie.com https://www.youtube.com' +   // trailers
+    (turnstileEnabled() ? ` ${TURNSTILE_ORIGIN}` : ''),                       // az emberpróba iframe-je
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -91,7 +128,23 @@ export default fp(async fastify => {
     // A második kivétel a terheléses mérésé, és három feltételhez kötött
     // (kulcs + fejléc + forráscím); kulcs nélkül nem létezik. Enélkül egy
     // mérés a korlátot méri, nem a terméket — lásd middleware/load-test.ts.
-    allowList: request => request.url.startsWith('/v1/health') || isLoadTestRequest(request),
+    /*
+     * A HARMADIK KIVÉTEL A SAJÁT RENDSZERÜNK.
+     *
+     * A worker, a bot, a mérőszkriptek és a karbantartó feladatok ugyanazon a
+     * Docker-hálózaton futnak, és ugyanezt az API-t hívják. Ha őket
+     * megfojtjuk, az nem védelem: a rendszer bénítja meg saját magát, pont
+     * amikor dolgozik — és a hiba a legrosszabb helyen jelenik meg, egy
+     * félbemaradt háttérfeladatban.
+     *
+     * A felismerés a TCP-kapcsolat túlsó végét nézi, nem fejlécet, és a
+     * proxyfejlécek jelenléte kizárja a mentességet. Kívülről tehát nem
+     * hamisítható — részletek az `internal-request.ts` fejlécében.
+     */
+    allowList: request =>
+      request.url.startsWith('/v1/health') ||
+      isInternalRequest(request) ||
+      isLoadTestRequest(request),
     // trustProxy is on, so request.ip is the real client behind a reverse proxy
     keyGenerator: request => request.ip,
     // match the app's RFC 9457 error convention
@@ -106,6 +159,21 @@ export default fp(async fastify => {
   // Egy bekapcsolva felejtett mentesség csendben rossz: semmi nem hibázik,
   // csak egy cím korlát nélkül jár. Induláskor kimondjuk, és a biztonsági
   // állapotjelentés is jelzi.
+  /*
+   * A BELSŐ MENTESSÉG KIMONDVA.
+   *
+   * Nem figyelmeztetés — ez az alapértelmezett és helyes állapot —, de
+   * kimondjuk, mert egy mentesség, amiről csak a forráskód tud, előbb-utóbb
+   * meglepetés lesz. Aki a naplót olvassa, lássa, mi van bekapcsolva.
+   */
+  fastify.log.info(
+    { trustInternal: internalTrustEnabled() },
+    internalTrustEnabled()
+      ? 'a sebességkorlát nem vonatkozik a saját hálózatunkról, proxyfejléc nélkül érkező kérésekre ' +
+        '(worker, bot, egészségjelző) — kikapcsolás: RATE_LIMIT_TRUST_INTERNAL=false'
+      : 'RATE_LIMIT_TRUST_INTERNAL=false — a saját háttérfeladataink is a sebességkorlát alá esnek'
+  )
+
   if (loadTestConfigured()) {
     fastify.log.warn(
       { ips: config.loadTestIps },

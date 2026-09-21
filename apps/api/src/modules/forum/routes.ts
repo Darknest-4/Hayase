@@ -16,6 +16,7 @@ import { WRITE_LIMIT } from '../../middleware/security.ts'
 
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import type pg from 'pg'
+import { uuidParams } from '../../infrastructure/http/params.ts'
 
 /** A url-safe name derived from a title, unique-ified by the caller. */
 function slugify (text: string): string {
@@ -26,6 +27,7 @@ function slugify (text: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 60) || 'forum'
 }
+
 
 const routes: FastifyPluginAsync = async fastify => {
   // The kill switch, enforced here rather than only in the client's routing —
@@ -115,7 +117,7 @@ const routes: FastifyPluginAsync = async fastify => {
   fastify.patch('/:id', {
     onRequest: fastify.requirePermission('forum.edit'),
     schema: {
-      params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } },
+      ...uuidParams(),
       body: {
         type: 'object',
         properties: {
@@ -146,6 +148,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.delete('/:id', {
+    schema: uuidParams(),
     onRequest: fastify.requirePermission('forum.delete')
   }, async (request, reply) => {
     const { id } = request.params as { id: string }
@@ -236,7 +239,7 @@ const routes: FastifyPluginAsync = async fastify => {
     return reply.code(201).send(topic)
   })
 
-  fastify.get('/topics/:id', async (request, reply) => {
+  fastify.get('/topics/:id', { schema: uuidParams() }, async (request, reply) => {
     const { id } = request.params as { id: string }
     const topic = await queryOne(
       `SELECT t.id, t.title, t.pinned, t.locked, t.post_count, t.created_at,
@@ -260,6 +263,7 @@ const routes: FastifyPluginAsync = async fastify => {
     // be checked.
     onRequest: fastify.authenticate,
     schema: {
+      ...uuidParams(),
       body: {
         type: 'object',
         properties: { pinned: { type: 'boolean' }, locked: { type: 'boolean' } },
@@ -291,6 +295,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.delete('/topics/:id', {
+    schema: uuidParams(),
     onRequest: fastify.requirePermission('topic.delete')
   }, async (request, reply) => {
     const { id } = request.params as { id: string }
@@ -303,6 +308,7 @@ const routes: FastifyPluginAsync = async fastify => {
 
   fastify.get('/topics/:id/posts', {
     schema: {
+      ...uuidParams(),
       querystring: {
         type: 'object',
         properties: {
@@ -332,6 +338,7 @@ const routes: FastifyPluginAsync = async fastify => {
     config: WRITE_LIMIT,
     onRequest: fastify.requirePermission('post.create'),
     schema: {
+      ...uuidParams(),
       body: {
         type: 'object',
         required: ['body'],
@@ -369,6 +376,7 @@ const routes: FastifyPluginAsync = async fastify => {
   fastify.patch('/posts/:id', {
     onRequest: fastify.requirePermission('post.edit'),
     schema: {
+      ...uuidParams(),
       body: {
         type: 'object',
         required: ['body'],
@@ -395,6 +403,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.delete('/posts/:id', {
+    schema: uuidParams(),
     onRequest: fastify.requirePermission('post.delete')
   }, async (request, reply) => {
     const { id } = request.params as { id: string }

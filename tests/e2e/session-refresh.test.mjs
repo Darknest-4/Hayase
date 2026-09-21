@@ -55,6 +55,20 @@ describe('an expired access token does not end the session', { skip: REASON }, (
   before(async () => {
     process.env.WEB_ROOT = WEB_ROOT
     process.env.JWT_SECRET ??= 'session-e2e-secret-0123456789-abcdefghij'
+    /*
+     * AZ EMBERPRÓBA KI VAN KAPCSOLVA a böngészős futásokban.
+     *
+     * Ezek a tesztek API-hívással regisztrálnak, tehát nincs widgetjük,
+     * amitől tokent kérhetnének. Ha a futtató héjába be van töltve a `.env`
+     * (és ez a szokásos mód egy szkript futtatásához), a regisztráció
+     * 403-mal hasalna el, mielőtt egy böngésző egyáltalán elindulna — egy
+     * olyan hibával, aminek semmi köze ahhoz, amit a teszt mér.
+     *
+     * A törlésnek az app IMPORTJA ELŐTT kell megtörténnie: a CSP-t a
+     * `security.ts` betöltéskor építi fel.
+     */
+    delete process.env.TURNSTILE_SITE_KEY
+    delete process.env.TURNSTILE_SECRET_KEY
     process.env.LOG_LEVEL ??= 'error'
     process.env.RATE_LIMIT_MAX ??= '100000'
 

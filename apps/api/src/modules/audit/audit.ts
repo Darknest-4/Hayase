@@ -37,6 +37,15 @@ export type AuditAction =
   // "who changed this description and to what" is asked afterwards.
   | 'anime.translation.create' | 'anime.translation.update' | 'anime.translation.delete'
   | 'config.flag' | 'config.setting'
+  /*
+   * Forrásszolgáltató ki- vagy bekapcsolása, sorrendjének átállítása.
+   *
+   * Azért naplózott, mert egy kikapcsolt szolgáltató első TÜNETE az, hogy
+   * „eltűntek a források" — és ilyenkor az első kérdés, hogy ki és mikor
+   * kapcsolta ki. Egy kapcsoló, aminek nincs nyoma, órákig tartó keresést
+   * okoz egy olyan dologban, ami nem is hiba volt.
+   */
+  | 'provider.update'
   // Mentés indítása, ellenőrzése, visszaállítása. A visszaállítás az egyetlen
   // művelet ezen a platformon, ami minden mást felülír — „ki kérte" itt nem
   // utólagos kérdés, hanem az első.
@@ -58,7 +67,7 @@ export type AuditAction =
   // who has not chosen otherwise sees.
   | 'theme.create' | 'theme.update' | 'theme.delete'
 
-export type SubjectType = 'user' | 'role' | 'anime' | 'episode' | 'config' | 'webhook' | 'metadata_run' | 'theme'
+export type SubjectType = 'user' | 'role' | 'anime' | 'episode' | 'config' | 'webhook' | 'metadata_run' | 'theme' | 'provider'
   // An act with no single subject — a sweep over the whole catalogue. It still
   // has a subject, and pretending otherwise is how the entry gets lost: the
   // column is NOT NULL, and a failed audit write is logged, not thrown, so a

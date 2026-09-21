@@ -1,0 +1,7 @@
+# A videófájlok NEM kerülnek verziókezelésbe.
+#
+# Egy 35 MB-os MP4 minden klónozásba és minden képépítésbe belekerülne, és a
+# git nem tud mit kezdeni a bináris különbségekkel. A fájlok a gazdagépen
+# élnek, és csatolt kötetként jutnak a konténerbe — lásd docker-compose.yml.
+*
+!.gitignore

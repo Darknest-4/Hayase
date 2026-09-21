@@ -7,12 +7,14 @@ import { site } from '../shared/lib/site-config.js'
 import { navigate, refreshChrome } from '../shared/lib/shell.js'
 import { Charts } from '../shared/ui/charts.js'
 import { AP } from '../shared/ui/admin-ui.js'
+import { renderMaintenance } from '../features/maintenance/admin/maintenance-dashboard.js'
 import { C } from '../shared/ui/components.js'
 import { I18n } from '../shared/i18n/i18n.js'
 import { Store } from '../shared/state/store.js'
 import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 import { YumeAPI } from '../shared/api/yume.js'
+import { ADMIN_GROUPS, ADMIN_SECTIONS } from '../shared/lib/admin-sections.js'
 
 export const PageAdmin = {
   /**
@@ -67,43 +69,9 @@ export const PageAdmin = {
    * Így a legnagyobb csoport hét bejegyzés, és mindegyikről egy mondatban
    * meg lehet mondani, miért ott van.
    */
-  GROUPS: [
-    { key: 'insight', label: 'Áttekintés' },
-    { key: 'content', label: 'Katalógus' },
-    { key: 'people', label: 'Közösség' },
-    { key: 'ops', label: 'Üzemeltetés' },
-    { key: 'look', label: 'Megjelenés' }
-  ],
+  GROUPS: ADMIN_GROUPS,
 
-  SECTIONS: [
-    { key: 'overview', group: 'insight', label: 'Áttekintés', sub: 'A platform állapota és statisztikája', perm: 'admin.analytics.view', render: 'renderOverview', icon: '<path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>' },
-    { key: 'errors', group: 'ops', label: 'Hibák', sub: 'Csoportosított hibák és hívási láncok', perm: 'admin.analytics.view', render: 'renderErrors', icon: '<path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0"/>' },
-    { key: 'audit-log', group: 'ops', label: 'Műveleti napló', sub: 'Ki mit változtatott, és mikor', perm: 'admin.users.manage', render: 'renderAudit', icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6"/><path d="M9 11h2"/>' },
-    { key: 'analytics', group: 'insight', label: 'Látogatottság', sub: 'Kik jártak itt, és mit csináltak', perm: 'analytics.view', render: 'renderAnalytics', icon: '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>' },
-
-    { key: 'users', group: 'people', label: 'Felhasználók', sub: 'Fiókok, felfüggesztések, kitiltások', perm: 'admin.users.manage', render: 'renderUsers', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
-    { key: 'roles', group: 'people', label: 'Szerepkörök', sub: 'Jogosultságok és szerepkörök', perm: 'roles.manage', render: 'renderRoles', icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>' },
-    { key: 'reports', group: 'people', label: 'Bejelentések', sub: 'Moderálási sor', perm: 'community.moderate', render: 'renderReports', icon: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>' },
-
-    { key: 'catalogue', group: 'content', label: 'Katalógus', sub: 'Animék, epizódok, publikálás', perm: 'anime.view', render: 'renderCatalogue', icon: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>' },
-    { key: 'metadata', group: 'content', label: 'Metaadatok', sub: 'AniList-lefedettség és szinkronfutások', perm: 'anime.edit', render: 'renderMetadata', icon: '<path d="M21 12a9 9 0 1 1-6.2-8.6"/><path d="M21 3v6h-6"/>' },
-    { key: 'translations', group: 'content', label: 'Fordítások', sub: 'Magyar címek és leírások', perm: 'anime.edit', render: 'renderTranslations', icon: '<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>' },
-
-    { key: 'monitoring', group: 'insight', label: 'Infrastruktúra', sub: 'A kiszolgáló állapota és szolgáltatásai', perm: 'system.metrics.view', render: 'renderMonitoring', icon: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>' },
-    { key: 'announcements', group: 'people', label: 'Hírek', sub: 'Az egész oldalra szóló üzenetek', perm: 'announcement.manage', render: 'renderAnnouncements', icon: '<path d="M3 11v3a1 1 0 0 0 1 1h3l4 4V6L7 10H4a1 1 0 0 0-1 1z"/><path d="M16 9a4 4 0 0 1 0 6"/><path d="M19.5 6a8 8 0 0 1 0 12"/>' },
-    { key: 'changelog', group: 'people', label: 'Fejlesztési napló', sub: 'Kiadások és a bennük lévő sorok', perm: 'changelog.manage', render: 'renderChangelog', icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>' },
-    { key: 'webhooks', group: 'ops', label: 'Webhookok', sub: 'Kimenő integrációk', perm: 'admin.webhooks.manage', render: 'renderWebhooks', icon: '<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>' },
-    { key: 'themes', group: 'look', label: 'Témák', sub: 'Színek, amikből a látogatók választhatnak', perm: 'theme.publish', render: 'renderThemes', icon: '<circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2a10 10 0 0 0 0 20 2 2 0 0 0 2-2v-1a2 2 0 0 1 2-2h2a4 4 0 0 0 4-4 10 10 0 0 0-10-11"/>' },
-    { key: 'backups', group: 'ops', label: 'Mentések', sub: 'Mentés, ellenőrzés, visszaállítás', perm: 'backup.manage', render: 'renderBackups', icon: '<path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/>' },
-    { key: 'security', group: 'ops', label: 'Biztonság', sub: 'Biztonsági állapot és vészkapcsolók', perm: 'security.manage', render: 'renderSecurity', icon: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>' },
-    { key: 'edge', group: 'ops', label: 'Él', sub: 'Kockázati réteg, WAF, tiltások', perm: 'edge.view', render: 'renderEdge', icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/>' },
-    // The code audit, which is not the audit *log* in Insight above — that one
-    // is what people did, this one is what is wrong with the software. It took
-    // the shorter key because /admin/audit is the address it was specified at;
-    // the log moved to audit-log. See YUME-AUDIT-0013.
-    { key: 'audit', group: 'ops', label: 'Kódaudit', sub: 'A legutóbbi kódátvizsgálás észrevételei', perm: 'audit.read', render: 'renderAuditStatus', icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 11 2 2 4-4"/>' },
-    { key: 'config', group: 'look', label: 'Beállítások', sub: 'Funkciókapcsolók és beállítások', perm: 'settings.system', render: 'renderConfig', icon: '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>' }
-  ],
+  SECTIONS: ADMIN_SECTIONS,
 
   /**
    * Jump to a section by typing.
@@ -449,8 +417,33 @@ export const PageAdmin = {
           this._headActions
         ])
       )
-      body.replaceChildren(P.spinner())
-      this[s.render](body)
+      /*
+       * MINDEN SZEKCIÓ SAJÁT TARTÓT KAP — és ez a javítás lényege.
+       *
+       * Korábban minden renderelő UGYANAZT a `body` elemet kapta, és csak a
+       * tartalmát cserélte. Három szekció — Áttekintés, Metaadatok,
+       * Infrastruktúra — viszont `setInterval`-lal frissíti magát, és így
+       * védekezik:
+       *
+       *     if (!document.body.contains(content)) { clearInterval(...); return }
+       *
+       * Ez az őr azt feltételezi, hogy a tartó a navigációkor KIKERÜL a
+       * dokumentumból. A `body` viszont sosem került ki — csak a gyerekei
+       * cserélődtek —, tehát a feltétel SOHA nem lett igaz. Az időzítő ment
+       * tovább, és öt, harminc, illetve `DASH_REFRESH_MS` másodpercenként
+       * rárajzolta a régi szekció felületét arra, amit az üzemeltető épp
+       * nézett. Pontosan ez volt a bejelentett hiba: „egy idő után visszajön
+       * a kezdőlap UI-ja". A lap frissítése azért segített, mert az időzítőt
+       * is eldobta — az első visszalátogatásig.
+       *
+       * Egy friss tartóval a csere valódi leválasztás: a régi elem kikerül a
+       * dokumentumból, az őr a következő ébredésekor igazzá válik, és az
+       * időzítő leállítja magát. A három szekció kódjához nem kell nyúlni —
+       * a feltevésük innentől igaz.
+       */
+      const pane = U.el('div', { class: 'admin-pane' }, [P.spinner()])
+      body.replaceChildren(pane)
+      this[s.render](pane)
     }
     select(state.section)
   },
@@ -1755,6 +1748,18 @@ export const PageAdmin = {
       submit.classList.add('btn-danger')
     }
     return modal
+  },
+
+  /**
+   * A karbantartási képernyő.
+   *
+   * A tényleges felület saját modulban van
+   * (`features/maintenance/admin/maintenance-dashboard.js`): ez a fájl már
+   * így is ötezer sor, és egy újabb képernyő beleírása pontosan az az
+   * óriásfájl lenne, amit a 36. pont tilt.
+   */
+  async renderMaintenanceSection (content) {
+    await renderMaintenance(content, { toast: U.toast })
   },
 
   async renderSecurity (content) {
@@ -5746,6 +5751,177 @@ export const PageAdmin = {
         this.renderChangelog(content)
       } catch (e) { U.toast(e.message, 'error') }
     })
+  },
+
+  /**
+   * A forrásszolgáltatók.
+   *
+   * MIT LÁT ITT AZ ÜZEMELTETŐ, ÉS MIÉRT ÉPP EZT:
+   *
+   *   * a KIKAPCSOLTAKAT IS. Egy kikapcsolt szolgáltató eltüntetése a
+   *     listából pont azt a kapcsolót venné el, amivel vissza lehetne
+   *     kapcsolni;
+   *   * az EGÉSZSÉGET a kapcsoló mellett. „Kikapcsoljam?" és „magától
+   *     kiesett?" két különböző helyzet, és ugyanaz a tünet — ha a kettő nem
+   *     egy képernyőn van, az ember azt kapcsolja ki, ami csak épp lassú volt;
+   *   * a SORRENDET, mert a lánc ezen halad, és a legelső szolgáltató dönti
+   *     el, mit lát a néző a legtöbbször.
+   */
+  async renderProviders (content) {
+    const rajzol = async () => {
+      content.replaceChildren(AP.stack([AP.note('Betöltés…')]))
+      let data
+      try {
+        ({ data } = await YumeAPI.admin.providers())
+      } catch (error) {
+        content.replaceChildren(AP.empty('A szolgáltatók nem kérhetők le', error.message))
+        return
+      }
+
+      content.replaceChildren()
+      content.append(U.el('p', {
+        class: 'list-row-sub',
+        style: 'max-width:46rem;margin:0 0 var(--space-4);',
+        text: 'A lejátszás ezen a láncon halad, fentről lefelé. Az első, ami forrást ad, nyer. ' +
+              'Egy megszűnt szolgáltató eltávolításához elég kikapcsolni: a lánc átlép rajta, és a lejátszó nem tud róla.'
+      }))
+
+      if (!data.length) {
+        content.append(P.emptyState('Nincs bekötött szolgáltató.'))
+        return
+      }
+
+      for (const sz of data) {
+        const allapot = sz.health?.state ?? 'up'
+        // A szín a TÉNYLEGES helyzetet mondja: a kikapcsolt szürke (döntés),
+        // a kiesett piros (baj), a félig nyitott sárga (próbálkozunk).
+        const szin = !sz.enabled
+          ? 'var(--fg-faint)'
+          : allapot === 'down' ? 'var(--danger)' : allapot === 'half-open' ? 'var(--status-paused)' : 'var(--ok)'
+        const allapotSzo = !sz.enabled
+          ? 'kikapcsolva'
+          : allapot === 'down' ? 'kiesett' : allapot === 'half-open' ? 'próbálkozunk' : 'működik'
+
+        const kartya = U.el('div', { class: 'setting-card', style: 'max-width:none;' })
+
+        kartya.append(U.el('div', { style: 'display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;' }, [
+          U.el('span', { style: `width:.6rem;height:.6rem;border-radius:var(--radius-full);background:${szin};flex:0 0 auto;` }),
+          U.el('h3', { style: 'margin:0;', text: sz.label || sz.slug }),
+          U.el('span', { class: 'ext-type-chip', text: sz.slug }),
+          U.el('span', { class: 'list-row-sub', text: `${allapotSzo} • sorrend: ${sz.priority}` })
+        ]))
+
+        // A MÉRT ADAT, nem szöveg: sikerek, hibák, utolsó válaszidő.
+        const h = sz.health ?? {}
+        const reszletek = [
+          h.successes ? `${h.successes} sikeres feloldás` : null,
+          h.failures ? `${h.failures} hiba` : null,
+          h.lastLatencyMs != null ? `utolsó válasz: ${h.lastLatencyMs} ms` : null,
+          h.retryAt ? `újra: ${new Date(h.retryAt).toLocaleTimeString('hu-HU')}` : null
+        ].filter(Boolean)
+        if (reszletek.length) {
+          kartya.append(U.el('div', { class: 'list-row-sub', style: 'margin:var(--space-2) 0;', text: reszletek.join(' • ') }))
+        }
+        if (h.lastError) {
+          kartya.append(U.el('div', {
+            class: 'list-row-sub',
+            style: 'margin:var(--space-2) 0;color:var(--danger);word-break:break-word;',
+            text: 'utolsó hiba: ' + h.lastError
+          }))
+        }
+
+        const sor = U.el('div', { style: 'display:flex;gap:var(--space-2);flex-wrap:wrap;align-items:center;margin-top:var(--space-3);' })
+
+        const kapcsolo = U.el('button', {
+          class: sz.enabled ? 'btn btn-secondary btn-sm' : 'btn btn-primary btn-sm'
+        }, [document.createTextNode(sz.enabled ? 'Kikapcsolás' : 'Bekapcsolás')])
+        kapcsolo.addEventListener('click', async () => {
+          kapcsolo.disabled = true
+          try {
+            await YumeAPI.admin.updateProvider(sz.slug, { enabled: !sz.enabled })
+            U.toast(sz.enabled ? 'Kikapcsolva' : 'Bekapcsolva')
+            await rajzol()
+          } catch (error) {
+            U.toast('Nem sikerült: ' + error.message, 'error')
+            kapcsolo.disabled = false
+          }
+        })
+        sor.append(kapcsolo)
+
+        /*
+         * A SORREND SZÁMMAL, nem nyilakkal. Egy nyíl azt sugallná, hogy a
+         * szolgáltatók egy zárt listát alkotnak; a prioritás viszont
+         * önmagában áll, és két szolgáltatónak lehet ugyanaz.
+         */
+        const prio = U.el('input', {
+          class: 'input',
+          type: 'number',
+          min: '0',
+          max: '1000',
+          value: String(sz.priority),
+          style: 'width:6rem;',
+          'aria-label': `${sz.label || sz.slug} sorrendje`
+        })
+        const ment = U.el('button', { class: 'btn btn-ghost btn-sm' }, [document.createTextNode('Sorrend mentése')])
+        ment.addEventListener('click', async () => {
+          const ertek = Number(prio.value)
+          if (!Number.isInteger(ertek) || ertek < 0 || ertek > 1000) {
+            U.toast('A sorrend 0 és 1000 közötti egész szám', 'error')
+            return
+          }
+          ment.disabled = true
+          try {
+            await YumeAPI.admin.updateProvider(sz.slug, { priority: ertek })
+            U.toast('Mentve')
+            await rajzol()
+          } catch (error) {
+            U.toast('Nem sikerült: ' + error.message, 'error')
+            ment.disabled = false
+          }
+        })
+        /*
+         * A MEZŐNEK LÁTHATÓ FELIRATA IS VAN, nem csak `aria-label`-je.
+         * Két gomb között egy puszta számdoboz nem mondja meg, mi az — és a
+         * felolvasónak szánt felirat annak nem segít, aki látja a képernyőt.
+         */
+        sor.append(
+          U.el('label', { style: 'display:flex;align-items:center;gap:var(--space-2);' }, [
+            U.el('span', { class: 'list-row-sub', text: 'Sorrend' }),
+            prio
+          ]),
+          ment
+        )
+
+        /*
+         * „MIÓTA ROMLIK?" — erre egy pillanatnyi állapot nem válasz. Az
+         * idővonal az állapotváltozásokat mutatja, nem minden kérést.
+         */
+        const naplo = U.el('div', { style: 'margin-top:var(--space-3);' })
+        const naploGomb = U.el('button', { class: 'btn btn-ghost btn-sm' }, [document.createTextNode('Előzmények')])
+        naploGomb.addEventListener('click', async () => {
+          naploGomb.disabled = true
+          try {
+            const { data: esemenyek } = await YumeAPI.admin.providerEvents(sz.slug, 20)
+            naplo.replaceChildren(esemenyek.length
+              ? AP.list(esemenyek.map(e => AP.row({
+                title: e.event === 'down' ? 'kiesett' : e.event === 'up' ? 'helyreállt' : e.event,
+                meta: [new Date(e.at).toLocaleString('hu-HU'), e.detail].filter(Boolean).join(' — ')
+              })))
+              : AP.note('Még nincs esemény — ez a szolgáltató eddig nem romlott el.'))
+          } catch (error) {
+            naplo.replaceChildren(AP.note('Az előzmények nem kérhetők le: ' + error.message))
+          } finally {
+            naploGomb.disabled = false
+          }
+        })
+        sor.append(naploGomb)
+
+        kartya.append(sor, naplo)
+        content.append(kartya)
+      }
+    }
+
+    await rajzol()
   },
 
   async renderWebhooks (content) {

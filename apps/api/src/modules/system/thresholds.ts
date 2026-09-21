@@ -57,6 +57,16 @@ export const DEFAULTS = {
   'net.drop_pct': { warn: 0.1, crit: 1.0, unit: 'pct', rationale: 'Interface rx/tx drop ratio. Any sustained loss points at a saturated link or NIC queue.' },
 
   // API response time measured against the app's own health endpoint.
+  // A KÜLSŐ szonda. Az `api.latency_ms`-től külön: az belülről kérdezi az
+  // alkalmazást, ez a fordított proxyn át az egész utat. Az audit egy olyan
+  // kiesést talált, ahol az első zöld volt, a második pedig nem létezett.
+  //
+  // A RIASZTÁS SOROZATRA SZÓL, nem egyetlen mintára. Egy elbukott szonda lehet
+  // egy eldobott csomag; három egymás utáni már kiesés. Az `edge.status` (0/1)
+  // önmagában is rögzül a grafikonhoz, de küszöböt szándékosan nem kap: ebben a
+  // modellben a nagyobb érték a rosszabb, és ott az 1 az EGÉSZSÉGES.
+  'edge.down_streak': { warn: 2, crit: 5, unit: 'count', rationale: 'Egymás utáni sikertelen külső szondák. Egy lehet eldobott csomag; kettő már tendencia, öt (öt perc) kiesés.' },
+  'edge.latency_ms': { warn: 1000, crit: 3000, unit: 'ms', rationale: 'A teljes út a proxyval és a TLS-sel együtt. Tágabb, mint az api.latency_ms, mert a proxyt és a kézfogást is magában foglalja.' },
   'api.latency_ms': { warn: 300, crit: 1000, unit: 'ms', rationale: 'Self-probe of /v1/health. >300ms means the event loop is congested; >1s is user-visible.' },
 
   // A trivial `SELECT 1`. Anything slow here is connection-pool or I/O trouble.

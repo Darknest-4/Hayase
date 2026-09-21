@@ -2,6 +2,7 @@
 // index.ts so tests can build an app without binding a port).
 
 import { existsSync } from 'node:fs'
+import { readFile, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -54,7 +55,17 @@ import libraryRoutes from './modules/library/routes.ts'
 import settingsRoutes from './modules/settings/routes.ts'
 import translationRoutes from './modules/translations/routes.ts'
 
-import type { FastifyError, FastifyInstance } from 'fastify'
+import type { FastifyError, FastifyInstance, FastifyReply } from 'fastify'
+import { renderStatusPage, wantsHtml } from './infrastructure/http/status-page.ts'
+import { STAMP_PREFIX, apiBaseUrl, clientVersion, stampApiBase, stampAssets, unstamp } from './infrastructure/http/client-version.ts'
+import { guard as maintenanceGuard } from './modules/maintenance/middleware.ts'
+import { watch as watchMaintenance } from './modules/maintenance/cache.ts'
+import { stopListener } from './infrastructure/queue/wake.ts'
+import { adminMaintenance, publicStatus } from './modules/maintenance/routes.ts'
+import { verifyMediaBase } from './modules/media/public-url.ts'
+import { verifyVideoBase } from './modules/maintenance/video-resolver.ts'
+import providerAdmin from './modules/providers/admin-routes.ts'
+import { registerBuiltInProviders } from './modules/providers/index.ts'
 
 /**
  * Reject introspection queries.
@@ -211,6 +222,22 @@ export async function buildApp (): Promise<FastifyInstance> {
     }
   })
 
+  /**
+   * A `Retry-After` fejléc értéke másodpercben.
+   *
+   * A sebességkorlát számot tesz rá, de a szabvány HTTP-dátumot is enged —
+   * és egy dátumot másodpercként értelmezve a visszaszámláló évezredeket
+   * mutatna.
+   */
+  const retryAfterSeconds = (header: unknown): number | null => {
+    if (typeof header === 'number') return header > 0 ? header : null
+    if (typeof header !== 'string' || !header) return null
+    if (/^\d+$/.test(header)) return Number(header) || null
+    const at = Date.parse(header)
+    if (!Number.isFinite(at)) return null
+    return Math.max(1, Math.round((at - Date.now()) / 1000))
+  }
+
   app.setErrorHandler((error: FastifyError, request, reply) => {
     // Some throwers — the rate limiter's errorResponseBuilder among them —
     // reject with a plain object already in this app's problem+json shape
@@ -224,6 +251,31 @@ export async function buildApp (): Promise<FastifyInstance> {
 
     const shaped = error as unknown as { status?: number, title?: string, detail?: string, type?: string }
     if (typeof shaped.status === 'number' && typeof shaped.title === 'string') {
+      /*
+       * A BÖNGÉSZŐNEK OLDAL JÁR, NEM JSON.
+       *
+       * A sebességkorlát válasza eddig `application/problem+json` volt minden
+       * hívónak. Aki géppel hív, annak ez a helyes; aki viszont a címsorba
+       * írta be a címet, az egy nyers JSON-t kapott a képernyőre — ami nem
+       * hibaüzenet, hanem egy elrontott oldal látszata.
+       *
+       * A döntést az `Accept` fejléc hozza: a böngésző navigációja `text/html`-t
+       * kér ELŐBB, a `fetch` és a `curl` nem. A `*​/*` szándékosan nem elég.
+       */
+      if (wantsHtml(request.headers.accept)) {
+        const seconds = retryAfterSeconds(reply.getHeader('retry-after'))
+        return reply.code(shaped.status).type('text/html; charset=utf-8').send(renderStatusPage({
+          status: shaped.status,
+          title: shaped.status === 429 ? 'Túl sok kérés' : (shaped.title ?? 'Hiba'),
+          message: shaped.status === 429
+            ? 'Egy kicsit gyorsan érkeztek a kérések erről a hálózatról. Ez nem tiltás — pár másodperc múlva folytathatod.'
+            : 'A kérést most nem tudjuk kiszolgálni.',
+          retryAfter: seconds,
+          requestId: request.id,
+          // Oda vissza, ahonnan jött — nem a főoldalra.
+          retryHref: request.url
+        }))
+      }
       return reply.code(shaped.status).type('application/problem+json')
         .send({ ...shaped, instance: request.id, code: errorCode(route, shaped.status) })
     }
@@ -308,16 +360,46 @@ export async function buildApp (): Promise<FastifyInstance> {
    * catalogue, and every other read endpoint, to anyone who called the API
    * directly or simply opened it in a second browser.
    *
-   * Three paths stay open, because they are what a signed-out caller needs in
+   * Four paths stay open, because they are what a signed-out caller needs in
    * order to stop being signed out: the readiness probes (a private instance
    * must still be monitorable), the config document that tells the client the
    * site is private in the first place, and the auth endpoints themselves.
    * Everything else under /v1 and /graphql needs a live token.
    *
+   * A NEGYEDIK A KARBANTARTÁSI ÁLLAPOT, és utólag került ide. A karbantartási
+   * oldal a kiszolgálóról kirajzolva eddig is eljutott mindenkihez — az a lap
+   * HTML, és ez a kapu csak a `/v1`-et és a `/graphql`-t őrzi. A lap viszont
+   * MAGÁT IS FRISSÍTI: a `/v1/status`-ból tudja meg, meddig tart és mikor
+   * jöhet vissza. Privát példányon ez 401-et adott, tehát pont egy
+   * kijelentkezett látogatónál állt meg a visszaszámláló — azon, akinek a
+   * legkevesebb más módja van megtudni, mi történik.
+   *
+   * Nem szivárog vele semmi: amit a válasz tartalmaz (cím, üzenet, várható
+   * vég), azt a kiszolgálóról kirajzolt lap amúgy is kiírja ugyanannak a
+   * névtelen látogatónak. Az üzemeltetőnek szánt karbantartási felület a
+   * `/v1/admin/maintenance` alatt van, és az továbbra sem mentes.
+   *
    * The setting is read through the cached reader, so the common case — a
    * public instance — costs one map lookup per request, not a query.
    */
-  const loginExempt = /^\/v1\/(health|config|auth)\b/
+  /*
+   * AMI A ZÁRT PÉLDÁNYON IS ÁTMEHET.
+   *
+   * Az `analytics/view` PONTOSAN ez az egy útvonal, nem az egész `analytics`
+   * előtag — a kimutatások a `/v1/admin/analytics` alatt élnek, és azokhoz
+   * továbbra is jogosultság kell.
+   *
+   * Miért kell kivétel: a beérkezésmérő végpontja kimondottan a be nem
+   * jelentkezett látogatóra készült („a látogatók többsége nincs
+   * bejelentkezve"), a kapu viszont 401-gyel utasította vissza. Zárt
+   * példányon tehát a bejelentkezés előtti forgalomról — vagyis arról,
+   * hányan álltak meg az ajtóban — NEM keletkezett adat, és közben minden
+   * kijelentkezett látogató konzoljában ott volt egy 401.
+   *
+   * Ez nem tágítja a támadási felületet: nyitott példányon ez a végpont
+   * amúgy is hitelesítés nélkül hívható, és írási sebességkorlát alatt van.
+   */
+  const loginExempt = /^\/v1\/(health|config|auth|status|analytics\/view)\b/
   app.addHook('onRequest', async (request, reply) => {
     if (!/^\/(v1|graphql)\b/.test(request.url)) return
     if (loginExempt.test(request.url)) return
@@ -417,8 +499,96 @@ export async function buildApp (): Promise<FastifyInstance> {
       })
   })
 
+  /*
+   * KARBANTARTÁSI MÓD.
+   *
+   * A sebességkorlát és a kockázati réteg UTÁN fut, és szándékosan: azok
+   * olcsóbbak, és amit ott elutasítunk, azzal itt már nem kell foglalkozni.
+   * A hitelesítés ELŐTT viszont — a döntéshez elég a szerep, ha már megvan, és
+   * egy karbantartás alatt álló oldalon nem akarunk minden kérésre tokent
+   * ellenőrizni.
+   *
+   * Kérésenként NULLA adatbázis-lekérdezés: a beállítás memóriából jön,
+   * értesítéssel és lejárati idővel frissítve. Adatbázishoz csak akkor
+   * nyúlunk, ha a kérésen TÉNYLEGESEN van mentességi jegy.
+   */
+  app.addHook('onRequest', maintenanceGuard)
+
+  /*
+   * Feliratkozás a karbantartás változásaira.
+   *
+   * A meglévő, újracsatlakozó hallgató kapcsolatot használja — nem nyit
+   * másodikat. Ha nincs még kapcsolat (az API folyamatban nem fut a
+   * feladatsor), a feliratkozás elindítja.
+   */
+  watchMaintenance()
+
+  /*
+   * A hallgató kapcsolat a folyamat lezárásakor is záruljon.
+   *
+   * Egy élő PostgreSQL-kapcsolat életben tartja az eseményhurkot: enélkül a
+   * `app.close()` visszatér, a folyamat mégsem lép ki. Élesben ez „a konténer
+   * nem áll le"-ként jelentkezne, tesztben pedig egy örökre váró futásként —
+   * és az utóbbi meg is történt.
+   */
+  app.addHook('onClose', async () => { stopListener() })
+
+  /*
+   * `onReady` HOOK, ÉS NEM `app.ready(callback)`.
+   *
+   * A különbség nem stílus, és drágán derült ki. Az `app.ready(callback)`
+   * ELINDÍTJA az avvio bootfolyamatát — nem csak feliratkozik rá. Ettől a
+   * `buildApp()` által visszaadott példány már bootolás közben van, és aki
+   * utána regisztrál egy útvonalat (`app.get(...)`), majd `await app.ready()`-t
+   * hív, az ÖRÖKRE ÁLL. Nem hibaüzenettel: némán.
+   *
+   * Ez pontosan megtörtént: a `cloudflare-chain.test.ts` — ami a `buildApp()`
+   * után tesz fel egy „ki vagyok" útvonalat — beragadt, és onnantól az EGÉSZ
+   * API-suite nem tudott végigfutni, mert a futtató erre a fájlra várt.
+   *
+   * Az `onReady` ezzel szemben csak feliratkozik: a boot akkor indul, amikor a
+   * hívó akarja.
+   */
+  app.addHook('onReady', async function bootEllenorzesek () {
+    /*
+     * A BEÁLLÍTOTT KÜLSŐ FORRÁSOK ELLENŐRZÉSE — egyszer, a háttérben.
+     *
+     * Nem tartja fel az indulást (ezért nincs `await` egyiken sem), és nem
+     * esik vissza magától: egyetlen dolga, hogy ha egy cím nem szolgál ki, azt
+     * VALAKI MEGTUDJA. Enélkül az oldal képei törötten, a karbantartási videó
+     * pedig sehogy sem jelenik meg, és a naplóban egy sor sincs róla — a hiba
+     * a látogató böngészőjében történik, nem nálunk.
+     *
+     * A kettő KÜLÖN próbálkozás: a képek ellenőrzése adatbázist kér, a videóé
+     * nem. Egy adatbázis-hiba ne vigye magával a másikat.
+     */
+    void (async () => {
+      try {
+        const { queryOne } = await import('./infrastructure/database/index.ts')
+        const row = await queryOne<{ mirror_key: string }>(
+          'SELECT mirror_key FROM anime_images WHERE mirror_key IS NOT NULL LIMIT 1'
+        )
+        await verifyMediaBase(row?.mirror_key ?? null, app.log)
+      } catch {
+        // Az ellenőrzés hibája nem akadályozhatja az indulást.
+      }
+    })()
+    void verifyVideoBase(app.log).catch(() => {})
+  })
+
+  /*
+   * A RÉGI CSAK-OLVASHATÓ KAPCSOLÓ.
+   *
+   * Megmarad, változatlan viselkedéssel. Nem azért, mert nem lehetne beolvasztani
+   * a `READ_ONLY` módba, hanem mert egy meglévő telepítés viselkedése nem
+   * változhat meg csendben egy átállástól: aki ma be van kapcsolva, annak
+   * holnap is pontosan ugyanaz történjen.
+   *
+   * A kettő EGYÜTT hat, és a szigorúbb nyer — a karbantartás hookja fentebb
+   * fut, tehát ami ott elbukik, ide el sem jut.
+   */
   const WRITES = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
-  const readOnlyExempt = /^\/v1\/(auth|admin\/(config|security|backups))\b/
+  const readOnlyExempt = /^\/v1\/(auth|admin\/(config|security|backups|maintenance))\b/
   app.addHook('onRequest', async (request, reply) => {
     if (!WRITES.has(request.method)) return
     if (!/^\/(v1|graphql)\b/.test(request.url)) return
@@ -432,6 +602,8 @@ export async function buildApp (): Promise<FastifyInstance> {
     })
   })
 
+  await app.register(publicStatus, { prefix: '/v1/status' })
+  await app.register(adminMaintenance, { prefix: '/v1/admin/maintenance' })
   await app.register(publicConfig, { prefix: '/v1/config' })
   await app.register(publicThemes, { prefix: '/v1/themes' })
   await app.register(adminThemes, { prefix: '/v1/admin/themes' })
@@ -461,6 +633,16 @@ export async function buildApp (): Promise<FastifyInstance> {
   // pontosan egy dolgot fogad el a klienstől (melyik oldalra lépett). Minden
   // más a kiszolgálóé — lásd modules/analytics/collect-routes.ts.
   await app.register(analyticsCollect, { prefix: '/v1/analytics' })
+
+  /*
+   * A FORRÁSSZOLGÁLTATÓK.
+   *
+   * Az adapterek a route-ok ELŐTT jelentkeznek be: a `/v1/admin/providers`
+   * listája a regiszterből dolgozik, és egy üres regiszterrel az adminfelület
+   * azt mondaná, hogy nincs egyetlen szolgáltató sem.
+   */
+  registerBuiltInProviders()
+  await app.register(providerAdmin, { prefix: '/v1/admin/providers' })
   await app.register(publicReadiness, { prefix: '/v1/health' })
   await app.register(adminMonitoring, { prefix: '/v1/admin/monitoring' })
 
@@ -491,11 +673,22 @@ export async function buildApp (): Promise<FastifyInstance> {
    * configuration changes that.
    */
   const CLIENT_DIRS = ['assets', 'css', 'src']
-  const CLIENT_FILES = ['index.html', 'favicon.ico', 'robots.txt', 'manifest.webmanifest']
+  /*
+   * AZ `index.html` NINCS A LISTÁN, és ez nem feledékenység.
+   *
+   * A lap NEM nyers fájlként megy ki: a hivatkozásai a kliens verziójával
+   * bélyegezve kerülnek bele (lásd `servePage`). Ha a fájlkiszolgáló is
+   * kiadhatná, akkor a `/` a bélyegzett lapot adná, a `/index.html` pedig a
+   * nyerset — ugyanaz az oldal két változatban, és az egyiken visszatérne az
+   * elavult gyorsítótár. Innen kihagyva mindkét cím ugyanoda esik.
+   */
+  const CLIENT_FILES = ['favicon.ico', 'robots.txt', 'manifest.webmanifest']
 
   const allowedPath = (pathName: string): boolean => {
     const clean = pathName.replace(/^\/+/, '')
-    if (clean === '' || CLIENT_FILES.includes(clean)) return true
+    // A gyökér a LAPÉ, nem a fájlkiszolgálóé — lásd `CLIENT_FILES`.
+    if (clean === '') return false
+    if (CLIENT_FILES.includes(clean)) return true
     const top = clean.split('/')[0]
     return top !== undefined && CLIENT_DIRS.includes(top)
   }
@@ -503,16 +696,115 @@ export async function buildApp (): Promise<FastifyInstance> {
   // Serve the static web client from the same origin so the whole app runs as
   // one container/port (WEB_ROOT overrides; defaults to the repo's web/).
   const webRoot = process.env.WEB_ROOT ?? join(dirname(fileURLToPath(import.meta.url)), '../../web')
-  if (existsSync(webRoot)) {
+
+  /*
+   * KISZOLGÁLJA-E EZ A FOLYAMAT A WEBKLIENST?
+   *
+   * Ma igen: egy konténer adja a lapot és az API-t, és ez ennél a méretnél
+   * helyes — egy kérés, egy origó, nincs CORS.
+   *
+   * Amikor az APP külön gépre kerül, ugyanez a kép fut majd ott is, csak
+   * `SERVE_WEB=false`-szal az API oldalon: onnantól az API CSAK API. A
+   * kapcsoló azért van, hogy ez a lépés egy környezeti változó legyen, ne
+   * kódvágás — és hogy a mostani viselkedés az alapértelmezés maradjon.
+   */
+  const serveWeb = process.env.SERVE_WEB !== 'false'
+  if (serveWeb && existsSync(webRoot)) {
+    /*
+     * A KLIENS VERZIÓJA, és az `index.html` vele bélyegezve.
+     *
+     * Egyszer, induláskor. A bélyegzett lap ugyanaz a fájl, csak a `/src/` és
+     * a `/css/` hivatkozásai előtt ott a verzió — a modulgráf relatív
+     * importjai innentől maguktól a bélyegzett előtag alatt oldódnak fel.
+     *
+     * Ha bármi elhasal, a BÉLYEGZÉS MARAD EL, nem a lap: verzió nélkül a
+     * régi, közvetlen címek járják, és az oldal ugyanúgy működik, csak a
+     * gyorsítótár megint lomha lesz. Egy gyorsítótár-optimalizálás nem
+     * döntheti el, hogy elindul-e az oldal.
+     */
+    let stamp = ''
+    try {
+      stamp = await clientVersion(webRoot)
+      app.log.info({ version: stamp }, 'a kliens verziója')
+    } catch (error) {
+      app.log.warn({ err: (error as Error).message },
+        'a kliens verziója nem számolható ki; a hivatkozások bélyegzés nélkül mennek ki')
+    }
+
+    /*
+     * A BÉLYEGZETT ÚTVONAL: `/b/<verzió>/src/...`
+     *
+     * A `find-my-way` a literális szegmenst elébe helyezi a statikus `*`-nak,
+     * ezért ez a kérés ide fut be, nem a fájlkiszolgálóhoz. Egy évre,
+     * `immutable`: a cím a tartalmat azonosítja, tehát ami egyszer megjött,
+     * az soha nem lesz elavult. A böngésző így EGYETLEN kérést sem küld a
+     * modulokért, amíg a verzió nem változik.
+     */
+    app.get(`/${STAMP_PREFIX}/*`, async (request, reply) => {
+      const file = unstamp(request.url)
+      if (file === null) return reply.callNotFound()
+      return await reply.sendFile(file)
+    })
+
     await app.register(fastifyStatic, {
       root: webRoot,
+      /*
+       * A KÖNYVTÁRINDEX MEGMARAD, pedig a `/`-ot már nem ez szolgálja ki.
+       *
+       * Kikapcsolva a `send` egy könyvtárkérésre (`/src/`) 403-at ad 404
+       * helyett — vagyis egy létező könyvtár MEGKÜLÖNBÖZTETHETŐ lenne egy nem
+       * létezőtől, pusztán a státuszkódból. Ez pont az a szivárgás, ami ellen
+       * az `allowedPath` visszautasítása is 404-et ad. A `/` nem ide fut be:
+       * azt az `allowedPath` utasítja vissza.
+       */
       index: 'index.html',
       // Never a directory index. It is off by default; saying so is cheap and
       // the failure mode — an index of the client's whole asset tree — is the
       // kind that arrives by upgrade rather than by edit.
       list: false,
       dotfiles: 'ignore',
-      allowedPath
+      allowedPath,
+      /*
+       * A KLIENS FORRÁSA MINDIG ELLENŐRZÉS ALATT.
+       *
+       * Ez a projekt szándékosan build nélküli: a böngésző azokat a
+       * fájlneveket tölti le, amik a lemezen vannak. Nincs tehát tartalomból
+       * származó fájlnév, ami magától frissülne — egy telepítés után a
+       * böngésző ugyanarról a címről kérné az ÚJ kódot, és ha a régit
+       * gyorsítótárazta, nem kéri.
+       *
+       * ÉS EZ MEG IS TÖRTÉNT. Az `index.html` mindig friss volt, a modulok
+       * viszont négy órára eltárolódtak, tehát egy visszatérő látogató ÚJ
+       * vázat kapott RÉGI kóddal — az új útvonal „Page not found" lett a
+       * telefonján, miközben a kiszolgálón minden rendben volt. A négy órát
+       * nem mi adtuk: az eredet `max-age=0`-t küldött, és a Cloudflare írta
+       * felül. Mérve:
+       *
+       *   konténer:  cache-control: public, max-age=0
+       *   az élen:   cache-control: public, max-age=14400
+       *
+       * A `no-cache` NEM azt jelenti, hogy „ne tárold" — azt, hogy „tárold,
+       * de HASZNÁLAT ELŐTT kérdezd meg". Az ETag megmarad, tehát a válasz
+       * jellemzően egy pár száz bájtos 304, nem újratöltés. Ez az ár egy
+       * build nélküli kliensért, és olcsóbb, mint egy fél napig törött oldal.
+       *
+       * Az `assets/` kimarad: képek, betűk, videó. Ezek ritkán változnak, és
+       * egy elavult kép legrosszabb esetben csúnya — nem törött alkalmazás.
+       */
+      setHeaders (response, filePath) {
+        /*
+         * EGY HELYEN DÖNTÜNK, mert a `sendFile` úgyis ezt futtatja utoljára —
+         * a bélyegzett útvonalon beállított fejlécet is felülírná. Először
+         * ezért azt nézzük meg, bélyegzett címről jött-e a kérés.
+         */
+        if (unstamp(response.request.url) !== null) {
+          // A cím a tartalmat azonosítja: ami egyszer megjött, sosem avul el.
+          response.header('cache-control', 'public, max-age=31536000, immutable')
+          return
+        }
+        const forras = /\.(?:js|mjs|css|html|webmanifest)$/i.test(filePath)
+        response.header('cache-control', forras ? 'no-cache' : 'public, max-age=86400')
+      }
     })
     /**
      * robots.txt, sitemap.xml, and /anime/:id with a real <head>.
@@ -552,12 +844,59 @@ export async function buildApp (): Promise<FastifyInstance> {
       const clean = pathName.replace(/^\/+/, '')
       if (CLIENT_FILES.includes(clean)) return true
       const top = clean.split('/')[0]
+      /*
+       * A BÉLYEGZETT ELŐTAG IS FÁJLKÉRÉS.
+       *
+       * Enélkül egy elrontott `/b/...` cím a LAPOT kapná, 200-zal — a
+       * böngésző pedig nem futtat HTML-t modulként, tehát fehér lap lenne
+       * belőle, miközben minden ellenőrzés egészséget jelent. Pontosan az a
+       * hiba, ami miatt ez a függvény létezik.
+       */
+      if (top === STAMP_PREFIX) return true
       return top !== undefined && CLIENT_DIRS.includes(top)
     }
 
-    app.setNotFoundHandler((request, reply) => {
+    /*
+     * A LAP MAGA — bélyegzett hivatkozásokkal, és MINDIG ellenőrizve.
+     *
+     * Ez az egyetlen hely, ahonnan az `index.html` kimegy (a `/` is ide esik,
+     * mert a fájlkiszolgáló nem ad könyvtárindexet). A `no-cache` nem azt
+     * jelenti, hogy „ne tárold", hanem hogy „használat előtt kérdezd meg" —
+     * és a lap a legkisebb fájl a készletben. Ez a lap hozza a verziót, tehát
+     * ha ez elavulna, minden más is elavulna vele.
+     *
+     * Mérve: a Cloudflare a HTML-re átengedi ezt a fejlécet (a JS-re nem —
+     * lásd `client-version.ts`).
+     */
+    /*
+     * A KÉSZ LAP ELTÉVE, a módosítási időre kulcsolva.
+     *
+     * Kérésenkénti `stat`, nem kérésenkénti olvasás és karakterlánccsere: a
+     * konténerben a fájl sosem változik, fejlesztés közben viszont gyakran, és
+     * egy beragadt lap ott a legrosszabb fajta hiba — a forrásban már ott a
+     * változás, a böngészőben még nincs. Ugyanaz a megfontolás, mint a
+     * `seo/meta.ts` sablonjánál.
+     */
+    let page: { mtimeMs: number, html: string } | null = null
+
+    const servePage = async (reply: FastifyReply): Promise<string> => {
+      reply.type('text/html; charset=utf-8')
+      reply.header('cache-control', 'no-cache')
+      const path = join(webRoot, 'index.html')
+      const { mtimeMs } = await stat(path)
+      if (page?.mtimeMs !== mtimeMs) {
+        // Előbb a hivatkozások verziója, utána az API címe. A második csak
+        // akkor ír bele, ha az `API_PUBLIC_URL` be van állítva — egyetlen
+        // gépen futó telepítés lapja változatlan marad.
+        const html = stampApiBase(stampAssets(await readFile(path, 'utf8'), stamp), apiBaseUrl())
+        page = { mtimeMs, html }
+      }
+      return page.html
+    }
+
+    app.setNotFoundHandler(async (request, reply) => {
       if (request.method === 'GET' && !/^\/(v1|graphql|graphiql|ws)\b/.test(request.url) && !isClientAsset(request.url)) {
-        return reply.sendFile('index.html')
+        return await servePage(reply)
       }
       return reply.code(404).type('application/problem+json').send({ type: 'about:blank', title: 'Not Found', status: 404 })
     })

@@ -30,12 +30,14 @@ const here = dirname(fileURLToPath(import.meta.url))
 const CSS = readFileSync(join(here, '../css/style.css'), 'utf8')
 const COMPONENTS = readFileSync(join(here, '../css/components.css'), 'utf8')
 const ADMIN = readFileSync(join(here, '../css/admin.css'), 'utf8')
+const PLAYER2 = readFileSync(join(here, '../css/player2.css'), 'utf8')
+const MAINTENANCE = readFileSync(join(here, '../css/maintenance.css'), 'utf8')
 
 // The two sheets the browser loads after tokens.css, in load order. The
 // undefined-token check below has to cover both: components.css is where the
 // primitives live now, and a token that resolves to nothing there drops a
 // declaration on every screen at once rather than on one.
-const SHEETS = [['style.css', CSS], ['components.css', COMPONENTS], ['admin.css', ADMIN]]
+const SHEETS = [['style.css', CSS], ['components.css', COMPONENTS], ['admin.css', ADMIN], ['player2.css', PLAYER2], ['maintenance.css', MAINTENANCE]]
 
 /**
  * Every rule in the sheet, tagged with whether it sits inside a media query.
@@ -179,7 +181,7 @@ describe('design tokens the stylesheet asks for', () => {
     .map(name => readFileSync(join(here, '../src', String(name)), 'utf8'))
 
   const defined = new Set(
-    [TOKENS, CSS, COMPONENTS, ADMIN, ...inlineSources]
+    [TOKENS, CSS, COMPONENTS, ADMIN, PLAYER2, MAINTENANCE, ...inlineSources]
       .flatMap(source => [...source.matchAll(/(--[a-z0-9-]+)\s*:/gi)])
       .map(m => m[1])
   )

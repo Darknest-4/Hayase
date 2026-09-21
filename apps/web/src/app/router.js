@@ -5,32 +5,30 @@
 import { Copy } from '../shared/i18n/copy.js'
 import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
-import { configure as configureFeatures, featureOn } from '../shared/lib/site-config.js'
+import { GATE_EXEMPT, pageAvailable, configure as configureFeatures, featureOn, permissionsHeld } from '../shared/lib/site-config.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
 import { Announcements } from '../features/announcements/announcements.js'
 import { Landing } from '../features/landing/landing.js'
 import { LibrarySync } from '../features/library-sync/library-sync.js'
 import { Onboarding } from '../features/onboarding/onboarding.js'
-import { PageAdmin } from '../pages/admin.js'
-import { PageAnime } from '../pages/anime.js'
-import { PageChangelog } from '../pages/changelog.js'
 import { PageCommunity } from '../pages/community.js'
 import { PageDashboard } from '../pages/dashboard.js'
 import { PageHome } from '../pages/home.js'
 import { PageList } from '../pages/list.js'
+import { PageLogin } from '../pages/login.js'
 import { PageNotifications } from '../pages/notifications.js'
 import { PageProfile } from '../pages/profile.js'
 import { PageSchedule } from '../pages/schedule.js'
 import { PageSearch } from '../pages/search.js'
-import { PageSettings } from '../pages/settings.js'
-import { PageW2G } from '../features/watch-together/watch-together.js'
-import { PageWatch } from '../pages/watch.js'
 import { Prefs } from '../shared/state/preferences.js'
 import { Store } from '../shared/state/store.js'
 import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 import { YumeAPI } from '../shared/api/yume.js'
 import { pageView } from '../shared/lib/analytics.js'
+import { createMaintenanceService } from '../features/maintenance/core/maintenance-service.js'
+import { createMaintenancePage } from '../features/maintenance/ui/maintenance-page.js'
+import { ADMIN_SECTIONS } from '../shared/lib/admin-sections.js'
 
 export const App = {
   routes: {
@@ -41,20 +39,24 @@ export const App = {
     search: (root, params) => PageSearch.render(root, params),
     schedule: (root, params) => PageSchedule.render(root, params),
     list: (root, params) => PageList.render(root, params),
+    // Saját címe van, mert hivatkozni kell rá: a hozzáférési kapuból, egy
+    // levélből, egy hibaüzenetből. A felugró ablak megmarad a
+    // kezdőképernyőn — a kettő UGYANAZT az űrlapot használja.
+    login: (root, params, arg) => PageLogin.render(root, params, arg),
     profile: (root, params) => PageProfile.render(root, params),
     notifications: (root, params) => PageNotifications.render(root, params),
     dashboard: (root, params) => PageDashboard.render(root, params),
     community: (root, params) => PageCommunity.render(root, params),
-    changelog: (root, params) => PageChangelog.render(root, params),
-    w2g: (root, params, arg) => PageW2G.render(root, params, arg),
-    watch: (root, params, arg) => PageWatch.render(root, params, arg),
+    changelog: async (root, params) => (await import('../pages/changelog.js')).PageChangelog.render(root, params),
+    w2g: async (root, params, arg) => (await import('../features/watch-together/watch-together.js')).PageW2G.render(root, params, arg),
+    watch: async (root, params, arg) => (await import('../pages/watch.js')).PageWatch.render(root, params, arg),
     // The section can arrive either way: `#/admin/audit` names it in the path,
     // which is the address form the panel's own sections are documented at,
     // and `?s=` is what the rail writes as you click through. The page takes
     // the path form first and falls back to the query.
-    admin: (root, params, arg) => PageAdmin.render(root, params, arg),
-    settings: (root, params) => PageSettings.render(root, params),
-    anime: (root, params, arg) => PageAnime.render(root, params, arg)
+    admin: async (root, params, arg) => (await import('../pages/admin.js')).PageAdmin.render(root, params, arg),
+    settings: async (root, params) => (await import('../pages/settings.js')).PageSettings.render(root, params),
+    anime: async (root, params, arg) => (await import('../pages/anime.js')).PageAnime.render(root, params, arg)
   },
 
   parseHash () {
@@ -80,6 +82,24 @@ export const App = {
     const [route, arg] = String(window.location.pathname || '/').replace(/^\/+/, '').split('/')
     const params = new URLSearchParams(window.location.search ?? '')
     if (route && this.routes[route]) return { route, arg, params }
+
+    /*
+     * A CSUPASZ GYÖKÉR A KEZDŐKÉPERNYŐ.
+     *
+     * Aki a domaint írja be, az nem a könyvtárát jött megnézni — ő még nem
+     * tudja, mi ez. A `#/home` a visszatérő látogató címe, és az is marad:
+     * ide csak az esik, ahol se útvonalnév, se fragmentum nincs.
+     *
+     * Belépve is a kezdőképernyő jön, és ez szándékos: a lap nekik is szól, és
+     * egy automatikus átirányítás elvenné tőlük a lehetőséget, hogy
+     * megnézzék. Az onnan induló gomb viszont tudja, hogy be vannak lépve, és
+     * a főoldalra visz.
+     *
+     * Ismeretlen ÚTVONALNÉV továbbra is a `home`: azt a `navigate()` a
+     * „nincs ilyen oldal" kapuval kezeli, és egy elgépelt cím ne a
+     * marketinglapra essen.
+     */
+    if (!route) return { route: 'landing', arg: undefined, params }
     return { route: 'home', arg: undefined, params }
   },
 
@@ -111,7 +131,12 @@ export const App = {
   normalisePath () {
     if (window.location.hash) return
     const { route, arg, params } = this.parseHash()
-    if (route === 'home' && !arg) return
+    /*
+     * A tiszta gyökeret békén hagyjuk. A `/` a kezdőképernyő címe, és nem
+     * nyer semmit azzal, ha `/#/landing`-re írjuk át — csak csúnyább lesz egy
+     * megosztott linkben.
+     */
+    if ((route === 'home' || route === 'landing') && !arg) return
     const query = params.toString()
     const target = `/#/${route}${arg ? '/' + arg : ''}${query ? '?' + query : ''}`
     window.history?.replaceState?.(null, '', target)
@@ -127,7 +152,106 @@ export const App = {
 
   _navGen: 0,
 
+  /**
+   * A karbantartási oldal, ha most azt kell mutatni — különben `null`.
+   *
+   * A TELJES OLDAL csak a mindent lezáró módokban jár. A részleges és a
+   * csak-olvasható üzem mellett az oldal MEGY, és ott szalag a helyes válasz:
+   * az elmondja, mi nem működik, és nem áll az útba.
+   */
+  _maintenanceGate (route) {
+    const service = this._maintenance
+    if (!service) return null
+    const status = service.status
+    const blocking = status.mode === 'ACTIVE' || status.mode === 'EMERGENCY'
+    if (!blocking) {
+      this._renderMaintenanceBanner(status)
+      return null
+    }
+
+    // Az üzemeltető átmegy a szerveren, tehát a lapja is működjön. Az
+    // adminfelület ráadásul az EGYETLEN hely, ahonnan ki lehet kapcsolni.
+    if (permissionsHeld().length > 0 || route === 'admin') {
+      this._renderMaintenanceBanner(status)
+      return null
+    }
+
+    this._maintenancePage?.destroy()
+    this._maintenancePage = createMaintenancePage(status, {
+      service,
+      onRetry: () => { window.location.reload() }
+    })
+    return this._maintenancePage.node
+  },
+
+  /** A szalag a működő oldal tetején — részleges vagy ütemezett üzemnél. */
+  _renderMaintenanceBanner (status) {
+    document.getElementById('mnt-banner')?.remove()
+    const interesting = ['SCHEDULED', 'DEGRADED', 'READ_ONLY', 'ACTIVE', 'EMERGENCY']
+    if (!interesting.includes(status.mode)) return
+
+    const text = {
+      SCHEDULED: 'Tervezett karbantartás következik.',
+      DEGRADED: 'Néhány funkció átmenetileg nem érhető el.',
+      READ_ONLY: 'Most csak olvasni lehet — a módosításokat nem fogadjuk.',
+      ACTIVE: 'Karbantartás folyik. Neked a jogosultságod miatt működik az oldal.',
+      EMERGENCY: 'Rendkívüli karbantartás folyik.'
+    }[status.mode]
+
+    const banner = U.el('div', { class: 'mnt-banner', id: 'mnt-banner', role: 'status' }, [
+      U.el('span', { class: 'mnt-banner-text', text: status.title ? `${status.title} — ${text}` : text }),
+      U.el('button', {
+        class: 'mnt-banner-close',
+        type: 'button',
+        'aria-label': 'Értesítés bezárása',
+        text: '×',
+        onclick: e => e.currentTarget.parentElement.remove()
+      })
+    ])
+    document.getElementById('page')?.prepend(banner)
+  },
+
+  /**
+   * A KRITIKUS BOOTSTRAP ÁLLAPOTA.
+   *
+   *   'pending'  a konfiguráció még úton van — útvonalat feloldani MÉG NEM
+   *              szabad, mert a kapu nem tud dönteni;
+   *   'ready'    megjött;
+   *   'failed'   nem jött meg, és nem is fog — a lap ettől még működjön.
+   *
+   * MIÉRT KELL. A `_gateCheck` eddig egyetlen `if (!cfg)` ággal kezelte a
+   * „nincs még meg" és a „nem érhető el" esetet, és mindkettőre átengedett.
+   * A második szándék volt (egy elérhetetlen háttértől ne álljon meg az
+   * egész oldal), az elsőt viszont MINDEN indulás eltalálja — és az
+   * eredménye mérhető volt:
+   *
+   *   kijelentkezve a `#/home`-ra érkezve a kezdőlap lefutott, elindított
+   *   TIZENEGY `/v1/anime/` lekérdezést, mind a tizenegy 401-gyel jött
+   *   vissza, aztán a konfiguráció megérkezett, a kapu döntött, és a
+   *   kezdőképernyő kicserélte az egészet
+   *
+   * Vagyis: dupla renderelés, tizenegy fölösleges és jogosulatlan kérés, és
+   * a végén a cím `#/home` maradt, miközben a látogató a kezdőképernyőt
+   * nézte — egy frissítés, egy könyvjelző vagy egy megosztott link mind
+   * rossz helyre mutatott.
+   */
+  _boot: 'pending',
+
   async navigate () {
+    /*
+     * ELŐBB A KRITIKUS BOOTSTRAP, UTÁNA AZ ELSŐ ÚTVONAL.
+     *
+     * Az `init()` több olyat is elindít, ami navigálni akar, mielőtt a
+     * konfiguráció megjönne — a karbantartás-figyelő első válasza, egy
+     * nyelvváltás, egy `hashchange`. Amíg a bootstrap tart, ezek nem
+     * rajzolnak: a `booting` váz marad a képen, és az `init()` végén egyetlen
+     * navigáció rajzol egyszer, a helyes kerettel.
+     *
+     * Ez nem késleltetés: ugyanaz a `loadConfig()` fut, ugyanannyi ideig. A
+     * különbség az, hogy nem rajzolunk ki egy oldalt, amit utána eldobunk.
+     */
+    if (this._boot === 'pending') return
+
     const gen = ++this._navGen
     const { route, arg, params } = this.parseHash()
     if (this.REDIRECTS[route]) { window.location.replace(this.REDIRECTS[route]); return }
@@ -164,7 +288,9 @@ export const App = {
     // úgysem juthat el.
     // A jelölést a `_renderGate` és a `landing` útvonal is átírhatja: a kapu a
     // kezdőképernyőt rajzolja olyan útvonalon, amit még máshogy hívnak.
-    document.body.classList.toggle('landing-route', route === 'landing')
+    // Tipp a címből: a keret osztálya már most a helyére kerül, de a krómot
+    // még nem mutatjuk meg — a kapu felülbírálhatja. Lásd `applyLayout`.
+    this.applyLayout(route)
 
     /*
      * Jelezzük, hogy megnyílt egy oldal.
@@ -188,10 +314,59 @@ export const App = {
     document.getElementById('nav-more')?.classList.toggle('active', !primary.includes(route))
     this.refreshNotifBadge()
 
+    /*
+     * ---- KARBANTARTÁSI KAPU ----
+     *
+     * EZ NEM BIZTONSÁGI HATÁR, és fontos tudni, hogy miért nem: a szerver
+     * minden kérést maga bírál el (`modules/maintenance/middleware.ts`), és
+     * ami oda nem jut be, azt ez a kapu sem engedi ki. Amit itt csinálunk, az
+     * a MEGJELENÍTÉS — hogy a néző ne egy sor elhasalt kérésből következtesse
+     * ki, mi történik.
+     *
+     * Aki a szerver szerint bemehet (üzemeltető, jeggyel rendelkező), annak a
+     * kérései sikeresek — ezért a teljes oldalt csak akkor mutatjuk, ha a
+     * nézőnek nincs üzemeltetői jogosultsága. Egy adminnak, aki épp a
+     * karbantartást kapcsolja ki, a legrosszabb dolog egy karbantartási oldal.
+     */
+    const maintenancePage = this._maintenanceGate(route)
+    if (maintenancePage) {
+      this.applyLayout(route, { reveal: true })
+      page.replaceChildren(maintenancePage)
+      return
+    }
+
+    /*
+     * A NEM LÉTEZŐ CÍM ELŐBB VAN, MINT A KAPU.
+     *
+     * A router lentebb ki is mondja, miért: egy holt hivatkozásnak meg kell
+     * mondania, hogy holt — különben minden elírás, minden átnevezett
+     * útvonal, minden elavult könyvjelző úgy fest, mintha működött volna.
+     *
+     * A sorrend viszont visszahozta ugyanezt a hibát: zárt példányon a kapu
+     * ELŐBB döntött, és a `#/nincs-ilyen-oldal` a KEZDŐKÉPERNYŐT kapta, nem
+     * egy hibát. Élesben lemérve.
+     *
+     * Ez nem szivárogtat: az útvonalak listája a kliens kódjában amúgy is
+     * ott van, tehát attól, hogy egy nem létező címre „nincs ilyen"-t
+     * mondunk, senki nem tud meg semmit, amit ne tudhatna.
+     */
+    if (!this.routes[route]) {
+      this.applyLayout(route, { reveal: true })
+      this._renderGate(page, { kind: 'not-found' }, route, arg)
+      if (!this.CHROMELESS.includes(route)) page.append(C.footer())
+      return
+    }
+
     // feature-flag / access gate (DB-driven site config)
     const gate = this._gateCheck(route)
     if (!gate.ok) {
-      this._renderGate(page, gate, route)
+      /*
+       * A KAPU DÖNTÖTT, tehát most már tudjuk, milyen keret jár. A
+       * `site-login` ág a kezdőképernyőt rajzolja — a keret is az övé, bármi
+       * is volt a címben.
+       */
+      this.applyLayout(gate.kind === 'site-login' ? 'landing' : route, { reveal: true })
+      this._renderGate(page, gate, route, arg)
       if (!this.CHROMELESS.includes(route)) page.append(C.footer())
       return
     }
@@ -204,9 +379,13 @@ export const App = {
      * else — look like it had worked. The viewer got the landing page and no
      * reason to think they had not arrived where they meant to.
      */
+    this.applyLayout(route, { reveal: true })
+
+    // A nem létező címet fent már elkaptuk, a kapu ELŐTT — ez itt csak az
+    // öv a nadrágtartó mellé.
     const handler = this.routes[route]
     if (!handler) {
-      this._renderGate(page, { kind: 'not-found' }, route)
+      this._renderGate(page, { kind: 'not-found' }, route, arg)
       if (!this.CHROMELESS.includes(route)) page.append(C.footer())
       return
     }
@@ -271,10 +450,16 @@ export const App = {
    * The immersive screens (the player, watch-together, the profile picker)
    * plus the admin panel, which brings its own frame entirely.
    */
-  CHROMELESS: ['watch', 'w2g', 'admin', 'landing'],
+  CHROMELESS: ['watch', 'w2g', 'admin', 'landing', 'login'],
 
   // routes always reachable so users can configure the server / sign in
-  _gateExempt: ['settings', 'landing'],
+  /*
+   * A kapu alól mentes útvonalak — a `site-config.js`-ből, nem külön
+   * másolatban. A `login` KÜLÖN FONTOS: ha a kapu elzárná, egy privát
+   * példányon a belépőlap maga is kapu mögé kerülne, és nem lenne mód
+   * bejutni. Ugyanebből a listából dolgozik a menük láthatósága is.
+   */
+  _gateExempt: GATE_EXEMPT,
 
   /**
    * Routes that must never be reachable by accident.
@@ -299,10 +484,18 @@ export const App = {
    * One rule, asked in one place, and both directions stop being wrong.
    */
   _adminSectionPermissions () {
-    const sections = PageAdmin?.SECTIONS
-    // Not loaded yet is not a reason to open the door.
-    if (!Array.isArray(sections)) return null
-    return [...new Set(sections.map(section => section.perm).filter(Boolean))]
+    /*
+     * A LISTA MOSTANTÓL SAJÁT MODULBAN VAN (`shared/lib/admin-sections.js`), nem a
+     * panelben. Eddig innen `PageAdmin.SECTIONS`-t olvastunk, és emiatt a
+     * 279 kB-os adminpanel MINDEN oldalbetöltéssel megérkezett — a
+     * belépőlapra is. A lista ettől nem duplikálódott: a panel is ugyanezt az
+     * egy példányt olvassa.
+     *
+     * A „még nincs betöltve" eset ezzel meg is szűnt: a lista statikus
+     * import, tehát mindig megvan.
+     */
+    if (!Array.isArray(ADMIN_SECTIONS)) return null
+    return [...new Set(ADMIN_SECTIONS.map(section => section.perm).filter(Boolean))]
   },
 
   _gateCheck (route) {
@@ -334,8 +527,14 @@ export const App = {
       }
     }
 
-    // Backend unreachable: the rest of the site stays usable, the privileged
-    // routes above have already been refused.
+    /*
+     * A HÁTTÉR NEM ÉRHETŐ EL: a lap többi része maradjon használható — a
+     * jogosultsághoz kötött útvonalakat fent már visszautasítottuk.
+     *
+     * Ez az ág MOSTANTÓL CSAK EZT JELENTI. Korábban a „még nem töltődött be"
+     * állapot is ide esett, és ugyanezt a választ kapta; azt most a
+     * `navigate()` bootstrap-őre fogja meg, tehát ide már nem juthat el.
+     */
     if (!cfg) return privileged ? { ok: false, kind: 'permission' } : { ok: true }
 
     if (cfg.site.requireLogin && !signedIn && !this._gateExempt.includes(route)) {
@@ -398,7 +597,7 @@ export const App = {
     })
   },
 
-  _renderGate (page, gate, route) {
+  _renderGate (page, gate, route, arg) {
     const wrap = U.el('div', { class: 'gate' })
 
     if (gate.kind === 'site-login') {
@@ -412,14 +611,46 @@ export const App = {
       Landing.render(page, this.config?.site, () => { this.afterAuth() })
       return
     } else if (gate.kind === 'auth') {
+      /*
+       * A KAPU ELKÜLD, NEM BEÁGYAZ.
+       *
+       * Eddig egy kis beágyazott űrlapot rajzolt ide. Két baja volt: ez a
+       * harmadik másolat volt ugyanabból a logikából (és amikor az emberpróba
+       * bekerült, ebbe nem került bele, tehát a regisztráció innen 403-mal
+       * hasalt volna el), és nem is volt hová visszatérni belőle — belépés
+       * után a látogató ott maradt, ahol volt, ahelyett hogy megérkezett
+       * volna oda, ahová indult.
+       *
+       * A `next` viszi tovább a szándékot: a belépőlap ide hozza vissza.
+       */
+      const back = `${route}${arg ? '/' + arg : ''}`
       wrap.append(
         U.el('div', { class: 'gate-icon', text: '🔑' }),
         // `gate.flag?.label` rather than `gate.flag.label`: a kind that
         // arrives without a flag must degrade to a plainer sentence, not throw
         // inside the renderer and leave the viewer a blank page.
-        U.el('h1', { class: 'gate-title', text: gate.flag ? `Sign in for ${gate.flag.label}` : T('Sign in to continue') }),
+        /*
+         * EZ A SOR SOSEM MENT ÁT A FORDÍTÓN.
+         *
+         * Sablonszöveg volt — `` `Sign in for ${...}` `` —, tehát a `T()` meg
+         * sem látta, és egy magyar nyelvű példányon angolul jelent meg:
+         * „Sign in for Beállítások". A másik ág ugyanebben a sorban rendesen
+         * fordítva volt, tehát a hiba pont ott ült, ahol a kettő találkozik.
+         *
+         * Összefűzés, nem behelyettesítés: a `T()` nem tud helyőrzőt, és egy
+         * kétszavas előtag nem indokol új fordítómotort.
+         */
+        U.el('h1', {
+          class: 'gate-title',
+          text: gate.flag ? `${T('Sign in for')} ${gate.flag.label}` : T('Sign in to continue')
+        }),
         U.el('p', { class: 'gate-sub', text: T('This section needs a signed-in account.') }),
-        C.authCard(() => { this.afterAuth() })
+        U.el('div', { class: 'gate-actions' }, [
+          U.el('a', { class: 'btn btn-primary', href: `#/login?next=${encodeURIComponent(back)}` },
+            [document.createTextNode(T('Sign in'))]),
+          U.el('a', { class: 'btn btn-secondary', href: `#/login/register?next=${encodeURIComponent(back)}` },
+            [document.createTextNode(T('Create account'))])
+        ])
       )
     } else if (gate.kind === 'not-found' || (gate.kind === 'permission' && this.PRIVILEGED.includes(route))) {
       // One branch for two cases on purpose. A privileged route the viewer may
@@ -513,7 +744,21 @@ export const App = {
   },
 
   async loadConfig () {
-    this.config = await YumeAPI.config()
+    /*
+     * A HIBA ITT ÁLL MEG, nem az `init()`-ben.
+     *
+     * Eddig egy elhasalt kérés kidobta az `init()` egészét, tehát a
+     * `navigate()` a végén SOSEM futott le — a lapot csak az menthette meg,
+     * hogy egy korábbi, kapu nélküli navigáció már rajzolt valamit. Ez a
+     * fordítottja annak, amit akartunk: a védelem múlott a véletlenen.
+     */
+    try {
+      this.config = await YumeAPI.config()
+      this._boot = 'ready'
+    } catch (error) {
+      this._boot = 'failed'
+      console.error('a példány beállítása nem tölthető be; a lap korlátozottan működik', error)
+    }
     this.applyLanguagePolicy()
     // The account's own profile row, which is where the picture lives. Best
     // effort: a viewer who is signed out, or an instance that cannot answer,
@@ -523,18 +768,64 @@ export const App = {
   },
 
   // hide nav entries that are disabled or permission-gated-and-unavailable
+  /**
+   * A navigációs elemek elrejtése.
+   *
+   * A DÖNTÉS NEM ITT VAN, hanem a `pageAvailable`-ben — ugyanott, ahonnan a
+   * lábléc is kérdezi. Korábban ez a függvény maga olvasta a kapcsolótáblát,
+   * a lábléc pedig egy bedrótozott linklistát épített: egy adminban
+   * kikapcsolt oldal eltűnt innen, és ott maradt lent. Itt már csak az van,
+   * ami DOM-munka.
+   */
+  /**
+   * A LAYOUT KIVÁLASZTÁSA — tisztán a címből, hálózat nélkül.
+   *
+   * Ez a metódus azért van külön, mert KÉT helyről kell: a `navigate()`-ből
+   * minden útvonalváltáskor, és az `init()`-ből MÉG A KONFIGURÁCIÓ BETÖLTÉSE
+   * ELŐTT.
+   *
+   * A második a lényeg. Az `init()` megvárja a `loadConfig()` hálózati körét,
+   * és korábban csak utána futott az első `navigate()` — addig viszont az
+   * `index.html` statikus váza, az ikonsávval együtt, teljes egészében
+   * látszott. Lassú kapcsolaton ez több száz ezredmásodpercnyi ROSSZ keret a
+   * kezdőképernyő vagy a belépőlap előtt, amit aztán egy csapásra lecserél a
+   * helyes.
+   *
+   * Márpedig az, hogy egy útvonal az alkalmazás krómját kéri-e, tisztán a
+   * címből eldől — nem kell hozzá se konfiguráció, se munkamenet. Tehát nem is
+   * várunk rá.
+   */
+  applyLayout (route, { reveal = false } = {}) {
+    /*
+     * A `booting` CSAK AKKOR KERÜL LE, AMIKOR A KERET VÉGLEGES.
+     *
+     * A cím alapján meg lehet tippelni a keretet, de a KAPU felülbírálhatja:
+     * egy privát példányon a `#/home` is a kezdőképernyőt rajzolja. Ha a
+     * krómot már a tipp alapján megmutatnánk, a sorrend ez lenne:
+     *
+     *     ikonsáv megjelenik → a kapu dönt → ikonsáv eltűnik
+     *
+     * — vagyis pont az a villanás, ami ellen ez az egész van. Éles oldalon
+     * mérve is látszott: `#/home`-on négy egymást követő mintavétel fogta
+     * meg. A `reveal` ezért a `navigate()` kezében van, a kapu UTÁN.
+     */
+    if (reveal) document.body.classList.remove('booting')
+    // A kezdőképernyőnek saját fejléce van, és telefonon nem kér alsó sávot:
+    // aki még nem lépett be, annak a lebegő pill öt olyan helyre mutat, ahová
+    // úgysem juthat el. A `_renderGate` is átírhatja: a kapu a
+    // kezdőképernyőt rajzolja olyan útvonalon, amit még máshogy hívnak.
+    document.body.classList.toggle('landing-route', route === 'landing')
+    // Ugyanaz a megfontolás a belépőlapon: az ikonsáv olyan helyekre mutatna,
+    // ahová a látogató épp most próbál eljutni.
+    document.body.classList.toggle('login-route', route === 'login')
+  },
+
   applyNavVisibility () {
-    const cfg = this.config
-    if (!cfg) return
-    const signedIn = !!YumeAPI.user()
+    if (!this.config) return
     document.querySelectorAll('.sidebar-btn[data-route]').forEach(btn => {
       const route = btn.dataset.route
       if (route === 'admin') return // handled by refreshAdminNav
-      let hide = false
-      if (cfg.site.requireLogin && !signedIn && !this._gateExempt.includes(route)) hide = true
-      const flag = cfg.flags['page.' + route]
-      if (flag && (!flag.enabled || (flag.access === 'permission' && !this.perms.includes(flag.permission)))) hide = true
-      btn.classList.toggle('nav-flag-hidden', hide)
+      btn.classList.toggle('nav-flag-hidden', !pageAvailable(route))
     })
   },
 
@@ -774,31 +1065,67 @@ export const App = {
    * control the desktop never shows has no business in the served markup where
    * a screen reader on a wide window would still announce it.
    */
+  /**
+   * Az oldalsáv összecsukása — gomb és beállítás, egy állapotra.
+   *
+   * A választás a PROFIL beállításai közt él (`Store.settings().navCollapsed`),
+   * nem külön `localStorage` kulcson. Így a beállítások lapról is állítható,
+   * profilonként külön, és az adatmentés is viszi. A sávon lévő gomb ugyanoda
+   * ír — két kapcsoló, egy igazság.
+   *
+   * Keskeny képernyőn az oldalsáv nem látszik (ott az alsó sáv navigál), tehát
+   * a beállításnak ott nincs hatása; ezt a beállítások lap ki is mondja.
+   */
   initNavCollapse () {
     const sidebar = document.getElementById('sidebar')
     if (!sidebar || sidebar.querySelector('.nav-collapse')) return
-
-    const apply = collapsed => {
-      sidebar.classList.toggle('nav-collapsed', collapsed)
-      tab.setAttribute('aria-expanded', String(!collapsed))
-      tab.setAttribute('aria-label', collapsed ? T('Feliratok mutatása') : T('Feliratok elrejtése'))
-    }
 
     const tab = U.el('button', {
       class: 'nav-collapse',
       type: 'button',
       'aria-controls': 'sidebar',
       onclick: () => {
-        const collapsed = !sidebar.classList.contains('nav-collapsed')
-        apply(collapsed)
-        try { window.localStorage.setItem('yume-nav-collapsed', collapsed ? '1' : '0') } catch { /* storage blocked: the choice just does not persist */ }
+        Store.saveSettings({ navCollapsed: !Store.settings().navCollapsed })
+        this.applyNavCollapsed()
       }
     }, [U.svg('<polyline points="6 9 12 15 18 9"/>', 16)])
 
     sidebar.append(tab)
-    let remembered = false
-    try { remembered = window.localStorage.getItem('yume-nav-collapsed') === '1' } catch { /* see above */ }
-    apply(remembered)
+
+    /*
+     * ÁTKÖLTÖZTETÉS a régi kulcsról, egyszer.
+     *
+     * Aki már összecsukta a sávot, annak a választása a `yume-nav-collapsed`
+     * kulcsban ül. Enélkül az első betöltésnél visszaugrana nyitottra — egy
+     * csendes „elfelejtettük, amit beállítottál".
+     */
+    try {
+      const regi = window.localStorage.getItem('yume-nav-collapsed')
+      if (regi !== null) {
+        Store.saveSettings({ navCollapsed: regi === '1' })
+        window.localStorage.removeItem('yume-nav-collapsed')
+      }
+    } catch { /* a tárolás tiltva: nincs mit átköltöztetni */ }
+
+    this.applyNavCollapsed()
+  },
+
+  /**
+   * Az összecsukott állapot érvényesítése a beállításból.
+   *
+   * Külön metódus, mert KÉT helyről kell: a sávon lévő gombtól és a
+   * beállítások lapról. Az utóbbi a `shell.js`-en át hívja — egy képernyő ne
+   * a DOM-ot igazgassa a router helyett, mert akkor a gomb felirata és az
+   * `aria` állapot előbb-utóbb széttart attól, amit a sáv mutat.
+   */
+  applyNavCollapsed () {
+    const sidebar = document.getElementById('sidebar')
+    const tab = sidebar?.querySelector('.nav-collapse')
+    if (!sidebar || !tab) return
+    const collapsed = Store.settings().navCollapsed === true
+    sidebar.classList.toggle('nav-collapsed', collapsed)
+    tab.setAttribute('aria-expanded', String(!collapsed))
+    tab.setAttribute('aria-label', collapsed ? T('Feliratok mutatása') : T('Feliratok elrejtése'))
   },
 
   openMoreSheet () {
@@ -896,10 +1223,27 @@ export const App = {
     this.refreshNotifBadge()
     this.initAccountMenu()
     this.normalisePath()
+    /*
+     * A KERET ELŐBB, MINT A HÁLÓZAT. Lásd `applyLayout`: enélkül a statikus
+     * váz ikonsávja végigvillan a kezdőképernyő és a belépőlap előtt, amíg a
+     * `loadConfig()` válasza megjön.
+     */
+    this.applyLayout(this.parseHash().route)
     this.applyNavLabels()
     this.initSearchModal()
     this.initMobileMore()
     this.initNavCollapse()
+    /*
+     * A karbantartás figyelése.
+     *
+     * Kétpercenként kérdez, karbantartás alatt húszmásodpercenként — és a
+     * változásra ÚJRARAJZOL, hogy a néző ne egy elavult oldalt nézzen, amikor
+     * már vége.
+     */
+    this._maintenance = createMaintenanceService({})
+    this._maintenance.subscribe(() => { this.navigate() })
+    this._maintenance.start()
+
     window.addEventListener('hashchange', () => { this.closeMoreSheet(); this.navigate() })
 
     // load DB-driven site config + permissions, apply the site name, then route

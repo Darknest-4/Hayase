@@ -21,6 +21,7 @@
 //     different answers and only one of them is honest.
 
 import { config } from '../../config.ts'
+import * as turnstile from '../auth/turnstile.ts'
 import { query, queryOne } from '../../infrastructure/database/index.ts'
 import { loadTestConfigured } from '../../middleware/load-test.ts'
 import { settings } from '../settings/site-settings.ts'
@@ -304,6 +305,52 @@ const DEFINITIONS: Definition[] = [
         verdict: 'pass',
         found: `${requiresLogin ? 'privát' : 'nyilvános'}, a regisztráció ${registrationOpen ? 'nyitva' : 'zárva'}`
       }
+    }
+  },
+  {
+    id: 'turnstile',
+    group: 'Kitettség',
+    title: 'A hitelesítési űrlapokon van emberpróba',
+    looksAt: 'TURNSTILE_SITE_KEY, TURNSTILE_SECRET_KEY',
+    weight: 'normal',
+    run: async () => {
+      /*
+       * FIGYELMEZTETÉS, NEM BUKÁS. Egy emberpróba nélküli példány nem hibás:
+       * egy zárt regisztrációjú, néhány fős telepítésen nincs is mit védeni,
+       * és a sebességkorlát meg a drága jelszóhasítás akkor is áll.
+       *
+       * Az ellenőrzés attól hasznos, hogy megmondja, MI AZ ÁLLAPOT — és hogy
+       * a félig beállított eset (egy kulcs megvan, a másik nem) ne maradjon
+       * észrevétlen. Az pont úgy néz ki, mint a működő, csak nem véd semmit.
+       */
+      const site = Boolean(process.env.TURNSTILE_SITE_KEY?.trim())
+      const secret = Boolean(process.env.TURNSTILE_SECRET_KEY?.trim())
+
+      if (site !== secret) {
+        return {
+          verdict: 'fail',
+          found: `csak a ${site ? 'helyszín kulcsa' : 'titok'} van beállítva — az emberpróba így NEM fut le`,
+          remedy: 'Add meg mindkettőt a Turnstile felületéről, vagy vedd ki a meglévőt is'
+        }
+      }
+      if (!site) {
+        return {
+          verdict: 'warn',
+          found: 'nincs emberpróba — a regisztrációt és a belépést csak a sebességkorlát védi',
+          remedy: 'Cloudflare → Turnstile → Add site, majd TURNSTILE_SITE_KEY és TURNSTILE_SECRET_KEY'
+        }
+      }
+
+      const protects = turnstile.PROTECTABLE.filter(what => turnstile.protects(what))
+      const hosts = turnstile.allowedHostnames()
+      if (hosts.length === 0) {
+        return {
+          verdict: 'warn',
+          found: 'az emberpróba fut, de gazdanév-ellenőrzés nélkül — egy máshol szerzett token is elmenne',
+          remedy: 'Állítsd be a PUBLIC_URL-t, vagy sorold fel a neveket a TURNSTILE_HOSTNAMES-ben'
+        }
+      }
+      return { verdict: 'pass', found: `${protects.join(', ')} — elfogadott gazdanevek: ${hosts.join(', ')}` }
     }
   },
   {

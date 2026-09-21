@@ -1,4 +1,4 @@
-/* global window, fetch, localStorage, WebSocket */
+/* global window, document, fetch, localStorage, WebSocket */
 // Yume backend adapter. The client works standalone (AniList/Jikan direct),
 // but when a Yume API is reachable it powers platform features: accounts,
 // comments/community, themes and playback data.
@@ -8,11 +8,30 @@
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export const YumeAPI = {
+  /**
+   * Hol van az API.
+   *
+   * A sorrend a leghatározottabbtól a leggyengébb felé megy:
+   *
+   *   1. amit a NÉZŐ állított be (`setBase`) — fejlesztéshez, hibakereséshez;
+   *   2. amit a KISZOLGÁLÓ írt a lapba (`<meta name="yume:api-base">`). Ez a
+   *      kapcsoló ahhoz, hogy az APP külön gépre kerülhessen: onnantól a lapot
+   *      egy gép adja, az API-t egy másik, és a kliensnek tudnia kell, melyik
+   *      hova. Egyetlen gépen futó telepítésen a kiszolgáló nem ír bele
+   *      semmit, tehát ez a lépés kimarad;
+   *   3. AZONOS ORIGÓ — a mai, egy konténeres telepítés esete;
+   *   4. `file://`-ról megnyitva egy helyi fejlesztői API.
+   *
+   * A 2. pont adat, nem szkript: a lap ezen a ponton szándékosan szkriptmentes
+   * marad, mert a `script-src 'self'` a beágyazott szkriptet megfogná.
+   */
   base () {
     const saved = localStorage.getItem('yume-api')
     if (saved) return saved
-    // served over http(s) → the API is same-origin (single-container deploy);
-    // opened from file:// → assume a local dev API on :4000
+
+    const declared = document.querySelector('meta[name="yume:api-base"]')?.content?.trim()
+    if (declared) return declared.replace(/\/+$/, '')
+
     if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
       return window.location.origin
     }
@@ -217,15 +236,25 @@ export const YumeAPI = {
 
   // ---- auth ----
 
-  async register (email, username, password) {
-    const tokens = await this._request('/v1/auth/register', { method: 'POST', body: { email, username, password }, credentials: 'include' })
+  /*
+   * A `turnstileToken` VÁLASZTHATÓ, és ez nem hanyagság: azt, hogy kell-e
+   * emberpróba, a TELEPÍTÉS dönti el, nem a kliens. A hívó a `turnstile.js`
+   * `needed()`-jétől kérdezi meg, kell-e szereznie egyet; ha ez a példány nem
+   * kér, a mező el sem megy.
+   */
+  async register (email, username, password, turnstileToken) {
+    const body = { email, username, password }
+    if (turnstileToken) body.turnstileToken = turnstileToken
+    const tokens = await this._request('/v1/auth/register', { method: 'POST', body, credentials: 'include' })
     this._saveTokens(tokens)
     this._perms = null
     return this.user()
   },
 
-  async login (identifier, password) {
-    const tokens = await this._request('/v1/auth/login', { method: 'POST', body: { identifier, password }, credentials: 'include' })
+  async login (identifier, password, turnstileToken) {
+    const body = { identifier, password }
+    if (turnstileToken) body.turnstileToken = turnstileToken
+    const tokens = await this._request('/v1/auth/login', { method: 'POST', body, credentials: 'include' })
     this._saveTokens(tokens)
     this._perms = null
     return this.user()
@@ -688,6 +717,20 @@ export const YumeAPI = {
     return this._request(`/v1/comments/${id}/like`, { method: 'POST', auth: true })
   },
 
+  /**
+   * Egy hozzászólás törlése.
+   *
+   * A JOGOSULTSÁGOT A KISZOLGÁLÓ DÖNTI EL — a saját kommentet a szerzője, a
+   * másét a moderátori jog. A kliens azt rejti el, aminek nincs értelme
+   * megmutatni; ami nem jár, azt a kiszolgáló utasítja vissza.
+   *
+   * 204-et ad vissza, tehát a `_request` `null`-t: a hívónak nincs mit
+   * kiolvasnia belőle, csak azt, hogy nem dobott.
+   */
+  deleteComment (id) {
+    return this._request(`/v1/comments/${id}`, { method: 'DELETE', auth: true })
+  },
+
   /** Public readiness aggregate — safe for any signed-in view. */
   async readiness () {
     try {
@@ -854,6 +897,16 @@ export const YumeAPI = {
     // when this account holds no permission over it.
     badges: () => YumeAPI._request('/v1/admin/badges', { auth: true }),
 
+    // ---- forrásszolgáltatók ----
+    // A listában a KIKAPCSOLTAK is benne vannak: a panelnek azt kell
+    // mutatnia, ami VAN, nem azt, ami épp fut — különben pont az a kapcsoló
+    // tűnne el, amivel vissza lehetne kapcsolni.
+    providers: () => YumeAPI._request('/v1/admin/providers', { auth: true }),
+    providerEvents: (slug, limit = 20) =>
+      YumeAPI._request(`/v1/admin/providers/${encodeURIComponent(slug)}/events?limit=${limit}`, { auth: true }),
+    updateProvider: (slug, patch) =>
+      YumeAPI._request(`/v1/admin/providers/${encodeURIComponent(slug)}`, { method: 'PATCH', body: patch, auth: true }),
+
     // Everything the overview screen draws, in one round trip. `days` is the
     // window every comparison on it is measured over, so the captions on the
     // cards are all true of the same period.
@@ -979,6 +1032,21 @@ export const YumeAPI = {
     // Emergency controls. Each switch has an enforcement point in the server
     // and the GET says which — see apps/api/src/modules/security/routes.ts.
     security: () => YumeAPI._request('/v1/admin/security', { auth: true }),
+
+    // ---- karbantartási mód ----
+    // A `security.manage` jogosultsághoz kötve, ugyanoda, ahova a
+    // csak-olvasható üzem: nem tartalmi szerkesztés, hanem üzemeltetés.
+    maintenance: () => YumeAPI._request('/v1/admin/maintenance', { auth: true }),
+    setMaintenance: body => YumeAPI._request('/v1/admin/maintenance', { method: 'PUT', auth: true, body }),
+    /** Előnézet: NEM aktivál semmit, csak megmondja, mi történne. */
+    previewMaintenance: body =>
+      YumeAPI._request('/v1/admin/maintenance/preview', { method: 'POST', auth: true, body }),
+    createMaintenanceBypass: body =>
+      YumeAPI._request('/v1/admin/maintenance/bypass', { method: 'POST', auth: true, body }),
+    revokeMaintenanceBypass: id =>
+      YumeAPI._request(`/v1/admin/maintenance/bypass/${encodeURIComponent(id)}`, { method: 'DELETE', auth: true }),
+    /** A nyilvános státusz — az admin előnézethez is ezt kérdezzük. */
+    publicStatus: () => YumeAPI._request('/v1/status'),
     // The posture: every entry inspects something and says what it found.
     posture: () => YumeAPI._request('/v1/admin/security/posture', { auth: true }),
     // A sebességkorlátok átírása. Ugyanaz a jogosultság, ami a

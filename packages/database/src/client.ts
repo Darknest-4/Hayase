@@ -35,13 +35,39 @@ export interface PoolOptions {
 }
 
 export function createPool (options: PoolOptions): pg.Pool {
-  return new pg.Pool({
+  const pool = new pg.Pool({
     connectionString: options.connectionString,
     max: options.max,
     idleTimeoutMillis: options.idleTimeoutMillis ?? 30_000,
     connectionTimeoutMillis: options.connectionTimeoutMillis,
     statement_timeout: options.statementTimeoutMillis || undefined
   })
+
+  /*
+   * A TÉTLEN KAPCSOLATOK HIBÁI — enélkül egy adatbázis-újraindítás megöli a
+   * folyamatot.
+   *
+   * A `pg` készlete `error` eseményt bocsát ki, ha egy ÉPPEN NEM HASZNÁLT
+   * kapcsolaton hálózati vagy kiszolgálóoldali hiba történik. Az ilyen esemény
+   * nem tartozik egyetlen `await`-hez sem, tehát nincs, aki elkapja: ha nincs
+   * figyelő, a Node `EventEmitter`-e kivételt dob, és a folyamat kilép.
+   *
+   * MÉRVE, EGY HANGOLÁSI ÚJRAINDÍTÁSKOR: a Postgres `terminating connection
+   * due to administrator command`-ot küldött a tétlen kapcsolatokra, és
+   * EZ MEGÖLTE MIND AZ API-T, MIND A WORKERT — `throw er; // Unhandled
+   * 'error' event`, majd újraindulás. A `restart: unless-stopped` visszahozta
+   * őket, de addig a futó kérések elhasaltak, és minden tervezett
+   * adatbázis-karbantartás így végződött volna.
+   *
+   * A helyes viselkedés nem a kilépés: a készlet eldobja a rossz kapcsolatot,
+   * és a következő kérés újat nyit. Ez a figyelő pontosan ennyit tesz —
+   * feljegyzi, és hagyja dolgozni a készletet.
+   */
+  pool.on('error', error => {
+    console.error('adatbázis-készlet hibája egy tétlen kapcsolaton:', (error as Error).message)
+  })
+
+  return pool
 }
 
 /** What a caller needs to run SQL. Anything holding one of these can reach the database. */

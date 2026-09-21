@@ -18,7 +18,7 @@
 import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 
-import { mirrorKeyFor } from '../src/modules/media/mirror.ts'
+import { mirrorKeyFor, scheduleNext } from '../src/modules/media/mirror.ts'
 
 import type { FastifyInstance } from 'fastify'
 import type pg from 'pg'
@@ -71,9 +71,9 @@ describe('a kiszolgáló útvonal csak ismert kulcsot ad ki', { skip: HAS_DB ? f
     await app.ready()
   })
 
-  after(async () => {
-    try { await app?.close() } finally { await pool?.end() }
-  })
+  // A kapcsolatkészletet NEM zárjuk itt: modulszintű egyke, és az alábbi
+  // suite is ezt használja. Az utolsó zárja le.
+  after(async () => { await app?.close() })
 
   /*
    * A LÉNYEG. Minden ilyen kérésre 404 kell — nem 403, nem 500, és főleg nem
@@ -155,5 +155,78 @@ describe('a kiszolgáló útvonal csak ismert kulcsot ad ki', { skip: HAS_DB ? f
     const res = await app.inject({ url: '/media/media/cover/aa/nincs.jpg' })
     assert.ok(!res.body.startsWith('<!doctype'),
       'a /media/* kérés az SPA index.html-jét kapta, tehát az útvonal nincs bekötve')
+  })
+})
+
+/*
+ * A tükrözés magát ütemezi újra, kötegenként — és ez elsőre NÉMÁN elromlott.
+ *
+ * Az utódot a szokásos `dedupe: 'media-mirror'` kulccsal ütemeztem, mint minden
+ * más ismétlődő feladatot. Csakhogy a `jobs_dedupe_idx` a `done_at IS NULL`
+ * sorokra szóló részleges egyedi index, és amíg a kezelő fut, a SAJÁT feladata
+ * még nincs késznek jelölve: az utód önmagával ütközött, az
+ * `ON CONFLICT DO NOTHING` eldobta, és a tükrözés az első köteg után megállt.
+ * Élesben ez 200 letükrözött képet jelentett a 32 390-ből, hibaüzenet nélkül.
+ *
+ * Ez a suite azt méri, ami akkor hiányzott: hogy egy lefutott köteg UTÁN
+ * tényleg vár-e a következő.
+ */
+describe('a tükrözés folytatja magát', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
+  let pool: pg.Pool
+
+  const pending = async (): Promise<number> => {
+    const { rows } = await pool.query(
+      "SELECT count(*)::int AS n FROM jobs WHERE queue = 'media' AND done_at IS NULL")
+    return Number(rows[0].n)
+  }
+
+  before(async () => {
+    const db = await import('../src/infrastructure/database/index.ts')
+    pool = db.pool as never
+    await pool.query("DELETE FROM jobs WHERE queue = 'media'")
+  })
+
+  after(async () => {
+    try { await pool.query("DELETE FROM jobs WHERE queue = 'media'") } finally { await pool?.end() }
+  })
+
+  test('semmit nem ütemez, ha nem volt mit tükrözni', async () => {
+    const before = await pending()
+    const scheduled = await scheduleNext('0', { examined: 0, mirrored: 0, failed: 0, bytes: 0, skipped: '' })
+    assert.equal(scheduled, false)
+    assert.equal(await pending(), before)
+  })
+
+  test('egy lefutott köteg után várakozik a következő', async () => {
+    const { rows } = await pool.query(
+      `INSERT INTO jobs (queue, payload) VALUES ('media', '{"dedupe":"media-mirror"}'::jsonb)
+       RETURNING id::text`)
+    const id = String(rows[0].id)
+
+    // A döntés úgy fut, ahogy a worker futtatná: a saját sorunk még NINCS
+    // késznek jelölve. Pontosan ez az állapot buktatta meg az első változatot.
+    const scheduled = await scheduleNext(id, { examined: 200, mirrored: 200, failed: 0, bytes: 1, skipped: '' })
+    assert.equal(scheduled, true, 'a köteg után nem ütemeződött következő')
+
+    // A saját sorunkat lezárjuk, ahogy a worker tenné a kezelő után.
+    await pool.query('UPDATE jobs SET done_at = now() WHERE id = $1', [id])
+
+    assert.equal(await pending(), 1,
+      'a köteg után nem maradt várakozó feladat — a tükrözés itt megállna')
+  })
+
+  test('nem torlódik fel: kettő nem lesz belőle', async () => {
+    const before = await pending()
+    const { rows } = await pool.query(
+      `INSERT INTO jobs (queue, payload) VALUES ('media', '{"dedupe":"media-kezi"}'::jsonb)
+       RETURNING id::text`)
+    // Már VAN várakozó (az előző teszté) — ez a futás nem tehet hozzá újat.
+    const scheduled = await scheduleNext(String(rows[0].id),
+      { examined: 200, mirrored: 200, failed: 0, bytes: 1, skipped: '' })
+    assert.equal(scheduled, false, 'már várakozott egy tükrözés, mégis ütemezett másikat')
+    await pool.query('UPDATE jobs SET done_at = now() WHERE id = $1', [rows[0].id])
+
+    assert.ok(await pending() <= Math.max(1, before),
+      'a tükrözés több utódot ütemezett, pedig már várakozott egy')
   })
 })

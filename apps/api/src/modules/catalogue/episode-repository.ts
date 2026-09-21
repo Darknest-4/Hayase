@@ -12,6 +12,7 @@
 import { Repository } from '@yume/database'
 
 import { db } from '../../infrastructure/database/index.ts'
+import { resolveExternalIds } from '../providers/mapping/index.ts'
 
 export class EpisodeRepository extends Repository {
   /**
@@ -57,6 +58,81 @@ export class EpisodeRepository extends Repository {
         WHERE e.id = $1 AND e.visibility = 'public' AND a.visibility <> 'hidden'`,
       [episodeId]
     ))
+  }
+
+  /**
+   * Amit a szolgáltatóknak tudniuk kell erről az epizódról.
+   *
+   * MIÉRT NEM A SAJÁT SOR-AZONOSÍTÓNK MEGY KI. Egy külső szolgáltató nem tud
+   * mit kezdeni egy YUME-uuid-vel. Ami segít neki, az az AniList-azonosító (a
+   * legjobb horgony, mert a legtöbb katalógus ismeri), a cím, az évszám és a
+   * rész száma — a szinonimák pedig azért, mert a párosítás sokszor épp azon
+   * áll vagy bukik.
+   */
+  async providerRef (episodeId: string): Promise<{
+    anilistId: number | null, malId: number | null, kitsuId: number | null, anidbId: number | null,
+    title: string, synonyms: string[], year: number | null, number: number
+  } | null> {
+    const row = await this.queryOne<{
+      anime_id: string,
+      anilist_id: number | null, mal_id: number | null, kitsu_id: number | null, anidb_id: number | null,
+      canonical_title: string, start_date: string | null, number: string
+    }>(
+      /*
+       * AZ ANILIST-AZONOSÍTÓ NEM AZ `anime` TÁBLÁN VAN, hanem az
+       * `anime_mappings`-ben, a többi külső azonosító mellett — és `LEFT
+       * JOIN`, mert egy katalógusbeli címhez nem feltétlenül tartozik
+       * leképezés. Az első nekifutásom `a.anilist_id`-t írt, és a
+       * `video-sources` tesztje azonnal elbuktatta: „column a.anilist_id does
+       * not exist".
+       */
+      /*
+       * MIND A NÉGY KÜLSŐ AZONOSÍTÓ ÁTMEGY, nem csak az AniList-é. Egy
+       * szolgáltató, ami MAL vagy AniDB szerint katalogizál, különben cím
+       * szerint párosítana, ami két évadnál rendre téved.
+       */
+      `SELECT a.id AS anime_id,
+              m.anilist_id, m.mal_id, m.kitsu_id, m.anidb_id,
+              a.canonical_title, a.start_date, e.number
+         FROM episodes e
+         JOIN anime a ON a.id = e.anime_id
+         LEFT JOIN anime_mappings m ON m.anime_id = a.id
+        WHERE e.id = $1 AND e.visibility = 'public' AND a.visibility <> 'hidden'`,
+      [episodeId]
+    )
+    if (!row) return null
+
+    /*
+     * A HIÁNYZÓ AZONOSÍTÓK KIEGÉSZÍTÉSE.
+     *
+     * A tábla azt tudja, amit valaha beírtunk. Ami hiányzik, azt eddig egy
+     * adapter cím szerint próbálta pótolni — és ott téved a legnagyobbat: két
+     * évad címe gyakran majdnem azonos, az azonosítójuk viszont nem
+     * (mérve: a Shingeki no Kyojin 1. évadához `anidb 9541`, a 3.-hoz
+     * `anidb 13241` tartozik).
+     *
+     * A feloldó nem dob, és nem is lassít, ha nincs mit tennie: teljes
+     * leképezésnél egyetlen külső hívás sincs.
+     */
+    const ids = await resolveExternalIds(row.anime_id)
+
+    const synonyms = await this.query<{ title: string }>(
+      `SELECT title FROM anime_titles t
+         JOIN episodes e ON e.anime_id = t.anime_id
+        WHERE e.id = $1 LIMIT 20`,
+      [episodeId]
+    ).catch(() => [])
+
+    return {
+      anilistId: ids.anilistId,
+      malId: ids.malId,
+      kitsuId: ids.kitsuId,
+      anidbId: ids.anidbId,
+      title: row.canonical_title,
+      synonyms: synonyms.map(s => s.title).filter(Boolean),
+      year: row.start_date ? Number(String(row.start_date).slice(0, 4)) : null,
+      number: Number(row.number)
+    }
   }
 
   /**

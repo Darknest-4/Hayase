@@ -66,8 +66,20 @@ describe('permission catalogue', () => {
     assert.ok(enforced.length >= 10, `only found ${enforced.length} requirePermission call sites`)
   })
 
+  /*
+   * A MINTA A KATALÓGUS SAJÁT SZOKÁSÁT KÖVETI, nem egy feltételezést.
+   *
+   * Eddig `^[a-z0-9]+(\.[a-z0-9]+)+$` állt itt — aláhúzás nélkül. Ez a
+   * katalógussal megy szembe: a 368 jogosultságból 115 tartalmaz aláhúzást
+   * (`video_source.edit`, `source_mirror.view`, `admin.users.manage`), és a
+   * minta csak azért volt zöld, mert egyetlen `requirePermission` hívás sem
+   * használt még ilyet.
+   *
+   * Amit ez az állítás tényleg őriz, az az elgépelés: egy `requirePermission('admin')`
+   * vagy egy `requirePermission('Foo Bar')` — pont, kisbetű, és semmi más.
+   */
   it('enforces nothing that is not a permission-shaped slug', () => {
-    for (const slug of enforced) assert.match(slug, /^[a-z0-9]+(\.[a-z0-9]+)+$/)
+    for (const slug of enforced) assert.match(slug, /^[a-z0-9_]+(\.[a-z0-9_]+)+$/)
   })
 
   describe('against the database', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {

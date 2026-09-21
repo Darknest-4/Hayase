@@ -10,6 +10,8 @@ import { evaluate, grantNew, measure } from './achievements.ts'
 import { requireProfile } from '../../middleware/profile.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
+import { imageUrlSql } from '../media/public-url.ts'
+import { uuidParams } from '../../infrastructure/http/params.ts'
 
 const LIBRARY_STATUSES = ['WATCHING', 'PLANNING', 'COMPLETED', 'PAUSED', 'DROPPED', 'REWATCHING'] as const
 
@@ -74,7 +76,7 @@ const routes: FastifyPluginAsync = async fastify => {
       `SELECT le.anime_id, le.status, le.progress, le.score, le.rewatches, le.updated_at,
               le.updated_at::text AS cursor_at,
               a.canonical_title, a.format, a.episode_count, a.next_airing_ep,
-              m.anilist_id, img.object_key AS cover_key
+              m.anilist_id, ${imageUrlSql('img')} AS cover_key
        FROM library_entries le
        JOIN anime a ON a.id = le.anime_id
        LEFT JOIN anime_mappings m ON m.anime_id = a.id
@@ -144,7 +146,7 @@ const routes: FastifyPluginAsync = async fastify => {
     return entry
   })
 
-  fastify.delete('/library/:animeId', { config: WRITE_LIMIT }, async (request, reply) => {
+  fastify.delete('/library/:animeId', { config: WRITE_LIMIT, schema: uuidParams('animeId') }, async (request, reply) => {
     const profileId = await requireProfile(request, reply)
     if (!profileId) return
     const { animeId } = request.params as { animeId: string }

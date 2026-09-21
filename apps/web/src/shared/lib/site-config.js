@@ -80,6 +80,60 @@ export function viewerProfile () {
   return viewer
 }
 
+/**
+ * Az útvonalak, amiket a hozzáférési kapu SOSEM zár el.
+ *
+ * Itt, és nem a routerben: a navigációs elemek láthatósága és a kapu döntése
+ * ugyanabból a listából kell dolgozzon. Két külön másolat pont azt a
+ * széttartást adná, ami miatt ez a modul bővült — a belépőlap eltűnése a
+ * menüből egy privát példányon azt jelentené, hogy nincs út befelé.
+ */
+export const GATE_EXEMPT = ['settings', 'landing', 'login']
+
+/**
+ * Elérhető-e ez az oldal ANNAK, AKI ÉPP NÉZI.
+ *
+ * EZ AZ EGYETLEN HELY, AHOL EZ ELDŐL. Korábban a fejléc (`applyNavVisibility`)
+ * futásidőben szűrt a kapcsolótáblából, a lábléc viszont egy BEDRÓTOZOTT
+ * linklistát épített újra minden rendereléskor — vagyis egy adminban
+ * kikapcsolt oldal eltűnt a fejlécből, és ott maradt a láblécben. Ugyanaz a
+ * kérdés, két külön válasz.
+ *
+ * A szabály sorrendje számít:
+ *
+ *   1. konfiguráció nélkül IGENT mondunk — egy még be nem töltött beállítás ne
+ *      ürítse ki a navigációt; a kapu és a kiszolgáló úgyis megfogja, ami nem
+ *      jár;
+ *   2. privát példányon a kijelentkezett látogatónak csak a mentes útvonalak;
+ *   3. hiányzó kapcsolósor = „ezt senki nem állította be" → jár. Így egy új
+ *      oldal nem tűnik el a régi telepítéseken;
+ *   4. kikapcsolva vagy jogosultsághoz kötve → csak annak, aki jogosult.
+ *
+ * NEM BIZTONSÁGI HATÁR. Ez azt mondja meg, mit AJÁNLUNK fel; amit egy oldal
+ * tényleg kiszolgál, azt a kiszolgáló dönti el.
+ */
+export function pageAvailable (route) {
+  if (!config) return true
+  if (config.site?.requireLogin && !signedIn() && !GATE_EXEMPT.includes(route)) return false
+  const flag = config.flags?.['page.' + route]
+  if (!flag) return true
+  if (!flag.enabled) return false
+  if (flag.access === 'permission' && !permissions.includes(flag.permission)) return false
+  return true
+}
+
+/**
+ * Létezik-e egyáltalán ez a kapcsoló a szerver tábláján.
+ *
+ * A `featureOn` szándékosan MEGENGEDŐ: amiről a tábla nem tud, azt átengedi,
+ * hogy egy új funkció ne tűnjön el a régi telepítéseken. Van, aminél pont ez
+ * a rossz irány — egy teljes lejátszócserénél a hiányzó sor nem „engedd át",
+ * hanem „még nem kapcsoltuk be". Az ilyen hívó ezt kérdezi meg előbb.
+ */
+export function flagDeclared (key) {
+  return Boolean(config?.flags?.[key])
+}
+
 export function featureOn (name) {
   if (!config) return true
   const flag = config.flags?.['feature.' + name]

@@ -3,9 +3,8 @@
 // Notifications, Data, About) with a left-hand tab rail, Netflix/Discord
 // style. Each section is a builder that returns its content node.
 
-import { navigate, refreshChrome, refreshNotifications } from '../shared/lib/shell.js'
-import { configure, site } from '../shared/lib/site-config.js'
-import { C } from '../shared/ui/components.js'
+import { afterAuth, applyNavCollapsed, navigate, refreshChrome, refreshNotifications } from '../shared/lib/shell.js'
+import { configure, featureOn, flagDeclared, site } from '../shared/lib/site-config.js'
 import { T } from '../shared/i18n/i18n.js'
 import { LibrarySync } from '../features/library-sync/library-sync.js'
 import { Onboarding } from '../features/onboarding/onboarding.js'
@@ -15,6 +14,8 @@ import { U } from '../shared/lib/dom.js'
 import { YumeAPI } from '../shared/api/yume.js'
 import { ArtworkPicker } from '../features/profile-artwork/picker.js'
 import { PageThemes } from '../features/themes/themes.js'
+import { createSettingsPanel } from '../features/player2/ui/settings-panel.js'
+import { createPlayerPreferences } from '../features/player2/preferences/player-preferences.js'
 
 export const PageSettings = {
   SECTIONS: [
@@ -26,6 +27,12 @@ export const PageSettings = {
     { key: 'language', label: 'Language', icon: '🌐' },
     { key: 'appearance', label: 'Appearance', icon: '🎨' },
     { key: 'content', label: 'Content', icon: '🔞' },
+    // A lejátszó fül CSAK a Player 2.0 mellett jelenik meg: a panel a 2.0
+    // beállítássémájából épül, és a régi lejátszó egyik mezőt sem olvassa.
+    // Egy fül, amin minden kapcsoló hatástalan, rosszabb, mint egy hiányzó.
+    ...(flagDeclared('feature.player2') && featureOn('player2')
+      ? [{ key: 'player', label: 'Player', icon: '▶️' }]
+      : []),
     { key: 'notifications', label: 'Notifications', icon: '🔔' },
     { key: 'data', label: 'Data', icon: '💾' },
     { key: 'about', label: 'About', icon: 'ℹ️' }
@@ -57,43 +64,144 @@ export const PageSettings = {
     panel.append(builder.call(this))
   },
 
-  _card (title, desc, ...children) {
-    const card = U.el('div', { class: 'setting-card' }, [
-      U.el('h2', { text: T(title) }),
-      desc ? U.el('p', { text: T(desc) }) : null,
-      ...children
+  /**
+   * A lejátszó beállításai.
+   *
+   * A panelt a `player2` saját modulja építi, a sémájából — nem itt felsorolt
+   * mezőkből. Egy kézzel írt lista és egy séma előbb-utóbb eltér, és a
+   * különbség csendben egy beállítás, amit nem lehet átállítani.
+   */
+  _player () {
+    const prefs = createPlayerPreferences(Prefs)
+    const panel = createSettingsPanel(prefs, {
+      onChange: () => {
+        // A már felállt lejátszó nem látja magától a változást; a nézőoldal a
+        // következő felépítéskor olvassa újra. A visszajelzés viszont
+        // azonnal jár, különben a néző nem tudja, mentődött-e.
+        U.toast?.(T('Saved'))
+      }
+    })
+    return U.el('section', { class: 'settings-group' }, [
+      U.el('h2', { class: 'settings-group-head', text: T('Player') }),
+      U.el('div', { class: 'settings-group-body', style: 'padding:var(--space-4);' }, [
+        U.el('p', {
+          class: 'setting-row-desc',
+          style: 'margin:0 0 var(--space-4);',
+          text: T('These apply to the video player. Changes take effect the next time a player opens.')
+        }),
+        panel.node
+      ])
     ])
-    // The card's heading *is* the control's name — it sits two lines above it
-    // and says exactly what the field does. A screen reader could not hear
-    // that, because a heading is not a label, so several settings announced
-    // as bare "edit text". Applied here rather than at each call site: every
-    // card in this page gets it, and a new one cannot forget.
+  },
+
+  /**
+   * Egy beállítás sora: balra a név és a magyarázat, jobbra a vezérlő.
+   *
+   * A régi `_card` minden beállítást külön dobozba tett, saját `h2`
+   * címsorral — egy „Címek nyelve" ugyanakkora betűvel, mint az oldal címe.
+   * Húsz beállításnál húsz doboz, amiből semmi nem mondja meg, mi tartozik
+   * össze. A sorok egy csoportkártyán belül élnek (`_group`), és a csoport
+   * címe mondja meg, miről van szó.
+   *
+   * `wide`: a vezérlő a szöveg ALÁ kerül — több gombnak vagy egy hosszú
+   * beviteli mezőnek nincs értelme a sor jobb szélére szorítva.
+   */
+  _row (title, desc, control = null, { wide = false } = {}) {
+    const card = U.el('div', { class: wide ? 'setting-row setting-row-wide' : 'setting-row' }, [
+      U.el('div', { class: 'setting-row-text' }, [
+        U.el('span', { class: 'setting-row-title', text: T(title) }),
+        desc ? U.el('span', { class: 'setting-row-desc', text: T(desc) }) : null
+      ]),
+      control ? U.el('div', { class: 'setting-row-control' }, Array.isArray(control) ? control : [control]) : null
+    ])
+    // A SOR NEVE A VEZÉRLŐ NEVE. Egy képernyőolvasó a fölötte álló szöveget
+    // nem kapcsolja a mezőhöz — enélkül több beállítás puszta „szerkesztőmező"
+    // néven szólalt meg. Itt alkalmazva, nem a hívási helyeken: minden sor
+    // megkapja, és egy új sor nem felejtheti el.
     for (const field of card.querySelectorAll('input, select, textarea')) {
       if (!field.getAttribute('aria-label') && !field.closest('label')) field.setAttribute('aria-label', T(title))
     }
     return card
   },
 
+  /**
+   * Egy csoport: fejléc és a hozzá tartozó sorok egyetlen kártyában.
+   *
+   * A cím NEM címsor-elem: rövid, nagybetűs felirat, ami elválaszt. Egy
+   * beállításlapon a valódi címsor az oldal neve — húsz `h2` egymás alatt a
+   * képernyőolvasónak is zajt jelent, nem szerkezetet.
+   */
+  _group (title, rows) {
+    const real = rows.filter(Boolean)
+    if (!real.length) return null
+    return U.el('section', { class: 'settings-group' }, [
+      title ? U.el('h2', { class: 'settings-group-head', text: T(title) }) : null,
+      U.el('div', { class: 'settings-group-body' }, real)
+    ])
+  },
+
   // ---- Account ----
+  //
+  // A BELÉPÉS ÉS A REGISZTRÁCIÓ NINCS ITT. Volt, és rossz helyen volt: egy
+  // teljes belépő űrlap a beállítások között a HARMADIK másolata volt
+  // ugyanannak a logikának, és amikor az emberpróba bekerült, pont ebbe nem
+  // került bele. A belépésnek saját lapja van (`#/login`), fülekkel; ez a
+  // szakasz csak megmondja, hol tartunk, és odavisz.
   _account () {
     const wrap = U.el('div')
     const settings = Store.settings()
-    wrap.append(this._card('Profile name', 'Shown on your profile page.',
-      U.el('input', {
-        class: 'input',
-        type: 'text',
-        maxlength: '50',
-        value: settings.profileName ?? '',
-        placeholder: T('Dreamer'),
-        onchange: e => Store.saveSettings({ profileName: e.target.value.trim() || undefined })
-      })
-    ))
-    // Artwork lives with the account rather than with Appearance: this is who
-    // you are on the site, not how the site looks to you. Only for a signed-in
-    // account, because it is stored on the account.
-    if (YumeAPI.user()) {
-      const cards = U.el('div')
-      wrap.append(cards)
+    const user = YumeAPI.user()
+
+    /*
+     * Az ÁLLAPOT az első sor, mert ez az első kérdés: be vagyok-e lépve.
+     * Eddig a lap tetején egy „Profil neve" mező állt, és a fiók állapota
+     * valahol alatta — vagyis a legfontosabb információ volt a legkevésbé
+     * szem előtt.
+     */
+    const here = String(window.location.hash || '').replace(/^#\/?/, '').split('?')[0]
+    const next = here ? `?next=${encodeURIComponent(here)}` : ''
+
+    wrap.append(this._group('Account', [
+      user
+        ? this._row('Signed in', `${T('Signed in as ')}${user.username}.`,
+          U.el('button', {
+            class: 'btn btn-secondary btn-sm',
+            onclick: async () => { await YumeAPI.logout(); await afterAuth() }
+          }, [document.createTextNode(T('Sign out'))]))
+        : this._row('Not signed in',
+          'Sign in to sync your library across devices and join the discussion.',
+          [
+            U.el('a', { class: 'btn btn-primary btn-sm', href: `#/login${next}` },
+              [document.createTextNode(T('Sign in'))]),
+            U.el('a', { class: 'btn btn-ghost btn-sm', href: `#/login/register${next}` },
+              [document.createTextNode(T('Create account'))])
+          ]),
+
+      this._row('Profile name', 'Shown on your profile page.',
+        U.el('input', {
+          class: 'input',
+          type: 'text',
+          maxlength: '50',
+          value: settings.profileName ?? '',
+          placeholder: T('Dreamer'),
+          onchange: e => Store.saveSettings({ profileName: e.target.value.trim() || undefined })
+        })),
+
+      user ? this._syncRow() : null
+    ]))
+
+    /*
+     * A KÉPEK a fiókhoz tartoznak, nem a megjelenéshez: ez az, akinek
+     * látszol, nem az, ahogy neked látszik az oldal. Csak belépve, mert a
+     * fiókon tárolódik — és saját csoportot kap, mert a választó nem egy sor,
+     * hanem egy rács.
+     */
+    if (user) {
+      const cards = U.el('div', { class: 'settings-group-body', style: 'padding:var(--space-4);' })
+      wrap.append(U.el('section', { class: 'settings-group' }, [
+        U.el('h2', { class: 'settings-group-head', text: T('Profile artwork') }),
+        cards
+      ]))
       YumeAPI.profile.get()
         .then(profile => cards.replaceChildren(ArtworkPicker.cards(profile, updated => {
           // The sidebar and the mobile sheet draw the same face, so they are
@@ -104,32 +212,32 @@ export const PageSettings = {
         .catch(() => { /* offline or signed out mid-render; the cards stay out */ })
     }
 
-    wrap.append(C.authCard())
-    if (YumeAPI.user()) {
-      const LABEL = { off: T('Not syncing'), syncing: T('Syncing…'), synced: T('✓ Synced to your account'), error: T('⚠ Sync unavailable') }
-      const statusEl = U.el('span', { class: 'list-row-sub', style: 'align-self:center;', text: LABEL[LibrarySync?.status ?? 'off'] })
-      const syncBtn = U.el('button', {
-        class: 'btn btn-secondary btn-sm',
-        onclick: async () => {
-          statusEl.textContent = LABEL.syncing
-          await LibrarySync?.init()
-          statusEl.textContent = LABEL[LibrarySync?.status ?? 'off']
-          U.toast(LibrarySync?.status === 'synced' ? 'Library synced' : 'Sync unavailable', LibrarySync?.status === 'error' ? 'error' : 'success')
-        }
-      }, [document.createTextNode(T('Sync now'))])
-      wrap.append(this._card('Library sync', 'Your library status and episode progress sync to your account and follow you across devices while signed in.',
-        U.el('div', { style: 'display:flex;gap:var(--space-2);flex-wrap:wrap;' }, [syncBtn, statusEl])))
-    }
-    wrap.append(this._card('Yume server', 'Backend endpoint for accounts, the catalogue and sync. Leave as-is for local development.',
-      U.el('input', {
-        class: 'input',
-        type: 'url',
-        style: 'min-width:20rem;',
-        value: YumeAPI.base(),
-        onchange: e => { YumeAPI.setBase(e.target.value); U.toast(T('Yume server updated')) }
-      })
-    ))
     return wrap
+  },
+
+  /** A könyvtár szinkronjának sora. Külön, mert állapotot mutat és cselekszik is. */
+  _syncRow () {
+    const LABEL = {
+      off: T('Not syncing'),
+      syncing: T('Syncing…'),
+      synced: T('Synced to your account'),
+      error: T('Sync unavailable')
+    }
+    const statusEl = U.el('span', { class: 'setting-row-desc', style: 'margin:0;', text: LABEL[LibrarySync?.status ?? 'off'] })
+    const syncBtn = U.el('button', {
+      class: 'btn btn-secondary btn-sm',
+      onclick: async () => {
+        statusEl.textContent = LABEL.syncing
+        await LibrarySync?.init()
+        statusEl.textContent = LABEL[LibrarySync?.status ?? 'off']
+        U.toast(
+          LibrarySync?.status === 'synced' ? T('Library synced') : T('Sync unavailable'),
+          LibrarySync?.status === 'error' ? 'error' : 'success')
+      }
+    }, [document.createTextNode(T('Sync now'))])
+    return this._row('Library sync',
+      'Your library status and episode progress follow you across devices while signed in.',
+      [statusEl, syncBtn])
   },
 
   // ---- Appearance ----
@@ -145,7 +253,9 @@ export const PageSettings = {
     const values = Prefs.all()
 
     if (!spec) {
-      wrap.append(this._card(T('Language'), T('Could not load the language options — check your connection and reload.')))
+      wrap.append(this._group('Language', [
+        this._row('Language', 'Could not load the language options — check your connection and reload.')
+      ]))
       return wrap
     }
 
@@ -160,6 +270,22 @@ export const PageSettings = {
     }
     const GROUP_TITLES = { language: 'Interface', content: 'Catalogue', playback: 'Playback' }
 
+    /*
+     * AMI MÁSHOL IS OTT VAN, AZ ITT NEM JELENIK MEG.
+     *
+     * A kiszolgáló beállításkészletében két olyan kulcs van, aminek a
+     * SAJÁT FÜLÉN már van kapcsolója: a felnőtt tartalom (Tartalom fül) és az
+     * új részekről szóló értesítés (Értesítések fül). Két kapcsoló ugyanarra,
+     * két külön fülön, egymástól függetlenül állítva — és a kettő közül CSAK
+     * a másik csinált bármit is: a katalógus szűrése a helyi beállításra megy
+     * (`public-routes.ts`: `if (!q.nsfw) where.push('NOT a.is_adult')`), ezt a
+     * kulcsot szűrésre senki nem olvassa.
+     *
+     * Itt tehát kimarad, a saját fülén lévő kapcsoló pedig MINDKETTŐT írja —
+     * így a fiókhoz kötött másolat is követi, és marad egy igazságforrás.
+     */
+    const ELSEWHERE = ['content.adult', 'notifications.episodes']
+
     // Ha a példány kikapcsolta a nyelvváltást, a felület nyelvének nincs mit
     // választani — a sor eltüntetése itt nem elrejtés, mert az I18n is a
     // házirendet követi és a /v1/config ugyanezt mondja. Egy vezérlő, ami
@@ -169,8 +295,9 @@ export const PageSettings = {
     for (const group of ['language', 'content', 'playback']) {
       const items = spec.filter(item => item.group === group)
         .filter(item => switching || item.key !== 'language.ui')
+        .filter(item => !ELSEWHERE.includes(item.key))
       if (!items.length) continue
-      wrap.append(U.el('h2', { class: 'settings-group-title', text: T(GROUP_TITLES[group]) }))
+      const rows = []
 
       for (const item of items) {
         const options = choices[item.key] ?? EXTRA[item.key]
@@ -194,13 +321,14 @@ export const PageSettings = {
           control = select
         }
 
-        wrap.append(this._card(T(item.label), item.description ? T(item.description) : null, control))
+        rows.push(this._row(item.label, item.description ?? null, control))
       }
+      wrap.append(this._group(GROUP_TITLES[group], rows))
     }
 
-    wrap.append(this._card(
-      T('Start over'),
-      T('Restore every language and playback setting to its default.'),
+    wrap.append(this._group(null, [this._row(
+      'Start over',
+      'Restore every language and playback setting to its default.',
       U.el('button', {
         class: 'btn btn-ghost btn-sm',
         onclick: () => {
@@ -209,7 +337,7 @@ export const PageSettings = {
           navigate()
         }
       }, [document.createTextNode(T('Reset to default'))])
-    ))
+    )]))
 
     return wrap
   },
@@ -218,11 +346,19 @@ export const PageSettings = {
     const wrap = U.el('div')
     const settings = Store.settings()
 
-    // full Theme Engine, embedded (base, accent presets, custom colour, preview)
-    wrap.append(U.el('p', { class: 'list-row-sub', style: 'margin:0 0 var(--space-4);', text: T('Personalise Yume — base, accent and surface tint apply instantly and are saved for this profile.') }))
-    PageThemes.body(wrap)
+    // A teljes témamotor beágyazva: alap, kiemelőszín, felületárnyalat, előnézet.
+    wrap.append(U.el('section', { class: 'settings-group' }, [
+      U.el('h2', { class: 'settings-group-head', text: T('Theme') }),
+      U.el('div', { class: 'settings-group-body', style: 'padding:var(--space-4);' }, [
+        U.el('p', {
+          class: 'setting-row-desc',
+          style: 'margin:0 0 var(--space-4);',
+          text: T('Base, accent and surface tint apply instantly and are saved for this profile.')
+        })
+      ])
+    ]))
+    PageThemes.body(wrap.lastChild.lastChild)
 
-    // title language
     const langSelect = U.el('select', {
       class: 'select',
       onchange: e => Store.saveSettings({ titleLang: e.target.value })
@@ -231,44 +367,73 @@ export const PageSettings = {
       ['english', 'English'],
       ['romaji', 'Romaji'],
       ['native', 'Native']
-    ].map(([value, label]) => U.el('option', { value, text: label, ...(settings.titleLang === value ? { selected: '' } : {}) })))
-    wrap.append(this._card('Title language', 'How anime titles are displayed across the app.', langSelect))
+    ].map(([value, label]) => U.el('option', { value, text: T(label), ...(settings.titleLang === value ? { selected: '' } : {}) })))
+
+    wrap.append(this._group('Titles', [
+      this._row('Title language', 'How anime titles are displayed across the app.', langSelect)
+    ]))
+
+    /*
+     * AZ OLDALSÁV ÁLLAPOTA.
+     *
+     * Ugyanaz a beállítás, amit a sávon lévő nyíl is állít — nem külön
+     * másolat. A választás a profil beállításai közt él, tehát profilonként
+     * külön, és az adatmentés is viszi.
+     *
+     * Az érvényesítést a shellre bízzuk: ha ez a képernyő maga igazgatná a sáv
+     * DOM-ját, a nyíl felirata és az `aria` állapot előbb-utóbb széttartana
+     * attól, amit a sáv mutat.
+     */
+    const navSelect = U.el('select', {
+      class: 'select',
+      onchange: e => {
+        Store.saveSettings({ navCollapsed: e.target.value === 'collapsed' })
+        applyNavCollapsed()
+      }
+    }, [
+      ['expanded', 'Expanded'],
+      ['collapsed', 'Collapsed']
+    ].map(([value, label]) => U.el('option', {
+      value,
+      text: T(label),
+      ...((settings.navCollapsed === true ? 'collapsed' : 'expanded') === value ? { selected: '' } : {})
+    })))
+
+    wrap.append(this._group('Navigation', [
+      this._row('Sidebar',
+        'Whether the side navigation shows its labels. The arrow at the bottom of the rail does the same thing. On a narrow screen the rail is replaced by the bottom bar, so this has no effect there.',
+        navSelect)
+    ]))
     return wrap
   },
 
   // ---- Content ----
   _content () {
-    const wrap = U.el('div')
     const settings = Store.settings()
-    const nsfwToggle = U.el('label', { class: 'switch' }, [
-      U.el('input', {
-        type: 'checkbox',
-        ...(settings.nsfw ? { checked: '' } : {}),
-        onchange: e => { Store.saveSettings({ nsfw: e.target.checked }); Store.clearCache() }
-      }),
+    const toggle = (checked, onchange) => U.el('label', { class: 'switch' }, [
+      U.el('input', { type: 'checkbox', ...(checked ? { checked: '' } : {}), onchange }),
       U.el('span', { class: 'slider' })
     ])
-    wrap.append(this._card('Show adult content', 'Include 18+ entries in search results and listings.', nsfwToggle))
 
-    const autoplayToggle = U.el('label', { class: 'switch' }, [
-      U.el('input', {
-        type: 'checkbox',
-        ...(settings.autoplay !== false ? { checked: '' } : {}),
-        onchange: e => Store.saveSettings({ autoplay: e.target.checked })
-      }),
-      U.el('span', { class: 'slider' })
-    ])
-    wrap.append(this._card('Autoplay next episode', 'Automatically start the next episode when one finishes.', autoplayToggle))
-
-    const skipToggle = U.el('label', { class: 'switch' }, [
-      U.el('input', {
-        type: 'checkbox',
-        ...(settings.autoSkip ? { checked: '' } : {}),
-        onchange: e => Store.saveSettings({ autoSkip: e.target.checked })
-      }),
-      U.el('span', { class: 'slider' })
-    ])
-    wrap.append(this._card('Auto-skip intros', 'Skip openings and endings automatically when timing data is available (AniSkip).', skipToggle))
+    const wrap = U.el('div')
+    wrap.append(this._group('Catalogue', [
+      this._row('Show adult content', 'Include 18+ entries in search results and listings.',
+        toggle(settings.nsfw, e => {
+          const on = e.target.checked
+          // A SZŰRÉST a helyi beállítás vezérli: a katalóguskérés ebből kapja
+          // az `nsfw` paramétert. A fiókhoz kötött másolatot is írjuk, hogy a
+          // kettő ne tudjon széttartani — de a szűrés nem várja meg.
+          Store.saveSettings({ nsfw: on })
+          Store.clearCache()
+          Prefs.set({ 'content.adult': on })
+        }))
+    ]))
+    wrap.append(this._group('Playback', [
+      this._row('Autoplay next episode', 'Automatically start the next episode when one finishes.',
+        toggle(settings.autoplay !== false, e => Store.saveSettings({ autoplay: e.target.checked }))),
+      this._row('Auto-skip intros', 'Skip openings and endings automatically when timing data is available (AniSkip).',
+        toggle(settings.autoSkip, e => Store.saveSettings({ autoSkip: e.target.checked })))
+    ]))
     return wrap
   },
 
@@ -276,86 +441,117 @@ export const PageSettings = {
   _notifications () {
     const wrap = U.el('div')
     const settings = Store.settings()
-    const prefs = settings.notifPrefs ?? { airing: true, resume: true, achievement: true }
+    const DEFAULTS = { airing: true, resume: true, achievement: true }
+    const prefs = settings.notifPrefs ?? DEFAULTS
 
-    wrap.append(U.el('p', { class: 'list-row-sub', style: 'margin-bottom:var(--space-4);', text: T('Choose which notifications appear in your inbox. These are generated from your library and activity — no account required.') }))
-
-    for (const [key, title, desc] of [
+    const rows = [
       ['airing', 'Airing episodes', 'When a new episode of something in your library airs.'],
       ['resume', 'Continue watching', 'Reminders to pick up shows you started but paused.'],
       ['achievement', 'Achievements', 'When you unlock a new achievement.']
-    ]) {
-      const toggle = U.el('label', { class: 'switch' }, [
+    ].map(([key, title, desc]) => this._row(title, desc,
+      U.el('label', { class: 'switch' }, [
         U.el('input', {
           type: 'checkbox',
           ...(prefs[key] !== false ? { checked: '' } : {}),
           onchange: e => {
-            const next = { ...(Store.settings().notifPrefs ?? { airing: true, resume: true, achievement: true }), [key]: e.target.checked }
+            const next = { ...(Store.settings().notifPrefs ?? DEFAULTS), [key]: e.target.checked }
             Store.saveSettings({ notifPrefs: next })
+            // Az új részekről szóló értesítésnek a kiszolgálón is van
+            // másolata; a kettő ne tudjon széttartani.
+            if (key === 'airing') Prefs.set({ 'notifications.episodes': e.target.checked })
             refreshNotifications()
           }
         }),
         U.el('span', { class: 'slider' })
-      ])
-      wrap.append(this._card(title, desc, toggle))
-    }
-    wrap.append(this._card('Notification inbox', 'View and manage all your notifications.',
-      U.el('a', { class: 'btn btn-secondary btn-sm', href: '#/notifications' }, [document.createTextNode(T('Open inbox'))])
-    ))
+      ])))
+
+    wrap.append(this._group('What you are told about', rows))
+    wrap.append(this._group(null, [
+      this._row('Notification inbox',
+        'These are generated from your library and activity — no account required.',
+        U.el('a', { class: 'btn btn-secondary btn-sm', href: '#/notifications' },
+          [document.createTextNode(T('Open inbox'))]))
+    ]))
     return wrap
   },
 
   // ---- Data ----
   _data () {
     const wrap = U.el('div')
-    wrap.append(this._card('API cache', 'Responses from AniList / Jikan / ani.zip are cached locally to keep the app fast and avoid rate limits.',
-      U.el('button', { class: 'btn btn-secondary btn-sm', onclick: () => Store.clearCache() }, [document.createTextNode(T('Clear cache'))])
-    ))
-    wrap.append(this._card('My data', 'Your anime list, favourites and progress live only in this browser (localStorage). Export it as JSON to back it up or move devices.',
-      U.el('div', { style: 'display:flex;gap:var(--space-2);flex-wrap:wrap;' }, [
+
+    const exportBtn = U.el('button', {
+      class: 'btn btn-secondary btn-sm',
+      onclick: () => {
+        const data = { animelist: Store.list(), favourites: Store.favourites(), settings: Store.settings(), history: Store.history() }
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+        const a = U.el('a', { href: URL.createObjectURL(blob), download: 'yume-data.json' })
+        a.click(); URL.revokeObjectURL(a.href)
+      }
+    }, [document.createTextNode(T('Export data'))])
+
+    const importBtn = U.el('button', {
+      class: 'btn btn-secondary btn-sm',
+      onclick: () => {
+        const input = U.el('input', { type: 'file', accept: 'application/json' })
+        input.onchange = async () => {
+          try {
+            const data = JSON.parse(await input.files[0].text())
+            if (data.animelist) Store._write(Store._profileKey('animelist'), data.animelist)
+            if (data.favourites) Store._write(Store._profileKey('favourites'), data.favourites)
+            if (data.settings) Store._write(Store._profileKey('settings'), data.settings)
+            if (data.history) Store._write(Store._profileKey('history'), data.history)
+            Store.applyTheme()
+            U.toast(T('Data imported'))
+          } catch (e) { U.toast(T('Invalid file'), 'error') }
+        }
+        input.click()
+      }
+    }, [document.createTextNode(T('Import data'))])
+
+    wrap.append(this._group('Your data', [
+      this._row('Export and import',
+        'Your anime list, favourites and progress live only in this browser. Export them as JSON to back them up or move devices.',
+        [exportBtn, importBtn]),
+      this._row('API cache',
+        'Responses from AniList, Jikan and ani.zip are kept locally to keep the app fast and to stay under their rate limits.',
+        U.el('button', { class: 'btn btn-secondary btn-sm', onclick: () => Store.clearCache() },
+          [document.createTextNode(T('Clear cache'))]))
+    ]))
+
+    /*
+     * A TÖRLÉS KÜLÖN CSOPORTBAN, a lap alján. Egy visszavonhatatlan művelet ne
+     * álljon egy sorban azzal, amit az ember naponta használ — a „Gyorsítótár
+     * ürítése" és a „Minden adat törlése" mellérendelve egy elgépelt
+     * kattintásnyira van egymástól.
+     */
+    wrap.append(this._group('Danger zone', [
+      this._row('Delete all local data',
+        'Your list, favourites, history and settings in this browser. This cannot be undone.',
         U.el('button', {
-          class: 'btn btn-secondary btn-sm',
+          class: 'btn btn-sm btn-danger',
           onclick: () => {
-            const data = { animelist: Store.list(), favourites: Store.favourites(), settings: Store.settings(), history: Store.history() }
-            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-            const a = U.el('a', { href: URL.createObjectURL(blob), download: 'yume-data.json' })
-            a.click(); URL.revokeObjectURL(a.href)
-          }
-        }, [document.createTextNode(T('Export data'))]),
-        U.el('button', {
-          class: 'btn btn-secondary btn-sm',
-          onclick: () => {
-            const input = U.el('input', { type: 'file', accept: 'application/json' })
-            input.onchange = async () => {
-              try {
-                const data = JSON.parse(await input.files[0].text())
-                if (data.animelist) Store._write(Store._profileKey('animelist'), data.animelist)
-                if (data.favourites) Store._write(Store._profileKey('favourites'), data.favourites)
-                if (data.settings) Store._write(Store._profileKey('settings'), data.settings)
-                if (data.history) Store._write(Store._profileKey('history'), data.history)
-                Store.applyTheme()
-                U.toast(T('Data imported'))
-              } catch (e) { U.toast(T('Invalid file'), 'error') }
+            if (window.confirm(T('Delete ALL local data (list, favourites, settings)?'))) {
+              Store.clearAll()
+              window.location.reload()
             }
-            input.click()
           }
-        }, [document.createTextNode(T('Import data'))]),
-        U.el('button', {
-          class: 'btn btn-sm',
-          style: 'background:var(--danger);color:white;',
-          onclick: () => { if (window.confirm('Delete ALL local data (list, favourites, settings)?')) { Store.clearAll(); window.location.reload() } }
-        }, [document.createTextNode(T('Delete all data'))])
-      ])
-    ))
+        }, [document.createTextNode(T('Delete all data'))]))
+    ]))
     return wrap
   },
 
   // ---- About ----
   _about () {
     const wrap = U.el('div')
-    wrap.append(this._card('About Yume', null,
-      U.el('p', { html: 'Yume (夢) — framework-free web client on the Yume design system. Data from <a href="https://anilist.co" target="_blank" rel="noopener" style="text-decoration:underline;">AniList</a>, <a href="https://jikan.moe" target="_blank" rel="noopener" style="text-decoration:underline;">Jikan (MyAnimeList)</a> and <a href="https://api.ani.zip" target="_blank" rel="noopener" style="text-decoration:underline;">ani.zip</a>. This build has no torrent playback — that requires the desktop app with its native client.' })
-    ))
+    wrap.append(this._group('About', [
+      this._row('Yume',
+        'Framework-free web client on the Yume design system. Catalogue data from AniList, Jikan (MyAnimeList) and ani.zip.'),
+      this._row('Sources', null, [
+        U.el('a', { class: 'btn btn-ghost btn-sm', href: 'https://anilist.co', target: '_blank', rel: 'noopener' }, [document.createTextNode('AniList')]),
+        U.el('a', { class: 'btn btn-ghost btn-sm', href: 'https://jikan.moe', target: '_blank', rel: 'noopener' }, [document.createTextNode('Jikan')]),
+        U.el('a', { class: 'btn btn-ghost btn-sm', href: 'https://api.ani.zip', target: '_blank', rel: 'noopener' }, [document.createTextNode('ani.zip')])
+      ])
+    ]))
     return wrap
   }
 }

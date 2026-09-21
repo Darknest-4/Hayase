@@ -20,6 +20,7 @@ import {
 } from './meta.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
+import { imageUrlSql } from '../media/public-url.ts'
 
 /** Where index.html lives. Supplied by app.ts, which already resolved it. */
 export interface SeoOptions { webRoot: string }
@@ -178,7 +179,7 @@ const routes: FastifyPluginAsync<SeoOptions> = async (fastify, opts) => {
                   m.anilist_id,
                   (SELECT t.title FROM anime_titles t
                     WHERE t.anime_id = a.id AND t.kind = 'english') AS english_title,
-                  (SELECT i.object_key FROM anime_images i
+                  (SELECT ${imageUrlSql('i')} FROM anime_images i
                     WHERE i.anime_id = a.id AND i.kind = 'cover' AND i.is_primary
                     LIMIT 1) AS cover
              FROM anime a

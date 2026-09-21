@@ -42,10 +42,61 @@ services:
       # never a bare hop count — Fastify 5.12 reads that as "trust nobody",
       # which puts every client into one rate-limit bucket. Address or subnet.
       TRUST_PROXY: ${TRUST_PROXY:-172.16.0.0/12}
+      # HONNAN JÖN A KATALÓGUS KÉPE.
+      #
+      # Üresen a saját `/media/` útvonalunk, ami külső beállítás nélkül
+      # működik — a kép a tükörből jön, nem az idegen CDN-ről.
+      #
+      # `https://media.animehub.hu`-ra állítva a kép közvetlenül az R2-ből
+      # megy a látogatóhoz, a hozzá legközelebbi Cloudflare él-szerverről,
+      # NULLA kimenő díjjal, és a mi gépünket el sem éri. Ehhez a vödröt a
+      # Cloudflare-en össze kell kötni a domainnel — lásd docs/operations/domain.md.
+      MEDIA_BASE_URL: ${MEDIA_BASE_URL:-}
+      # A karbantartási oldal háttérvideója. Ugyanaz a megfontolás, csak
+      # élesebben: ez az oldal PONT AKKOR megy ki, amikor a kiszolgáló bajban
+      # van — túlterhelés, telepítés, adatbázishiba —, és egy 35 MB-os videó
+      # minden látogatónak, a saját sávszélességünkről, a lehető legrosszabb
+      # pillanatban érkezne. Beállítva a fájl az R2-ből megy, a mi gépünk
+      # terhelése nélkül.
+      #
+      # A KÖNYVTÁR MARAD A KATALÓGUS: a neveket továbbra is az
+      # `assets/videos` adja, ez csak azt mondja meg, honnan tölti le a
+      # böngésző ugyanazt a nevet. A vödörben tehát ugyanazon a néven kell
+      # lennie — feltöltés: apps/api/scripts/upload-video.ts --key …
+      MAINTENANCE_VIDEO_BASE: ${MAINTENANCE_VIDEO_BASE:-}
       # This site's public address. Used for the canonical link, the Open Graph
       # URL and the Sitemap: line in robots.txt. Leave it unset and those are
       # built from the Host header, which the caller chooses — see docs/seo.md.
       PUBLIC_URL: ${PUBLIC_URL:-}
+      # EMBERPRÓBA (Cloudflare Turnstile) a hitelesítési űrlapokon.
+      #
+      # Két kulcs. A HELYSZÍNÉ nyilvános — a widget HTML-jébe kerül, tehát
+      # minden látogató böngészőjében ott van amúgy is. A TITOK sosem hagyja el
+      # a kiszolgálót: ez érvényesíti a tokent a Cloudflare felé.
+      #
+      # Mindkettő hiányában a modul minden kérést átenged, és az idegen eredetű
+      # widget-szkript a CSP-be sem kerül bele. A KIKAPCSOLÁS ezért egy sor
+      # kivétele a .env-ből — ez az a fogantyú, amihez éjjel is hozzá lehet
+      # nyúlni, ha valami elromlana.
+      #
+      # TURNSTILE_PROTECT: melyik űrlapot védje (register,login,forgot).
+      #   Alapból register,login. A `forgot` azért nincs benne, mert a
+      #   webkliensben nincs hozzá űrlap, ami tokent tudna szerezni — bevenni
+      #   annyi lenne, mint csendben bezárni egy végpontot.
+      # TURNSTILE_HOSTNAMES: mely gazdanevekről fogadunk el tokent, a
+      #   PUBLIC_URL-én felül. A Cloudflare megmondja, melyik oldalon futott a
+      #   widget; enélkül egy máshol szerzett token is jó lenne.
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      TURNSTILE_PROTECT: ${TURNSTILE_PROTECT:-}
+      TURNSTILE_HOSTNAMES: ${TURNSTILE_HOSTNAMES:-}
+      # Cloudflare Web Analytics.
+      #
+      # A mérőszkriptet NEM mi tesszük be: ha a zónán be van kapcsolva, a
+      # Cloudflare az ÉLEN fűzi bele a HTML-be. A CSP viszont a mi fejlécünk, és
+      # az blokkolja — az eredmény egy néma hiba, ahol a kapcsoló be van
+      # kapcsolva, és mégsem érkezik adat. Ez a sor engedi be az origót.
+      CLOUDFLARE_ANALYTICS: ${CLOUDFLARE_ANALYTICS:-}
       # A képtükör tárhelye — KÜLÖN VÖDÖR a mentésekétől, mert ezt a
       # tartalmat egy nyilvános útvonal szolgálja ki, a mentéseket soha semmi.
       # Az `app` olvassa (kiszolgálás), a `worker` írja (tükrözés).
@@ -57,6 +108,13 @@ services:
     # running without the proxy and know the request is already on a trusted
     # network.
     expose: ['4000']
+    volumes:
+      # A VIDEÓK CSATOLVA, nem a képbe építve.
+      #
+      # Egy feltöltött epizód nem indokolhat képépítést és újratelepítést, és
+      # egy 35 MB-os fájl minden rétegbe belekerülne. Csak olvasható: az
+      # alkalmazásnak kiszolgálnia kell őket, nem írnia.
+      - ./apps/web/assets/videos:/app/apps/web/assets/videos:ro
     healthcheck:
       test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:4000/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
@@ -94,6 +152,12 @@ services:
       # container, but statfs('/') would measure the container overlay — so the
       # host root is bind-mounted read-only, the same approach node-exporter uses.
       DISK_PATH: /host
+      # A KÜLSŐ szonda címe. A worker innen kéri le a `/v1/health`-et, a
+      # fordított proxyn keresztül — vagyis onnan nézve, ahonnan a látogató
+      # látja. Üresen hagyva a `PUBLIC_URL`-re esik vissza; ha egyik sincs, a
+      # szonda csendben kimarad ahelyett, hogy hibát jelentene.
+      EDGE_PROBE_URL: ${EDGE_PROBE_URL:-https://yumee.duckdns.org}
+
       # A képtükör tárhelye — KÜLÖN VÖDÖR a mentésekétől, mert ezt a
       # tartalmat egy nyilvános útvonal szolgálja ki, a mentéseket soha semmi.
       # Az `app` olvassa (kiszolgálás), a `worker` írja (tükrözés).
@@ -104,7 +168,28 @@ services:
       # MONITOR_INTERVAL_MS: '60000'      # collection cadence
       # METRICS_RETENTION_DAYS: '7'       # raw sample retention
     volumes:
-      - /:/host:ro
+      # A LEMEZMÉRÉS CSATOLÁSA — egy üres könyvtár, nem a gazdagép gyökere.
+      #
+      # A `/proc` alatti mérőszámokat a Docker nem szeparálja, tehát a CPU, a
+      # memória, a lemez-I/O és a hálózat a konténerből is a GÉPET mutatja. A
+      # kivétel a fájlrendszer telítettsége: a `statfs('/')` a konténeren
+      # belül az overlay-t méri, nem a gazdagépet. Ezért kell egy csatolt út.
+      #
+      # ITT KORÁBBAN A TELJES GYÖKÉR ÁLLT (`/:/host:ro`). Egyetlen `statfs`
+      # hívás kedvéért a worker folyamat olvashatta a gép MINDEN fájlját — a
+      # gépen futó másik két projekt `.env`-jét és az SSH-kulcsokat is. Egy
+      # olvasási jog, amit senki nem használ, csak kockázat.
+      #
+      # A `statfs` a FÁJLRENDSZERT méri, nem az utat: egy üres könyvtár
+      # ugyanarról a fájlrendszerről bitre ugyanazt adja. Mérve, ugyanazon a
+      # gépen: teljes gyökérrel 53 GB / 20 GB szabad, ezzel a csatolással
+      # 53 GB / 20 GB szabad — a konténer viszont üres könyvtárat lát.
+      #
+      # A könyvtárat a Docker létrehozza, ha nincs. Ha a gazdagépen a
+      # `/var/lib` KÜLÖN fájlrendszeren van, ez a mérés arra vonatkozna —
+      # ilyenkor a `DISK_PATH`-nak a mérendő fájlrendszeren lévő utat kell
+      # adni. Ezen a gépen mindkettő `/dev/sda2`, ellenőrizve `df`-fel.
+      - /var/lib/yume/diskprobe:/host:ro
     command: ['npm', 'run', 'worker']
     healthcheck:
       # The worker has no port, so liveness is "the process can still reach the
@@ -259,10 +344,30 @@ services:
       - ./scripts/database:/db:ro
       - backups:/backups
     working_dir: /
+    # A MENTÉSEKET ÍRÓ SZOLGÁLTATÁS IS MEGKEMÉNYÍTVE.
+    #
+    # Ez a konténer fér hozzá a teljes adatbázis-tartalomhoz — kiírja, és
+    # feltölti az R2-be. Épp ezért nem maradhat az egyetlen, ami a Docker
+    # teljes alapértelmezett képességkészletével fut.
+    security_opt: ['no-new-privileges:true']
+    cap_drop: ['ALL']
+    # `DAC_OVERRIDE` és `CHOWN`: a `pg_dump` a csatolt kötetbe ír, és a
+    # `cron` a saját állományait állítja.
+    cap_add: ['CHOWN', 'SETUID', 'SETGID', 'DAC_OVERRIDE']
     command: ['/db/backup-cron.sh']
 
   postgres:
     image: postgres:16-alpine
+    # LEGKISEBB JOGOSULTSÁG — ugyanaz, amit az `app` és a `worker` kap.
+    #
+    # Ez korábban lemaradt, pedig ez a szolgáltatás őrzi az egész rendszer
+    # adatát. A Postgres a saját felhasználójára vált induláskor, és egyik
+    # képességre sincs szüksége abból a tizennégyből, amit a Docker
+    # alapértelmezésben ad — a `CHOWN`, `SETUID`, `SETGID` és `FOWNER`
+    # kivételével, amiket az `initdb` és a jogosultságváltás használ.
+    security_opt: ['no-new-privileges:true']
+    cap_drop: ['ALL']
+    cap_add: ['CHOWN', 'SETUID', 'SETGID', 'FOWNER', 'DAC_OVERRIDE']
     # `unless-stopped`, mint minden másnak. A hiánya nem elméleti hiba volt:
     # app, worker, caddy és backup mind újraindul magától, a Postgres viszont
     # nem — egy újraindítás vagy egy Docker-daemon-frissítés után a YUME
@@ -288,6 +393,62 @@ services:
     #   docker compose exec postgres psql -U yume yume
     expose: ['5432']
     volumes: ['pgdata:/var/lib/postgresql/data']
+    # A PÁRHUZAMOS LEKÉRDEZÉSEK OSZTOTT MEMÓRIÁJA.
+    #
+    # A Docker alapértelmezett `/dev/shm`-je 64 MB. A `shared_buffers` nem
+    # innen jön (azt a Postgres `mmap`-pel foglalja), de a párhuzamos
+    # lekérdezések munkásai IGEN — és 64 MB-on egy nagyobb párhuzamos hash-join
+    # „could not resize shared memory segment" hibával áll meg. Ez a fajta hiba
+    # terhelés alatt jelentkezik először, vagyis a legrosszabbkor.
+    shm_size: 1gb
+    # A HANGOLÁS. Mérve, hangolás előtt (lásd docs/audits/):
+    #
+    #   shared_buffers        128 MB   miközben a teljes adatbázis 1 107 MB
+    #   work_mem                4 MB   → 391 ideiglenes fájl, 2 531 MB lemezre ömlött
+    #   effective_cache_size    4 GB   miközben a gazdagépen 6,7 GB a lapcache
+    #   random_page_cost          4    ami forgó lemez feltételezése, nem SSD-é
+    #
+    # `shared_buffers = 2GB`: a teljes adatbázis elfér benne. A 98,14%-os
+    # találati arányt eddig a gazdagép lapcache-e tartotta — most a Postgres
+    # saját puffere teszi, ahol a találat olcsóbb.
+    #
+    # `work_mem = 16MB`: ez a KOCKÁZATOS érték, mert MŰVELETENKÉNT és
+    # KAPCSOLATONKÉNT él. A felső korlát kiszámítható: az app és a worker
+    # készlete 20-20 kapcsolat, tehát 40 × 16 MB × néhány rendezés ≈ 1,3 GB
+    # csúcs. A 9,7 GB-os gépen, 2 GB `shared_buffers` mellett ez belefér, és a
+    # most beállított 2 GB swap a párna alatta.
+    #
+    # `autovacuum_work_mem = 256MB` külön, mert a `maintenance_work_mem`-et
+    # három autovacuum-munkás EGYSZERRE használhatná — 3 × 512 MB már nem
+    # elhanyagolható. A kézi `VACUUM` és az indexépítés kapja a teljeset.
+    #
+    # A `random_page_cost` SZÁNDÉKOSAN MARAD AZ ALAPÉRTELMEZETT 4-EN.
+    #
+    # A kézikönyvi tanács SSD-re 1,1, és be is állítottam — aztán megmértem.
+    # Tizenöt-tizenöt mintán, a két érték között váltogatva, hogy a bemelegedés
+    # egyiknek se kedvezzen:
+    #
+    #   random_page_cost = 1.1   medián 109,2 ms   átlag 150,5 ms
+    #   random_page_cost = 4     medián  68,9 ms   átlag 112,8 ms
+    #
+    # A YUME keresése GIN trigram-indexeken fut, és a bitmap-olvasás után sok
+    # jelöltet dob el a visszaellenőrzés (`kimetsu`: 1 531 jelöltből 1 502).
+    # Az alacsony érték túlságosan indexpártivá teszi a tervezőt, és pont a
+    # legdrágább lekérdezésünket lassítja. A lemez ugyan SSD, de a döntés nem
+    # a lemezről szól, hanem arról, hogy MENNYIT dolgozunk fölöslegesen.
+    command: >
+      postgres
+      -c shared_buffers=2GB
+      -c effective_cache_size=6GB
+      -c work_mem=16MB
+      -c maintenance_work_mem=512MB
+      -c autovacuum_work_mem=256MB
+    deploy:
+      resources:
+        # Nem fojtás, hanem korlát: egy elszabadult lekérdezéssor ne vigye el a
+        # gazdagépet a másik projekt és a Caddy elől. 2 GB a puffer, a többi a
+        # kapcsolatonkénti munkamemóriának és a folyamatoknak.
+        limits: { memory: 4G }
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U yume']
       interval: 5s

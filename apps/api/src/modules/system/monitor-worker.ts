@@ -14,6 +14,7 @@ import { query, queryOne } from '../../infrastructure/database/index.ts'
 import { evaluate, pruneResolvedAlerts } from './alerts.ts'
 import { formatReport, runDiagnostics } from './diagnostics.ts'
 import { collectHost } from '../../infrastructure/observability/host-metrics.ts'
+import { probeEdge, type EdgeProbeResult } from './edge-probe.ts'
 import { probeAll } from '../../infrastructure/observability/probes.ts'
 import { compare, thresholds } from './thresholds.ts'
 
@@ -37,7 +38,13 @@ export function toSamples (
   host: Awaited<ReturnType<typeof collectHost>>,
   probes: ProbeResult[],
   queue: { pending: number, dead: number },
-  backupAge: number | null = null
+  backupAge: number | null = null,
+  /*
+   * A KÜLSŐ szonda eredménye. Leolvasásként érkezik, nem itt készül: a
+   * `toSamples` tiszta függvény, és egy hálózati hívás abban azt jelentené,
+   * hogy a mérőszám-összeállítás tesztelhetetlen és lassú lesz.
+   */
+  edge: EdgeProbeResult | null = null
 ): Sample[] {
   const samples: Sample[] = []
   const add = (metric: string, value: number | null | undefined, unit: string): void => {
@@ -83,6 +90,27 @@ export function toSamples (
   add('queue.pending', queue.pending, 'count')
   add('queue.dead', queue.dead, 'count')
   add('backup.age_hours', backupAge, 'hours')
+
+  /*
+   * AZ OLDAL KÍVÜLRŐL. Külön az `api.latency_ms`-től, és ez a különbség a
+   * lényeg: az belülről kérdezi meg az alkalmazást, ez a fordított proxyn
+   * keresztül az egész utat méri.
+   *
+   * Egy valódi kiesésből nőtt ki: az `app` minden jelzője zöld volt, az
+   * `api.latency_ms` rendben, és közben a látogatók harminc másodpercig 503-at
+   * kaptak, mert a Caddy leírta az upstreamet. A monitorozás ezt nem látta.
+   */
+  if (edge) {
+    add('edge.status', edge.status, 'bool')
+    add('edge.down_streak', edge.downStreak, 'count')
+    if (edge.latencyMs !== null) add('edge.latency_ms', edge.latencyMs, 'ms')
+    if (edge.outcome !== 'healthy') {
+      // A FAJTÁJA is kell, nem csak az, hogy nem megy: a névfeloldás, a
+      // kapcsolat, a TLS és a HTTP-válasz más-más beavatkozást kíván.
+      console.error(`az oldal kívülről nem elérhető (${edge.outcome}): ${edge.detail ?? ''}`)
+    }
+  }
+
   return samples
 }
 
@@ -209,10 +237,15 @@ export async function toReadings (samples: Sample[], probes: ProbeResult[]): Pro
 
 /** One collection cycle. Returns the samples written (useful in tests). */
 export async function collectOnce (): Promise<Sample[]> {
-  const [host, probes, queue, backupAge] = await Promise.all([
-    collectHost(), probeAll(), queueDepth(), backupAgeHours()
+  /*
+   * A külső szonda a többi leolvasással PÁRHUZAMOSAN fut. Egy tíz másodperces
+   * időtúllépés sorosan azt jelentené, hogy a lassú válasz feltartja a teljes
+   * mérési ciklust — és pont akkor maradnánk mérőszám nélkül, amikor baj van.
+   */
+  const [host, probes, queue, backupAge, edge] = await Promise.all([
+    collectHost(), probeAll(), queueDepth(), backupAgeHours(), probeEdge()
   ])
-  const samples = toSamples(host, probes, queue, backupAge)
+  const samples = toSamples(host, probes, queue, backupAge, edge)
 
   await storeSamples(samples)
   await storeServiceStatus(probes)

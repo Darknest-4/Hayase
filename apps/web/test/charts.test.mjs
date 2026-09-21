@@ -35,8 +35,16 @@ function findAll (node, tag, out = []) {
   return out
 }
 
+/*
+ * AZ Y-TENGELY FELIRATAI — osztály szerint, nem igazítás szerint.
+ *
+ * Eddig a `text-anchor === 'end'` volt a szűrő. Ez nem a dolgot nevezte meg,
+ * hanem egy megjelenési tulajdonságot, ami történetesen egybeesett vele —
+ * és abban a pillanatban elromlott, hogy a szélső x-feliratok is befelé
+ * igazodtak: a teszt egy „b" feliratot próbált számmá alakítani.
+ */
 const axisLabels = svg => findAll(svg, 'text')
-  .filter(t => t.attrs['text-anchor'] === 'end')
+  .filter(t => String(t.attrs.class ?? '').split(/\s+/).includes('chart-axis-y'))
   .map(t => t.textContent)
 
 let Charts

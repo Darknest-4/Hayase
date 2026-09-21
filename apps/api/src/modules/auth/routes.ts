@@ -20,6 +20,7 @@ import { onUniqueViolation } from '@yume/database'
 import { authRepository as accounts } from './repository.ts'
 import { hashPassword, verifyPassword } from './password.ts'
 import { deliverReset } from './reset-delivery.ts'
+import * as turnstile from './turnstile.ts'
 import { settings as siteSettings } from '../settings/site-settings.ts'
 import { emitEvent } from '../webhooks/delivery.ts'
 
@@ -37,12 +38,25 @@ const DECOY_HASH = await hashPassword(randomBytes(32).toString('base64url'))
 /** How long a reset link stays usable. Short: it is a full account credential. */
 const RESET_TTL_MS = Number(process.env.PASSWORD_RESET_TTL_MS ?? 3_600_000)
 
+/**
+ * Az emberpróba tokenje — MINDENHOL VÁLASZTHATÓ A SÉMÁBAN.
+ *
+ * Nem `required`, és ez szándékos: a kötelezőség a TELEPÍTÉSTŐL függ (van-e
+ * Turnstile-kulcs), a séma viszont a kódban áll. Ha itt kötelező lenne, egy
+ * Turnstile nélküli példányon minden belépés 400-zal hasalna el.
+ *
+ * A hiányzó tokenre ezért az útvonal válaszol, nem a séma — ott tudjuk, hogy
+ * ez a példány kér-e emberpróbát egyáltalán.
+ */
+const turnstileField = { turnstileToken: { type: 'string', maxLength: 2048 } } as const
+
 const credentialsSchema = {
   type: 'object',
   required: ['identifier', 'password'],
   properties: {
     identifier: { type: 'string', minLength: 3, maxLength: 254 }, // email or username
-    password: { type: 'string', minLength: 8, maxLength: 128 }
+    password: { type: 'string', minLength: 8, maxLength: 128 },
+    ...turnstileField
   }
 } as const
 
@@ -189,6 +203,42 @@ const routes: FastifyPluginAsync = async fastify => {
     return { accessToken, refreshToken, expiresAt: expiresAt.toISOString() }
   }
 
+  /**
+   * Az emberpróba kapuja.
+   *
+   * `true`, ha a kérés mehet tovább; `false`, ha már VÁLASZOLTUNK is rá.
+   *
+   * MINDEN VÉDETT ÚTVONAL ELSŐ SORA. Nem azért, mert így szebb, hanem mert a
+   * jelszó-ellenőrzés szándékosan drága (scrypt, N=2^17), és egy robot
+   * kérésére egyetlen ilyet sem akarunk elégetni. Ami a kapu mögött van, az
+   * már munka.
+   *
+   * 403, nem 400: a kérés jól formált, csak nem fogadjuk el. A `detail` a
+   * látogatónak szól, és megmondja, mit tegyen — a napló kapja meg az okot.
+   */
+  const humanGate = async (
+    request: { body?: unknown, ip: string },
+    reply: FastifyReply,
+    action: turnstile.Protected
+  ): Promise<boolean> => {
+    if (!turnstile.protects(action)) return true
+    const token = (request.body as { turnstileToken?: unknown } | undefined)?.turnstileToken
+    const verdict = await turnstile.verify(token, request.ip, action, fastify.log)
+    if (verdict.ok) return true
+    fastify.log.info({ action, reason: verdict.reason, ip: request.ip }, 'emberpróba: visszautasítva')
+    await reply.code(403).send({
+      type: 'about:blank',
+      title: 'Forbidden',
+      status: 403,
+      detail: verdict.detail ?? 'Az emberpróba nem sikerült.',
+      // A kliens ebből tudja, hogy a widgetet újra kell rajzolnia: a token
+      // egyszer használatos, tehát egy második próbálkozás ugyanazzal a
+      // tokennel biztosan elbukna.
+      code: 'turnstile_failed'
+    })
+    return false
+  }
+
   fastify.post('/register', {
     config: AUTH_LIMIT,
     schema: {
@@ -198,11 +248,13 @@ const routes: FastifyPluginAsync = async fastify => {
         properties: {
           email: { type: 'string', format: 'email', maxLength: 254 },
           username: { type: 'string', minLength: 3, maxLength: 32, pattern: '^[a-zA-Z0-9_]+$' },
-          password: { type: 'string', minLength: 8, maxLength: 128 }
+          password: { type: 'string', minLength: 8, maxLength: 128 },
+          ...turnstileField
         }
       }
     }
   }, async (request, reply) => {
+    if (!await humanGate(request, reply, 'register')) return
     const { email, username, password } = request.body as { email: string, username: string, password: string }
 
     /*
@@ -275,6 +327,7 @@ const routes: FastifyPluginAsync = async fastify => {
   })
 
   fastify.post('/login', { config: AUTH_LIMIT, schema: { body: credentialsSchema } }, async (request, reply) => {
+    if (!await humanGate(request, reply, 'login')) return
     const { identifier, password } = request.body as { identifier: string, password: string }
 
     const user = await accounts.byIdentifier(identifier)
@@ -595,10 +648,14 @@ const routes: FastifyPluginAsync = async fastify => {
       body: {
         type: 'object',
         required: ['identifier'],
-        properties: { identifier: { type: 'string', minLength: 3, maxLength: 254 } }
+        properties: {
+          identifier: { type: 'string', minLength: 3, maxLength: 254 },
+          ...turnstileField
+        }
       }
     }
   }, async (request, reply) => {
+    if (!await humanGate(request, reply, 'forgot')) return
     const { identifier } = request.body as { identifier: string }
 
     const user = await accounts.activeByIdentifier(identifier)

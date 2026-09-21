@@ -24,7 +24,6 @@ I18n.register('hu', {
   Dashboard: 'Áttekintés',
   Analytics: 'Statisztika',
   History: 'Előzmények',
-  Achievements: 'Eredmények',
   Themes: 'Témák',
   Admin: 'Adminisztráció',
   More: 'Továbbiak',
@@ -66,7 +65,6 @@ I18n.register('hu', {
   Data: 'Adatok',
   Account: 'Fiók',
   Appearance: 'Megjelenés',
-  About: 'Névjegy',
 
   // ---------------------------------------------------------------- lejátszás
   'Watch now': 'Megnézem',
@@ -131,6 +129,23 @@ I18n.register('hu', {
     'Ezt a részt egyik elérhető forrásból sem sikerült lejátszani.',
   'No episode data available.': 'Nincs elérhető epizódadat.',
   'Invalid watch link.': 'Érvénytelen nézési hivatkozás.',
+
+  // A Player 2.0 hibataxonómiája (`core/player-errors.js`). Fordítás nélkül a
+  // lejátszó pont azt csinálná, amit a saját fejléce kifogásol: angol
+  // fejlesztői mondatot tenne a képernyőre egy magyar oldalon.
+  Player: 'Lejátszó',
+  'These apply to the video player. Changes take effect the next time a player opens.':
+    'Ezek a videólejátszóra vonatkoznak. A következő lejátszó megnyitásakor lépnek életbe.',
+  'There is no source for this episode yet.': 'Ehhez a részhez még nincs forrás.',
+  'The source did not respond.': 'A forrás nem válaszolt.',
+  'Your browser cannot play this format.': 'A böngésződ nem tudja lejátszani ezt a formátumot.',
+  'The connection was lost.': 'Megszakadt a kapcsolat.',
+  'The video is damaged or unreadable.': 'A videó sérült vagy olvashatatlan.',
+  'This source does not allow playback from here.': 'Ez a forrás nem engedi innen a lejátszást.',
+  'This content is protected.': 'Ez a tartalom másolásvédett.',
+  'The subtitles could not be loaded.': 'A feliratot nem sikerült betölteni.',
+  'That quality is not available.': 'Ez a minőség nem érhető el.',
+  'Could not play this.': 'Ezt nem sikerült lejátszani.',
 
   // ---------------------------------------------------------------- könyvtár
   'Add to list': 'Listára teszem',
@@ -371,7 +386,102 @@ I18n.register('hu', {
   Email: 'E-mail',
   'Email or username': 'E-mail vagy felhasználónév',
   Username: 'Felhasználónév',
+  Password: 'Jelszó',
   'Password (min 8 chars)': 'Jelszó (legalább 8 karakter)',
+  '3–32 characters, letters and numbers.': '3–32 karakter, betű és szám.',
+  'At least 8 characters.': 'Legalább 8 karakter.',
+  'Sign in': 'Belépés',
+  Register: 'Regisztráció',
+  'Create account': 'Fiók létrehozása',
+  'Create an account': 'Fiók létrehozása',
+  // A szóköz a végén szándékos: a felhasználónév kerül utána.
+  'Signed in as ': 'Belépve: ',
+  'You are signed in': 'Már be vagy lépve',
+  'Your list, your history and your settings follow you.':
+    'A listád, az előzményeid és a beállításaid veled tartanak.',
+  'It takes a moment, and nothing but an email address.':
+    'Egy pillanat, és nem kell hozzá más, csak egy e-mail-cím.',
+  // ----------------------------------------------------------- oldalsáv
+  Navigation: 'Navigáció',
+  Sidebar: 'Oldalsáv',
+  Expanded: 'Nyitva',
+  Collapsed: 'Összecsukva',
+  'Whether the side navigation shows its labels. The arrow at the bottom of the rail does the same thing. On a narrow screen the rail is replaced by the bottom bar, so this has no effect there.':
+    'Kiírja-e az oldalsáv a feliratokat. A sáv alján lévő nyíl ugyanezt állítja. Keskeny képernyőn a sáv helyett az alsó sáv navigál, ott ennek nincs hatása.',
+
+  // ---------------------------------------------------------- hozzászólások
+  'Delete this comment? This cannot be undone.':
+    'Törlöd ezt a hozzászólást? Nem vonható vissza.',
+  'Comment deleted': 'A hozzászólás törölve',
+  'This comment was deleted.': 'Ezt a hozzászólást törölték.',
+
+  // ------------------------------------------------------------ beállítások
+  //
+  // A lap fele angolul állt egy magyar felületen — nem azért, mert hiányzott
+  // a T(), hanem mert a szótárban nem volt mit találnia.
+  'Signed in': 'Be vagy lépve',
+  'Not signed in': 'Nem vagy belépve',
+  'Sign in to sync your library across devices and join the discussion.':
+    'Lépj be, hogy a könyvtárad minden eszközödön ugyanaz legyen, és hozzászólhass.',
+  'Shown on your profile page.': 'Ez jelenik meg a profilodon.',
+  'Profile artwork': 'Profilképek',
+  'Library sync': 'Könyvtár szinkronizálása',
+  'Your library status and episode progress follow you across devices while signed in.':
+    'Belépve a könyvtárad állapota és az epizódjaid állása minden eszközödön ugyanaz.',
+  'Synced to your account': 'Szinkronizálva a fiókoddal',
+  'Sync unavailable': 'A szinkronizálás nem elérhető',
+  'Library synced': 'A könyvtár szinkronizálva',
+  Saved: 'Mentve',
+
+  Theme: 'Téma',
+  'Base, accent and surface tint apply instantly and are saved for this profile.':
+    'Az alap, a kiemelőszín és a felület árnyalata azonnal érvényes, és megmarad ennél a profilnál.',
+  Titles: 'Címek',
+  'How anime titles are displayed across the app.':
+    'Milyen nyelven jelenjenek meg az anime címek az oldalon.',
+  'Preferred (AniList default)': 'Ahogy az AniList adja',
+  Native: 'Eredeti',
+
+  'Include 18+ entries in search results and listings.':
+    'A 18+ címek is megjelennek a keresésben és a listákban.',
+  'Autoplay next episode': 'A következő rész automatikus indítása',
+  'Automatically start the next episode when one finishes.':
+    'Ha egy rész véget ér, a következő magától elindul.',
+  'Auto-skip intros': 'A főcím automatikus átugrása',
+  'Skip openings and endings automatically when timing data is available (AniSkip).':
+    'A főcím és a záró automatikus átugrása, ha van hozzá időadat (AniSkip).',
+
+  'What you are told about': 'Miről kapsz értesítést',
+  'Airing episodes': 'Megjelenő epizódok',
+  'When a new episode of something in your library airs.':
+    'Ha megjelenik egy új rész abból, ami a könyvtáradban van.',
+  'Reminders to pick up shows you started but paused.':
+    'Emlékeztető azokról, amiket elkezdtél, de félbehagytál.',
+  Achievements: 'Eredmények',
+  'When you unlock a new achievement.': 'Ha új eredményt szerzel.',
+  'Notification inbox': 'Értesítési postaláda',
+  'These are generated from your library and activity — no account required.':
+    'Az értesítések a könyvtáradból és a tevékenységedből készülnek — fiók sem kell hozzájuk.',
+
+  'Your data': 'Az adataid',
+  'Export and import': 'Mentés és visszatöltés',
+  'Your anime list, favourites and progress live only in this browser. Export them as JSON to back them up or move devices.':
+    'A listád, a kedvenceid és az állásod csak ebben a böngészőben élnek. JSON-ba mentve megőrizheted vagy átviheted másik eszközre.',
+  'API cache': 'Gyorsítótár',
+  'Responses from AniList, Jikan and ani.zip are kept locally to keep the app fast and to stay under their rate limits.':
+    'Az AniList, a Jikan és az ani.zip válaszai helyben megmaradnak, hogy az oldal gyors legyen, és ne fussunk bele a korlátaikba.',
+  'Danger zone': 'Veszélyes műveletek',
+  'Delete all local data': 'Minden helyi adat törlése',
+  'Your list, favourites, history and settings in this browser. This cannot be undone.':
+    'A listád, a kedvenceid, az előzményeid és a beállításaid ebben a böngészőben. Nem vonható vissza.',
+  'Delete ALL local data (list, favourites, settings)?':
+    'Tényleg törlöd MINDEN helyi adatot (lista, kedvencek, beállítások)?',
+
+  About: 'Névjegy',
+  'Framework-free web client on the Yume design system. Catalogue data from AniList, Jikan (MyAnimeList) and ani.zip.':
+    'Keretrendszer nélküli webkliens a Yume designrendszerén. A katalógus adatai az AniListről, a Jikanből (MyAnimeList) és az ani.zipről származnak.',
+  Sources: 'Források',
+
   'Yume server updated': 'A Yume-kiszolgáló frissítve',
   'Sync now': 'Szinkronizálás most',
 
@@ -534,6 +644,11 @@ I18n.register('hu', {
   'Track, discover and watch anime — your list, your way.':
     'Kövesd, fedezd fel és nézd az animéket — a te listád, a te profiljaid, a te módodon.',
   'built on the Yume design system': 'a Yume designrendszerére építve',
+  // A kapu címének előtagja. Összefűzve kapja a szakasz nevét: „Belépés
+  // ehhez: Beállítások". Magyarul a kettőspont természetesebb, mint az
+  // angol elöljáró tükörfordítása.
+  'Sign in for': 'Belépés ehhez:',
+  'Anime data from': 'Az anime-adatok forrása:',
 
   // ---------------------------------------------------------------- varázsló
   'Welcome to Yume': 'Üdv a Yumén',

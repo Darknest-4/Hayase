@@ -17,7 +17,7 @@
 import { createHash } from 'node:crypto'
 
 import { mediaStorage, putObject, type S3Config } from '../../infrastructure/storage/s3.ts'
-import { query } from '../../infrastructure/database/index.ts'
+import { query, queryOne } from '../../infrastructure/database/index.ts'
 
 /** Egy futás mérlege. Ez megy a naplóba és a panelre. */
 export interface MirrorResult {
@@ -36,7 +36,13 @@ const KIND_ORDER = ['cover', 'banner', 'backdrop', 'logo']
  *
  * TARTALOMCÍMZETT, a forrás URL-jének hasításából: ugyanaz a kép ugyanazt a
  * kulcsot kapja, tehát egy megismételt futás nem hoz létre duplikátumot, és a
- * kulcs SOSEM változik. Ez utóbbi azért számít, mert így a kiszolgálásnál
+ * kulcs SOSEM változik.
+ *
+ * TÖBB KATALÓGUSSOR OSZTOZHAT EGY KULCSON, és ezt először elrontottam: ugyanaz
+ * a borító két bejegyzéshez ugyanazt a forrás-URL-t viseli, tehát ugyanazt a
+ * kulcsot kapja. A soron lévő egyedi index emiatt 119 tükrözést bukott el
+ * 3 624-ből — a kép megérkezett, csak a sor nem tudta feljegyezni. Lásd a
+ * 0056-os migrációt. Ez utóbbi azért számít, mert így a kiszolgálásnál
  * `immutable` gyorsítótárazás adható rá — egy kulcs mögött sosem lesz más kép.
  *
  * A kiterjesztés a forrásból jön, mert a böngésző és a tárhely is ebből dönti
@@ -80,7 +86,7 @@ async function mirrorOne (
       headers: {
         // Megmondjuk, kik vagyunk. Egy névtelen tömeges letöltés az, amit egy
         // CDN üzemeltetője joggal blokkol.
-        'user-agent': 'YUME image mirror (https://yumee.duckdns.org)',
+        'user-agent': 'YUME image mirror (https://animehub.hu)',
         accept: 'image/*'
       }
     })
@@ -186,14 +192,53 @@ export async function mirrorProgress (): Promise<Array<{
 }
 
 /**
+ * Kell-e még egy köteg, és ütemezhető-e.
+ *
+ * KÜLÖNVÁLASZTVA a tükrözéstől, mert két külön kérdés: „mit hoztunk át" és
+ * „mi legyen ezután". A második maga is elromolhat — és el is romlott.
+ *
+ * AZ ELSŐ VÁLTOZAT NÉMÁN NEM CSINÁLT SEMMIT. Az utódot a szokásos
+ * `dedupe: 'media-mirror'` kulccsal ütemeztem, mint minden más ismétlődő
+ * feladatot. Csakhogy a `jobs_dedupe_idx` a `done_at IS NULL` sorokra szóló
+ * részleges egyedi index, és amíg a kezelő fut, a SAJÁT feladata még nincs
+ * késznek jelölve: az utód önmagával ütközött, az `ON CONFLICT DO NOTHING`
+ * eldobta. Élesben ez 200 letükrözött képet jelentett a 32 390-ből, egyetlen
+ * hibaüzenet nélkül.
+ *
+ * Az utód ezért saját kulcsot kap, a feltorlódás ellen pedig nem a kulcs véd,
+ * hanem a számolás: ha már várakozik egy tükrözés, ez a futás nem tesz hozzá
+ * másikat.
+ *
+ * Igazzal tér vissza, ha ütemezett egyet.
+ */
+export async function scheduleNext (
+  jobId: string, result: MirrorResult, kinds?: string[]
+): Promise<boolean> {
+  if (result.examined === 0) return false
+
+  const waiting = await queryOne<{ n: number }>(
+    "SELECT count(*)::int AS n FROM jobs WHERE queue = 'media' AND done_at IS NULL AND id <> $1",
+    [jobId]
+  )
+  if (Number(waiting?.n ?? 0) > 0) return false
+
+  const { enqueue } = await import('../../infrastructure/queue/index.ts')
+  await enqueue('media', {
+    ...(kinds ? { kinds } : {}),
+    dedupe: `media-mirror:${Date.now()}`
+  })
+  return true
+}
+
+/**
  * A feladatsor kezelője.
  *
- * Kötegenként fut, és MAGÁT ÜTEMEZI ÚJRA, amíg van mit tükrözni. Ez azért így
+ * Kötegenként fut, és magát ütemezi újra, amíg van mit tükrözni. Ez azért így
  * van, és nem egyetlen hosszú futásként, mert 57 012 kép letöltése óra
  * nagyságrend: egy megszakadt futás így nem kezdi elölről, és a sor többi
  * feladata sem áll meg mögötte.
  */
-export async function handleMediaJob (job: { payload: Record<string, unknown> }): Promise<void> {
+export async function handleMediaJob (job: { id: string, payload: Record<string, unknown> }): Promise<void> {
   const kinds = Array.isArray(job.payload.kinds)
     ? (job.payload.kinds as string[])
     : undefined
@@ -209,10 +254,5 @@ export async function handleMediaJob (job: { payload: Record<string, unknown> })
     `${result.failed ? `, ${result.failed} nem sikerült` : ''}`
   )
 
-  // Ha ez a köteg tele volt, van még hátra. A `dedupe` kulcs miatt egy lassú
-  // futás nem tud feltorlódni: egyszerre egy tükrözés áll a sorban.
-  if (result.examined > 0 && result.mirrored + result.failed === result.examined) {
-    const { enqueue } = await import('../../infrastructure/queue/index.ts')
-    await enqueue('media', { ...(kinds ? { kinds } : {}), dedupe: 'media-mirror' })
-  }
+  await scheduleNext(job.id, result, kinds)
 }

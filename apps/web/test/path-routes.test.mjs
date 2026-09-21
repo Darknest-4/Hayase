@@ -50,9 +50,21 @@ describe('reading a hash address', () => {
     assert.equal(params.get('tab'), 'episodes')
   })
 
-  it('an empty hash is home', () => {
-    assert.equal(at('').route, 'home')
-    assert.equal(at('#/').route, 'home')
+  /*
+   * A CSUPASZ GYÖKÉR A KEZDŐKÉPERNYŐ, nem a főoldal.
+   *
+   * Aki a domaint írja be, még nem tudja, mi ez — a `#/home` a visszatérő
+   * látogató címe. Korábban mindkettő `home` volt, és a bemutatkozó lapra
+   * csak egy külön címmel lehetett eljutni.
+   */
+  it('az üres cím a kezdőképernyő', () => {
+    assert.equal(at('').route, 'landing')
+    assert.equal(at('#/').route, 'landing')
+  })
+
+  /* Egy elgépelt ÚTVONALNÉV viszont nem a marketinglapra esik. */
+  it('ismeretlen útvonalnév továbbra is a főoldal kapuja', () => {
+    assert.equal(at('', '/nonsense').route, 'home')
   })
 
   it('the hash wins over the path, so a click never lands on the old page', () => {
@@ -87,7 +99,8 @@ describe('reading a path address', () => {
     // Not hypothetical: several client tests construct exactly this window.
     Object.assign(location, { hash: '', search: '' })
     delete location.pathname
-    assert.equal(App.parseHash().route, 'home')
+    // Útvonal nélkül ugyanaz, mint a csupasz gyökér.
+    assert.equal(App.parseHash().route, 'landing')
   })
 })
 
@@ -105,6 +118,8 @@ describe('normalising a path address', () => {
   })
 
   it('leaves the site root alone', () => {
+    // A `/` a kezdőképernyő címe, és nem nyer semmit azzal, ha
+    // `/#/landing`-re írjuk át — csak csúnyább lesz egy megosztott linkben.
     at('', '/')
     App.normalisePath()
     assert.deepEqual(replaced, [], 'the root was rewritten to something else')

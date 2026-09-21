@@ -199,7 +199,18 @@ describe('API integration', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => 
 
   describe('rate limiting', () => {
     test('a spoofed X-Forwarded-For does not buy a fresh quota', async () => {
-      const attempt = (headers: Record<string, string> = {}): Promise<number> =>
+      /*
+       * MINDEN KÉRÉS KÍVÜLRŐL JÖN — ezért van rajta továbbítófejléc.
+       *
+       * Az `inject` alapból hurokcímről érkezik, fejléc nélkül, és azt a
+       * sebességkorlát a saját rendszerünknek tekinti (lásd
+       * `middleware/internal-request.ts`). A kvótát tehát fejléc nélkül el sem
+       * lehetne fogyasztani, és ez a teszt csendben semmit nem bizonyítana.
+       *
+       * Amit bizonyítani akar, az változatlan: a fejléc VÁLTOZTATÁSA nem ad
+       * friss kvótát.
+       */
+      const attempt = (headers: Record<string, string> = { 'x-forwarded-for': '203.0.113.60' }): Promise<number> =>
         app.inject({
           method: 'POST',
           url: '/v1/auth/login',

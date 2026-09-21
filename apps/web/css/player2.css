@@ -1,0 +1,734 @@
+/* YUME PLAYER 2.0
+ *
+ * A lejátszó saját lapja. Külön fájl, mert a `style.css` a képernyőké, ez
+ * pedig EGY komponensé — és mert a lejátszó a `tokens.css` értékein kívül alig
+ * függ bármitől, így külön is olvasható.
+ *
+ * A RÉTEGEK a DOM sorrendjéből következnek, nem `z-index` versenyből. Minden
+ * réteg `position: absolute` a `.yp`-n belül, és amelyik hátrébb van a
+ * forrásban, az van hátrébb a képen is. A `z-index` csak ott jelenik meg, ahol
+ * a sorrend nem elég — a teljes képernyős kilépő gombnál.
+ */
+
+.yp {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: var(--ink-black);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  /* A lejátszó a SAJÁT tartalmazó blokkja: enélkül a teljes képernyős mód
+     előtti `position: absolute` rétegek a lapra pozicionálódnának. */
+  contain: layout paint;
+  color: var(--on-media);
+  font-family: var(--font-sans);
+  --yp-sub-size: 1;
+  --yp-sub-weight: 600;
+  --yp-sub-color: #ffffff;
+  --yp-sub-bg: #000000;
+  --yp-sub-bg-opacity: 0.35;
+  --yp-sub-outline: 1;
+  --yp-sub-bottom: 8%;
+}
+
+.yp video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: var(--ink-black);
+}
+
+/* Az EGÉRMUTATÓ is eltűnik a vezérlőkkel. Egy mozdulatlan nyíl a kép közepén
+   ugyanúgy zavar, mint egy kint felejtett sáv. */
+.yp.yp-idle { cursor: none; }
+.yp.yp-idle .yp-surface { cursor: none; }
+
+.yp-hidden {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition: opacity var(--dur) var(--ease), visibility 0s linear var(--dur);
+}
+
+/* ---- ambiens fény ----
+ *
+ * A NAIV MEGOLDÁS MÉRHETŐEN DRÁGA VOLT. Az első változat a vásznat a héj
+ * teljes méretére nyújtotta, és arra tett `blur(64px)`-et. Mérve: a
+ * képkockaköz mediánja 16,7 ms-ról 75,2 ms-ra romlott — négy és félszeres —,
+ * és ez két külön futáson ugyanígy jött ki.
+ *
+ * Az ok nem a rajzolás (az 32×18 képpont, fél másodpercenként), hanem az
+ * ELMOSÁS: egy 64 képpontos sugarú szűrő egy 1440×810-es felületen minden
+ * képkockán újraszámolódik, mert a vászon egy összeállítási bemenet.
+ *
+ * A megoldás ugyanaz a kép, fordított sorrendben: a vászon a SAJÁT PICI
+ * MÉRETÉBEN marad, ott kap egy pár képpontos elmosást — ami a kicsinység
+ * miatt nevetségesen olcsó —, és utána nagyítjuk fel. A nagyítás a GPU
+ * dolga, és egy már elmosott textúra kinagyítása pontosan ugyanolyan lágy
+ * foltot ad.
+ */
+.yp-ambient {
+  position: absolute;
+  /* A bal felső sarokból nagyítunk, ezért a saját méretével kezdünk. */
+  top: 0;
+  left: 0;
+  width: 32px;
+  height: 18px;
+  /* Az elmosás a KICSI méreten: két képpont itt a felnagyítás után
+     nyolcvannal ér fel. */
+  filter: blur(2px) saturate(1.6);
+  transform-origin: 0 0;
+  /* 32 × 45 = 1440, 18 × 45 = 810 — bőven a héj fölé nő, és a héj levágja. */
+  transform: scale(45);
+  opacity: 0;
+  transition: opacity 600ms var(--ease);
+  pointer-events: none;
+  /* SAJÁT RÉTEG. Enélkül a böngésző a fölötte lévő tartalommal együtt
+     rajzolja újra, és a nyereség egy része elveszik. */
+  will-change: opacity;
+}
+.yp-ambient-on .yp-ambient { opacity: 0.55; }
+
+/* ---- gesztusfelület ---- */
+.yp-surface {
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+  /* Az érintés SAJÁT kezelésű: e nélkül a böngésző görgetésnek veszi a
+     függőleges csúsztatást, és a hangerőgesztus sosem érkezik meg. */
+  touch-action: none;
+}
+
+/* ---- felirat ---- */
+.yp-subtitles {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--yp-sub-bottom);
+  display: flex;
+  justify-content: center;
+  padding: 0 var(--space-4);
+  pointer-events: none;
+  transition: bottom var(--dur) var(--ease);
+}
+/* Kint lévő vezérlőknél a felirat FELJEBB CSÚSZIK. A sáv különben pont a
+   feliratot takarja, és a néző a szöveg kedvéért kénytelen elvenni az egeret. */
+.yp:not(.yp-idle) .yp-subtitles { bottom: calc(var(--yp-sub-bottom) + 64px); }
+
+.yp-subtitles > * {
+  font-size: calc(var(--text-lg) * var(--yp-sub-size));
+  font-weight: var(--yp-sub-weight);
+  line-height: var(--leading-tight);
+  color: var(--yp-sub-color);
+  background: color-mix(in srgb, var(--yp-sub-bg) calc(var(--yp-sub-bg-opacity) * 100%), transparent);
+  padding: 0.15em 0.5em;
+  border-radius: var(--radius-sm);
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* ---- átugrás gomb ---- */
+.yp-skip {
+  position: absolute;
+  right: var(--space-5);
+  bottom: 84px;
+  padding: var(--space-3) var(--space-5);
+  font: inherit;
+  font-weight: var(--weight-semibold);
+  color: var(--on-media);
+  background: color-mix(in srgb, var(--ink-black) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--on-media) 35%, transparent);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.yp-skip:hover { background: var(--accent); color: var(--accent-fg); transform: translateY(-2px); }
+
+/* ---- vezérlősáv ---- */
+.yp-controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: var(--space-6) var(--space-4) var(--space-3);
+  /* A SÖTÉTÍTÉS a sávon van, nem külön rétegen: külön rétegként a felirat és a
+     sáv közé került, és a feliratot is besötétítette. */
+  background: linear-gradient(to top, color-mix(in srgb, var(--ink-black) 88%, transparent), transparent);
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.yp-controls-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.yp-controls-left,
+.yp-controls-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.yp-btn {
+  display: inline-flex;
+  /* NEM ZSUGORODIK. A vezérlősáv rugalmas doboz, és szűk helyen a böngésző a
+     gombokat nyomja össze — 320 képpontos telefonon 40-ről 20-ra, ami ujjal
+     eltalálhatatlan. Ez nem elméleti: a böngészős mérés pontosan ezt írta ki
+     `button.yp-btn 20×40` alakban, kilenc gombra. */
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  /* Negyvennégy képpont: ez az a méret, ami ujjal eltalálható. Egy huszonnégy
+     képpontos ikon körül a kattintható terület akkor is ekkora, ha nem
+     látszik. */
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  color: var(--on-media);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease), opacity var(--dur) var(--ease);
+}
+.yp-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--on-media) 16%, transparent); }
+.yp-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.yp-btn:disabled { opacity: 0.35; cursor: default; }
+.yp-btn.yp-on { color: var(--accent); }
+.yp-btn-play { width: 52px; height: 52px; }
+.yp-btn-rate { width: auto; padding: 0 var(--space-3); font-size: var(--text-sm); font-weight: var(--weight-semibold); }
+
+.yp-time {
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--on-media);
+  opacity: 0.85;
+  padding: 0 var(--space-2);
+  white-space: nowrap;
+}
+
+/* ---- hangerő ---- */
+.yp-volume {
+  width: 0;
+  overflow: hidden;
+  cursor: pointer;
+  padding: var(--space-3) 0;
+  transition: width var(--dur) var(--ease);
+}
+/* A csúszka csak akkor foglal helyet, ha kell. Telefonon nincs hangerőcsúszka
+   a lapon — ott a készülék gombjai állítják, és a sáv csak helyet venne el. */
+.yp-controls-left:hover .yp-volume,
+.yp-volume:focus-within { width: 80px; }
+.yp-volume-rail {
+  height: 4px;
+  background: color-mix(in srgb, var(--on-media) 28%, transparent);
+  border-radius: var(--radius-full);
+}
+.yp-volume-fill { height: 100%; background: var(--on-media); border-radius: var(--radius-full); }
+
+/* ---- tekerősáv ---- */
+.yp-seek {
+  position: relative;
+  /* A SÁV VÉKONY, A FOGÁSI TERÜLET VASTAG. Egy négy képpontos sáv egérrel is
+     nehezen eltalálható, ujjal pedig lehetetlen. */
+  padding: var(--space-3) 0;
+  margin-bottom: var(--space-1);
+  cursor: pointer;
+  touch-action: none;
+}
+.yp-seek-rail {
+  position: relative;
+  height: 4px;
+  background: color-mix(in srgb, var(--on-media) 24%, transparent);
+  border-radius: var(--radius-full);
+  transition: height var(--dur) var(--ease);
+}
+.yp-seek:hover .yp-seek-rail,
+.yp-seek:focus-visible .yp-seek-rail { height: 6px; }
+.yp-seek:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: var(--radius-full); }
+
+.yp-seek-buffer {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: color-mix(in srgb, var(--on-media) 38%, transparent);
+  border-radius: var(--radius-full);
+}
+.yp-seek-played {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  border-radius: var(--radius-full);
+}
+.yp-seek-head {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 13px;
+  height: 13px;
+  margin: -6.5px 0 0 -6.5px;
+  background: var(--accent);
+  border-radius: var(--radius-full);
+  transform: scale(0);
+  transition: transform var(--dur) var(--ease);
+}
+.yp-seek:hover .yp-seek-head,
+.yp-seek:focus-visible .yp-seek-head { transform: scale(1); }
+
+.yp-seek-marker {
+  position: absolute;
+  top: 0;
+  width: 3px;
+  height: 100%;
+  margin-left: -1.5px;
+  background: var(--on-media);
+  opacity: 0.75;
+  border-radius: 1px;
+}
+.yp-seek-marker-intro { background: var(--amber-400); }
+.yp-seek-marker-outro { background: var(--violet-400); }
+
+.yp-seek-tip {
+  position: absolute;
+  bottom: 100%;
+  transform: translateX(-50%);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--on-media);
+  background: color-mix(in srgb, var(--ink-black) 88%, transparent);
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* ---- következő rész kártya ---- */
+.yp-next {
+  position: absolute;
+  right: var(--space-5);
+  bottom: 84px;
+  max-width: min(320px, calc(100% - var(--space-8)));
+  padding: var(--space-4);
+  background: color-mix(in srgb, var(--ink-950) 92%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+  backdrop-filter: blur(12px);
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.yp-next-title {
+  margin: 0 0 var(--space-3);
+  font-weight: var(--weight-semibold);
+  color: var(--fg);
+  /* Egy hosszú epizódcím ne tolja szét a kártyát. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.yp-next-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.yp-next-go {
+  flex: 1 1 auto;
+  padding: var(--space-2) var(--space-4);
+  font: inherit;
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-fg);
+  background: var(--accent);
+  border: 0;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.yp-next-cancel {
+  padding: var(--space-2) var(--space-3);
+  font: inherit;
+  color: var(--fg-muted);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+}
+.yp-next-cancel:hover { color: var(--fg); background: var(--bg-raised); }
+
+/* Az átugrás gombja és a kártya egymás mellett nem fér el; a kártya
+   fontosabb, mert időhöz kötött. */
+.yp:has(.yp-next:not(.yp-hidden)) .yp-skip { display: none; }
+
+/* ---- teljes beállításpanel ---- */
+.yp-settings { display: grid; gap: var(--space-6); }
+.yp-settings-group { display: grid; gap: var(--space-2); }
+.yp-settings-title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.yp-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-height: 40px;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.yp-settings-label { color: var(--fg); min-width: 0; }
+.yp-settings-input { flex: 0 0 auto; max-width: 50%; }
+.yp-settings-input[type="range"] { width: 140px; }
+.yp-settings-input[type="color"] { width: 44px; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; }
+
+/* ---- beállítások menü ---- */
+.yp-menu {
+  position: absolute;
+  right: var(--space-4);
+  bottom: 76px;
+  width: min(300px, calc(100% - var(--space-8)));
+  max-height: min(60%, 400px);
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--ink-950) 94%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+  backdrop-filter: blur(16px);
+  overflow: hidden;
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease), visibility 0s;
+}
+.yp-menu-header { border-bottom: 1px solid var(--border); }
+.yp-menu-back {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  font: inherit;
+  font-weight: var(--weight-semibold);
+  color: var(--fg);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.yp-menu-body { overflow-y: auto; padding: var(--space-2); }
+.yp-menu-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-3);
+  font: inherit;
+  color: var(--fg);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+}
+.yp-menu-row:hover { background: var(--bg-raised); }
+.yp-menu-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.yp-menu-label { flex: 1; min-width: 0; }
+.yp-menu-value { color: var(--fg-muted); font-size: var(--text-sm); }
+.yp-menu-tick { display: inline-flex; width: 16px; color: var(--accent); }
+.yp-menu-note { padding: var(--space-3); margin: 0; color: var(--fg-muted); font-size: var(--text-sm); }
+
+/* ---- betöltőképernyő ---- */
+.yp-loader {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5);
+  background: var(--ink-black);
+  transition: opacity 450ms var(--ease), visibility 0s linear 450ms;
+}
+.yp-loader-brand {
+  position: relative;
+  width: min(280px, 55%);
+  display: grid;
+}
+/* A két réteg EGYMÁSON: mindkettő az első rács-cellában. Abszolút
+   pozicionálással a magasság nullára esne, mert egyik réteg sem foglalna
+   helyet. */
+.yp-loader-base,
+.yp-loader-sweep { grid-area: 1 / 1; }
+
+.yp-loader-base { filter: grayscale(1) brightness(0.75); }
+
+/* A SZÍNES RÉTEG maszkkal: egy keskeny, átlátszatlan csík fut végig balról
+   jobbra, és csak ott látszik a szín. A maszk kétszer akkora, mint az elem,
+   így a csík kívülről érkezik és kívülre távozik. */
+.yp-loader-sweep {
+  -webkit-mask-image: linear-gradient(100deg, transparent 38%, #000 50%, transparent 62%);
+  mask-image: linear-gradient(100deg, transparent 38%, #000 50%, transparent 62%);
+  -webkit-mask-size: 280% 100%;
+  mask-size: 280% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  animation: yp-sweep 2.4s var(--ease) infinite;
+  /* A színes réteg saját fénye: egy egyszínű fehér logón a szín „végigfutása"
+     máskülönben nem látszik, mert nincs mit színezni. A ragyogás az, ami
+     mozog. */
+  filter: drop-shadow(0 0 14px var(--accent));
+}
+.yp-loader-art { width: 100%; height: auto; display: block; }
+.yp-loader-wordmark {
+  font-size: clamp(2rem, 9vw, 4rem);
+  font-weight: var(--weight-black);
+  letter-spacing: 0.22em;
+  text-align: center;
+  color: var(--on-media);
+}
+.yp-loader-phase {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: color-mix(in srgb, var(--on-media) 60%, transparent);
+  letter-spacing: 0.04em;
+}
+
+@keyframes yp-sweep {
+  from { -webkit-mask-position: 120% 0; mask-position: 120% 0; }
+  to { -webkit-mask-position: -20% 0; mask-position: -20% 0; }
+}
+
+/* ---- hiba ---- */
+.yp-error {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  background: color-mix(in srgb, var(--ink-black) 90%, transparent);
+}
+.yp-error-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 34ch;
+  text-align: center;
+  color: var(--on-media);
+}
+.yp-error-text { margin: 0; line-height: var(--leading-normal); }
+.yp-btn-text {
+  padding: var(--space-2) var(--space-5);
+  font: inherit;
+  font-weight: var(--weight-semibold);
+  color: var(--accent-fg);
+  background: var(--accent);
+  border: 0;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+}
+
+/* ---- mozi mód ---- */
+.yp-cinema { border-radius: 0; }
+
+/* ---- teljes képernyő ---- */
+.yp-fullscreen { aspect-ratio: auto; height: 100%; border-radius: 0; }
+
+/* ---- kis lejátszó ----
+ *
+ * A pozíciót a JS írja beágyazott stílusként (húzás és átméretezés), ezért
+ * itt NINCS `right`/`bottom`: egy ilyen szabály felülírná a húzás eredményét
+ * minden újrarajzoláskor, és az ablak visszaugrana a sarokba.
+ */
+.yp-mini {
+  position: fixed;
+  z-index: 60;
+  box-shadow: var(--shadow-3);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+/* A HELYŐRZŐ a régi helyén marad, hogy a lap tartalma ne ugorjon fel, amikor
+   a lejátszó kikerül a folyamból. */
+.yp-mini-placeholder { width: 100%; }
+
+.yp-mini-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-2);
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--ink-black) 80%, transparent), transparent);
+  cursor: grab;
+  /* Az érintés SAJÁT kezelésű: e nélkül a húzás a lapot görgetné. */
+  touch-action: none;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+.yp-mini:hover .yp-mini-bar,
+.yp-mini-bar:focus-within { opacity: 1; }
+.yp-mini-bar:active { cursor: grabbing; }
+
+.yp-mini-grip {
+  width: 28px;
+  height: 3px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--on-media) 55%, transparent);
+}
+.yp-mini-close {
+  width: 28px;
+  height: 28px;
+  font-size: var(--text-lg);
+  line-height: 1;
+  color: var(--on-media);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.yp-mini-close:hover { background: color-mix(in srgb, var(--on-media) 20%, transparent); }
+
+/* A BAL ALSÓ SARKON méretez, mert az ablak jobbra-lent ül: a jobb sarok a
+   képernyő széléhez tapadna. */
+.yp-mini-resize {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nesw-resize;
+  touch-action: none;
+  background: linear-gradient(45deg, color-mix(in srgb, var(--on-media) 45%, transparent) 0 2px, transparent 2px);
+}
+
+/* A kislejátszóban a teljes vezérlősáv nem fér el, és nem is kell: ott a
+   lejátszás, az idő és a bezárás a teljes eszköztár. */
+.yp-mini .yp-controls { padding: var(--space-4) var(--space-1) var(--space-1); }
+.yp-mini .yp-btn-sub,
+.yp-mini .yp-btn-settings,
+.yp-mini .yp-volume,
+.yp-mini .yp-btn-back,
+.yp-mini .yp-btn-fwd,
+.yp-mini .yp-btn-mute { display: none; }
+.yp-mini .yp-menu,
+.yp-mini .yp-skip,
+.yp-mini .yp-debug { display: none; }
+
+/* ---- fejlesztői réteg ---- */
+.yp-debug {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  max-width: min(340px, 60%);
+  max-height: 70%;
+  overflow: auto;
+  padding: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--on-media);
+  background: color-mix(in srgb, var(--ink-black) 82%, transparent);
+  border: 1px solid color-mix(in srgb, var(--on-media) 20%, transparent);
+  border-radius: var(--radius-sm);
+  /* Nem fogja el a kattintást a videó elől: ez egy kijelző, nem vezérlő. */
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+}
+.yp-debug-table { width: 100%; border-collapse: collapse; }
+.yp-debug-table th {
+  text-align: left;
+  font-weight: var(--weight-normal);
+  color: color-mix(in srgb, var(--on-media) 62%, transparent);
+  padding-right: var(--space-3);
+  white-space: nowrap;
+}
+.yp-debug-table td { text-align: right; font-variant-numeric: tabular-nums; }
+.yp-debug-log {
+  margin: var(--space-2) 0 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid color-mix(in srgb, var(--on-media) 18%, transparent);
+  color: color-mix(in srgb, var(--on-media) 70%, transparent);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* A MOZGÁS LETILTÁSA. A betöltő pásztázása folyamatos mozgás a képernyő
+   közepén; akinek ez rosszullétet okoz, annak a rendszerbeállítása erről
+   szól, és a lejátszónak illik meghallania. A logó ilyenkor egyben, színesen
+   áll — nem tűnik el, csak nem mozog. */
+@media (prefers-reduced-motion: reduce) {
+  .yp-loader-sweep {
+    animation: none;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .yp-loader-base { display: none; }
+  .yp-skip:hover { transform: none; }
+}
+
+/* ---- keskeny képernyő ----
+ *
+ * A blokk a lap VÉGÉN van. Egy média-lekérdezés nem hordoz többlet
+ * fajsúlyt: egy ugyanolyan szelektorú, később írt szabály felülírja — ezért
+ * a felülírásoknak lentebb kell lenniük, mint amit felülírnak.
+ */
+@media (max-width: 640px) {
+  .yp { border-radius: var(--radius-md); }
+  .yp-controls { padding: var(--space-5) var(--space-2) var(--space-2); }
+  /* Telefonon a hangerőcsúszka, a mozi mód és a részváltó gombok elmaradnak:
+     a hangerőt a készülék gombjai állítják, a mozi módnak nincs mit
+     tágítania, a részváltás pedig az epizódlistából egy koppintás.
+     Osztálynévre célozva, nem sorszámra — egy új gomb beszúrása a
+     `nth-child(5)`-öt csendben másra irányítaná. */
+  .yp-volume,
+  .yp-btn-cinema,
+  .yp-btn-prev,
+  .yp-btn-next { display: none; }
+  .yp-btn { width: 40px; height: 40px; }
+  .yp-btn-play { width: 48px; height: 48px; }
+  .yp-time { font-size: var(--text-xs); }
+  .yp-menu { right: var(--space-2); left: var(--space-2); width: auto; bottom: 68px; }
+  .yp-skip { right: var(--space-3); bottom: 72px; padding: var(--space-2) var(--space-4); font-size: var(--text-sm); }
+  .yp-mini { width: min(240px, 62vw); }
+}
+
+/* ---- nagy telefon ----
+ *
+ * 430 képpont (a nagy iPhone) az a pont, ahol a teljes gombsor még ELFÉR a
+ * szemnek, de már nem a mérőszalagnak: a teljes képernyő gombja kilenc
+ * képponttal a héjon kívülre került, és ott le is vágódott.
+ *
+ * Ami itt megy, az mind ELÉRHETŐ MÁSHOL: a kép a képben és a sebesség is ott
+ * van a beállítások menüben, egy koppintásra.
+ */
+@media (max-width: 560px) {
+  .yp-btn-pip,
+  .yp-btn-rate { display: none; }
+}
+
+/* ---- a legkeskenyebb készülékek ----
+ *
+ * 320 képpont az a szélesség, ahol a teljes gombsor MATEMATIKAILAG nem fér
+ * el: tíz gomb negyven képponttal négyszáz, és a képernyő háromszázhúsz. Itt
+ * nem elrendezni kell, hanem VÁLASZTANI.
+ *
+ * Ami marad: lejátszás, idő, felirat, beállítások, teljes képernyő. Ami megy:
+ * a tíz másodperces ugrás (érintésen a KÉT KOPPINTÁS ugyanezt csinálja, a
+ * képernyő két oldalán), a némítás (a készüléknek van hangerőgombja), a kép a
+ * képben és a sebesség (mindkettő ott van a beállítások menüben).
+ */
+@media (max-width: 400px) {
+  .yp-btn-back,
+  .yp-btn-fwd,
+  .yp-btn-mute { display: none; }
+  .yp-controls { padding: var(--space-5) var(--space-1) var(--space-1); }
+  .yp-time { padding: 0 var(--space-1); }
+}

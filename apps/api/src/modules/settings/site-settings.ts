@@ -37,11 +37,50 @@ export function rateLimitDefaults (): RateLimits {
   // az importáláskor rögzült volna, és egy teszt, ami a saját korlátját
   // állítja be a `buildApp()` előtt, a régi értéket kapta volna. A gyártásban
   // ez ugyanaz az érték; a különbség az, hogy mikor kérdezzük meg.
+  /*
+   * A GLOBÁLIS KORLÁT MÉRÉSBŐL, NEM TIPPBŐL.
+   *
+   * Megszámolva, mennyibe kerül egy valódi látogatás: a főoldal 13 API-kérés,
+   * a többi képernyő 1–5, tehát egy átlagos oldalváltás ~5. A régi 300/perc
+   * ezzel egyetlen látogatónak bőven elég lett volna — csakhogy a korlát
+   * CÍMENKÉNT számol, és egy cím mögött sokan vannak:
+   *
+   *   * mobilszolgáltatói NAT — több száz előfizető egy címen;
+   *   * munkahely, iskola, kollégium — egy kijárat;
+   *   * a saját mérőfutásaink, amik közben 429-et kaptak.
+   *
+   * Húsz ember egy cím mögött 300/perc mellett fejenként három oldalt nézhet
+   * meg percenként. Ez nem védelem, hanem egy elrontott élmény.
+   *
+   * 1200/perc mellett ugyanez húsz ember × tizenkét oldal. Egyetlen gépi
+   * gyűjtőnek viszont továbbra is valódi plafon, és a MINTA-alapú védelem
+   * (edge) ettől függetlenül fut: ott a nagy forgalom pontot ad, nem
+   * mentességet.
+   */
+  /**
+   * Egy környezeti változó értéke, ha értelmes szám — különben az alapérték.
+   *
+   * A `Number(process.env.X ?? alap)` csapda: egy ÜRES sztring nem nullish,
+   * tehát átmegy a `??`-on, és `Number('')` az NULLA. Egy elfelejtett
+   * `RATE_LIMIT_MAX=` sor így nem az alapértéket adta volna vissza, hanem
+   * nulla kérés/percet — vagyis az egész oldal 429-et adna mindenkinek.
+   */
+  const fromEnv = (name: string, fallback: number): number => {
+    const raw = process.env[name]
+    if (raw === undefined || raw === null || raw.trim() === '') return fallback
+    const value = Number(raw)
+    return Number.isFinite(value) && value > 0 ? value : fallback
+  }
+
   return {
-    global: { max: Number(process.env.RATE_LIMIT_MAX ?? 300), windowSeconds: 60 },
-    auth: { max: Number(process.env.AUTH_RATE_LIMIT_MAX ?? 10), windowSeconds: 15 * 60 },
-    write: { max: Number(process.env.WRITE_RATE_LIMIT_MAX ?? 30), windowSeconds: 5 * 60 },
-    refresh: { max: Number(process.env.REFRESH_RATE_LIMIT_MAX ?? 60), windowSeconds: 15 * 60 }
+    global: { max: fromEnv('RATE_LIMIT_MAX', 1200), windowSeconds: 60 },
+    // A belépés SZÁNDÉKOSAN szoros marad: ez a jelszókitalálás elleni védelem,
+    // és tíz próbálkozás negyedóránként egy valódi embernek is elég.
+    auth: { max: fromEnv('AUTH_RATE_LIMIT_MAX', 10), windowSeconds: 15 * 60 },
+    // Az írás enyhül, de nem szabadul el: aki egy beszélgetésben aktívan
+    // hozzászól, öt perc alatt harmincat is írhat.
+    write: { max: fromEnv('WRITE_RATE_LIMIT_MAX', 60), windowSeconds: 5 * 60 },
+    refresh: { max: fromEnv('REFRESH_RATE_LIMIT_MAX', 60), windowSeconds: 15 * 60 }
   }
 }
 

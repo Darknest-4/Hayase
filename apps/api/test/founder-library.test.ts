@@ -232,9 +232,30 @@ describe('the founder library', { skip: HAS_DB ? false : 'no DATABASE_URL' }, ()
     assert.equal(titlePages[titlePages.length - 1]![1], result.library)
     assert.equal(episodePages[episodePages.length - 1]![1], result.episodes)
 
+    /*
+     * AMI KÖZBEN MEGSZŰNT, AZ NEM „KIMARADT".
+     *
+     * A pillanatkép a vetés ELŐTT készül — ez a beszúrások versenyét kezeli
+     * (lásd fent). A TÖRLÉSEK versenyét viszont nem kezelte, és attól ez az
+     * állítás ingadozó volt: ha egy párhuzamos suite a pillanatkép után
+     * eldobott egy nyilvános címet, az id ittmaradt a listában, a vetés már
+     * nem látta, a `library_entries` sora pedig a törléssel együtt ment el —
+     * tehát „hiányzónak" számolódott.
+     *
+     * Megmérve: zavaró nélkül háromszor 14/14; egy párhuzamos
+     * létrehoz-és-töröl ciklus mellett pontosan ezzel az üzenettel bukik.
+     * A közös teszt-adatbázison több suite is ír a katalógusba, köztük a
+     * providerréteg sajátjai.
+     *
+     * Az `EXISTS` a szimmetrikus párja a pillanatképnek: csak arról
+     * állítunk, ami MOST IS nyilvános. Egy menet közben törölt cím nem
+     * maradt ki a könyvtárból — megszűnt létezni.
+     */
     const { rows } = await pool.query(
       `SELECT count(*)::int AS n FROM unnest($2::uuid[]) AS a(id)
-        WHERE NOT EXISTS (SELECT 1 FROM library_entries le
+        WHERE EXISTS (SELECT 1 FROM anime an
+                       WHERE an.id = a.id AND an.visibility = 'public')
+          AND NOT EXISTS (SELECT 1 FROM library_entries le
                            WHERE le.profile_id = $1 AND le.anime_id = a.id)`,
       [profileId, publicBefore]
     )

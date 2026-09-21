@@ -48,13 +48,17 @@ export const Catalogue = {
     const list = Array.isArray(images) ? images : []
     const cover = list.find(i => i.kind === 'cover')
     const banner = list.find(i => i.kind === 'banner')
+    // A logó a lejátszó betöltőképernyőjéé. A katalógus 32 536 címéből
+    // 4 810-nek van — ezért a lejátszó mindig számol azzal, hogy nincs.
+    const logo = list.find(i => i.kind === 'logo')
     return {
       coverImage: {
         extraLarge: cover?.key ?? '',
         large: cover?.key ?? '',
         color: cover?.color ?? null
       },
-      bannerImage: banner?.key ?? null
+      bannerImage: banner?.key ?? null,
+      logoImage: logo?.key ?? null
     }
   },
 
@@ -76,7 +80,7 @@ export const Catalogue = {
   toMedia (row) {
     if (!row) return null
     const titles = row.titles ?? {}
-    const { coverImage, bannerImage } = this._images(row.images)
+    const { coverImage, bannerImage, logoImage } = this._images(row.images)
     const mappings = row.mappings ?? {}
 
     return {
@@ -103,6 +107,9 @@ export const Catalogue = {
 
       coverImage,
       bannerImage,
+      // A lejátszó betöltőképernyőjéé. A katalógus címeinek csak ~15%-ához van
+      // logó, ezért `null` a gyakoribb érték, és a lejátszó erre számít.
+      logoImage,
 
       format: row.format ?? null,
       status: row.status ?? null,

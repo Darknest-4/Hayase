@@ -25,7 +25,28 @@ const shell = {
   /** Re-read the unread count and repaint the badge. */
   refreshNotifications: noop,
   /** Re-read the configuration, permissions and nav visibility after a change. */
-  refreshChrome: async () => {}
+  refreshChrome: async () => {},
+  /**
+   * Belépés vagy kilépés UTÁN: mindent újraolvasni, és újrarajzolni.
+   *
+   * Több, mint a `refreshChrome`: a jogosultságok, a könyvtárszinkron és a
+   * beállítások is a fiókhoz tartoznak. Egy képernyő, ami beléptet vagy
+   * kiléptet valakit, nem tudhatja ezek felét — és nem is szabad tudnia.
+   *
+   * Azért kerül a listára, mert két képernyő is kéri (a belépőlap és a
+   * beállítások), és az alternatíva az lenne, hogy mindkettő behúzza a
+   * routert — pont az, ami ellen ez a modul van.
+   */
+  afterAuth: async () => {},
+  /**
+   * Az oldalsáv összecsukott állapotának érvényesítése a beállításból.
+   *
+   * Azért kerül a listára, mert a beállítások lapon is állítható, és az
+   * alternatíva az lenne, hogy az a képernyő maga igazgatja a sáv DOM-ját —
+   * onnantól a gomb felirata és az `aria` állapot széttartana attól, amit a
+   * sáv mutat.
+   */
+  applyNavCollapsed: () => {}
 }
 
 export function provideShell (implementation) {
@@ -37,3 +58,5 @@ export const applyNavLabels = (...args) => shell.applyNavLabels(...args)
 export const setTitle = (...args) => shell.setTitle(...args)
 export const refreshNotifications = (...args) => shell.refreshNotifications(...args)
 export const refreshChrome = (...args) => shell.refreshChrome(...args)
+export const afterAuth = (...args) => shell.afterAuth(...args)
+export const applyNavCollapsed = (...args) => shell.applyNavCollapsed(...args)
