@@ -118,6 +118,19 @@ export interface EpisodeRef {
    */
   episodeId?: string
   anilistId: number | null
+  /*
+   * A TÖBBI KÜLSŐ AZONOSÍTÓ.
+   *
+   * Az `anime_mappings` tábla hordozza őket, és eddig nem mentek át — egy
+   * olyan szolgáltató, ami MAL vagy AniDB szerint katalogizál, kénytelen volt
+   * cím szerint párosítani, ami két évadnál rendre téved.
+   *
+   * Mind `null` lehet: egy katalógusbeli címhez nem feltétlenül tartozik
+   * leképezés, és egyikhez sem tartozik mind.
+   */
+  malId?: number | null
+  kitsuId?: number | null
+  anidbId?: number | null
   title: string
   /** Alternatív címek — a párosítás sokszor ezen múlik. */
   synonyms?: string[]
@@ -164,8 +177,16 @@ export interface AnimeProvider {
    * A lejátszható címek egy epizódhoz.
    *
    * Ez a forró út: ez fut le, amikor valaki megnyom egy lejátszás gombot.
+   *
+   * A MÁSODIK PARAMÉTER A SZOLGÁLTATÓ SAJÁT BEÁLLÍTÁSA — a `providers.config`
+   * oszlopból, az adminfelületről szerkeszthetően. Opcionális: egy adapter,
+   * ami nem kér beállítást, egyszerűen nem veszi át.
+   *
+   * SOHA NEM TITOK. Ez az érték megjelenik az adminfelületen, tehát alap-URL,
+   * régió, nyelvi preferencia való bele — kulcs, jelszó, token nem. Azok a
+   * környezeti változókban maradnak.
    */
-  resolve (ref: EpisodeRef): Promise<ProviderResult>
+  resolve (ref: EpisodeRef, config?: Record<string, unknown>): Promise<ProviderResult>
 }
 
 /** Üres eredmény — a „megkérdeztem, és nincs" válasz egy helyen leírva. */

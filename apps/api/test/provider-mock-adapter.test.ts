@@ -16,6 +16,10 @@
 import assert from 'node:assert/strict'
 import { after, before, beforeEach, describe, it } from 'node:test'
 
+import {
+  checkEpisodes, checkMatches, checkNoSecretsInHeaders, checkResult, checkShape
+} from './support/provider-contract.ts'
+
 const HAS_DB = Boolean(process.env.DATABASE_URL)
 process.env.JWT_SECRET ??= 'provider-mock-secret-long-enough-0123456789'
 
@@ -50,13 +54,13 @@ describe('a minta-adapter', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => 
 
   // ---- 1. a szerződés alakja ----
 
+  /*
+   * A SZERZŐDÉS EGY HELYEN VAN LEÍRVA — `support/provider-contract.ts`.
+   * Ezek a hívások nem kényelmi rövidítések: ha a szerződés változik, ez a
+   * teszt VELE változik, nem marad zölden a régit mérve.
+   */
   it('teljesíti az `AnimeProvider` szerződést', () => {
-    const p = mock.mockProvider
-    assert.equal(typeof p.id, 'string')
-    assert.equal(typeof p.label, 'string')
-    for (const metodus of ['search', 'episodes', 'resolve'] as const) {
-      assert.equal(typeof p[metodus], 'function', `hiányzik a(z) ${metodus}`)
-    }
+    checkShape(mock.mockProvider, 'a minta-adapter')
   })
 
   it('NINCS a BUILT_IN listában — éles láncba nem kerülhet', async () => {
@@ -71,6 +75,7 @@ describe('a minta-adapter', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => 
 
   it('AniList-azonosítóra keres, ha van', async () => {
     const talalat = await mock.mockProvider.search('teljesen más szöveg', { anilistId: 1 })
+    checkMatches(talalat)
     assert.equal(talalat.length, 1)
     assert.equal(talalat[0]?.anilistId, 1)
   })
@@ -87,6 +92,7 @@ describe('a minta-adapter', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => 
 
   it('az epizód azonosítója a SZOLGÁLTATÓÉ, nem a miénk', async () => {
     const lista = await mock.mockProvider.episodes('mock-1')
+    checkEpisodes(lista)
     assert.equal(lista.length, 12)
     assert.equal(lista[0]?.number, 1)
     assert.match(String(lista[0]?.id), /^mock-1-ep1$/)
@@ -94,10 +100,19 @@ describe('a minta-adapter', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => 
 
   // ---- 4. feloldás: források ----
 
-  it('a láncon át is feloldódik', async () => {
+  it('a láncon át is feloldódik, és az eredmény megfelel a szerződésnek', async () => {
     const r = await resolveMod.resolveEpisode(REF)
     assert.equal(r.provider, 'mock')
+    checkResult(r, { expectSources: true })
     assert.ok(r.sources.length >= 3, JSON.stringify(r.attempts))
+  })
+
+  /*
+   * A FEJLÉCEK KIMENNEK A BÖNGÉSZŐNEK. Egy `Authorization` vagy egy `Cookie`
+   * közöttük onnantól ott van minden néző hálózati naplójában.
+   */
+  it('nem szivárog titok a fejlécekben', async () => {
+    checkNoSecretsInHeaders(await resolveMod.resolveEpisode(REF))
   })
 
   it('minden forrás deklarál változatot — ez KÖTELEZŐ mező', async () => {

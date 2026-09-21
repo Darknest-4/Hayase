@@ -69,10 +69,12 @@ export class EpisodeRepository extends Repository {
    * áll vagy bukik.
    */
   async providerRef (episodeId: string): Promise<{
-    anilistId: number | null, title: string, synonyms: string[], year: number | null, number: number
+    anilistId: number | null, malId: number | null, kitsuId: number | null, anidbId: number | null,
+    title: string, synonyms: string[], year: number | null, number: number
   } | null> {
     const row = await this.queryOne<{
-      anilist_id: number | null, canonical_title: string, start_date: string | null, number: string
+      anilist_id: number | null, mal_id: number | null, kitsu_id: number | null, anidb_id: number | null,
+      canonical_title: string, start_date: string | null, number: string
     }>(
       /*
        * AZ ANILIST-AZONOSÍTÓ NEM AZ `anime` TÁBLÁN VAN, hanem az
@@ -82,7 +84,13 @@ export class EpisodeRepository extends Repository {
        * `video-sources` tesztje azonnal elbuktatta: „column a.anilist_id does
        * not exist".
        */
-      `SELECT m.anilist_id, a.canonical_title, a.start_date, e.number
+      /*
+       * MIND A NÉGY KÜLSŐ AZONOSÍTÓ ÁTMEGY, nem csak az AniList-é. Egy
+       * szolgáltató, ami MAL vagy AniDB szerint katalogizál, különben cím
+       * szerint párosítana, ami két évadnál rendre téved.
+       */
+      `SELECT m.anilist_id, m.mal_id, m.kitsu_id, m.anidb_id,
+              a.canonical_title, a.start_date, e.number
          FROM episodes e
          JOIN anime a ON a.id = e.anime_id
          LEFT JOIN anime_mappings m ON m.anime_id = a.id
@@ -100,6 +108,9 @@ export class EpisodeRepository extends Repository {
 
     return {
       anilistId: row.anilist_id ?? null,
+      malId: row.mal_id ?? null,
+      kitsuId: row.kitsu_id ?? null,
+      anidbId: row.anidb_id ?? null,
       title: row.canonical_title,
       synonyms: synonyms.map(s => s.title).filter(Boolean),
       year: row.start_date ? Number(String(row.start_date).slice(0, 4)) : null,

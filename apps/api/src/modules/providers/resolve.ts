@@ -124,7 +124,7 @@ export async function resolveEpisode (ref: EpisodeRef): Promise<Resolution> {
     return { ...noResult(), provider: null, fromCache: false, attempts }
   }
 
-  for (const { provider } of entries) {
+  for (const { provider, config } of entries) {
     if (!health.usable(provider.id)) {
       attempts.push({ provider: provider.id, outcome: 'skipped', sources: 0, ms: 0, detail: 'a megszakító kizárta' })
       continue
@@ -132,7 +132,9 @@ export async function resolveEpisode (ref: EpisodeRef): Promise<Resolution> {
 
     const started = Date.now()
     try {
-      const result = await withTimeout(provider.resolve(ref), TIMEOUT_MS)
+      // A beállítás a REGISZTERBŐL jön, minden feloldásnál frissen — így egy
+      // adminfelületen átírt érték a következő kérésre már hat.
+      const result = await withTimeout(provider.resolve(ref, config), TIMEOUT_MS)
       const ms = Date.now() - started
       const sources = result.sources?.length ?? 0
 

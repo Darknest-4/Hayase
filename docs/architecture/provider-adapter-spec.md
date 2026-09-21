@@ -24,7 +24,7 @@ kódra, és egy adapter, ami ezekre épít, nem fog lefordulni.
 | `healthCheck()` az adapteren | **nem létezik**. Az egészséget a `resolve()` kimenetele adja |
 | `label` a feliratsávon | **nincs**. A feliratnak `language`, `kind`, `format`, `url`, `headers`, `isDefault` mezője van |
 | `season` / `special` / `absolute` az `EpisodeRef`-ben | **nincs**. Egyetlen `number` van |
-| MAL / Kitsu / AniDB azonosító az `EpisodeRef`-ben | **nincs**. Csak `anilistId`. A többi az `anime_mappings` táblában él, de nem megy át az adapterhez |
+| `ProviderSubtitle` deduplikálás | **nincs**. Két azonos nyelvű sáv mindkettő megmarad |
 
 **Egy pontosítás a változatokról.** Két különböző `variant` mező van, és a
 kettő szabálya ellentétes:
@@ -57,13 +57,21 @@ export interface AnimeProvider {
 
 ### Konstruktor és beállítás
 
-Nincs konstruktor: az adapter egy **objektum-literál**, nem osztály. A
-`providers` táblában van egy `config jsonb` oszlop, ami a
-`RegisteredProvider.config`-ban jelenik meg — de a `resolve()` ezt **nem
-kapja meg**. Ha egy adapternek beállítás kell, azt ma a környezetből olvassa.
+Nincs konstruktor: az adapter egy **objektum-literál**, nem osztály.
 
-> **Hiányként jelölve:** a `config` jsonb el van tárolva és lekérdezhető, de a
-> feloldási úton nincs átadva. Ez a Core mai állapota; nem változtattam rajta.
+A beállítás a `resolve()` **második paraméterén** érkezik, a `providers.config`
+jsonb oszlopból:
+
+```ts
+async resolve (ref: EpisodeRef, config?: Record<string, unknown>): Promise<ProviderResult> {
+  const alap = typeof config?.baseUrl === 'string' ? config.baseUrl : 'https://alapertelmezes.invalid'
+  …
+}
+```
+
+Opcionális: egy adapter, ami nem kér beállítást, egyszerűen nem veszi át. Az
+érték **minden feloldásnál frissen** jön a regiszterből, tehát egy
+adminfelületen átírt beállítás a következő kérésre már hat.
 
 **Titok soha nem kerül a `config`-ba** — az adminfelület megjeleníti.
 
@@ -128,6 +136,9 @@ Az adapter **ezt** kapja, és semmi mást:
 interface EpisodeRef {
   episodeId?: string        // a YUME SAJÁT epizódazonosítója
   anilistId: number | null
+  malId?: number | null
+  kitsuId?: number | null
+  anidbId?: number | null
   title: string
   synonyms?: string[]
   year?: number | null
@@ -140,21 +151,25 @@ interface EpisodeRef {
 |---|---|
 | YUME anime ID | **nem** — csak az epizódé, `episodeId` |
 | YUME episode ID | **igen**, `episodeId` |
-| AniList | **igen**, `anilistId` (lehet `null`) |
-| MAL | **nem megy át** (az `anime_mappings.mal_id` létezik, de nincs átadva) |
-| Kitsu | **nem megy át** (`anime_mappings.kitsu_id`) |
-| AniDB | **nem megy át** (`anime_mappings.anidb_id`) |
+| AniList | **igen**, `anilistId` |
+| MAL | **igen**, `malId` |
+| Kitsu | **igen**, `kitsuId` |
+| AniDB | **igen**, `anidbId` |
 | szolgáltató-specifikus | a te dolgod: a `search()`/`episodes()` adja |
+
+Mind a négy külső azonosító **lehet `null`**: egy katalógusbeli címhez nem
+feltétlenül tartozik leképezés, és egyikhez sem tartozik mind. Az
+`anime_mappings` tábla hordozza őket.
 
 **Az `episodeId` a HÁZON BELÜLI adaptereknek szól.** Külső szolgáltató
 figyelmen kívül hagyja — ő a mi uuid-nkkel nem tud mit kezdeni. A
 `adapters/local.ts` ezt használja, mert ő maga a katalógus.
 
-**Ajánlott párosítási sorrend:** `anilistId` → `title` → `synonyms`.
+**Ajánlott párosítási sorrend:** a szolgáltató által ismert külső azonosító
+(`anilistId` / `malId` / `kitsuId` / `anidbId`) → `title` → `synonyms`.
 
-> **Hiányként jelölve:** a MAL/Kitsu/AniDB azonosítók megvannak az
-> adatbázisban, de a `providerRef` nem viszi át őket. Ha egy adapternek
-> kellenének, a Core-t kell bővíteni — ezt most nem tettem meg.
+Cím szerint csak akkor párosíts, ha egyetlen azonosító sem illik: két évad
+címe gyakran majdnem azonos, és a tévedés ott csendes.
 
 ---
 
@@ -530,9 +545,38 @@ adapterekkel. Egy új adapter akkor kész, ha:
 A `test/provider-mock-adapter.test.ts` **pontosan ezt a listát** járja végig a
 minta-adapteren — ez a másolható kiindulópont.
 
-> **Hiányként jelölve, nem javítva:** nincs egyetlen „futtasd le minden
-> regisztrált adapterre" szerződésteszt. Minden adapter a sajátját hozza. Egy
-> ilyen közös futtató hasznos lenne; a Core-hoz most nem nyúltam.
+### A közös ellenőrzők
+
+A szerződés **egy helyen** van leírva: `test/support/provider-contract.ts`.
+Ne írd újra, hívd:
+
+```ts
+import { checkShape, checkMatches, checkEpisodes, checkResult, checkNoSecretsInHeaders }
+  from './support/provider-contract.ts'
+
+checkShape(ujProvider, 'az új adapter')
+checkMatches(await ujProvider.search('minta'))
+checkEpisodes(await ujProvider.episodes('valami-id'))
+checkResult(eredmeny, { expectSources: true })
+checkNoSecretsInHeaders(eredmeny)
+```
+
+A `checkResult` a `variant` kötelezőségét, a `kind` és a feliratformátum zárt
+halmazát, a fejlécek alakját és az `expiresAt` értelmezhetőségét nézi. A
+`checkNoSecretsInHeaders` külön áll, mert az nem alak- hanem tartalmi kérdés:
+egy `Authorization` fejléc a `headers`-ben onnantól ott van minden néző
+hálózati naplójában.
+
+### És ami minden adapterre magától lefut
+
+A `test/provider-contract-all.test.ts` a **regisztert** kérdezi, nem egy kézzel
+karbantartott listát: ami bejelentkezett a `BUILT_IN`-be, azon lefuttatja az
+alak-ellenőrzést, megnézi, hogy az azonosítók egyediek (a regiszter `Map`-ben
+tárol — két azonos azonosító közül a második CSENDBEN felülírná az elsőt), és
+hogy a minta-adapter nem szivárgott be.
+
+Egy holnap felvett adapter, aminek a szerzője elfelejt tesztet írni, így sem
+kerülhet észrevétlenül a láncba.
 
 ---
 
@@ -559,7 +603,7 @@ Bekapcsolása fejlesztéshez: vedd fel a `BUILT_IN` listába a
 * [ ] Adapter létrehozva (`adapters/<nev>.ts`)
 * [ ] `AnimeProvider` implementálva (`id`, `label`, `search`, `episodes`, `resolve`)
 * [ ] ~~Capabilities definiálva~~ — **nincs ilyen a jelenlegi Core-ban**
-* [ ] Párosítás: `anilistId` → `title` → `synonyms` sorrendben
+* [ ] Párosítás: külső azonosító (`anilistId`/`malId`/`kitsuId`/`anidbId`) → `title` → `synonyms`
 * [ ] Epizód-párosítás: a szolgáltató saját azonosítójára fordítva
 * [ ] Forrás-feloldás: minden forrásnak `kind`, `url`, `variant`, és lehetőleg `label`
 * [ ] Feliratok: minden sáv megtartva, `language` + `kind` + `format` + `url`
@@ -571,7 +615,8 @@ Bekapcsolása fejlesztéshez: vedd fel a `BUILT_IN` listába a
 * [ ] Felvéve a `BUILT_IN` listába
 * [ ] `npx tsc -p apps/api --noEmit`
 * [ ] `npm run lint`
-* [ ] Saját szerződésteszt zöld
+* [ ] Saját szerződésteszt zöld (`support/provider-contract.ts` ellenőrzőivel)
+* [ ] `provider-contract-all.test.ts` zöld (magától lefut az új adapterre)
 * [ ] Éles feloldás kipróbálva egy valódi epizódon
 
 ---
@@ -610,8 +655,12 @@ export const ujProvider: AnimeProvider = {
     return []
   },
 
-  async resolve (ref: EpisodeRef): Promise<ProviderResult> {
-    // 1. párosítás: ref.anilistId → ref.title → ref.synonyms
+  async resolve (ref: EpisodeRef, config?: Record<string, unknown>): Promise<ProviderResult> {
+    // A `config` a `providers.config` jsonb oszlopból jön, adminfelületről
+    // szerkeszthetően — és SOHA nem titok, mert ott meg is jelenik.
+    // const alap = typeof config?.baseUrl === 'string' ? config.baseUrl : '…'
+    //
+    // 1. párosítás: ref.anilistId / malId / kitsuId / anidbId → title → synonyms
     //    (az `episodeId` a mi azonosítónk — külső szolgáltatónak nem mond semmit)
     // 2. a szolgáltató epizód-azonosítója a `ref.number`-ből
     // 3. a lejátszható címek lekérése
