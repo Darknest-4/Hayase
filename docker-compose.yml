@@ -42,6 +42,16 @@ services:
       # never a bare hop count — Fastify 5.12 reads that as "trust nobody",
       # which puts every client into one rate-limit bucket. Address or subnet.
       TRUST_PROXY: ${TRUST_PROXY:-172.16.0.0/12}
+      # A DISCORD BOT TOKENJE — csak ha van.
+      #
+      # `:-` alapértelmezéssel, nem `:?`-vel: a bot NEM kötelező. Enélkül a
+      # tartós üzenetek feladata azonnal visszatér, és megmondja, miért — nem
+      # hasal el, és nem is büntet: enélkül minden futás kudarcot számolna
+      # minden üzenetnél, és pár perc alatt mindet letiltaná.
+      #
+      # A `.env`-ből jön, és SEHOL máshol nem szerepel: nem kerül a repóba, a
+      # naplóba, a válaszba és a hibaüzenetbe sem.
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
       # HONNAN JÖN A KATALÓGUS KÉPE.
       #
       # Üresen a saját `/media/` útvonalunk, ami külső beállítás nélkül
@@ -140,6 +150,16 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/yume
+      # A DISCORD BOT TOKENJE — csak ha van.
+      #
+      # `:-` alapértelmezéssel, nem `:?`-vel: a bot NEM kötelező. Enélkül a
+      # tartós üzenetek feladata azonnal visszatér, és megmondja, miért — nem
+      # hasal el, és nem is büntet: enélkül minden futás kudarcot számolna
+      # minden üzenetnél, és pár perc alatt mindet letiltaná.
+      #
+      # A `.env`-ből jön, és SEHOL máshol nem szerepel: nem kerül a repóba, a
+      # naplóba, a válaszba és a hibaüzenetbe sem.
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
       # The worker reports the instance's security posture, which includes
       # whether this secret is a real one — so it needs the value, not just the
       # variable. The one-shot services below deliberately have no JWT_SECRET:
