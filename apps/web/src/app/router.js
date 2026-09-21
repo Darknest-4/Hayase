@@ -11,9 +11,6 @@ import { Announcements } from '../features/announcements/announcements.js'
 import { Landing } from '../features/landing/landing.js'
 import { LibrarySync } from '../features/library-sync/library-sync.js'
 import { Onboarding } from '../features/onboarding/onboarding.js'
-import { PageAdmin } from '../pages/admin.js'
-import { PageAnime } from '../pages/anime.js'
-import { PageChangelog } from '../pages/changelog.js'
 import { PageCommunity } from '../pages/community.js'
 import { PageDashboard } from '../pages/dashboard.js'
 import { PageHome } from '../pages/home.js'
@@ -23,9 +20,6 @@ import { PageNotifications } from '../pages/notifications.js'
 import { PageProfile } from '../pages/profile.js'
 import { PageSchedule } from '../pages/schedule.js'
 import { PageSearch } from '../pages/search.js'
-import { PageSettings } from '../pages/settings.js'
-import { PageW2G } from '../features/watch-together/watch-together.js'
-import { PageWatch } from '../pages/watch.js'
 import { Prefs } from '../shared/state/preferences.js'
 import { Store } from '../shared/state/store.js'
 import { P } from '../shared/ui/primitives.js'
@@ -34,6 +28,7 @@ import { YumeAPI } from '../shared/api/yume.js'
 import { pageView } from '../shared/lib/analytics.js'
 import { createMaintenanceService } from '../features/maintenance/core/maintenance-service.js'
 import { createMaintenancePage } from '../features/maintenance/ui/maintenance-page.js'
+import { ADMIN_SECTIONS } from '../shared/lib/admin-sections.js'
 
 export const App = {
   routes: {
@@ -52,16 +47,16 @@ export const App = {
     notifications: (root, params) => PageNotifications.render(root, params),
     dashboard: (root, params) => PageDashboard.render(root, params),
     community: (root, params) => PageCommunity.render(root, params),
-    changelog: (root, params) => PageChangelog.render(root, params),
-    w2g: (root, params, arg) => PageW2G.render(root, params, arg),
-    watch: (root, params, arg) => PageWatch.render(root, params, arg),
+    changelog: async (root, params) => (await import('../pages/changelog.js')).PageChangelog.render(root, params),
+    w2g: async (root, params, arg) => (await import('../features/watch-together/watch-together.js')).PageW2G.render(root, params, arg),
+    watch: async (root, params, arg) => (await import('../pages/watch.js')).PageWatch.render(root, params, arg),
     // The section can arrive either way: `#/admin/audit` names it in the path,
     // which is the address form the panel's own sections are documented at,
     // and `?s=` is what the rail writes as you click through. The page takes
     // the path form first and falls back to the query.
-    admin: (root, params, arg) => PageAdmin.render(root, params, arg),
-    settings: (root, params) => PageSettings.render(root, params),
-    anime: (root, params, arg) => PageAnime.render(root, params, arg)
+    admin: async (root, params, arg) => (await import('../pages/admin.js')).PageAdmin.render(root, params, arg),
+    settings: async (root, params) => (await import('../pages/settings.js')).PageSettings.render(root, params),
+    anime: async (root, params, arg) => (await import('../pages/anime.js')).PageAnime.render(root, params, arg)
   },
 
   parseHash () {
@@ -489,10 +484,18 @@ export const App = {
    * One rule, asked in one place, and both directions stop being wrong.
    */
   _adminSectionPermissions () {
-    const sections = PageAdmin?.SECTIONS
-    // Not loaded yet is not a reason to open the door.
-    if (!Array.isArray(sections)) return null
-    return [...new Set(sections.map(section => section.perm).filter(Boolean))]
+    /*
+     * A LISTA MOSTANTÓL SAJÁT MODULBAN VAN (`shared/lib/admin-sections.js`), nem a
+     * panelben. Eddig innen `PageAdmin.SECTIONS`-t olvastunk, és emiatt a
+     * 279 kB-os adminpanel MINDEN oldalbetöltéssel megérkezett — a
+     * belépőlapra is. A lista ettől nem duplikálódott: a panel is ugyanezt az
+     * egy példányt olvassa.
+     *
+     * A „még nincs betöltve" eset ezzel meg is szűnt: a lista statikus
+     * import, tehát mindig megvan.
+     */
+    if (!Array.isArray(ADMIN_SECTIONS)) return null
+    return [...new Set(ADMIN_SECTIONS.map(section => section.perm).filter(Boolean))]
   },
 
   _gateCheck (route) {

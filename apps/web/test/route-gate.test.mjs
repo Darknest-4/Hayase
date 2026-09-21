@@ -21,32 +21,45 @@ import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
-let App, YumeAPI, PageAdmin
+let App, YumeAPI, ADMIN_SECTIONS
 
-/** The section list a loaded admin panel would present. */
-const SECTIONS = [
-  { perm: 'admin.analytics.view' },
-  { perm: 'admin.users.manage' },
-  { perm: 'community.moderate' },
-  { perm: 'roles.manage' }
-]
-
+/*
+ * A VALÓDI SZAKASZLISTÁVAL MÉRÜNK, nem egy kitalálttal.
+ *
+ * Eddig ez a fájl egy négyelemű `SECTIONS` mintát tett `PageAdmin.SECTIONS`
+ * helyére, és azon állított. Ez azt mérte, hogy a kapu helyesen olvas EGY
+ * KITALÁLT listát — nem azt, hogy a YUME kapuja helyesen dönt. A kettő
+ * akkor vált szét, amikor a lista saját modulba került, és kiderült, hogy
+ * két állítás a minta hiányosságán állt:
+ *
+ *   `analytics.view`   a minta szerint semmit nem nyitott → a valóságban a
+ *                      „Látogatottság" szakaszt nyitja;
+ *   `settings.system`  a minta szerint csak visszaállítási jog → a
+ *                      valóságban szakaszt nyit, tehát a panel jár neki.
+ *
+ * Egyik sem a kód hibája volt. A teszt premisszája volt hamis.
+ */
 before(async () => {
   install()
   ;({ App } = await import('../src/app/router.js'))
   ;({ YumeAPI } = await import('../src/shared/api/yume.js'))
-  ;({ PageAdmin } = await import('../src/pages/admin.js'))
+  ;({ ADMIN_SECTIONS } = await import('../src/shared/lib/admin-sections.js'))
   assert.ok(App, 'app.js must export App')
 })
 
+/** Egy jogosultság, ami bizonyítottan EGYETLEN szakaszt sem nyit. */
+function nyitSemmit (...jeloltek) {
+  const nyit = new Set(ADMIN_SECTIONS.map(s => s.perm).filter(Boolean))
+  for (const j of jeloltek) {
+    assert.ok(!nyit.has(j), `a(z) ${j} MOST MÁR nyit szakaszt — a teszt premisszája elavult`)
+  }
+  return jeloltek
+}
+
 /** Put the app in a given signed-in state and ask the gate. */
-function gate (route, { signedIn = true, perms = [], config = {}, sections = true } = {}) {
+function gate (route, { signedIn = true, perms = [], config = {} } = {}) {
   mock.restoreAll()
   mock.method(YumeAPI, 'user', () => (signedIn ? { id: 'u1' } : null))
-  // "the panel module has not loaded" used to be an absent global. An import
-  // is always there, so the same situation is a panel with no sections to
-  // offer — which is what the gate actually reads.
-  PageAdmin.SECTIONS = sections ? SECTIONS : undefined
   App.perms = perms
   App.config = config === null
     ? null
@@ -68,11 +81,24 @@ describe('the admin gate', () => {
   })
 
   it('keeps out an account whose permission opens no section', () => {
-    // `analytics.view` is the permission the old `page.admin` flag asked for,
-    // and it opens nothing: every section wants `admin.analytics.view` or
-    // another slug. It let people through to a wall.
-    assert.equal(gate('admin', { perms: ['analytics.view'] }).ok, false)
-    assert.equal(gate('admin', { perms: ['comments.write', 'anime.view'] }).ok, false)
+    // A jogosultságokat a VALÓDI listához mérjük: a `nyitSemmit` elbukik, ha
+    // a panel egyszer szakaszt ad valamelyikhez, tehát ez az állítás nem tud
+    // némán elavulni.
+    for (const perm of nyitSemmit('comments.write', 'profile.edit')) {
+      assert.equal(gate('admin', { perms: [perm] }).ok, false, perm)
+    }
+    assert.equal(gate('admin', { perms: nyitSemmit('comments.write', 'profile.edit') }).ok, false)
+  })
+
+  /*
+   * A FORDÍTOTT IRÁNY IS KELL. Csak azt állítani, hogy valakit kizárunk,
+   * félrevezet: egy elrontott kapu, ami MINDENKIT kizár, ettől még zöld
+   * lenne. Aki tart egy szakasznyitó jogosultságot, az menjen be.
+   */
+  it('beengedi azt, akinek van szakasza', () => {
+    for (const perm of ['admin.users.manage', 'community.moderate', 'analytics.view']) {
+      assert.equal(gate('admin', { perms: [perm] }).ok, true, perm)
+    }
   })
 
   it('keeps out an account with no permissions at all', () => {
@@ -136,11 +162,21 @@ describe('failing closed', () => {
   })
 
   it('the recovery path is not a way past the permission check', () => {
-    // settings.system is what lets you undo the flag, not a section grant. On
-    // its own it still has to satisfy the same section test as anybody else.
+    /*
+     * A kikapcsolt `page.admin` a panelt nem zárja el az elől, aki
+     * amúgy is bemehetne — de nem is NYITJA MEG annak, aki nem.
+     *
+     * A régi állítás `settings.system`-mel dolgozott, azzal az indoklással,
+     * hogy az „csak a visszaállítás joga, nem szakaszjog". A valódi listában
+     * viszont szakaszt nyit, tehát a panel jár neki — a minta hiányossága
+     * miatt tűnt másnak.
+     */
     const off = { flags: { 'page.admin': { enabled: false, access: 'permission', permission: 'analytics.view', label: 'Admin' } } }
-    assert.equal(gate('admin', { perms: ['settings.system'], config: off }).ok, false)
-    assert.equal(gate('admin', { signedIn: false, perms: ['settings.system'], config: off }).ok, false)
+    for (const perm of nyitSemmit('comments.write', 'profile.edit')) {
+      assert.equal(gate('admin', { perms: [perm], config: off }).ok, false, perm)
+    }
+    assert.equal(gate('admin', { signedIn: false, perms: ['settings.system'], config: off }).ok, false,
+      'kijelentkezve a visszaállítási út sem út')
   })
 
   it('the recovery path is only for the panel, not for ordinary pages', () => {
@@ -150,9 +186,25 @@ describe('failing closed', () => {
     assert.equal(gate('community', { perms: ['settings.system'], config: off }).ok, false)
   })
 
-  it('refuses the admin panel when the panel module has not loaded', () => {
-    // "We could not check" must mean no on a privileged route.
-    assert.equal(gate('admin', { perms: ['admin.users.manage'], sections: false }).ok, false)
+  /*
+   * EZ AZ ESET MEGSZŰNT, és ezt jobb kimondani, mint csendben törölni.
+   *
+   * A szakaszlista régen az adminpanel modulján lógott, ezért létezett olyan
+   * állapot, hogy „még nem tudjuk, mire gátol a panel" — és a kapu erre
+   * helyesen nemet mondott. A lista azóta saját modulban van
+   * (`shared/lib/admin-sections.js`), STATIKUS importtal: a 279 kB-os panel
+   * emiatt már nem terhel minden oldalbetöltést, a lista viszont mindig
+   * megvan.
+   *
+   * Amit most őrizni kell, az nem a régi nemleges válasz, hanem az, hogy a
+   * kapu és a panel UGYANAZT a listát olvassa — a széttartásuk volt az
+   * eredeti hiba.
+   */
+  it('a kapu és a panel ugyanarra a szakaszlistára gátol', async () => {
+    const { PageAdmin } = await import('../src/pages/admin.js')
+    assert.equal(PageAdmin.SECTIONS, ADMIN_SECTIONS,
+      'a panel saját másolatot tart a szakaszlistából')
+    assert.ok(ADMIN_SECTIONS.length > 0, 'üres szakaszlistával ez semmit nem bizonyít')
   })
 
   it('still allows an unconfigured ordinary page', () => {
