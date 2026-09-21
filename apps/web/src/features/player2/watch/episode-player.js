@@ -9,6 +9,7 @@
 // másiknak szól. Ahol mégis dönteni kell (melyik minőség, melyik felirat), a
 // döntést a megfelelő modul hozza, és ez a fájl csak megkérdezi.
 
+import { T } from '../../../shared/i18n/i18n.js'
 import { createPlayer } from '../core/player.js'
 import { createPlaybackController } from '../playback/playback-controller.js'
 import { createPlayerUI } from '../ui/player-ui.js'
@@ -237,12 +238,25 @@ export function createEpisodePlayer (options = {}) {
     if (prefs.get('player.autoplayNext') === true) options.onNextEpisode?.()
   }))
 
-  // A forrás kimerülése a lejátszó legvégső hibája: itt már nincs mit
-  // megpróbálni, és ezt meg kell mondani, nem pörögni tovább.
-  player.own(player.bus.on(EV.SOURCES_EXHAUSTED, () => {
-    player.state.patch({
-      error: { message: 'Ezt a részt egyik elérhető forrásból sem sikerült lejátszani.', retryable: true }
-    })
+  /*
+   * A forrás kimerülése a lejátszó legvégső hibája: itt már nincs mit
+   * megpróbálni, és ezt meg kell mondani, nem pörögni tovább.
+   *
+   * KÉT HELYZET, KÉT ÜZENET. A `source-manager` ugyanezt az eseményt küldi
+   * akkor is, ha NULLA jelölt volt (`NO_SOURCE`), és akkor is, ha mindegyik
+   * elbukott. Eddig mindkettőre ugyanaz a mondat ment ki — „egyik elérhető
+   * forrásból sem sikerült" —, ami nulla forrásnál egyszerűen nem igaz, és
+   * rossz irányba küldi azt, aki keresi a hibát: lejátszási problémát
+   * keres, pedig nincs mit lejátszani.
+   *
+   * A megkülönböztetéshez szükséges adat eddig is megvolt, csak eldobtuk: a
+   * `PlayerError` `code` mezője pontosan ezt mondja meg.
+   */
+  player.own(player.bus.on(EV.SOURCES_EXHAUSTED, (error) => {
+    const uzenet = error?.code === 'NO_SOURCE'
+      ? T('No playable source is available for this episode yet.')
+      : T('Could not play this episode from any available source.')
+    player.state.patch({ error: { message: uzenet, retryable: true } })
   }))
 
   // ---- közös nézés ----

@@ -127,6 +127,9 @@ I18n.register('hu', {
     'https://… közvetlen videostream (mp4 / webm) — soronként egy, így lesz automatikus váltás',
   'Could not play this episode from any available source.':
     'Ezt a részt egyik elérhető forrásból sem sikerült lejátszani.',
+  // NULLA forrás — más helyzet, más mondat. Lásd `episode-player.js`.
+  'No playable source is available for this episode yet.':
+    'Ehhez a részhez jelenleg nincs elérhető forrás.',
   'No episode data available.': 'Nincs elérhető epizódadat.',
   'Invalid watch link.': 'Érvénytelen nézési hivatkozás.',
 
