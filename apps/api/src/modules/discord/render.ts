@@ -90,7 +90,12 @@ async function latestReleases (config: Record<string, unknown>): Promise<unknown
     `SELECT a.canonical_title AS title, e.number::text AS number, e.created_at
        FROM episodes e JOIN anime a ON a.id = e.anime_id
       WHERE e.visibility = 'public' AND a.visibility = 'public'
-      ORDER BY e.created_at DESC LIMIT $1`, [limit])
+      -- A masodlagos rendezes nem disz: azonos created_at eseten a Postgres
+      -- sorrendje nem determinisztikus, tehat ket egymas utani lekerdezes MAS
+      -- sorrendet adhat -- es attol a tartalom ujjlenyomata is mas lesz,
+      -- vagyis az uzenet folosleges modosulna. Egy tomeges importnal tobb
+      -- szaz epizod kap ezredmasodpercre azonos idobelyeget.
+      ORDER BY e.created_at DESC, e.id DESC LIMIT $1`, [limit])
 
   return {
     embeds: [{
@@ -139,12 +144,27 @@ async function systemHealth (): Promise<unknown> {
   const jel = (status: string): string =>
     status === 'green' ? '✅' : status === 'not_configured' ? '➖' : status === 'unknown' ? '❔' : '⚠️'
 
+  /*
+   * A KÉSLEltetéS KEREKÍTVE — mérve, egy valódi hiba miatt.
+   *
+   * A `service_status` századmásodpercre pontos értéket tárol, és az
+   * percenként ingadozik (28,9 → 3,2 → 11,4 ms). Ez VALÓDI változás, tehát
+   * az ujjlenyomat is más lett, és az üzenet percenként módosult — napi
+   * 1440 Discord-hívás egy szám remegése miatt.
+   *
+   * Tíz ezredmásodpercre kerekítve a JELZÉS megmarad (egy 300 ms-os
+   * adatbázis továbbra is feltűnik), a zaj viszont eltűnik. A `skipped`
+   * ettől kezdve erre az üzenetre is működik.
+   */
+  const kerekit = (ms: string | null): string =>
+    ms ? ` — ~${Math.round(Number(ms) / 10) * 10} ms` : ''
+
   return {
     embeds: [{
       title: 'Rendszerállapot',
       color: SZIN,
       description: rows.length
-        ? rows.map(r => `${jel(r.status)} **${r.service}**${r.latency_ms ? ` — ${Number(r.latency_ms).toFixed(1)} ms` : ''}`).join('\n')
+        ? rows.map(r => `${jel(r.status)} **${r.service}**${kerekit(r.latency_ms)}`).join('\n')
         : 'Nincs állapotadat.',
       footer: { text: '➖ = szándékosan nincs bekapcsolva' }
     }]
