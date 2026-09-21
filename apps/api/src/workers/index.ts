@@ -8,6 +8,7 @@ import { drain, enqueue, runWorker } from '../infrastructure/queue/index.ts'
 import { handleWebhookJob } from '../modules/webhooks/delivery.ts'
 import { announceDeadJobs } from '../modules/webhooks/subscriptions.ts'
 import { handleAnalyticsJob } from '../modules/analytics/worker.ts'
+import { handleDiscordJob } from '../modules/discord/worker.ts'
 import { handleEdgeJob } from '../modules/edge/worker.ts'
 import { handleFounderJob } from '../modules/library/founder.ts'
 import { handleImportJob } from '../integrations/anilist/importer.ts'
@@ -43,7 +44,14 @@ const handlers = {
   // A katalógusképek tükrözése saját tárhelyre. Külön sor, mert kötegenként
   // több száz idegen CDN-kérés, és nem tarthatja fel sem a webhookokat, sem a
   // mérőszámokat. Magát ütemezi újra, amíg van hátra — lásd `handleMediaJob`.
-  media: handleMediaJob
+  media: handleMediaJob,
+  /*
+   * A tartós Discord-üzenetek frissítése. Külön sor, mert IDEGEN
+   * KISZOLGÁLÓRA megy: egy lassú vagy korlátozó Discord nem tarthatja fel a
+   * saját összesítőinket, és egy elakadt üzenet nem foghatja meg a
+   * webhookokat.
+   */
+  discord: handleDiscordJob
 } as const
 
 async function scheduleRecurring (): Promise<void> {
@@ -66,6 +74,24 @@ async function scheduleRecurring (): Promise<void> {
   await enqueue('edge', { day: today, dedupe: `edge:${today}` })
   await enqueue('edge', { behaviour: true, dedupe: 'edge-behaviour' })
   await enqueue('edge', { prune: true, dedupe: `edge-prune:${today}` })
+
+  // A tartós üzenetek előzményének nyesése naponta. A FRISSÍTÉS nem itt van:
+  // az sűrűbb ütemet kíván, és saját időzítőn megy — lásd `scheduleDiscord`.
+  await enqueue('discord', { prune: true, dedupe: `discord-prune:${today}` })
+}
+
+/**
+ * A tartós üzenetek frissítése sűrűbb ütemet kíván, mint az óránkénti
+ * feladatok — de nem annyit, mint a rendszermetrika. A tényleges fékezés
+ * amúgy sem itt van: a rekordonkénti minimális időköz és az
+ * ujjlenyomat-egyezés dönti el, hogy tényleg kimegy-e kérés.
+ *
+ * A dedupe-kulcs miatt egy lassú kör sosem torlódhat fel.
+ */
+const DISCORD_INTERVAL_MS = Number(process.env.DISCORD_SYNC_INTERVAL_MS ?? 60_000)
+
+async function scheduleDiscord (): Promise<void> {
+  await enqueue('discord', { dedupe: 'discord-sync' })
 }
 
 /**
@@ -144,6 +170,7 @@ if (once) {
   await scheduleRecurring()
   await scheduleMonitor()
   await scheduleIntel()
+  await scheduleDiscord()
   const executed = await drain(handlers)
   console.log(`drained ${executed} jobs`)
   await pool.end()
@@ -165,6 +192,9 @@ if (once) {
 
   await attempt('az IP-adatok ütemezése', scheduleIntel)
   setInterval(() => { void attempt('az IP-adatok ütemezése', scheduleIntel) }, INTEL_INTERVAL_MS).unref()
+
+  await attempt('a tartós üzenetek ütemezése', scheduleDiscord)
+  setInterval(() => { void attempt('a tartós üzenetek ütemezése', scheduleDiscord) }, DISCORD_INTERVAL_MS).unref()
 
   console.log('worker running:', Object.keys(handlers).join(', '))
   await runWorker(handlers, {
