@@ -64,6 +64,8 @@ import { stopListener } from './infrastructure/queue/wake.ts'
 import { adminMaintenance, publicStatus } from './modules/maintenance/routes.ts'
 import { verifyMediaBase } from './modules/media/public-url.ts'
 import { verifyVideoBase } from './modules/maintenance/video-resolver.ts'
+import providerAdmin from './modules/providers/admin-routes.ts'
+import { registerBuiltInProviders } from './modules/providers/index.ts'
 
 /**
  * Reject introspection queries.
@@ -631,6 +633,16 @@ export async function buildApp (): Promise<FastifyInstance> {
   // pontosan egy dolgot fogad el a klienstől (melyik oldalra lépett). Minden
   // más a kiszolgálóé — lásd modules/analytics/collect-routes.ts.
   await app.register(analyticsCollect, { prefix: '/v1/analytics' })
+
+  /*
+   * A FORRÁSSZOLGÁLTATÓK.
+   *
+   * Az adapterek a route-ok ELŐTT jelentkeznek be: a `/v1/admin/providers`
+   * listája a regiszterből dolgozik, és egy üres regiszterrel az adminfelület
+   * azt mondaná, hogy nincs egyetlen szolgáltató sem.
+   */
+  registerBuiltInProviders()
+  await app.register(providerAdmin, { prefix: '/v1/admin/providers' })
   await app.register(publicReadiness, { prefix: '/v1/health' })
   await app.register(adminMonitoring, { prefix: '/v1/admin/monitoring' })
 
