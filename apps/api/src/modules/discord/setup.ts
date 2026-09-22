@@ -679,6 +679,148 @@ export async function factoryReset (
 }
 
 /**
+ * IDEGEN OBJEKTUMOK TAKARÍTÁSA — a rendszer legveszélyesebb művelete.
+ *
+ * EZ NEM A GYÁRI VISSZAÁLLÍTÁS, ÉS SZÁNDÉKOSAN KÜLÖN NÉV ALATT VAN. A
+ * `factoryReset` a SAJÁT objektumainkat takarítja; ez ennek az ellentéte:
+ * mindent töröl, ami NINCS a registryben. A kettőt egyetlen kapcsolóval
+ * megkülönböztetni hiba volna — egy elgépelt paraméter idegen tartalmat
+ * vinne el.
+ *
+ * MIÉRT LÉTEZIK EGYÁLTALÁN. Mert a szerver tulajdonosa kérheti, hogy a
+ * szerver KIZÁRÓLAG a YUME struktúráját tartalmazza. Ez legitim igény, de
+ * visszafordíthatatlan: a Discord a törölt csatornát és az üzeneteit nem
+ * állítja vissza.
+ *
+ * AMIT AKKOR SEM TÖRÖL, HA KÉRIK:
+ *
+ *   * az `@everyone` rangot — a Discord sem engedné, és a guild alapja;
+ *   * a KEZELT (`managed`) rangokat — ezek botokhoz és integrációkhoz
+ *     tartoznak, a Discord API el sem fogadná a törlésüket;
+ *   * a bot SAJÁT rangját — enélkül a bot elveszítené a jogosultságait a
+ *     művelet közepén, és a maradék lépések mind elbuknának;
+ *   * bármit, ami a registryben van (az a miénk).
+ *
+ * MINDEN TÖRLÉS NAPLÓZVA, és a részleges eredmény pontosan látszik: egy
+ * „sikeres" jelentés egy félbehagyott takarítás fölött rosszabb a hibánál.
+ */
+export interface ForeignTarget {
+  type: 'channel' | 'category' | 'role'
+  id: string
+  name: string
+  /** Ha védett, itt az ok — és nem kerül a törlendők közé. */
+  protectedReason?: string
+}
+
+export async function foreignTargets (guildId: string): Promise<{
+  deletable: ForeignTarget[]
+  protected: ForeignTarget[]
+}> {
+  const [csatornak, rangok, sorok, bot] = await Promise.all([
+    rest.fetchChannels(guildId), rest.fetchRoles(guildId),
+    registry.list(guildId), rest.botMember(guildId)
+  ])
+  const deletable: ForeignTarget[] = []
+  const protectedList: ForeignTarget[] = []
+  if (csatornak === null || rangok === null) return { deletable, protected: protectedList }
+
+  const mienk = new Set(sorok.map(s => s.discord_object_id).filter((x): x is string => Boolean(x)))
+  const botRangok = new Set(bot?.roles ?? [])
+
+  for (const c of csatornak) {
+    const t: ForeignTarget = {
+      type: c.type === 4 ? 'category' : 'channel',
+      id: c.id,
+      name: c.name
+    }
+    if (mienk.has(c.id)) protectedList.push({ ...t, protectedReason: 'a YUME kezeli' })
+    else deletable.push(t)
+  }
+
+  for (const r of rangok) {
+    const t: ForeignTarget = { type: 'role', id: r.id, name: r.name }
+    if (r.id === guildId) {
+      protectedList.push({ ...t, protectedReason: '@everyone — a guild alapja' })
+    } else if (mienk.has(r.id)) {
+      protectedList.push({ ...t, protectedReason: 'a YUME kezeli' })
+    } else if (r.managed) {
+      protectedList.push({ ...t, protectedReason: 'bot vagy integráció kezeli — a Discord nem engedi törölni' })
+    } else if (botRangok.has(r.id)) {
+      protectedList.push({ ...t, protectedReason: 'a bot saját rangja — enélkül elveszítené a jogosultságait' })
+    } else {
+      deletable.push(t)
+    }
+  }
+
+  return { deletable, protected: protectedList }
+}
+
+/** A törlendők ujjlenyomata — a megerősítő jegyhez. Lásd `targetsHash`. */
+export function foreignHash (targets: ForeignTarget[]): string {
+  return createHash('sha256')
+    .update([...targets].map(t => `${t.type}:${t.id}`).sort().join('|'))
+    .digest('hex')
+}
+
+export async function purgeForeign (
+  guildId: string, actorId: string | null
+): Promise<ApplyResult> {
+  const runId = await registry.startRun(guildId, 'purge_foreign', actorId)
+  const { deletable, protected: vedett } = await foreignTargets(guildId)
+  const results: StepResult[] = []
+  const indok = 'YUME takarítás — a tulajdonos kérésére'
+
+  for (const t of vedett) {
+    results.push({
+      type: t.type === 'role' ? 'role' : 'channel',
+      key: t.name, name: t.name, action: 'ok',
+      reason: t.protectedReason ?? 'védett', outcome: 'skipped',
+      // `exactOptionalPropertyTypes`: a hiányzó kulcs nem ugyanaz, mint az
+      // `undefined` érték — ezért feltételesen kerül be.
+      ...(t.protectedReason ? { detail: t.protectedReason } : {})
+    })
+  }
+
+  /*
+   * ELŐBB A CSATORNÁK, AZTÁN A KATEGÓRIÁK. Egy kategória törlése a benne
+   * lévőket is elviszi; fordítva a második törlés már nem létező
+   * objektumra menne, és fölösleges hibát jelentene.
+   *
+   * A RANGOK A VÉGÉN: ha valamelyik törlése elvenné a bot jogát, addigra a
+   * csatornák már megvannak.
+   */
+  const sorrend: Array<ForeignTarget['type']> = ['channel', 'category', 'role']
+  for (const tipus of sorrend) {
+    for (const t of deletable.filter(x => x.type === tipus)) {
+      const sikeres = tipus === 'role'
+        ? await rest.deleteRole(guildId, t.id, indok)
+        : await rest.deleteChannel(t.id, indok)
+
+      results.push({
+        type: tipus === 'role' ? 'role' : 'channel',
+        key: t.name, name: t.name, action: 'ok',
+        reason: 'nem a YUME-hoz tartozik',
+        outcome: sikeres ? 'updated' : 'failed',
+        ...(sikeres ? {} : { detail: rest.lastError() ?? 'a törlés nem sikerült' })
+      })
+      await registry.event({
+        guildId, objectType: tipus === 'role' ? 'role' : 'channel',
+        logicalKey: t.name, discordObjectId: t.id,
+        action: sikeres ? 'deleted' : 'failed',
+        detail: sikeres ? 'idegen objektum, a tulajdonos kérésére' : rest.lastError(),
+        actorId, runId
+      })
+    }
+  }
+
+  const counts: Record<string, number> = {}
+  for (const r of results) counts[r.outcome] = (counts[r.outcome] ?? 0) + 1
+  const status = (counts.failed ?? 0) > 0 ? ((counts.updated ?? 0) > 0 ? 'partial' : 'failed') : 'ok'
+  await registry.finishRun(runId, status, { counts, results })
+  return { runId, status, results, counts }
+}
+
+/**
  * ÚJRASZINKRONIZÁLÁS — a Discordból kézzel törölt objektumok felismerése.
  *
  * A registry azt hiszi, hogy az objektum megvan; a Discord szerint nincs. A

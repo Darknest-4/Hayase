@@ -55,6 +55,7 @@ function ujAllapot (): FakeState {
   }
 }
 
+let botExtraRangok: string[] = []
 let idSzamlalo = 1
 const ujId = (): string => `70000000000000${String(idSzamlalo++).padStart(4, '0')}`
 
@@ -82,7 +83,7 @@ function hamisDiscord (): void {
       return valasz(200, { id: '800000000000000002', username: 'YumeBot' })
     }
     if (method === 'GET' && path === `/guilds/${GUILD}/members/800000000000000002`) {
-      return valasz(200, { roles: ['900000000000000001'] })
+      return valasz(200, { roles: ['900000000000000001', ...botExtraRangok] })
     }
     if (method === 'GET' && path === `/guilds/${GUILD}/members/@me`) {
       // A hamis Discord is úgy viselkedik, mint az igazi: ezt elutasítja.
@@ -162,6 +163,7 @@ describe('a Discord-setup', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => 
   beforeEach(async () => {
     mock.restoreAll()
     allapot = ujAllapot()
+    botExtraRangok = []
     hamisDiscord()
     // A bot azonosítója gyorsítótárazódik; a tesztek közt el kell felejteni.
     const rest = await import('../src/modules/discord/rest-client.ts')
@@ -484,6 +486,117 @@ describe('a Discord-setup', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => 
     const utana = await db.queryOne<{ channel_id: string }>(
       "SELECT channel_id FROM persistent_messages WHERE guild_id = $1 AND message_type = 'bot_status'", [GUILD])
     assert.equal(utana?.channel_id, elotte?.channel_id)
+  })
+
+  // ---- idegen objektumok takarítása ----
+  //
+  // EZ A RENDSZER LEGVESZÉLYESEBB MŰVELETE, és pontosan ezért van rá a
+  // legtöbb tétel. A tulajdonos kérheti, hogy a szerver KIZÁRÓLAG a YUME
+  // struktúráját tartalmazza — de még akkor is van négy dolog, amihez nem
+  // szabad hozzányúlni.
+
+  it('a saját objektumainkat NEM törli', async () => {
+    await setup.apply(GUILD, 'setup', null)
+    const sajatCsatornak = allapot.channels.length
+    const celok = await setup.foreignTargets(GUILD)
+    assert.equal(celok.deletable.length, 0, 'a sajátjainkat is törölné')
+    await setup.purgeForeign(GUILD, null)
+    assert.equal(allapot.channels.length, sajatCsatornak, 'saját csatornát törölt')
+  })
+
+  it('az idegen csatornát és rangot törli', async () => {
+    allapot.channels.push({ id: '600000000000000010', name: 'idegen-csatorna', type: 0, position: 0, parent_id: null })
+    allapot.roles.push({ id: '600000000000000011', name: 'Idegen Rang', color: 0, position: 2, managed: false, permissions: '0' })
+    await setup.apply(GUILD, 'setup', null)
+
+    const e = await setup.purgeForeign(GUILD, null)
+    assert.equal(e.status, 'ok', JSON.stringify(e.counts))
+    assert.ok(!allapot.channels.some(c => c.id === '600000000000000010'), 'nem törölte az idegen csatornát')
+    assert.ok(!allapot.roles.some(r => r.id === '600000000000000011'), 'nem törölte az idegen rangot')
+  })
+
+  /*
+   * AZ `@everyone` A GUILD ALAPJA. A Discord sem engedné, de nem is szabad
+   * megpróbálni: egy hibába futó törlés a naplóban úgy néz ki, mintha
+   * szándék lett volna.
+   */
+  it('az @everyone rangot SOHA nem törli', async () => {
+    await setup.apply(GUILD, 'setup', null)
+    const celok = await setup.foreignTargets(GUILD)
+    assert.ok(!celok.deletable.some(t => t.id === GUILD), 'az @everyone a törlendők között van')
+    assert.ok(celok.protected.some(t => t.id === GUILD), 'az @everyone nincs a védettek között')
+
+    await setup.purgeForeign(GUILD, null)
+    assert.ok(allapot.roles.some(r => r.id === GUILD), 'AZ @EVERYONE RANGOT TÖRÖLTE')
+  })
+
+  /*
+   * A KEZELT RANGOK botokhoz és integrációkhoz tartoznak — a Discord API el
+   * sem fogadná a törlésüket, és a másik bot rangját elvenni amúgy sem a mi
+   * dolgunk.
+   */
+  it('a bot- és integrációs rangokat nem törli', async () => {
+    allapot.roles.push({ id: '600000000000000012', name: 'Másik Bot', color: 0, position: 3, managed: true, permissions: '0' })
+    await setup.apply(GUILD, 'setup', null)
+    const celok = await setup.foreignTargets(GUILD)
+    assert.ok(!celok.deletable.some(t => t.id === '600000000000000012'), 'kezelt rangot törölne')
+
+    await setup.purgeForeign(GUILD, null)
+    assert.ok(allapot.roles.some(r => r.id === '600000000000000012'), 'kezelt rangot törölt')
+  })
+
+  /*
+   * A BOT SAJÁT RANGJA. Enélkül a bot a művelet KÖZEPÉN veszítené el a
+   * jogosultságait, és a maradék lépések mind elbuknának — a szerver
+   * félig kitakarítva maradna, javíthatatlanul.
+   */
+  it('a bot saját rangját nem törli', async () => {
+    /*
+     * A BOT RENDES RANGOT IS VISELHET. A saját, integrációs rangját a
+     * `managed` ág úgyis védi — de ha egy admin adott neki egy KÖZÖNSÉGES
+     * rangot (mert azon van a jogosultság), annak a törlése a művelet
+     * közepén venné el a bot jogait, és a maradék lépés mind elbukna. A
+     * szerver félig kitakarítva maradna, javíthatatlanul.
+     */
+    allapot.roles.push({
+      id: '600000000000000014', name: 'Bot jogosultságok', color: 0,
+      position: BOT_ROLE_POS - 1, managed: false, permissions: '0'
+    })
+    // A hamis Discord szerint a bot EZT a rangot is viseli.
+    mock.restoreAll()
+    const eredetiAllapot = allapot
+    hamisDiscord()
+    allapot = eredetiAllapot
+    const rest = await import('../src/modules/discord/rest-client.ts')
+    rest.forgetBotUser()
+    botExtraRangok = ['600000000000000014']
+
+    await setup.apply(GUILD, 'setup', null)
+    const celok = await setup.foreignTargets(GUILD)
+    const botRang = celok.protected.find(t => t.id === '600000000000000014')
+    assert.ok(botRang, 'a bot közönséges rangja nincs a védettek között')
+    assert.match(String(botRang?.protectedReason), /bot saját rangja/)
+
+    await setup.purgeForeign(GUILD, null)
+    assert.ok(allapot.roles.some(r => r.id === '600000000000000014'),
+      'a bot jogosultságait hordozó rangot törölte')
+    botExtraRangok = []
+  })
+
+  it('a védett objektumokat az eredményben is jelenti', async () => {
+    await setup.apply(GUILD, 'setup', null)
+    const e = await setup.purgeForeign(GUILD, null)
+    assert.ok((e.counts.skipped ?? 0) > 0, 'nem jelentett védett objektumot')
+    assert.ok(e.results.some(r => String(r.detail).includes('@everyone')), 'az @everyone nincs az eredményben')
+  })
+
+  it('a takarítás minden törlést naplóz', async () => {
+    allapot.channels.push({ id: '600000000000000013', name: 'idegen-2', type: 0, position: 0, parent_id: null })
+    await setup.apply(GUILD, 'setup', null)
+    await setup.purgeForeign(GUILD, null)
+    const naplo = await registry.history(GUILD, 500)
+    assert.ok(naplo.some(e => e.action === 'deleted' && e.logical_key === 'idegen-2'),
+      'a törlés nem került a naplóba')
   })
 
   // ---- a struktúra épsége ----
