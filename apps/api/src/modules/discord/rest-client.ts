@@ -449,7 +449,23 @@ export async function addMemberRole (
 export async function botMember (guildId: string): Promise<{ roles: string[] } | null> {
   if (!isConfigured()) return null
   try {
-    const { status, body } = await request(`/guilds/${safeId(guildId, 'guild')}/members/@me`)
+    /*
+     * A `@me` ITT NEM MŰKÖDIK, és ezt élesben kellett megmérni.
+     *
+     * A `GET /guilds/{id}/members/@me` CSAK OAuth bearer tokennel
+     * érvényes; bot tokennel a Discord `50035 Invalid Form Body`-val
+     * utasítja vissza, mert a `@me`-t számként próbálja értelmezni. Előbb
+     * tehát megkérdezzük a bot SAJÁT azonosítóját, és azzal kérdezünk.
+     *
+     * AMI A HIBÁT ÁRULKODÓVÁ TETTE: a `null` visszatérés miatt a setup azt
+     * hitte, hogy a botnak NINCS egyetlen jogosultsága sem, és mind a
+     * huszonhárom lépést „nincs jogosultság" indokkal blokkolta — egy
+     * olyan szerveren, ahol a bot valójában adminisztrátor.
+     */
+    const en = await botUser()
+    if (!en) return null
+    const { status, body } = await request(
+      `/guilds/${safeId(guildId, 'guild')}/members/${safeId(en.id, 'bot')}`)
     if (status >= 400) return null
     const roles = (body as { roles?: unknown }).roles
     return { roles: Array.isArray(roles) ? roles.map(String) : [] }
@@ -457,6 +473,27 @@ export async function botMember (guildId: string): Promise<{ roles: string[] } |
     return null
   }
 }
+
+/** A bot saját felhasználója. Egyszer kérdezzük le, aztán megjegyezzük. */
+let botUserCache: { id: string, username: string } | null = null
+
+export async function botUser (): Promise<{ id: string, username: string } | null> {
+  if (botUserCache) return botUserCache
+  if (!isConfigured()) return null
+  try {
+    const { status, body } = await request('/users/@me')
+    if (status >= 400) return null
+    const id = (body as { id?: unknown }).id
+    if (typeof id !== 'string') return null
+    botUserCache = { id, username: String((body as { username?: unknown }).username ?? '') }
+    return botUserCache
+  } catch {
+    return null
+  }
+}
+
+/** Teszthez: felejtse el, amit megjegyzett. */
+export function forgetBotUser (): void { botUserCache = null }
 
 /** A bot saját alkalmazásazonosítója — a parancsregisztrációhoz. */
 export async function applicationId (): Promise<string | null> {

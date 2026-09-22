@@ -76,8 +76,17 @@ function hamisDiscord (): void {
 
     if (method === 'GET' && path === `/guilds/${GUILD}/channels`) return valasz(200, allapot.channels)
     if (method === 'GET' && path === `/guilds/${GUILD}/roles`) return valasz(200, allapot.roles)
-    if (method === 'GET' && path === `/guilds/${GUILD}/members/@me`) {
+    // A BOT SAJÁT AZONOSÍTÓJA. A `@me` tag-végpont bot tokennel NEM
+    // működik (50035) — élesben mérve; a kliens ezért előbb ezt kérdezi.
+    if (method === 'GET' && path === '/users/@me') {
+      return valasz(200, { id: '800000000000000002', username: 'YumeBot' })
+    }
+    if (method === 'GET' && path === `/guilds/${GUILD}/members/800000000000000002`) {
       return valasz(200, { roles: ['900000000000000001'] })
+    }
+    if (method === 'GET' && path === `/guilds/${GUILD}/members/@me`) {
+      // A hamis Discord is úgy viselkedik, mint az igazi: ezt elutasítja.
+      return valasz(400, { code: 50035, message: 'Invalid Form Body' })
     }
     if (method === 'GET' && path.startsWith(`/guilds/${GUILD}`)) {
       return valasz(200, { name: 'Próba szerver', approximate_member_count: 10, approximate_presence_count: 3 })
@@ -154,6 +163,9 @@ describe('a Discord-setup', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => 
     mock.restoreAll()
     allapot = ujAllapot()
     hamisDiscord()
+    // A bot azonosítója gyorsítótárazódik; a tesztek közt el kell felejteni.
+    const rest = await import('../src/modules/discord/rest-client.ts')
+    rest.forgetBotUser()
     await db.query('DELETE FROM discord_registry WHERE guild_id = $1', [GUILD])
     await db.query('DELETE FROM discord_registry_events WHERE guild_id = $1', [GUILD])
     await db.query('DELETE FROM discord_setup_runs WHERE guild_id = $1', [GUILD])
