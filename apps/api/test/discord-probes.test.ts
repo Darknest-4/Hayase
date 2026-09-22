@@ -10,6 +10,7 @@
 // folyamatosan riasztana egy működő rendszerre.
 
 import assert from 'node:assert/strict'
+import { randomBytes } from 'node:crypto'
 import { before, describe, it, mock } from 'node:test'
 
 const HAS_DB = Boolean(process.env.DATABASE_URL)
@@ -138,17 +139,23 @@ describe('a Discord szondái', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () 
       })
     })
 
-    it('régen frissült üzenetre sárgát jelent', async () => {
+    /*
+     * A `last_updated_at` DÖNT, NEM a `last_success_at` — lásd a szonda
+     * megjegyzését. A motor lényege, hogy változatlan tartalomnál NE
+     * küldjön; ott a „sikeres küldés" ideje jogosan régi, miközben a kör
+     * percenként lefut.
+     */
+    it('a le nem futott körre sárgát jelent', async () => {
       await tokennel(async () => {
         await takarit()
         await db.query(
-          `INSERT INTO persistent_messages (guild_id, channel_id, message_type, last_success_at)
+          `INSERT INTO persistent_messages (guild_id, channel_id, message_type, last_updated_at)
            VALUES ($1, '200000000000000001', 'system_health', now() - interval '3 hours')`, [GUILD])
         mock.method(globalThis, 'fetch', async () => ({ ok: true, status: 200, json: async () => ({}) }))
         try {
           const m = await szonda('discord-messages')
           assert.equal(m?.status, 'yellow')
-          assert.match(String(m?.detail), /nem frissült/)
+          assert.match(String(m?.detail), /nem futott a kör/)
         } finally { mock.restoreAll(); await takarit() }
       })
     })
@@ -179,5 +186,70 @@ describe('a Discord szondái', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () 
       const itelet = probes.overall(mind)
       assert.notEqual(itelet, 'UNHEALTHY')
     })
+  })
+
+  /*
+   * A KIHAGYOTT FRISSÍTÉS NEM HIBA — ez a motor LÉNYEGE.
+   *
+   * MÉRT HIBA, élesben: a szonda a `last_success_at`-ot nézte, vagyis azt,
+   * mikor ment ki utoljára valami a Discordra. A motor viszont
+   * szándékosan NEM küld, ha a tartalom nem változott — ilyenkor `skipped`,
+   * és az az oszlop érintetlen marad. Mind a négy üzenet egészségesen futott,
+   * a rendszerállapot mégis sárga volt.
+   *
+   * Egy riasztás, ami a HELYES működésre szól, rosszabb a hiányzó
+   * riasztásnál: pár nap alatt megtanulja mindenki, hogy nem kell odanézni.
+   */
+  it('a változatlan tartalom nem tesz sárgára semmit', async () => {
+    const guild = 'szonda-' + randomBytes(3).toString('hex')
+    const elozo = process.env.DISCORD_BOT_TOKEN
+    process.env.DISCORD_BOT_TOKEN = 'proba-token-nem-valodi'
+    try {
+      await db.query('DELETE FROM persistent_messages WHERE guild_id = $1', [guild])
+      await db.query(
+        `INSERT INTO persistent_messages
+                (guild_id, channel_id, message_type, message_id, enabled,
+                 last_updated_at, last_success_at)
+         VALUES ($1, '200000000000000001', 'yume_statistics', '300000000000000001', true,
+                 -- A KÖR MOST FUTOTT (kihagyta), de KÜLDENI két napja küldött.
+                 now(), now() - interval '2 days')`,
+        [guild])
+
+      const eredmeny = await probes.probeAll()
+      const uzenetek = eredmeny.find(r => r.service === 'discord-messages')
+      assert.ok(uzenetek, 'nincs discord-messages szonda')
+      assert.notEqual(uzenetek.status, 'yellow',
+        `a kihagyott frissítéstől sárga lett: ${uzenetek.detail ?? ''}`)
+    } finally {
+      await db.query('DELETE FROM persistent_messages WHERE guild_id = $1', [guild])
+      if (elozo === undefined) delete process.env.DISCORD_BOT_TOKEN
+      else process.env.DISCORD_BOT_TOKEN = elozo
+    }
+  })
+
+  /* A valódi baj viszont továbbra is látszik: a kör nem futott le rájuk. */
+  it('a le nem futott kör viszont sárga', async () => {
+    const guild = 'szonda-' + randomBytes(3).toString('hex')
+    const elozo = process.env.DISCORD_BOT_TOKEN
+    process.env.DISCORD_BOT_TOKEN = 'proba-token-nem-valodi'
+    try {
+      await db.query('DELETE FROM persistent_messages WHERE guild_id = $1', [guild])
+      await db.query(
+        `INSERT INTO persistent_messages
+                (guild_id, channel_id, message_type, message_id, enabled,
+                 last_updated_at, last_success_at)
+         VALUES ($1, '200000000000000002', 'system_health', '300000000000000002', true,
+                 now() - interval '3 hours', now() - interval '3 hours')`,
+        [guild])
+
+      const eredmeny = await probes.probeAll()
+      const uzenetek = eredmeny.find(r => r.service === 'discord-messages')
+      assert.equal(uzenetek?.status, 'yellow', 'a leállt kört nem vette észre')
+      assert.match(String(uzenetek?.detail), /nem futott a kör/)
+    } finally {
+      await db.query('DELETE FROM persistent_messages WHERE guild_id = $1', [guild])
+      if (elozo === undefined) delete process.env.DISCORD_BOT_TOKEN
+      else process.env.DISCORD_BOT_TOKEN = elozo
+    }
   })
 })

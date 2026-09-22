@@ -246,18 +246,38 @@ async function probePersistentMessages (): Promise<ProbeResult> {
   if (!process.env.DISCORD_BOT_TOKEN) return notConfigured('discord-messages')
 
   return await timed('discord-messages', async () => {
-    const row = await queryOne<{ total: number, elakadt: number, sikeres: number }>(
+    /*
+     * A FELDOLGOZÁS IDEJE SZÁMÍT, NEM A KÜLDÉSÉ — és ezt először elrontottam.
+     *
+     * A szonda a `last_success_at`-ot nézte: mikor ment ki utoljára VALAMI a
+     * Discordra. Csakhogy a motor egész lényege az, hogy NE küldjön, ha a
+     * tartalom nem változott — ilyenkor `skipped`, és a `last_success_at`
+     * érintetlen marad. Egy tökéletesen egészséges, órák óta változatlan
+     * üzenet tehát sárgára váltotta a rendszerállapotot.
+     *
+     * MÉRVE, élesben: mind a négy üzenet `skipped` volt ugyanabban a
+     * percben — vagyis a kör pontosan úgy futott, ahogy kell —, és a szonda
+     * közben azt írta ki, hogy „2 üzenet egy órája nem frissült". Egy
+     * riasztás, ami a helyes működésre szól, rosszabb a hiányzó riasztásnál:
+     * pár nap alatt megtanulja mindenki, hogy nem kell odanézni.
+     *
+     * A `last_updated_at` az, amit a motor MINDEN körben frissít — kihagyott
+     * és elküldött üzenetnél egyaránt. Ez mondja meg, hogy a ciklus él.
+     */
+    const row = await queryOne<{ total: number, elakadt: number, frissitve: number }>(
       `SELECT count(*)::int AS total,
               count(*) FILTER (WHERE failure_count >= 5)::int AS elakadt,
-              count(*) FILTER (WHERE last_success_at > now() - interval '1 hour')::int AS sikeres
+              count(*) FILTER (WHERE last_updated_at > now() - interval '1 hour')::int AS frissitve
          FROM persistent_messages WHERE enabled`)
     const total = row?.total ?? 0
     if (total === 0) return { status: 'not_configured' as const, detail: 'nincs beállított üzenet' }
     if ((row?.elakadt ?? 0) > 0) {
       return { status: 'red' as const, detail: `${row!.elakadt} üzenet elakadt` }
     }
-    if ((row?.sikeres ?? 0) < total) {
-      return { status: 'yellow' as const, detail: `${total - (row?.sikeres ?? 0)} üzenet egy órája nem frissült` }
+    if ((row?.frissitve ?? 0) < total) {
+      // Itt már tényleg baj van: a KÖR nem futott le rájuk, nem csak a
+      // küldés maradt el.
+      return { status: 'yellow' as const, detail: `${total - (row?.frissitve ?? 0)} üzenetre egy órája nem futott a kör` }
     }
     return
   })
