@@ -41,7 +41,16 @@ export const EVENT_TYPES = [
   /** Könyvtárba vétel. */
   'library.add',
   /** Kedvencekhez adás. */
-  'favorite.add'
+  'favorite.add',
+  /*
+   * DISCORD SLASH PARANCS HASZNÁLATA.
+   *
+   * A meglévő eseménysémába megy, nem külön táblába: a parancshasználat
+   * ugyanolyan „ki, mit, mikor" esemény, mint a többi, és a deduplikáció is
+   * kell rá (a Discord ismételhet). Egy külön tábla ugyanezt a logikát
+   * másolná le még egyszer.
+   */
+  'discord.command.use'
 ] as const
 
 export type EventType = typeof EVENT_TYPES[number]

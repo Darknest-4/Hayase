@@ -20,6 +20,11 @@ import { allapot as gatewayAllapot, elo as gatewayElo, intentsFromEnv, INTENTS }
 import { findById, listForGuild, recreateMessage, syncMessage, type PersistentMessage } from './persistent-messages.ts'
 import { renderMessage, MESSAGE_TYPES } from './render.ts'
 import * as oauth from './oauth.ts'
+import * as registry from './registry.ts'
+import * as setup from './setup.ts'
+import * as welcome from './welcome.ts'
+import * as commands from './commands.ts'
+import { WRITE_LIMIT } from '../../middleware/security.ts'
 import { can, parsePermissions } from './permissions.ts'
 
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
@@ -545,6 +550,357 @@ const routes: FastifyPluginAsync = async fastify => {
         [limit ?? 25])
     ])
     return { summary: osszesites, recent: utolsok }
+  })
+
+  // ---- setup és automatizálás ---------------------------------------------
+  //
+  // A JOGOSULTSÁG ITT `manage_guild`, nem `view_stats`: ezek a végpontok
+  // LÉTREHOZNAK és TÖRÖLNEK a Discordon. Aki csak nézni akar, annak a
+  // `/setup/status` is elég — az is `manage_guild`, mert a szerver
+  // szerkezete üzemeltetői adat.
+
+  /** Mi a helyzet: terv, registry, futások, parancsok, köszöntő. */
+  fastify.get('/guilds/:guildId/setup/status', {
+    onRequest: fastify.authenticate,
+    schema: { params: GUILD_PARAMS }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'manage_guild')
+    if (!guildId) return
+
+    const [terv, sorok, futasok, parancsok, welcomeBeall, celok] = await Promise.all([
+      setup.plan(guildId),
+      registry.list(guildId),
+      registry.runs(guildId, 10),
+      commands.registered(guildId),
+      welcome.config(guildId),
+      setup.resetTargets(guildId)
+    ])
+
+    const szamok: Record<string, number> = {}
+    for (const l of terv.steps) szamok[l.action] = (szamok[l.action] ?? 0) + 1
+
+    return {
+      configured: isConfigured(),
+      version: terv.version,
+      plan: terv.steps,
+      counts: szamok,
+      blocked: terv.blocked,
+      missingPermissions: terv.missingPermissions,
+      botRolePosition: terv.botRolePosition,
+      registry: sorok.map(s => ({
+        type: s.object_type,
+        key: s.logical_key,
+        objectId: s.discord_object_id,
+        createdByYume: s.created_by_yume,
+        version: s.configuration_version
+      })),
+      runs: futasok,
+      // `null` = nem tudtuk lekérdezni. Az üres tömb azt jelentené, hogy
+      // nincs egy parancs sem — a kettő nem ugyanaz.
+      commands: parancsok,
+      welcome: {
+        enabled: welcomeBeall.enabled,
+        channelId: welcomeBeall.channel_id,
+        roleKey: welcomeBeall.role_key
+      },
+      reset: { deletable: celok.deletable.length, protected: celok.protected.length }
+    }
+  })
+
+  /** Előnézet — SEMMIT nem módosít. Ugyanazt a tervet adja, amit a futtatás elvégez. */
+  fastify.get('/guilds/:guildId/setup/preview', {
+    onRequest: fastify.authenticate,
+    schema: { params: GUILD_PARAMS }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'manage_guild')
+    if (!guildId) return
+    return await setup.plan(guildId)
+  })
+
+  /** A setup futtatása. Idempotens: másodszor nem hoz létre semmit. */
+  fastify.post('/guilds/:guildId/setup/run', {
+    config: WRITE_LIMIT,
+    onRequest: fastify.authenticate,
+    schema: { params: GUILD_PARAMS }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'manage_guild')
+    if (!guildId) return
+    if (!isConfigured()) {
+      return await reply.code(503).send({
+        type: 'about:blank', title: 'Service Unavailable', status: 503,
+        detail: 'nincs beállítva Discord bot token'
+      })
+    }
+    const userId = (request.user as { sub: string }).sub
+    const eredmeny = await setup.apply(guildId, 'setup', userId)
+    await audit(userId, 'discord.setup.run', 'config', `discord:${guildId}`, null,
+      { status: eredmeny.status, counts: eredmeny.counts })
+    return eredmeny
+  })
+
+  /**
+   * JAVÍTÁS. Előbb újraszinkronizál (megkeresi a Discordból kézzel törölt
+   * objektumokat), aztán pótolja a hiányzókat. Nem töröl semmit.
+   */
+  fastify.post('/guilds/:guildId/setup/repair', {
+    config: WRITE_LIMIT,
+    onRequest: fastify.authenticate,
+    schema: { params: GUILD_PARAMS }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'manage_guild')
+    if (!guildId) return
+    if (!isConfigured()) {
+      return await reply.code(503).send({
+        type: 'about:blank', title: 'Service Unavailable', status: 503,
+        detail: 'nincs beállítva Discord bot token'
+      })
+    }
+    const userId = (request.user as { sub: string }).sub
+    const szinkron = await setup.resync(guildId, userId)
+    const eredmeny = await setup.apply(guildId, 'repair', userId)
+    await audit(userId, 'discord.setup.repair', 'config', `discord:${guildId}`, null,
+      { status: eredmeny.status, counts: eredmeny.counts, orphaned: szinkron.orphaned.length })
+    return { ...eredmeny, resync: szinkron }
+  })
+
+  /**
+   * A GYÁRI VISSZAÁLLÍTÁS ELŐKÉSZÍTÉSE.
+   *
+   * Ez adja ki a megerősítő jegyet — és ez az a lépés, ami a véletlen
+   * törlést megakadályozza. A jegy EGY guildhez, EGY felhasználóhoz, EGY
+   * művelethez és EGY KONKRÉT LISTÁHOZ szól, öt percig. Ha közben változik
+   * a törlendők köre, a jegy érvénytelen.
+   */
+  fastify.post('/guilds/:guildId/setup/reset/prepare', {
+    config: WRITE_LIMIT,
+    onRequest: fastify.authenticate,
+    schema: { params: GUILD_PARAMS }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'manage_guild')
+    if (!guildId) return
+    const userId = (request.user as { sub: string }).sub
+    const celok = await setup.resetTargets(guildId)
+    const ujjlenyomat = setup.targetsHash(celok.deletable)
+    const jegy = await setup.issueConfirmation(guildId, userId, 'factory_reset', ujjlenyomat)
+    return {
+      token: jegy,
+      expiresInMs: setup.CONFIRM_TTL_MS,
+      // AZ ELŐNÉZET RÉSZE A MEGERŐSÍTÉSNEK. Aki nem látja, mit töröl, az nem
+      // tud érdemben megerősíteni.
+      deletable: celok.deletable,
+      protected: celok.protected
+    }
+  })
+
+  /**
+   * A GYÁRI VISSZAÁLLÍTÁS VÉGREHAJTÁSA.
+   *
+   * `POST` és megerősítő jegy — GET-tel vagy CSRF-fel nem indítható. A jegy
+   * a kérés TÖRZSÉBEN megy, nem a címben: a cím naplóba, előzménybe és
+   * hivatkozó fejlécbe is bekerülhet.
+   */
+  fastify.post('/guilds/:guildId/setup/reset', {
+    config: WRITE_LIMIT,
+    onRequest: fastify.authenticate,
+    schema: {
+      params: GUILD_PARAMS,
+      body: {
+        type: 'object',
+        required: ['token'],
+        additionalProperties: false,
+        properties: { token: { type: 'string', minLength: 20, maxLength: 200 } }
+      }
+    }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'manage_guild')
+    if (!guildId) return
+    const userId = (request.user as { sub: string }).sub
+    const { token } = request.body as { token: string }
+
+    const celok = await setup.resetTargets(guildId)
+    const ervenyes = await setup.consumeConfirmation(
+      token, guildId, userId, 'factory_reset', setup.targetsHash(celok.deletable))
+
+    if (!ervenyes) {
+      /*
+       * EGY VÁLASZ MINDEN ELUTASÍTÁSRA. Nem mondjuk meg, hogy a jegy lejárt,
+       * ismeretlen, vagy közben változott a lista — abból ki lehetne
+       * találni, melyik feltételt kell megkerülni.
+       */
+      return await reply.code(409).send({
+        type: 'about:blank', title: 'Conflict', status: 409,
+        detail: 'a megerősítés érvénytelen vagy lejárt — kérj újat'
+      })
+    }
+
+    const eredmeny = await setup.factoryReset(guildId, userId)
+    await audit(userId, 'discord.setup.factory_reset', 'config', `discord:${guildId}`, null,
+      { status: eredmeny.status, counts: eredmeny.counts })
+    return eredmeny
+  })
+
+  /** Újraszinkronizálás: mi tűnt el a Discordból. Nem hoz létre semmit. */
+  fastify.post('/guilds/:guildId/setup/resync', {
+    config: WRITE_LIMIT,
+    onRequest: fastify.authenticate,
+    schema: { params: GUILD_PARAMS }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'manage_guild')
+    if (!guildId) return
+    const userId = (request.user as { sub: string }).sub
+    return await setup.resync(guildId, userId)
+  })
+
+  /** A registry teljes naplója. */
+  fastify.get('/guilds/:guildId/setup/audit', {
+    onRequest: fastify.authenticate,
+    schema: {
+      params: GUILD_PARAMS,
+      querystring: {
+        type: 'object', additionalProperties: false,
+        properties: { limit: { type: 'integer', minimum: 1, maximum: 200 } }
+      }
+    }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'manage_guild')
+    if (!guildId) return
+    const { limit } = request.query as { limit?: number }
+    return { data: await registry.history(guildId, limit ?? 100) }
+  })
+
+  /** Slash parancsok feltöltése a Discordra. */
+  fastify.post('/guilds/:guildId/commands/register', {
+    config: WRITE_LIMIT,
+    onRequest: fastify.authenticate,
+    schema: { params: GUILD_PARAMS }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'manage_guild')
+    if (!guildId) return
+    if (!isConfigured()) {
+      return await reply.code(503).send({
+        type: 'about:blank', title: 'Service Unavailable', status: 503,
+        detail: 'nincs beállítva Discord bot token'
+      })
+    }
+    const eredmeny = await commands.register(guildId)
+    if (!eredmeny) {
+      return await reply.code(502).send({
+        type: 'about:blank', title: 'Bad Gateway', status: 502,
+        detail: 'a Discord nem fogadta el a parancsokat'
+      })
+    }
+    await audit((request.user as { sub: string }).sub, 'discord.commands.register',
+      'config', `discord:${guildId}`, null, { count: eredmeny.count })
+    return eredmeny
+  })
+
+  // ---- köszöntő -----------------------------------------------------------
+
+  fastify.get('/guilds/:guildId/welcome', {
+    onRequest: fastify.authenticate,
+    schema: { params: GUILD_PARAMS }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'manage_guild')
+    if (!guildId) return
+    const beall = await welcome.config(guildId)
+    return {
+      enabled: beall.enabled,
+      channelId: beall.channel_id,
+      template: beall.template,
+      roleKey: beall.role_key,
+      dmEnabled: beall.dm_enabled,
+      mention: beall.mention,
+      variables: welcome.VARIABLES,
+      defaultTemplate: welcome.DEFAULT_TEMPLATE
+    }
+  })
+
+  fastify.patch('/guilds/:guildId/welcome', {
+    config: WRITE_LIMIT,
+    onRequest: fastify.authenticate,
+    schema: {
+      params: GUILD_PARAMS,
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        minProperties: 1,
+        properties: {
+          enabled: { type: 'boolean' },
+          channelId: { type: ['string', 'null'], pattern: '^[0-9]{17,20}$' },
+          template: { type: 'string', maxLength: 3500 },
+          roleKey: { type: ['string', 'null'], maxLength: 64 },
+          dmEnabled: { type: 'boolean' },
+          mention: { type: 'boolean' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'manage_guild')
+    if (!guildId) return
+    const body = request.body as Record<string, unknown>
+    try {
+      const beall = await welcome.saveConfig(guildId, body as never)
+      await audit((request.user as { sub: string }).sub, 'discord.welcome.update',
+        'config', `discord:${guildId}`, null, { enabled: beall.enabled })
+      return { enabled: beall.enabled, channelId: beall.channel_id, template: beall.template }
+    } catch (error) {
+      // A SABLONHIBA A KÉRÉS HIBÁJA, nem üzemzavar — és a szövege az, ami
+      // segít: megmondja, melyik változó ismeretlen.
+      return await reply.code(400).send({
+        type: 'about:blank', title: 'Bad Request', status: 400,
+        detail: String((error as Error).message).slice(0, 200)
+      })
+    }
+  })
+
+  /** Előnézet — a Discordot MEG SEM SZÓLÍTJA. */
+  fastify.get('/guilds/:guildId/welcome/preview', {
+    onRequest: fastify.authenticate,
+    schema: { params: GUILD_PARAMS }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'manage_guild')
+    if (!guildId) return
+    return { sent: false, ...(await welcome.preview(guildId)) }
+  })
+
+  /**
+   * PRÓBAKÖSZÖNTŐ — ez VISZONT küld.
+   *
+   * A hívó SAJÁT Discord-fiókjára, nem egy tetszőleges azonosítóra: egy
+   * „küldj köszöntőt ennek a felhasználónak" végpont zaklatásra volna jó.
+   */
+  fastify.post('/guilds/:guildId/welcome/test', {
+    config: WRITE_LIMIT,
+    onRequest: fastify.authenticate,
+    schema: { params: GUILD_PARAMS }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'manage_guild')
+    if (!guildId) return
+    const userId = (request.user as { sub: string }).sub
+
+    const link = await oauth.linkOf(userId)
+    if (!link) {
+      return await reply.code(409).send({
+        type: 'about:blank', title: 'Conflict', status: 409,
+        detail: 'a próbaköszöntő a saját Discord-fiókodra megy — előbb kösd össze'
+      })
+    }
+    const kimenet = await welcome.handleJoin({
+      guildId,
+      userId: link.discordUserId,
+      username: link.username ?? 'teszt'
+    })
+    await audit(userId, 'discord.welcome.test', 'config', `discord:${guildId}`, null, { outcome: kimenet })
+    return { outcome: kimenet }
+  })
+
+  fastify.get('/guilds/:guildId/welcome/log', {
+    onRequest: fastify.authenticate,
+    schema: { params: GUILD_PARAMS }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'manage_guild')
+    if (!guildId) return
+    return { data: await welcome.log(guildId, 50) }
   })
 
   // ---- tartós üzenetek ----------------------------------------------------

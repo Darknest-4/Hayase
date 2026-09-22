@@ -137,5 +137,25 @@ export const Api = {
   recreate: (g, id) => kerd(`/v1/discord/guilds/${g}/persistent-messages/${id}/recreate`, { method: 'POST' }),
   preview: (g, id) => kerd(`/v1/discord/guilds/${g}/persistent-messages/${id}/preview`),
   history: (g, id) => kerd(`/v1/discord/guilds/${g}/persistent-messages/${id}/history?limit=100`),
-  diagnose: (g, c) => kerd(`/v1/discord/guilds/${g}/channels/${c}/diagnose`)
+  diagnose: (g, c) => kerd(`/v1/discord/guilds/${g}/channels/${c}/diagnose`),
+
+  // ---- setup és automatizálás ----
+  setupStatus: g => kerd(`/v1/discord/guilds/${g}/setup/status`),
+  setupPreview: g => kerd(`/v1/discord/guilds/${g}/setup/preview`),
+  setupRun: g => kerd(`/v1/discord/guilds/${g}/setup/run`, { method: 'POST' }),
+  setupRepair: g => kerd(`/v1/discord/guilds/${g}/setup/repair`, { method: 'POST' }),
+  setupResync: g => kerd(`/v1/discord/guilds/${g}/setup/resync`, { method: 'POST' }),
+  // A GYÁRI VISSZAÁLLÍTÁS KÉT LÉPÉS. Az első megmutatja, mit törölne, és ad
+  // egy jegyet; a második enélkül nem indul.
+  resetPrepare: g => kerd(`/v1/discord/guilds/${g}/setup/reset/prepare`, { method: 'POST' }),
+  resetRun: (g, token) => kerd(`/v1/discord/guilds/${g}/setup/reset`, { method: 'POST', body: { token } }),
+  setupAudit: g => kerd(`/v1/discord/guilds/${g}/setup/audit?limit=100`),
+  registerCommands: g => kerd(`/v1/discord/guilds/${g}/commands/register`, { method: 'POST' }),
+
+  // ---- köszöntő ----
+  welcome: g => kerd(`/v1/discord/guilds/${g}/welcome`),
+  saveWelcome: (g, body) => kerd(`/v1/discord/guilds/${g}/welcome`, { method: 'PATCH', body }),
+  welcomePreview: g => kerd(`/v1/discord/guilds/${g}/welcome/preview`),
+  welcomeTest: g => kerd(`/v1/discord/guilds/${g}/welcome/test`, { method: 'POST' }),
+  welcomeLog: g => kerd(`/v1/discord/guilds/${g}/welcome/log`)
 }

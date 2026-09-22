@@ -111,6 +111,9 @@ describe('a Discord vezérlőpult', { skip: REASON }, () => {
   after(async () => {
     try {
       await pool?.query('DELETE FROM persistent_messages WHERE guild_id = $1', [GUILD])
+      await pool?.query('DELETE FROM discord_welcome_config WHERE guild_id = $1', [GUILD])
+      await pool?.query('DELETE FROM discord_welcome_log WHERE guild_id = $1', [GUILD])
+      await pool?.query('DELETE FROM discord_registry WHERE guild_id = $1', [GUILD])
       await pool?.query('DELETE FROM discord_guild_members WHERE discord_user_id = $1', [DISCORD_USER])
       await pool?.query('DELETE FROM discord_links WHERE discord_user_id = $1', [DISCORD_USER])
       await pool?.query('DELETE FROM users WHERE username = $1', [username])
@@ -261,7 +264,7 @@ describe('a Discord vezérlőpult', { skip: REASON }, () => {
   })
 
   it('SOHA nem ír NaN-t, undefined-ot vagy objektumot', async () => {
-    for (const nezet of ['overview', 'messages', 'health', 'audit', 'notifications']) {
+    for (const nezet of ['overview', 'messages', 'health', 'audit', 'notifications', 'setup', 'welcome']) {
       await nyit(nezet)
       const k = await kepernyo()
       assert.ok(!/NaN/.test(k.szoveg), `NaN a(z) ${nezet} nézeten`)
@@ -375,6 +378,69 @@ describe('a Discord vezérlőpult', { skip: REASON }, () => {
     const k = await kepernyo()
     assert.match(k.szoveg, /Discord-fiók/)
     assert.match(k.szoveg, /probauser|Próba szerver/)
+  })
+
+  // ---- setup és köszöntő ----
+
+  /*
+   * A SETUP OLDAL TOKEN NÉLKÜL IS MEGÁLL A LÁBÁN. A mérőkörnyezetben nincs
+   * valódi bot token, tehát a Discordtól semmit nem tudunk lekérdezni — a
+   * felületnek ilyenkor is meg kell mondania, MI HIÁNYZIK, és nem szabad
+   * nullákat vagy kitalált állapotot mutatnia.
+   */
+  it('a setup oldal megmondja, mi hiányzik', async () => {
+    await nyit('setup')
+    const k = await kepernyo()
+    assert.match(k.szoveg, /Setup/)
+    assert.ok(!/NaN|undefined|\[object /.test(k.szoveg), `szemét a setup oldalon: ${k.szoveg.slice(0, 200)}`)
+    // A gombok akkor is ott vannak, ha épp nincs mit tenni.
+    const gombok = await page.locator('.dc-main button').allInnerTexts()
+    for (const cimke of ['Előnézet', 'Setup futtatása', 'Javítás', 'Gyári visszaállítás']) {
+      assert.ok(gombok.some(g => g.includes(cimke)), `nincs gomb: ${cimke} (${gombok.join(', ')})`)
+    }
+  })
+
+  /*
+   * A GYÁRI VISSZAÁLLÍTÁS NEM EGY KATTINTÁS. Az első gomb csak ELŐNÉZETET
+   * ad: megmutatja, mit törölne, és csak utána jöhet a megerősítés.
+   */
+  it('a gyári visszaállítás előbb megmutatja, mit törölne', async () => {
+    await nyit('setup')
+    await page.locator('.dc-main button', { hasText: 'Gyári visszaállítás' }).click()
+    await page.waitForTimeout(1500)
+    const k = await kepernyo()
+    assert.match(k.szoveg, /előnézet|törlődne|Nincs mit törölni/i,
+      `nem mutatott előnézetet: ${k.szoveg.slice(0, 300)}`)
+    // ÉS NEM TÖRÖLT SEMMIT: a registry érintetlen.
+    const { rows } = await pool.query('SELECT count(*)::int AS n FROM discord_registry WHERE guild_id = $1', [GUILD])
+    assert.equal(rows[0].n, 0)
+  })
+
+  it('a köszöntő oldal szerkeszthető, és a hibás sablont elutasítja', async () => {
+    await nyit('welcome')
+    const k = await kepernyo()
+    assert.match(k.szoveg, /Köszöntő/)
+
+    const sablon = page.locator('.dc-main textarea')
+    await sablon.fill('Üdv, {user}! Ez a {nincs_ilyen_valtozo} hibás.')
+    await page.locator('.dc-main button', { hasText: 'Mentés' }).click()
+    await page.waitForTimeout(1500)
+
+    const hiba = await page.locator('.dc-main .form-error').innerText()
+    assert.match(hiba, /nincs_ilyen_valtozo/, `nem mondta meg, melyik változó rossz: ${hiba}`)
+  })
+
+  it('a köszöntő előnézete nem küld', async () => {
+    await nyit('welcome')
+    await page.locator('.dc-main textarea').fill('Üdv, {user}! A szerver: {server_name}')
+    await page.locator('.dc-main button', { hasText: 'Mentés' }).click()
+    await page.waitForTimeout(1200)
+    await page.locator('.dc-main button', { hasText: 'Előnézet' }).click()
+    await page.waitForTimeout(1200)
+
+    const { rows } = await pool.query(
+      'SELECT count(*)::int AS n FROM discord_welcome_log WHERE guild_id = $1', [GUILD])
+    assert.equal(rows[0].n, 0, 'az előnézet köszöntőt küldött')
   })
 
   for (const width of [1440, 430, 390, 360]) {

@@ -22,6 +22,10 @@ import {
   konfiguralva, kodMagyarazat, OP, ujAllapot, ujraVaras, vegzetes, botToken
 } from './gateway.ts'
 
+import * as commands from './commands.ts'
+import * as rest from './rest-client.ts'
+import * as welcome from './welcome.ts'
+
 import type { EngineState } from './gateway.ts'
 
 const GATEWAY_URL = process.env.DISCORD_GATEWAY_URL ?? 'wss://gateway.discord.gg/?v=10&encoding=json'
@@ -91,6 +95,12 @@ function folytat (): void {
 }
 
 async function feldolgoz (t: string, d: unknown): Promise<void> {
+  /*
+   * AZ INTERAKCIÓ NEM STATISZTIKA. Előbb ezt nézzük meg, mert a parancsra
+   * HÁROM MÁSODPERCEN BELÜL válaszolni kell — a számlálók ráérnek.
+   */
+  if (t === 'INTERACTION_CREATE') { await interakcio(d); return }
+
   const e = esemenyBol(t, d)
   if (!e) return
   if (e.kind === 'message') {
@@ -99,6 +109,49 @@ async function feldolgoz (t: string, d: unknown): Promise<void> {
     gyujto.tagletszam(e.guildId, e.memberCount ?? null)
   } else {
     gyujto.mozgott(e.guildId, e.kind)
+    // A BELÉPÉS KÖSZÖNTŐT IS JELENTHET. A `handleJoin` maga dönti el, hogy
+    // kell-e — és maga védekezik a duplikált esemény ellen.
+    if (e.kind === 'join') await belepes(t, d, e.guildId)
+  }
+}
+
+/**
+ * EGY SLASH PARANCS.
+ *
+ * A VÁLASZ MINDIG ELMEGY, akkor is, ha a kezelő elhasalt: a Discord három
+ * másodpercig vár, utána a felhasználónak azt írja ki, hogy a bot nem
+ * válaszolt. Egy őszinte hibaüzenet ennél jobb.
+ */
+async function interakcio (d: unknown): Promise<void> {
+  const i = commands.parseInteraction(d)
+  if (!i) return
+
+  // A PING-re PONG. A Discord ezzel ellenőrzi a kapcsolatot.
+  if (i.type === commands.INTERACTION.PING) {
+    await rest.respondToInteraction(i.id, i.token, { type: commands.RESPONSE.PONG })
+    return
+  }
+  if (i.type !== commands.INTERACTION.COMMAND) return
+
+  const eredmeny = await commands.handle(i)
+  const elment = await rest.respondToInteraction(i.id, i.token, eredmeny.response)
+  naplo('parancs', { parancs: i.command, kimenet: eredmeny.outcome, valasz: elment })
+}
+
+/** Egy új tag. A köszöntő részleteit a `welcome` modul dönti el. */
+async function belepes (t: string, d: unknown, guildId: string): Promise<void> {
+  const adat = (d ?? {}) as Record<string, unknown>
+  const user = (adat.user ?? {}) as Record<string, unknown>
+  if (typeof user.id !== 'string') return
+  try {
+    const kimenet = await welcome.handleJoin({
+      guildId,
+      userId: user.id,
+      username: String(user.username ?? user.id)
+    })
+    if (kimenet !== 'skipped') naplo('köszöntő', { kimenet })
+  } catch (error) {
+    naplo('a köszöntő elhasalt', { hiba: String((error as Error)?.message ?? error).slice(0, 200) })
   }
 }
 
