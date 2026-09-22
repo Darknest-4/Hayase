@@ -897,6 +897,12 @@ export const YumeAPI = {
       visitors: range => YumeAPI._request(`/v1/admin/analytics/visitors?range=${range}`, { auth: true }),
       providers: range => YumeAPI._request(`/v1/admin/analytics/providers?range=${range}`, { auth: true }),
       systemHealth: () => YumeAPI._request('/v1/admin/analytics/system-health', { auth: true }),
+      // `/summary`, nem `/overview`: az utóbbi ezen az előtagon már foglalt
+      // (a platform egészéről szóló nézet, fent).
+      summary: range => YumeAPI._request(`/v1/admin/analytics/summary?range=${range}`, { auth: true }),
+      timeseries: (range, metric, granularity) =>
+        YumeAPI._request(`/v1/admin/analytics/timeseries?range=${range}&metric=${metric}&granularity=${granularity}`, { auth: true }),
+      dataQuality: () => YumeAPI._request('/v1/admin/analytics/data-quality', { auth: true }),
       breakdown: (dimension, range, limit = 20) =>
         YumeAPI._request(`/v1/admin/analytics/breakdown?dimension=${dimension}&range=${range}&limit=${limit}`, { auth: true }),
       realtime: () => YumeAPI._request('/v1/admin/analytics/realtime', { auth: true }),

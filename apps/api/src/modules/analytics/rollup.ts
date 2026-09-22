@@ -279,6 +279,92 @@ export async function rollupAnime (day?: string): Promise<void> {
  * normalizált alak marad, tehát a „mire kerestek" kérdés megmarad, a „ki mit
  * gépelt be szó szerint" pedig elmúlik.
  */
+/**
+ * HETI ÉS HAVI ÖSSZESÍTŐ.
+ *
+ * A legtöbb mérőszám egyszerűen összeadódik a napi sorokból. KETTŐ nem:
+ *
+ *   * az EGYEDI LÁTOGATÓ — a napi só miatt (`visitor.ts`) napokon átívelően
+ *     nem is létezik. Ezért `visitor_days` néven a napi egyediek ÖSSZEGE
+ *     megy be, és a neve is ezt mondja. Lásd a 0073-as migráció fejlécét:
+ *     ugyanez a szám „heti egyedi látogató" címkével hazugság volna,
+ *     méghozzá a hízelgő irányba;
+ *   * a BEJELENTKEZETT egyedi felhasználó — ez viszont pontosan mérhető, mert
+ *     a `user_id` állandó. Ezt a NYERS munkamenettáblából számoljuk.
+ *
+ * A nyers tábla megőrzési ideje véges. Ha az időszak régebbi, mint ami
+ * megmaradt, a `unique_users` értékét NEM írjuk felül és nem találjuk ki:
+ * a meglévő marad, az `unique_users_exact` pedig hamis lesz.
+ */
+export async function rollupPeriods (day?: string): Promise<void> {
+  const d = dayOf(day)
+  for (const period of ['week', 'month'] as const) {
+    await query(
+      `WITH hatar AS (
+         SELECT date_trunc($2, $1::timestamp)::date AS kezd,
+                -- A sorrend NEM mindegy: a 'week 1' nem intervallum, az
+                -- '1 week' az. Az elsotol a tartomany ures lett, es minden
+                -- idoszak nullat mutatott -- merve, eles adaton.
+                (date_trunc($2, $1::timestamp) + ('1 ' || $2)::interval)::date AS veg
+       ),
+       napi AS (
+         SELECT coalesce(sum(sessions), 0)            AS sessions,
+                coalesce(sum(visitors), 0)            AS visitor_days,
+                coalesce(sum(page_views), 0)          AS page_views,
+                coalesce(sum(registrations), 0)       AS registrations,
+                coalesce(sum(logins), 0)              AS logins,
+                coalesce(sum(searches), 0)            AS searches,
+                coalesce(sum(episode_starts), 0)      AS episode_starts,
+                coalesce(sum(episode_completions), 0) AS episode_completions,
+                coalesce(sum(watch_seconds), 0)       AS watch_seconds,
+                count(*)                              AS days_counted
+           FROM analytics_daily, hatar
+          WHERE day >= hatar.kezd AND day < hatar.veg
+       ),
+       /*
+        * A BEJELENTKEZETT EGYEDIEK a nyers munkamenetbol. A van-mezo azt mondja
+        * meg, volt-e egyáltalán nyers sor az időszakra: ha nem volt, az nem
+        * „nulla felhasználó", hanem „nem tudjuk" — és akkor a meglévő értéket
+        * hagyjuk békén.
+        */
+       nyers AS (
+         SELECT count(DISTINCT user_id) FILTER (WHERE user_id IS NOT NULL) AS unique_users,
+                count(*) > 0 AS van
+           FROM analytics_sessions, hatar
+          WHERE started_at >= hatar.kezd AND started_at < hatar.veg
+       )
+       INSERT INTO analytics_periods (
+              period, period_start, sessions, visitor_days, unique_users,
+              unique_users_exact, page_views, registrations, logins, searches,
+              episode_starts, episode_completions, watch_seconds, days_counted, updated_at)
+       SELECT $2, hatar.kezd, napi.sessions, napi.visitor_days, nyers.unique_users,
+              nyers.van, napi.page_views, napi.registrations, napi.logins, napi.searches,
+              napi.episode_starts, napi.episode_completions, napi.watch_seconds,
+              napi.days_counted, now()
+         FROM hatar, napi, nyers
+       ON CONFLICT (period, period_start) DO UPDATE
+          SET sessions            = excluded.sessions,
+              visitor_days        = excluded.visitor_days,
+              -- A NYERS ADAT HIÁNYA NEM ÍRJA FELÜL A KORÁBBI PONTOS SZÁMOT.
+              -- Egy 90 napnál régebbi hónap újraszámolásakor a munkamenetek
+              -- már nincsenek meg; a nulla ilyenkor nem mérés, hanem felejtés.
+              unique_users        = CASE WHEN excluded.unique_users_exact
+                                         THEN excluded.unique_users
+                                         ELSE analytics_periods.unique_users END,
+              unique_users_exact  = analytics_periods.unique_users_exact OR excluded.unique_users_exact,
+              page_views          = excluded.page_views,
+              registrations       = excluded.registrations,
+              logins              = excluded.logins,
+              searches            = excluded.searches,
+              episode_starts      = excluded.episode_starts,
+              episode_completions = excluded.episode_completions,
+              watch_seconds       = excluded.watch_seconds,
+              days_counted        = excluded.days_counted,
+              updated_at          = now()`,
+      [d, period])
+  }
+}
+
 export async function pruneAnalytics (): Promise<Record<string, number>> {
   const out: Record<string, number> = {}
   const del = async (name: string, sql: string, days: number): Promise<void> => {
@@ -336,4 +422,7 @@ export async function rollupAll (day?: string): Promise<void> {
   await rollupVisitors(day)
   await rollupActivity(day)
   await rollupAnime(day)
+  // A HETI/HAVI A NAPI UTÁN, mert abból olvas. Fordított sorrendben a mai
+  // nap még a tegnapi értékével kerülne bele.
+  await rollupPeriods(day)
 }

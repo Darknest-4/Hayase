@@ -940,6 +940,7 @@ export const PageAdmin = {
   // napra, a jobb oldali 30-ra vonatkozik, és senki nem veszi észre.
 
   ANALYTICS_TABS: [
+    ['overview', 'Áttekintés'],
     ['visitors', 'Látogatók'],
     ['anime', 'Címek'],
     ['search', 'Keresés'],
@@ -947,7 +948,9 @@ export const PageAdmin = {
     ['devices', 'Eszközök'],
     ['performance', 'Teljesítmény'],
     ['providers', 'Szolgáltatók'],
-    ['health', 'Rendszer']
+    ['health', 'Rendszer'],
+    ['timeseries', 'Idősor'],
+    ['quality', 'Adatminőség']
   ],
 
   ANALYTICS_RANGES: [
@@ -957,7 +960,7 @@ export const PageAdmin = {
 
   async renderAnalytics (content) {
     const state = {
-      tab: this._analyticsTab ?? 'visitors',
+      tab: this._analyticsTab ?? 'overview',
       range: this._analyticsRange ?? '7d'
     }
 
@@ -1343,6 +1346,292 @@ export const PageAdmin = {
    * „melyik szolgáltatónál?", „mikor romlott el?". Ezért van elöl a hibaarány,
    * utána a szolgáltatónkénti bontás, és leghátul az eseménynapló.
    */
+  /**
+   * ÁTTEKINTÉS — az első fül, mert ezért nyitja meg valaki a panelt.
+   *
+   * Nem új mérés: a meglévő összesítőkből áll össze, EGY kérésben. A
+   * részletezés a többi fülön marad; ide az kerül, amiből egy pillantás
+   * alatt eldönthető, hogy minden rendben van-e.
+   *
+   * A „MIÓTA MÉRÜNK" SOR NEM DÍSZ. Egy éves nézet nem azért üres, mert
+   * elromlott valami, hanem mert a gyűjtés szeptemberben indult. Enélkül a
+   * panel minden hosszú tartományon hibásnak látszik.
+   */
+  async analyticsOverview (body, range) {
+    const d = await YumeAPI.admin.analytics.summary(range)
+    body.replaceChildren()
+
+    const p = d.period ?? {}
+    const elozo = d.previous ?? {}
+    const kat = d.catalogue ?? {}
+
+    body.append(U.el('div', { class: 'dash-cards' }, [
+      this.analyticsKpi('Munkamenet', p.sessions, elozo.sessions,
+        { tone: 'blue', icon: '<path d="M4 12h16"/><path d="M12 4v16"/>' }),
+      this.analyticsKpi('Oldalletöltés', p.page_views, elozo.page_views,
+        { tone: 'blue', icon: '<path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>' }),
+      this.analyticsKpi('Regisztráció', p.registrations, elozo.registrations,
+        { tone: 'green', icon: '<path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 20a8 8 0 0 1 16 0"/>' }),
+      this.analyticsKpi('Epizód indítás', p.episode_starts, null,
+        { tone: 'amber', icon: '<path d="m5 3 14 9-14 9V3z"/>' })
+    ]))
+
+    /*
+     * A KATALÓGUS SZÁMAI KÜLÖN SORBAN, és NINCS mellettük „az előző
+     * időszakhoz" nyíl. Ezek ÁLLAPOTOK, nem időszaki mérőszámok: harmincezer
+     * anime nem „több, mint múlt héten" — egyszerűen ennyi van.
+     */
+    body.append(U.el('div', { class: 'dash-cards' }, [
+      this.analyticsKpi('Anime', kat.anime, null, { tone: 'blue', icon: '<rect x="3" y="4" width="18" height="16" rx="2"/>' }),
+      this.analyticsKpi('Epizód', kat.episodes, null, { tone: 'blue', icon: '<path d="M4 6h16M4 12h16M4 18h10"/>' }),
+      this.analyticsKpi('Felhasználó', kat.users, null, { tone: 'green', icon: '<path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 20a8 8 0 0 1 16 0"/>' }),
+      this.analyticsKpi('Új fiók (30 nap)', kat.new_users, null, { tone: 'amber', icon: '<path d="M12 5v14M5 12h14"/>' })
+    ]))
+
+    const cov = d.coverage ?? {}
+    body.append(U.el('p', {
+      class: 'list-row-sub',
+      style: 'margin:var(--space-2) 0 var(--space-4);',
+      text: cov.since
+        ? `Az adatgyűjtés ${cov.since} óta tart — összesen ${cov.days} nap. ` +
+          'Az ennél hosszabb tartományok ugyanezt az időszakot mutatják, nem hiányzó adatot.'
+        : 'Még nincs egyetlen összesített nap sem. A panel az első összesítés után mutat számokat.'
+    }))
+
+    const also = U.el('div', { class: 'dash-lower' })
+
+    const top = d.topAnime ?? []
+    also.append(this.dashPanel({
+      title: 'Legnézettebb címek',
+      sub: 'ebben az időszakban',
+      body: this.analyticsTable(top.map(t => [t.title, String(t.views)]),
+        { head: ['Cím', 'Megtekintés'], empty: 'Ebben az időszakban egyetlen címnél sem mértünk megtekintést.' })
+    }))
+
+    const sz = d.providers ?? {}
+    const szKerdezve = Number(sz.attempts) || 0
+    const szHiba = Number(sz.failures) || 0
+    const svc = d.services ?? {}
+    also.append(this.dashPanel({
+      title: 'A rendszer állapota',
+      sub: 'szolgáltatók és komponensek',
+      body: this.statusList([
+        {
+          label: 'Forrásszolgáltatók',
+          tone: szKerdezve === 0 ? '' : szHiba > 0 ? 'warn' : 'ok',
+          detail: szKerdezve === 0
+            ? 'ebben az időszakban egyetlen kérés sem futott'
+            : `${sz.providers} szolgáltató · ${szKerdezve} kérés · ${szHiba} hiba`
+        },
+        {
+          label: 'Komponensek',
+          tone: Number(svc.problem) > 0 ? 'bad' : 'ok',
+          detail: `${svc.green ?? 0} rendben · ${svc.problem ?? 0} hibás · ${svc.off ?? 0} nincs bekapcsolva`
+        },
+        {
+          label: 'Hibák a naplóban',
+          tone: Number(p.errors) > 0 ? 'warn' : 'ok',
+          detail: `${p.errors ?? 0} hiba · ${p.days_with_data ?? 0} nap adata`
+        }
+      ], 'Nincs állapotadat.')
+    }))
+    body.append(also)
+  },
+
+  /** Az idősor fül mérőszámai. A kulcs a végpont fehérlistájával egyezik. */
+  TIMESERIES_METRICS: [
+    ['sessions', 'Munkamenet'], ['visitors', 'Látogató'], ['page_views', 'Oldalletöltés'],
+    ['registrations', 'Regisztráció'], ['logins', 'Belépés'], ['searches', 'Keresés'],
+    ['episode_starts', 'Epizód indítás'], ['episode_completions', 'Epizód befejezés'],
+    ['watch_seconds', 'Nézett másodperc'], ['errors', 'Hiba'],
+    ['zero_result_searches', 'Nulla találatú keresés']
+  ],
+
+  /** Amelyik mérőszám csak napi bontásban létezik — a végpont ugyanezt mondja. */
+  TIMESERIES_DAY_ONLY: ['errors', 'zero_result_searches'],
+
+  TIMESERIES_GRANULARITY: [['day', 'Napi'], ['week', 'Heti'], ['month', 'Havi']],
+
+  /**
+   * IDŐSOR — egy mérőszám, szabadon választott bontásban.
+   *
+   * A HETI ÉS HAVI NEM A NAPI SOROK ÖSSZEGE a felületen: külön összesítőből
+   * jön (`analytics_periods`). Ennek egy látható következménye van, és ezt ki
+   * is írjuk: a heti „látogató" a napi egyediek ÖSSZEGE, nem heti egyedi
+   * látogató — a napi sóval képzett kulcsból az utóbbi nem áll elő.
+   *
+   * A BEFEJEZETLEN IDŐSZAK MEG VAN JELÖLVE. Egy folyamatban lévő hét
+   * oszlopa különben mindig „visszaesésnek" látszana.
+   */
+  async analyticsTimeseries (body, range) {
+    const state = {
+      metric: this._tsMetric ?? 'sessions',
+      granularity: this._tsGranularity ?? 'day'
+    }
+
+    const rajzol = async () => {
+      this._tsMetric = state.metric
+      this._tsGranularity = state.granularity
+      body.replaceChildren(P.spinner())
+
+      // A csak-napi mérőszámok nem kérhetők heti bontásban; a végpont 400-at
+      // adna. A felület ezt előre tudja, és nem küld olyan kérést.
+      if (state.granularity !== 'day' && this.TIMESERIES_DAY_ONLY.includes(state.metric)) {
+        state.granularity = 'day'
+      }
+
+      const valaszto = (ertekek, aktiv, onValt) =>
+        U.el('div', { class: 'dash-ranges' }, ertekek.map(([value, label]) =>
+          U.el('button', {
+            class: 'dash-range' + (aktiv === value ? ' active' : ''),
+            type: 'button',
+            onclick: () => onValt(value)
+          }, [document.createTextNode(label)])))
+
+      let d
+      try {
+        d = await YumeAPI.admin.analytics.timeseries(range, state.metric, state.granularity)
+      } catch (e) {
+        body.replaceChildren(P.errorState('Az idősor betöltése nem sikerült: ' + e.message))
+        return
+      }
+
+      const sorok = d.data ?? []
+      const vezerlok = U.el('div', { style: 'display:flex;gap:var(--space-3);flex-wrap:wrap;margin-bottom:var(--space-4);' }, [
+        valaszto(this.TIMESERIES_METRICS, state.metric, v => { state.metric = v; rajzol() }),
+        valaszto(
+          this.TIMESERIES_GRANULARITY.filter(([g]) => g === 'day' || !this.TIMESERIES_DAY_ONLY.includes(state.metric)),
+          state.granularity, v => { state.granularity = v; rajzol() })
+      ])
+
+      body.replaceChildren(vezerlok)
+
+      if (!sorok.length) {
+        body.append(P.emptyState('Ebben a tartományban nincs összesített adat.'))
+        return
+      }
+
+      const ertekek = sorok.map(r => Number(r.value) || 0)
+      const cimkek = sorok.map(r => state.granularity === 'day' ? this.dayLabel(r.at) : r.at)
+
+      body.append(this.dashPanel({
+        title: d.label ?? state.metric,
+        sub: (this.TIMESERIES_GRANULARITY.find(([g]) => g === state.granularity) ?? [])[1] + ' bontás',
+        wide: true,
+        body: Charts.lines([{ name: d.label ?? state.metric, values: ertekek, color: 'var(--accent)' }],
+          { labels: cimkek, label: 'Idősor', height: 210 })
+      }))
+
+      const osszeg = ertekek.reduce((a, b) => a + b, 0)
+      const atlag = Math.round(osszeg / ertekek.length)
+      body.append(U.el('div', { class: 'dash-cards' }, [
+        this.analyticsKpi('Összesen', osszeg, null, { tone: 'blue', icon: '<path d="M4 12h16"/>' }),
+        this.analyticsKpi('Átlag / időszak', atlag, null, { tone: 'blue', icon: '<path d="M3 12h18"/><path d="M3 6h18"/><path d="M3 18h18"/>' }),
+        this.analyticsKpi('Csúcs', Math.max(...ertekek), null, { tone: 'amber', icon: '<path d="m3 17 6-6 4 4 8-8"/>' })
+      ]))
+
+      // A RÉSZLETES SOROK — a grafikon melletti szám, mert egy görbéről nem
+      // lehet leolvasni, hogy kedden pontosan mennyi volt.
+      body.append(this.dashPanel({
+        title: 'Számokban',
+        sub: state.granularity === 'day' ? 'naponként' : 'időszakonként',
+        wide: true,
+        body: this.analyticsTable(
+          sorok.slice().reverse().map(r => [
+            state.granularity === 'day' ? r.at : r.at + (r.complete === false ? ' (folyamatban)' : ''),
+            String(Number(r.value) || 0),
+            r.days_counted != null ? `${r.days_counted} nap` : ''
+          ]),
+          { head: ['Időszak', 'Érték'], empty: 'Nincs adat.' })
+      }))
+
+      if (state.granularity !== 'day' && state.metric === 'visitors') {
+        body.append(U.el('p', {
+          class: 'list-row-sub',
+          style: 'margin-top:var(--space-3);',
+          text: 'Heti és havi bontásban ez a napi EGYEDI látogatók összege, nem heti egyedi látogató: ' +
+            'a látogatói kulcs naponta cserélődik, tehát aki két napon itt járt, ebben kettő. ' +
+            'Napokon átívelően csak a bejelentkezett felhasználók számolhatók pontosan.'
+        }))
+      }
+    }
+
+    await rajzol()
+  },
+
+  /**
+   * ADATMINŐSÉG — ez a fül a panel őszintesége.
+   *
+   * Minden más nézet számokat mutat; ez azt mutatja meg, mennyit érnek.
+   * Három kérdésre válaszol: mióta van adat, van-e lyuk az összesítőben, és
+   * meddig őrizzük a nyers sorokat. A harmadik azért fontos, mert a
+   * megőrzési idő letelte után bizonyos számok már nem számolhatók újra.
+   */
+  async analyticsQuality (body) {
+    const d = await YumeAPI.admin.analytics.dataQuality()
+    body.replaceChildren()
+
+    const forrasok = d.sources ?? []
+    const ures = forrasok.filter(f => f.rows === 0)
+    const lyukak = d.gaps ?? []
+
+    body.append(U.el('div', { class: 'dash-cards' }, [
+      this.analyticsKpi('Adatforrás', forrasok.length, null,
+        { tone: 'blue', icon: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/>' }),
+      this.analyticsKpi('Üres forrás', ures.length, null, {
+        tone: ures.length > 0 ? 'amber' : 'green',
+        icon: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>'
+      }),
+      this.analyticsKpi('Hiányzó nap (30)', lyukak.length, null, {
+        tone: lyukak.length > 0 ? 'red' : 'green',
+        icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>'
+      }),
+      this.analyticsKpi('Utolsó összesítés', 0, null, {
+        tone: d.lastRollupAt ? 'green' : 'red',
+        display: d.lastRollupAt ? new Date(d.lastRollupAt).toLocaleString('hu-HU') : 'soha',
+        icon: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>'
+      })
+    ]))
+
+    /*
+     * A LYUKAK KÜLÖN PANELBEN, és a hiányzó nap NEM ugyanaz, mint a nulla
+     * forgalmú nap: az elsőnél nem futott le az összesítő, a másodiknál
+     * lefutott, és nulla volt az eredmény. A panel csak az elsőt sorolja fel.
+     */
+    if (lyukak.length) {
+      body.append(this.dashPanel({
+        title: 'Hiányzó napok',
+        sub: 'ezekre a napokra nincs összesítő sor',
+        wide: true,
+        body: U.el('div', {}, [
+          U.el('p', {
+            class: 'list-row-sub',
+            text: 'Ez nem „nulla forgalmú nap": arra is van sor, nullákkal. Ezekre a napokra az ' +
+              'összesítő nem futott le — leállt worker, vagy a rendszer akkor még nem gyűjtött.'
+          }),
+          U.el('div', { style: 'display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-3);' },
+            lyukak.map(nap => AP.tag(nap, 'warn')))
+        ])
+      }))
+    }
+
+    body.append(this.dashPanel({
+      title: 'Adatforrások',
+      sub: 'mit gyűjtünk, mióta, és meddig őrizzük',
+      wide: true,
+      body: this.statusList(forrasok.map(f => ({
+        label: f.label,
+        tone: f.rows === 0 ? 'warn' : 'ok',
+        detail: [
+          f.rows === 0 ? 'nincs egyetlen sor sem' : `${Number(f.rows).toLocaleString(I18n.locale())} sor`,
+          f.firstAt ? `${String(f.firstAt).slice(0, 10)} — ${String(f.lastAt).slice(0, 10)}` : null,
+          f.retentionDays ? `${f.retentionDays} nap megőrzés` : 'összesítő, nem nyesődik',
+          f.table
+        ].filter(Boolean).join(' · ')
+      })), 'Nincs adatforrás.')
+    }))
+  },
+
   async analyticsProviders (body, range) {
     const data = await YumeAPI.admin.analytics.providers(range)
     body.replaceChildren()
@@ -1407,6 +1696,31 @@ export const PageAdmin = {
         }),
         { head: ['Szolgáltató', 'Kísérlet'], empty: 'Nincs mérés ebben az időszakban.' })
     }))
+
+    /*
+     * A PERCENTILISEK — és miért „≤".
+     *
+     * Az átlag és a csúcs együtt sem mondja meg, milyen egy szolgáltató:
+     * száz kérésből kilencvenkilenc 200 ms alatt és egy tíz másodpercben
+     * ugyanazt az átlagot adja, mint a mind-300-ms-körül. Az elsőt a néző
+     * észre sem veszi, a másodiknál minden epizódnál vár.
+     *
+     * A szám VÖDRÖKBŐL jön, tehát felső korlát: „a kérések 95%-a ennyi
+     * alatt volt". Egy pontosnak látszó `487 ms` itt találgatás lenne, és a
+     * felirat ezért írja ki a relációjelet.
+     */
+    const percentilisek = (data.percentiles ?? []).filter(p => p.samples > 0)
+    if (percentilisek.length) {
+      lower.append(this.dashPanel({
+        title: 'Válaszidő-eloszlás',
+        sub: 'felső korlát, vödrökből számolva',
+        body: this.statusList(percentilisek.map(p => ({
+          label: p.slug,
+          tone: (p.p95 ?? 0) > 5000 ? 'warn' : 'ok',
+          detail: `medián ≤ ${p.p50} ms · p95 ≤ ${p.p95} ms · p99 ≤ ${p.p99} ms · ${p.samples} mérés`
+        })), 'Nincs mérés ebben az időszakban.')
+      }))
+    }
 
     lower.append(this.dashPanel({
       title: 'Kimenetek',

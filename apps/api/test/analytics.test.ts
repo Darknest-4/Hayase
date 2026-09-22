@@ -414,4 +414,76 @@ describe('analytics', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
     const res = await app.inject({ url: '/v1/admin/analytics/visitors?range=mindent', headers: as(admin) })
     assert.equal(res.statusCode, 400, res.body)
   })
+
+  // ---- az új fülek végpontjai ----
+
+  test('az áttekintő végpont jogosultság nélkül nem válaszol', async () => {
+    assert.equal((await app.inject({ url: '/v1/admin/analytics/summary' })).statusCode, 401)
+    assert.equal((await app.inject({
+      url: '/v1/admin/analytics/summary', headers: as(plain)
+    })).statusCode, 403)
+    assert.equal((await app.inject({
+      url: '/v1/admin/analytics/timeseries', headers: as(plain)
+    })).statusCode, 403)
+    assert.equal((await app.inject({
+      url: '/v1/admin/analytics/data-quality', headers: as(plain)
+    })).statusCode, 403)
+  })
+
+  test('az áttekintő a katalógus VALÓDI számait adja', async () => {
+    const res = await app.inject({ url: '/v1/admin/analytics/summary?range=7d', headers: as(admin) })
+    assert.equal(res.statusCode, 200)
+    const body = res.json()
+    const { rows } = await pool.query<{ n: string }>(
+      "SELECT count(*)::int AS n FROM anime WHERE visibility = 'public'")
+    assert.equal(body.catalogue.anime, Number(rows[0]!.n), 'az áttekintő száma nem a katalógusból jön')
+    // A „mióta mérünk" nélkül egy éves nézet hibásnak látszana.
+    assert.ok('since' in body.coverage)
+  })
+
+  /*
+   * A MÉRŐSZÁM NEVE A LEKÉRDEZÉSBE KERÜL — oda paraméter nem tehető. Egy
+   * szabad szöveg itt SQL-injekció lenne, ezért fehérlistás, és a séma
+   * utasítja el, ami nincs rajta.
+   */
+  test('az idősor csak fehérlistás mérőszámot fogad', async () => {
+    const rossz = await app.inject({
+      url: '/v1/admin/analytics/timeseries?metric=sessions;DROP+TABLE+users',
+      headers: as(admin)
+    })
+    assert.equal(rossz.statusCode, 400)
+
+    const jo = await app.inject({
+      url: '/v1/admin/analytics/timeseries?metric=sessions&granularity=day', headers: as(admin)
+    })
+    assert.equal(jo.statusCode, 200)
+    assert.equal(jo.json().metric, 'sessions')
+  })
+
+  test('a csak-napi mérőszámot nem adja heti bontásban', async () => {
+    const res = await app.inject({
+      url: '/v1/admin/analytics/timeseries?metric=errors&granularity=week', headers: as(admin)
+    })
+    assert.equal(res.statusCode, 400)
+    assert.match(String(res.json().detail), /csak napi bontásban/)
+  })
+
+  /*
+   * AZ ADATMINŐSÉG A PANEL ŐSZINTESÉGE: ez mondja meg, mennyit érnek a többi
+   * fül számai. Ha az üres forrást „0 sorral" elhallgatná, pont azt a kérdést
+   * nem válaszolná meg, amiért van.
+   */
+  test('az adatminőség megmondja, melyik forrás üres', async () => {
+    const res = await app.inject({ url: '/v1/admin/analytics/data-quality', headers: as(admin) })
+    assert.equal(res.statusCode, 200)
+    const body = res.json()
+    assert.ok(Array.isArray(body.sources) && body.sources.length > 5)
+    for (const f of body.sources) {
+      assert.equal(typeof f.rows, 'number')
+      assert.equal(typeof f.label, 'string')
+      // Üres forrásnál NINCS kitalált időpont.
+      if (f.rows === 0) assert.equal(f.firstAt, null, `${f.table}: üres, mégis van első időpontja`)
+    }
+    assert.ok(Array.isArray(body.gaps))
+  })
 })
