@@ -100,6 +100,19 @@ describe('the founder library', { skip: HAS_DB ? false : 'no DATABASE_URL' }, ()
   }
 
   test('fills the library with the whole catalogue, finished', async () => {
+    /*
+     * A HATÁR MÉRT IDŐPONT, NEM TŰRÉS.
+     *
+     * Eddig `missing <= 2` állt itt: ha egy testvérkészlet a vetés tizenegy
+     * másodperce alatt HÁROM címet vett fel, ez a tétel elbukott — nem a
+     * vetés hibájából. Egy kettes tűrés nem szabály, hanem tapasztalat, és a
+     * forgalmasabb futásnál elfogy.
+     *
+     * Amit a vetéstől elvárunk, az pontosan megfogalmazható: ami a KEZDÉS
+     * PILLANATÁBAN már létezett, annak benne kell lennie. Ami közben
+     * született, az jogosan hiányzik.
+     */
+    const kezdes = (await pool.query<{ most: Date }>('SELECT now() AS most')).rows[0]!.most
     const result = await seed()
     assert.ok(result.library > 0, 'nothing was written')
 
@@ -108,13 +121,13 @@ describe('the founder library', { skip: HAS_DB ? false : 'no DATABASE_URL' }, ()
     // existed when this ran was left out.
     const { rows } = await pool.query(
       `SELECT (SELECT count(*)::int FROM anime a
-                WHERE a.created_at <= now()
+                WHERE a.created_at <= $2::timestamptz
                   AND NOT EXISTS (SELECT 1 FROM library_entries le
                                    WHERE le.profile_id = $1 AND le.anime_id = a.id))          AS missing,
               (SELECT count(*)::int FROM library_entries WHERE profile_id = $1)               AS total,
               (SELECT count(*)::int FROM library_entries
                 WHERE profile_id = $1 AND status <> 'COMPLETED')                              AS unfinished`,
-      [profileId]
+      [profileId, kezdes]
     )
     // Not `=== result.library`. That compares a count taken at one instant with
     // the work done over eleven seconds, while sibling suites are inserting and
@@ -127,7 +140,8 @@ describe('the founder library', { skip: HAS_DB ? false : 'no DATABASE_URL' }, ()
       `the library holds ${rows[0]!.total} entries, fewer than the ${result.library} written`
     )
     assert.equal(rows[0]!.unfinished, 0, 'every entry should be marked completed')
-    assert.ok(Number(rows[0]!.missing) <= 2, `${rows[0]!.missing} titles were left out of the library`)
+    assert.equal(rows[0]!.missing, 0,
+      `${rows[0]!.missing} titles that existed when the seed started were left out of the library`)
   })
 
   test('marks every episode watched, and leaves nothing to continue', async () => {

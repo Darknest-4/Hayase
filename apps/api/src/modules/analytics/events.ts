@@ -67,6 +67,17 @@ export interface YumeEvent {
 export const DEDUPE_WINDOW_MS = Number(process.env.ANALYTICS_EVENT_DEDUPE_MS ?? 10_000)
 
 /**
+ * AZ ESEMÉNY AZONOSSÁGA — idő nélkül.
+ *
+ * Ez mondja meg, hogy két esemény „ugyanaz-e": ki, mit, mire. Az IDŐ nem
+ * része; azt a hívó dönti el, mennyi telhet el két azonos esemény között.
+ */
+function azonossag (e: YumeEvent): string {
+  const ki = e.userId ?? e.visitorKey ?? 'nevtelen'
+  return [e.type, ki, e.subjectType ?? '', e.subjectId ?? ''].join('|')
+}
+
+/**
  * A DEDUPLIKÁCIÓS KULCS — IDŐABLAKOS, és ez a lényeg.
  *
  * Egy tartósan egyedi kulcs azt jelentené, hogy ugyanaz a felhasználó
@@ -84,11 +95,36 @@ export const DEDUPE_WINDOW_MS = Number(process.env.ANALYTICS_EVENT_DEDUPE_MS ?? 
  */
 export function dedupeKey (e: YumeEvent, at: Date = e.at ?? new Date()): string {
   const szelet = Math.floor(at.getTime() / DEDUPE_WINDOW_MS)
-  const ki = e.userId ?? e.visitorKey ?? 'nevtelen'
   return createHash('sha256')
-    .update([e.type, ki, e.subjectType ?? '', e.subjectId ?? '', String(szelet)].join('|'))
+    .update([azonossag(e), String(szelet)].join('|'))
     .digest('hex')
     .slice(0, 32)
+}
+
+/**
+ * A MEMÓRIABELI SZŰRŐ — és miért kell a két réteg.
+ *
+ * A vödrös kulcs egy dologban gyenge: a HATÁRON. Két kattintás két
+ * másodperc különbséggel átnyúlhat két szeletbe (10:00:09 és 10:00:11), és
+ * onnantól két eseménynek látszik. MÉRVE, valódi böngészővel: két gyors
+ * kattintás ugyanarra a találatra két sort írt.
+ *
+ * Ezért a pontos, ELTELT IDŐ szerinti szűrés itt van, a folyamat
+ * memóriájában — ugyanaz a minta, mint az oldalletöltés-gyűjtőnél —, a
+ * vödrös adatbázis-index pedig a PÉLDÁNYOK KÖZÖTTI biztosíték marad. A kettő
+ * együtt fedi le azt, amit külön egyik sem.
+ */
+const MAX_DEDUPE_KEYS = Number(process.env.ANALYTICS_EVENT_DEDUPE_KEYS ?? 20_000)
+const recent = new Map<string, number>()
+
+function nyes (most: number): void {
+  if (recent.size < 10_000) return
+  for (const [kulcs, at] of recent) if (most - at > DEDUPE_WINDOW_MS) recent.delete(kulcs)
+  // Ha ezután is a határ fölött van — mert valaki tízezer KÜLÖNBÖZŐ eseményt
+  // küldött egy másodpercen belül —, az egészet eldobjuk. A csere tudatos: a
+  // szűrés egy pillanatra elveszik, a memória viszont nem nő korlátlanul egy
+  // nyilvános végpontról.
+  if (recent.size > MAX_DEDUPE_KEYS) recent.clear()
 }
 
 // ---------------------------------------------------------------- a gyűjtő
@@ -121,6 +157,15 @@ let timer: NodeJS.Timeout | undefined
 export function record (e: YumeEvent): void {
   if (!isEventType(e.type)) return
   const at = e.at ?? new Date()
+
+  // ELŐBB A PONTOS SZŰRŐ. Lásd fent: a vödrös kulcs a határon átereszt.
+  const most = at.getTime()
+  const kulcs = azonossag(e)
+  const utoljara = recent.get(kulcs)
+  if (utoljara !== undefined && most - utoljara < DEDUPE_WINDOW_MS) return
+  nyes(most)
+  recent.set(kulcs, most)
+
   buffer.push({
     eventId: e.eventId ?? randomUUID(),
     type: e.type,
@@ -184,4 +229,5 @@ export function pending (): number {
 export function reset (): void {
   if (timer) { clearTimeout(timer); timer = undefined }
   buffer = []
+  recent.clear()
 }

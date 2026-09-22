@@ -32,7 +32,15 @@ describe('a heti és havi összesítő', { skip: HAS_DB ? false : 'no DATABASE_U
   beforeEach(async () => {
     await db.query("DELETE FROM analytics_daily WHERE day BETWEEN '2026-03-01' AND '2026-03-31'")
     await db.query("DELETE FROM analytics_periods WHERE period_start BETWEEN '2026-02-01' AND '2026-03-31'")
+    /*
+     * MINDKÉT TÁBLA. A `flush()` a `provider_metrics_daily`-be IS ír, nem
+     * csak az eloszlásba — és az ottmaradt sorok egy MÁSIK készlet
+     * kérésszámát növelték meg (a szolgáltatói fül 187 helyett 190-et
+     * mutatott). Ez a fajta szennyezés csak együttes futásnál jelentkezik,
+     * és ott is csak néha.
+     */
     await db.query('DELETE FROM provider_latency_daily WHERE slug = $1', [SLUG])
+    await db.query('DELETE FROM provider_metrics_daily WHERE slug = $1', [SLUG])
     metrics.reset()
   })
 
@@ -40,6 +48,7 @@ describe('a heti és havi összesítő', { skip: HAS_DB ? false : 'no DATABASE_U
     await db.query("DELETE FROM analytics_daily WHERE day BETWEEN '2026-03-01' AND '2026-03-31'")
     await db.query("DELETE FROM analytics_periods WHERE period_start BETWEEN '2026-02-01' AND '2026-03-31'")
     await db.query('DELETE FROM provider_latency_daily WHERE slug = $1', [SLUG])
+    await db.query('DELETE FROM provider_metrics_daily WHERE slug = $1', [SLUG])
   })
 
   const nap = async (day: string, sessions: number, visitors: number, pageViews = 0) => {
@@ -201,5 +210,6 @@ describe('a szolgáltatói percentilis', { skip: HAS_DB ? false : 'no DATABASE_U
   after(async () => {
     metrics.reset()
     await db.query('DELETE FROM provider_latency_daily WHERE slug = $1', [SLUG])
+    await db.query('DELETE FROM provider_metrics_daily WHERE slug = $1', [SLUG])
   })
 })

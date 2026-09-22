@@ -304,6 +304,20 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
       host.id = 'yp-harness'
       host.style.cssText = 'position:fixed;inset:0;z-index:9999;'
       document.body.append(host)
+      /*
+       * A SZÓTÁR IS KELL — és ez a MÉRÉS sajátja, nem a terméké.
+       *
+       * A lap a modulokat BÉLYEGZETT címről tölti (`/b/<verzió>/src/...`);
+       * ez a próba viszont közvetlen címről importál. A kettő a böngésző
+       * számára KÉT KÜLÖN MODUL, saját állapottal — a próba I18n-példányában
+       * tehát nincs benne a magyar szótár, és minden felirat a kulcsát (az
+       * angol eredetit) mutatná. Nem a termék beszél angolul: a mérés néz egy
+       * másik példányt.
+       */
+      await import('../../../../src/shared/i18n/hu.js')
+      const { I18n } = await import('../../../../src/shared/i18n/i18n.js')
+      I18n.setLanguage('hu')
+
       const { createEpisodePlayer } = await import('../../../../src/features/player2/watch/episode-player.js')
       const video = document.createElement('video')
       video.muted = true

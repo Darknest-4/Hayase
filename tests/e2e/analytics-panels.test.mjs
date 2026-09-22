@@ -188,10 +188,33 @@ describe('a statisztikai panel új füljei', { skip: REASON }, () => {
     assert.match(k.szoveg, new RegExp(SLUG), 'a próbaszolgáltató nem jelenik meg')
     assert.ok(!/NaN|\[object |undefined/.test(k.szoveg + k.kartyak),
       `hibás érték a panelen: ${(k.szoveg + k.kartyak).slice(0, 200)}`)
-    // 142 ok + 37 empty + 6 error + 2 timeout = 187 kérdezett; a skipped kimarad
-    assert.match(k.kartyak, /187/, `a kérésszám nem 187: ${k.kartyak.replace(/\n/g, ' | ')}`)
-    // (6 + 2) / 187 = 4,27…% → 4,3%
-    assert.match(k.kartyak, /4[.,]3\s*%/, `a hibaarány nem 4,3%: ${k.kartyak.replace(/\n/g, ' | ')}`)
+
+    /*
+     * A VÁRT SZÁM AZ ADATBÁZISBÓL JÖN, NEM BEÉGETVE.
+     *
+     * Eredetileg a saját vetésem összege (187) állt itt. Ez a KPI viszont a
+     * TELJES időszak minden szolgáltatóját összegzi, tehát bármelyik másik
+     * készlet egyetlen ottfelejtett sora elrontja — mérve: egy `yume-local`
+     * sor egy attempttel, és a panel 188-at írt.
+     *
+     * Így a tétel azt méri, amit mérni akar: hogy a panel UGYANAZT a
+     * szabályt alkalmazza, mint amit a végponttól elvárunk (a `skipped`
+     * kimarad a kérdezett kérésekből, és a hibaarány ezekhez viszonyít) —
+     * nem azt, hogy a teszt-adatbázis épp milyen állapotban van.
+     */
+    const { rows } = await pool.query(
+      `SELECT coalesce(sum(attempts) FILTER (WHERE outcome IN ('ok','empty','error','timeout')), 0)::int AS kerdezett,
+              coalesce(sum(attempts) FILTER (WHERE outcome IN ('error','timeout')), 0)::int AS hibas
+         FROM provider_metrics_daily
+        WHERE day >= current_date - 6`)
+    const { kerdezett, hibas } = rows[0]
+    const arany = kerdezett > 0 ? Math.round((hibas / kerdezett) * 1000) / 10 : null
+
+    assert.ok(kerdezett >= 187, `a vetés nem ért be: ${kerdezett}`)
+    assert.match(k.kartyak, new RegExp(String(kerdezett)),
+      `a kérésszám nem ${kerdezett}: ${k.kartyak.replace(/\n/g, ' | ')}`)
+    assert.match(k.kartyak, new RegExp(String(arany).replace('.', '[.,]') + '\\s*%'),
+      `a hibaarány nem ${arany}%: ${k.kartyak.replace(/\n/g, ' | ')}`)
   })
 
   /*
