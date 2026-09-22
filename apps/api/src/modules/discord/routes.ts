@@ -178,8 +178,20 @@ const routes: FastifyPluginAsync = async fastify => {
   }, async (request, reply) => {
     const q = request.query as { code?: string, state?: string, error?: string }
     const vissza = (allapot: string): void => {
-      // A cél a vezérlőpult, nem egy API-válasz.
-      void reply.redirect(`/#/admin/discord?link=${encodeURIComponent(allapot)}`)
+      /*
+       * A CÉL A VEZÉRLŐPULT BEÁLLÍTÁSOK FÜLE — ott indult a folyamat, és ott
+       * is kell végződnie.
+       *
+       * Korábban `/#/admin/discord` volt, a YUME adminpaneljének akkori
+       * Discord-szekciója. A felület azóta saját címre költözött; ez a cím
+       * ott már nem létezik, és a néző az áttekintésen kötött volna ki egy
+       * üzenettel arról, amit épp nem lát.
+       *
+       * RELATÍV ÚTVONAL, mert ugyanaz a válasz kell hogy működjön a
+       * vezérlőpult saját nevén és — fejlesztés közben — a `/dashboard`
+       * előtag alatt is.
+       */
+      void reply.redirect(`/#/settings?link=${encodeURIComponent(allapot)}`)
     }
 
     // A felhasználó elutasította az engedélyt. Ez nem hiba, csak nem igen.

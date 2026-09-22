@@ -284,6 +284,9 @@ describe('a Discord OAuth', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => 
     const res = await app.inject({ method: 'GET', url: '/v1/discord/oauth/callback?code=x&state=nemletezo0123456789' })
     assert.equal(res.statusCode, 302)
     assert.match(String(res.headers.location), /link=expired/)
+    // A CÉL A VEZÉRLŐPULT, nem a YUME adminpanelje: az a szekció már nem
+    // létezik, és a néző egy olyan lapon kötne ki, ahol nem lát semmit.
+    assert.match(String(res.headers.location), /#\/settings/)
     assert.equal(await oauth.linkOf(idA), null, 'állapot nélkül összekötött egy fiókot')
   })
 

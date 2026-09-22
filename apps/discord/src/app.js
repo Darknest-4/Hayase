@@ -251,7 +251,10 @@ function osszekotesUzenet () {
   }
   const [uzenet, tone] = uzenetek[talalat[1]] ?? ['Ismeretlen válasz az összekötésből.', '']
   toast(uzenet, tone)
+  // A cím megtisztítása: enélkül egy oldalfrissítés újra kiírná ugyanazt a
+  // visszajelzést egy régen lezajlott műveletről.
   window.history.replaceState(null, '', window.location.pathname + '#/settings')
+  allapot.nezet = 'settings'
 }
 
 async function indul () {
