@@ -442,6 +442,50 @@ describe('a Discord-setup', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => 
     }
   })
 
+  /*
+   * A LÉTEZÉS KEVÉS — A HELY IS SZÁMÍT.
+   *
+   * MÉRT HIÁNY: egy már meglévő tartós üzenet ülhet egy RÉGI csatornában,
+   * amit a setup előtt hoztak létre kézzel. Az első változatom ezt
+   * „rendben"-nek jelentette — a szerveren ott állt volna az új
+   * `📊・statisztika` csatorna ÜRESEN, a statisztika pedig változatlanul a
+   * régi helyen frissül.
+   */
+  it('a rossz csatornában lévő tartós üzenetet áthelyezi', async () => {
+    await setup.apply(GUILD, 'setup', null)
+    const csatorna = await registry.get(GUILD, 'channel', 'channel:statisztika')
+
+    // Elmozdítjuk máshová, mintha kézzel került volna oda.
+    await db.query(
+      "UPDATE persistent_messages SET channel_id = '999999999999999999', message_id = '888888888888888888' WHERE guild_id = $1 AND message_type = 'yume_statistics'",
+      [GUILD])
+
+    const terv = await setup.plan(GUILD)
+    const lepes = terv.steps.find(s => s.key === 'pm:yume_statistics')
+    assert.equal(lepes?.action, 'update', 'nem vette észre, hogy rossz csatornában van')
+
+    await setup.apply(GUILD, 'repair', null)
+    const sor = await db.queryOne<{ channel_id: string, message_id: string | null }>(
+      "SELECT channel_id, message_id FROM persistent_messages WHERE guild_id = $1 AND message_type = 'yume_statistics'",
+      [GUILD])
+    assert.equal(sor?.channel_id, csatorna?.discord_object_id, 'nem a leírás szerinti csatornába került')
+    // AZ ÜZENETAZONOSÍTÓ ELENGEDVE: a régi a RÉGI csatornára mutat, és ott
+    // már nem módosítható. A következő kör az újba küldi ki.
+    assert.equal(sor?.message_id, null, 'a régi üzenetazonosító megmaradt')
+  })
+
+  it('a jó helyen lévő üzenetet nem mozgatja', async () => {
+    await setup.apply(GUILD, 'setup', null)
+    const elotte = await db.queryOne<{ channel_id: string }>(
+      "SELECT channel_id FROM persistent_messages WHERE guild_id = $1 AND message_type = 'bot_status'", [GUILD])
+    const terv = await setup.plan(GUILD)
+    assert.equal(terv.steps.find(s => s.key === 'pm:bot_status')?.action, 'ok')
+    await setup.apply(GUILD, 'repair', null)
+    const utana = await db.queryOne<{ channel_id: string }>(
+      "SELECT channel_id FROM persistent_messages WHERE guild_id = $1 AND message_type = 'bot_status'", [GUILD])
+    assert.equal(utana?.channel_id, elotte?.channel_id)
+  })
+
   // ---- a struktúra épsége ----
 
   it('egyetlen rang sem kap adminisztrátori jogot', async () => {

@@ -220,16 +220,46 @@ export async function plan (guildId: string): Promise<Plan> {
   }
 
   // ---- tartós üzenetek ----
-  const pmSorok = await query<{ message_type: string, channel_id: string }>(
-    'SELECT message_type, channel_id FROM persistent_messages WHERE guild_id = $1', [guildId])
+  const pmSorok = await query<{ id: string, message_type: string, channel_id: string }>(
+    'SELECT id, message_type, channel_id FROM persistent_messages WHERE guild_id = $1', [guildId])
+
   for (const pm of PERSISTENT_MESSAGES) {
     const megvan = pmSorok.find(p => p.message_type === pm.messageType)
+
+    /*
+     * A LÉTEZÉS KEVÉS — A HELY IS SZÁMÍT.
+     *
+     * Egy már meglévő üzenet ülhet egy RÉGI csatornában, amit a setup előtt
+     * hoztak létre kézzel. A leírás viszont megmondja, hova tartozik. Ha ezt
+     * nem néznénk, a setup után a szerveren ott állna az új
+     * `📊・statisztika` csatorna — üresen —, a statisztika pedig
+     * változatlanul a régi helyen frissülne. „Rendben"-nek jelentve.
+     *
+     * A csatornacsere a motor szabályai szerint ÚJ üzenetet jelent: a régi
+     * azonosító a régi csatornára mutat, és ott már nem módosítható.
+     */
+    const celCsatorna = regByKey.get(`channel:${pm.channelKey}`)?.discord_object_id ?? null
+
+    if (megvan && celCsatorna && megvan.channel_id !== celCsatorna) {
+      steps.push({
+        type: 'persistent_message',
+        key: pm.key,
+        name: pm.messageType,
+        action: 'update',
+        reason: 'másik csatornában van, mint amit a leírás mond',
+        objectId: megvan.id,
+        parentKey: pm.channelKey
+      })
+      continue
+    }
+
     steps.push({
       type: 'persistent_message',
       key: pm.key,
       name: pm.messageType,
       action: megvan ? 'ok' : 'create',
       reason: megvan ? 'rendben' : 'hiányzik',
+      objectId: megvan?.id ?? null,
       parentKey: pm.channelKey
     })
   }
@@ -420,6 +450,29 @@ export async function apply (
           await jegyez(lepes, 'failed', 'a célcsatorna nem jött létre')
           continue
         }
+
+        if (lepes.action === 'update' && lepes.objectId) {
+          /*
+           * ÁTHELYEZÉS. A `message_id` NULLÁZÓDIK, mert a régi azonosító a
+           * RÉGI csatornára mutat, és ott már nem módosítható — a következő
+           * kör az új csatornába küldi ki. A régi üzenet ottmarad; azt az
+           * üzemeltető törli, ha akarja.
+           */
+          await query(
+            `UPDATE persistent_messages
+                SET channel_id = $3, message_id = NULL, last_rendered_hash = NULL,
+                    failure_count = 0, last_error = NULL, updated_at = now()
+              WHERE id = $1 AND guild_id = $2`,
+            [lepes.objectId, guildId, csatornaId])
+          await registry.upsert({
+            guildId, objectType: 'persistent_message', logicalKey: lepes.key,
+            discordObjectId: lepes.objectId, parentKey: pm.channelKey,
+            createdByYume: true, version: VERSION
+          })
+          await jegyez(lepes, 'updated', 'áthelyezve a leírás szerinti csatornába')
+          continue
+        }
+
         /*
          * AZ ÜTKÖZÉST AZ ADATBÁZIS DÖNTI EL. Egy guildben egy típusból egy
          * AKTÍV üzenet lehet; a `DO NOTHING` azt jelenti, hogy egy
