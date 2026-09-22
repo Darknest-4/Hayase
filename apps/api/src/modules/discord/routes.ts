@@ -15,7 +15,7 @@
 import { audit } from '../audit/audit.ts'
 import { query, queryOne } from '../../infrastructure/database/index.ts'
 import { guildAccess } from './guild-access.ts'
-import { createRestClient, diagnoseChannel, isConfigured } from './rest-client.ts'
+import { createRestClient, diagnoseChannel, fetchChannels, fetchGuild, fetchRoles, isConfigured } from './rest-client.ts'
 import { findById, listForGuild, recreateMessage, syncMessage, type PersistentMessage } from './persistent-messages.ts'
 import { renderMessage, MESSAGE_TYPES } from './render.ts'
 import * as oauth from './oauth.ts'
@@ -240,6 +240,211 @@ const routes: FastifyPluginAsync = async fastify => {
     const volt = await oauth.unlink(userId)
     if (volt) await audit(userId, 'discord.account.unlink', 'user', userId, null, null)
     return await reply.code(volt ? 204 : 404).send()
+  })
+
+  // ---- a vezérlőpult nézetei ---------------------------------------------
+  //
+  // MI VAN VALÓS ADATTAL, ÉS MI NINCS — mert ezt nem elkenni kell, hanem
+  // kimondani. A bot REST-en a következőket tudja lekérdezni privilegizált
+  // intent NÉLKÜL: a guild közelítő létszámait, a csatornákat és a
+  // szerepköröket. Ezek tehát valós adattal működnek.
+  //
+  // AMI GATEWAY NÉLKÜL NEM LÉTEZIK: üzenetforgalom, csatlakozás/kilépés
+  // idősora, parancshasználat, jelenlét. Ezekhez folyamatos
+  // WebSocket-kapcsolat kell, és a taglistához a fejlesztői portálon
+  // engedélyezett `GUILD_MEMBERS` privilegizált intent. Amíg ezek nincsenek,
+  // a felület AZT ÍRJA KI, hogy nincs adatforrás — nem nullákat mutat.
+
+  /** A guild áttekintése: létszám, csatornák, szerepkörök, üzenetek. */
+  fastify.get('/guilds/:guildId/overview', {
+    onRequest: fastify.authenticate,
+    schema: { params: GUILD_PARAMS }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'view_stats')
+    if (!guildId) return
+
+    const [guild, csatornak, szerepek, uzenetek, kotott] = await Promise.all([
+      fetchGuild(guildId),
+      fetchChannels(guildId),
+      fetchRoles(guildId),
+      query<{ total: string, enabled: string, failing: string, posted: string }>(
+        `SELECT count(*)::text AS total,
+                count(*) FILTER (WHERE enabled)::text AS enabled,
+                count(*) FILTER (WHERE failure_count > 0)::text AS failing,
+                count(*) FILTER (WHERE message_id IS NOT NULL)::text AS posted
+           FROM persistent_messages WHERE guild_id = $1`, [guildId]),
+      queryOne<{ n: string }>(
+        `SELECT count(DISTINCT l.user_id)::text AS n
+           FROM discord_links l
+           JOIN discord_guild_members m ON m.discord_user_id = l.discord_user_id
+          WHERE m.guild_id = $1`, [guildId])
+    ])
+
+    return {
+      configured: isConfigured(),
+      guild: guild === null
+        ? null
+        : { name: guild.name, memberCount: guild.memberCount, onlineCount: guild.onlineCount },
+      channels: csatornak === null ? null : csatornak.length,
+      roles: szerepek === null ? null : szerepek.length,
+      messages: uzenetek[0] ?? null,
+      linkedAccounts: Number(kotott?.n ?? 0)
+    }
+  })
+
+  /** A csatornák — valós adat, privilegizált intent nélkül is. */
+  fastify.get('/guilds/:guildId/channels', {
+    onRequest: fastify.authenticate,
+    schema: { params: GUILD_PARAMS }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'view_stats')
+    if (!guildId) return
+    const lista = await fetchChannels(guildId)
+    /*
+     * A NULL ÉS AZ ÜRES LISTA KÜLÖNBSÉGE. Az első azt jelenti, hogy nem
+     * tudtuk lekérdezni (nincs token, vagy a bot nem tagja a szervernek); a
+     * második azt, hogy tényleg nincs csatorna. Üres listát adni az elsőre
+     * hazugság volna.
+     */
+    if (lista === null) {
+      return { available: false, reason: isConfigured() ? 'a bot nem éri el ezt a szervert' : 'nincs bot token', data: [] }
+    }
+    return { available: true, reason: null, data: lista }
+  })
+
+  /** A szerepkörök — szintén valós adat. */
+  fastify.get('/guilds/:guildId/roles', {
+    onRequest: fastify.authenticate,
+    schema: { params: GUILD_PARAMS }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'view_stats')
+    if (!guildId) return
+    const lista = await fetchRoles(guildId)
+    if (lista === null) {
+      return { available: false, reason: isConfigured() ? 'a bot nem éri el ezt a szervert' : 'nincs bot token', data: [] }
+    }
+    return { available: true, reason: null, data: lista }
+  })
+
+  /**
+   * A BOT EGÉSZSÉGE — és ami nincs, arról is beszámol.
+   *
+   * A `capabilities` mező NEM dísz: ez mondja meg a felületnek, melyik
+   * nézetnek van egyáltalán adatforrása. Enélkül minden üres nézet
+   * meghibásodásnak látszana.
+   */
+  fastify.get('/guilds/:guildId/health', {
+    onRequest: fastify.authenticate,
+    schema: { params: GUILD_PARAMS }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'view_stats')
+    if (!guildId) return
+
+    const [szondak, esemenyek, hibasak] = await Promise.all([
+      query<{ service: string, status: string, latency_ms: string | null, detail: string | null, checked_at: Date }>(
+        `SELECT service, status, latency_ms, left(detail, 200) AS detail, checked_at
+           FROM service_status WHERE service LIKE 'discord%' ORDER BY service`),
+      query<{ event: string, n: string }>(
+        `SELECT e.event, count(*)::text AS n
+           FROM persistent_message_events e
+           JOIN persistent_messages m ON m.id = e.message_id
+          WHERE m.guild_id = $1 AND e.at > now() - interval '24 hours'
+          GROUP BY e.event ORDER BY count(*) DESC`, [guildId]),
+      query<{ message_type: string, failure_count: number, last_error: string | null }>(
+        `SELECT message_type, failure_count, left(last_error, 200) AS last_error
+           FROM persistent_messages WHERE guild_id = $1 AND failure_count > 0
+          ORDER BY failure_count DESC`, [guildId])
+    ])
+
+    return {
+      configured: isConfigured(),
+      probes: szondak,
+      events24h: esemenyek,
+      failing: hibasak,
+      /*
+       * AMI MŰKÖDIK, ÉS AMI NEM — a felület ebből tudja, mit mutasson.
+       * A gateway nélküli nézetek nem „üresek", hanem nincs adatforrásuk.
+       */
+      capabilities: {
+        rest: isConfigured(),
+        gateway: false,
+        memberAnalytics: false,
+        messageAnalytics: false,
+        commandAnalytics: false
+      }
+    }
+  })
+
+  /**
+   * A NAPLÓ — a MI oldalunkról, nem a Discordéról.
+   *
+   * A Discord saját audit logja külön jogosultságot igényel, és arról szól,
+   * ki mit csinált A SZERVEREN. Ez arról szól, ki mit csinált ITT: ki hozott
+   * létre, módosított, küldött újra tartós üzenetet. Ez a mi
+   * felelősségünk, és ezt tudjuk hitelesen megmondani.
+   */
+  fastify.get('/guilds/:guildId/audit', {
+    onRequest: fastify.authenticate,
+    schema: {
+      params: GUILD_PARAMS,
+      querystring: {
+        type: 'object', additionalProperties: false,
+        properties: { limit: { type: 'integer', minimum: 1, maximum: 200 } }
+      }
+    }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'view_stats')
+    if (!guildId) return
+    const { limit } = request.query as { limit?: number }
+
+    const sorok = await query(
+      `SELECT a.action, a.subject_id, a.after, a.created_at,
+              u.username AS actor
+         FROM audit_logs a
+         LEFT JOIN users u ON u.id = a.actor_id
+        WHERE a.action LIKE 'discord.%' AND a.subject_id LIKE $1
+        ORDER BY a.created_at DESC LIMIT $2`,
+      [`discord:${guildId}:%`, limit ?? 50])
+    return { data: sorok }
+  })
+
+  /**
+   * ÉRTESÍTÉSEK — a webhookok kézbesítése.
+   *
+   * VALÓS ADAT, gateway nélkül is: ezt a YUME maga küldi, és maga is
+   * naplózza. A `webhook_deliveries` tábla a forrás.
+   */
+  fastify.get('/guilds/:guildId/notifications', {
+    onRequest: fastify.authenticate,
+    schema: {
+      params: GUILD_PARAMS,
+      querystring: {
+        type: 'object', additionalProperties: false,
+        properties: { limit: { type: 'integer', minimum: 1, maximum: 100 } }
+      }
+    }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'view_stats')
+    if (!guildId) return
+    const { limit } = request.query as { limit?: number }
+
+    const [osszesites, utolsok] = await Promise.all([
+      query<{ event: string, total: string, failed: string }>(
+        `SELECT event, count(*)::text AS total,
+                count(*) FILTER (WHERE status_code IS NULL OR status_code >= 400)::text AS failed
+           FROM webhook_deliveries
+          WHERE created_at > now() - interval '7 days'
+          GROUP BY event ORDER BY count(*) DESC`),
+      query(
+        // A `payload` NEM megy ki: tartalmazhat olyat, ami nem tartozik a
+        // vezérlőpultra. A kézbesítés ténye és a hibája elég.
+        `SELECT d.event, d.status_code, d.duration_ms, left(d.error, 200) AS error,
+                d.created_at, w.name AS webhook
+           FROM webhook_deliveries d JOIN webhooks w ON w.id = d.webhook_id
+          ORDER BY d.created_at DESC LIMIT $1`,
+        [limit ?? 25])
+    ])
+    return { summary: osszesites, recent: utolsok }
   })
 
   // ---- tartós üzenetek ----------------------------------------------------

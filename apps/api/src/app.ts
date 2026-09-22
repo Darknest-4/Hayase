@@ -905,9 +905,81 @@ export async function buildApp (): Promise<FastifyInstance> {
       return page.html
     }
 
+    /*
+     * ---- A DISCORD-VEZÉRLŐPULT ----
+     *
+     * KÜLÖN FELÜLET, UGYANAZ AZ ALKALMAZÁS. A `discord.animehub.hu` a
+     * fordított proxyn keresztül ugyanide érkezik, és a proxy minden nem-API
+     * címet a `/dashboard` előtag alá ír át. Így a vezérlőpult SAJÁT CÍMEN
+     * él, de nincs külön konténer, külön telepítés és — mivel az API is
+     * ugyanez az eredet — nincs CORS sem.
+     *
+     * MIÉRT KÜLÖN FELÜLET EGYÁLTALÁN. Ide az is beléphet, akinek a YUME-ban
+     * NINCS admin jogosultsága, csak a Discord-szerverén van „Szerver
+     * kezelése" joga. Egy ilyen embernek nem kell — és nem is szabad —
+     * látnia a katalógust, a felhasználókat vagy a moderációt. A
+     * jogosultságot a kiszolgáló dönti el (`guildAccess`); ez a szétválasztás
+     * nem védelem, hanem az, hogy a két közönség ne egymás felületét kapja.
+     *
+     * A LAPKÉSZLET ÉS A KÉPEK A WEBKLIENSÉI: ugyanaz a termék, ugyanazok a
+     * tokenek. Két példány a design-rendszerből azt jelentené, hogy két
+     * helyen kell javítani ugyanazt, és a második mindig elmarad.
+     */
+    const discordRoot = process.env.DISCORD_WEB_ROOT ??
+      join(dirname(fileURLToPath(import.meta.url)), '../../discord')
+
+    let discordPage: { mtimeMs: number, html: string } | null = null
+    const serveDashboard = async (reply: FastifyReply): Promise<string> => {
+      reply.type('text/html; charset=utf-8')
+      reply.header('cache-control', 'no-cache')
+      const path = join(discordRoot, 'index.html')
+      const { mtimeMs } = await stat(path)
+      if (discordPage?.mtimeMs !== mtimeMs) {
+        discordPage = { mtimeMs, html: await readFile(path, 'utf8') }
+      }
+      return discordPage.html
+    }
+
+    const hasDashboard = existsSync(join(discordRoot, 'index.html'))
+    if (hasDashboard) {
+      await app.register(async scope => {
+        // Csak az EGYIK bővítmény díszítheti a választ; a többi ugyanabban a
+        // hatókörben `decorateReply: false`-szal él meg egymás mellett.
+        await scope.register(fastifyStatic, {
+          root: discordRoot, prefix: '/dashboard/', decorateReply: false,
+          index: false, list: false, dotfiles: 'ignore'
+        })
+        await scope.register(fastifyStatic, {
+          root: join(webRoot, 'css'), prefix: '/dashboard/css/', decorateReply: false,
+          index: false, list: false, dotfiles: 'ignore'
+        })
+        await scope.register(fastifyStatic, {
+          root: join(webRoot, 'assets'), prefix: '/dashboard/assets/', decorateReply: false,
+          index: false, list: false, dotfiles: 'ignore'
+        })
+      })
+      /*
+       * A GYÖKÉR A LAPÉ, nem a fájlkiszolgálóé — ugyanaz a felállás, mint a
+       * webkliensnél. A `fastify-static` egy KÖNYVTÁRKÉRÉSRE (`/dashboard/`)
+       * könyvtárindex nélkül 403-at ad, nem lapot; mérve: pontosan ez
+       * történt, és a böngésző egy hibatestet kapott HTML helyett.
+       */
+      app.get('/dashboard', async (_request, reply) => await serveDashboard(reply))
+      app.get('/dashboard/', async (_request, reply) => await serveDashboard(reply))
+      app.log.info(`serving discord dashboard from ${discordRoot}`)
+    }
+
     app.setNotFoundHandler(async (request, reply) => {
-      if (request.method === 'GET' && !/^\/(v1|graphql|graphiql|ws)\b/.test(request.url) && !isClientAsset(request.url)) {
-        return await servePage(reply)
+      if (request.method === 'GET' && !/^\/(v1|graphql|graphiql|ws)\b/.test(request.url)) {
+        /*
+         * A VEZÉRLŐPULT SAJÁT LAPJA. Enélkül a `/dashboard/bármi` a YUME
+         * index.html-jét kapná — vagyis a rossz alkalmazást, 200-zal, és a
+         * hiba csak a böngészőben derülne ki.
+         */
+        if (hasDashboard && /^\/dashboard(\/|$)/.test(request.url)) {
+          return await serveDashboard(reply)
+        }
+        if (!isClientAsset(request.url)) return await servePage(reply)
       }
       return reply.code(404).type('application/problem+json').send({ type: 'about:blank', title: 'Not Found', status: 404 })
     })

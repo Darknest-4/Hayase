@@ -874,24 +874,14 @@ export const YumeAPI = {
       config: body => YumeAPI._request('/v1/admin/edge/config', { method: 'PATCH', auth: true, body })
     },
 
-    discord: {
-      status: () => YumeAPI._request('/v1/discord/status', { auth: true }),
-      list: guildId => YumeAPI._request(`/v1/discord/guilds/${guildId}/persistent-messages`, { auth: true }),
-      create: (guildId, body) => YumeAPI._request(`/v1/discord/guilds/${guildId}/persistent-messages`, { method: 'POST', auth: true, body }),
-      update: (guildId, id, body) => YumeAPI._request(`/v1/discord/guilds/${guildId}/persistent-messages/${id}`, { method: 'PATCH', auth: true, body }),
-      remove: (guildId, id) => YumeAPI._request(`/v1/discord/guilds/${guildId}/persistent-messages/${id}`, { method: 'DELETE', auth: true }),
-      resync: (guildId, id) => YumeAPI._request(`/v1/discord/guilds/${guildId}/persistent-messages/${id}/resync`, { method: 'POST', auth: true }),
-      preview: (guildId, id) => YumeAPI._request(`/v1/discord/guilds/${guildId}/persistent-messages/${id}/preview`, { auth: true }),
-      history: (guildId, id) => YumeAPI._request(`/v1/discord/guilds/${guildId}/persistent-messages/${id}/history`, { auth: true }),
-      recreate: (guildId, id) => YumeAPI._request(`/v1/discord/guilds/${guildId}/persistent-messages/${id}/recreate`, { method: 'POST', auth: true }),
-      diagnose: (guildId, channelId) => YumeAPI._request(`/v1/discord/guilds/${guildId}/channels/${channelId}/diagnose`, { auth: true }),
-      // A fiók-összekötés. A `start` csak a címet adja vissza — az
-      // átirányítást a böngésző végzi, mert a Discord engedélyezési
-      // képernyője nem tölthető be háttérkérésként.
-      linkStatus: () => YumeAPI._request('/v1/discord/oauth/link', { auth: true }),
-      linkStart: () => YumeAPI._request('/v1/discord/oauth/start', { method: 'POST', auth: true }),
-      unlink: () => YumeAPI._request('/v1/discord/oauth/link', { method: 'DELETE', auth: true })
-    },
+    /*
+     * A DISCORD-KLIENS ELKÖLTÖZÖTT. A vezérlőpult saját címen él
+     * (`discord.animehub.hu`), és saját, önálló API-kliense van
+     * (`apps/discord/src/api.js`) — a webkliensnek nincs többé dolga a
+     * `/v1/discord/...` végpontokkal.
+     *
+     * A kiszolgálóoldal változatlan; csak a hívó került át.
+     */
 
     analytics: {
       visitors: range => YumeAPI._request(`/v1/admin/analytics/visitors?range=${range}`, { auth: true }),

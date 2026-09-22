@@ -28,6 +28,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
+COPY apps/discord/package.json apps/discord/
 COPY packages/database/package.json packages/database/
 COPY packages/design-tokens/package.json packages/design-tokens/
 RUN npm ci --omit=dev
@@ -47,6 +48,11 @@ RUN npm ci --omit=dev
 # container starts, then fails to find its migrations.
 COPY apps/api/ apps/api/
 COPY apps/web/ apps/web/
+# A Discord-vezérlőpult: ugyanez a kép szolgálja ki a `/dashboard` előtag
+# alatt, a `discord.animehub.hu` nevet pedig a fordított proxy írja ide át.
+# Külön kép nem indokolt — ugyanaz az API, ugyanaz az eredet, ugyanaz a
+# lapkészlet (a CSS-t a webkliensétől kapja).
+COPY apps/discord/ apps/discord/
 COPY packages/ packages/
 COPY database/ database/
 

@@ -133,7 +133,33 @@ discord.animehub.hu {
 		-Server
 	}
 
+	# A VEZÉRLŐPULT A GYÖKÉREN — az API változatlanul.
+	#
+	# Ezen a néven a `/` NEM a YUME weboldala, hanem a Discord-vezérlőpult:
+	# ezért van külön név. Az alkalmazás a vezérlőpultot a `/dashboard`
+	# előtag alatt szolgálja ki, tehát minden nem-API címet oda írunk át.
+	#
+	# MIÉRT ÁTÍRÁS, ÉS NEM KÜLÖN KONTÉNER. Az API-nak ugyanazon az EREDETEN
+	# kell lennie, mint a lapnak: így nincs CORS, és a munkamenet ugyanaz a
+	# JWT. Egy külön kiszolgáló ugyanezt csak CORS-szal és egy második
+	# telepítéssel tudná.
+	#
+	# AZ API-ELŐTAGOK KIMARADNAK az átírásból. Enélkül a `/v1/...` kérés
+	# `/dashboard/v1/...`-ként érkezne, és a vezérlőpult a saját API-ját nem
+	# érné el — a lap betöltődne, és utána minden hívás 404 lenne.
+	@api path /v1/* /graphql* /graphiql* /ws*
+	handle @api {
+		reverse_proxy yume-app-1:4000 {
+			health_uri /v1/health
+			health_interval 5s
+			health_timeout 3s
+			lb_try_duration 20s
+			lb_try_interval 500ms
+		}
+	}
+
 	handle {
+		rewrite * /dashboard{uri}
 		# Ugyanaz a beállítás, mint a többi néven: a telepítés ne legyen kiesés.
 		reverse_proxy yume-app-1:4000 {
 			health_uri /v1/health

@@ -233,6 +233,57 @@ export async function fetchGuild (guildId: string): Promise<{
   }
 }
 
+/**
+ * A guild CSATORNÁI és SZEREPKÖREI — a vezérlőpulthoz.
+ *
+ * EZ NEM IGÉNYEL PRIVILEGIZÁLT INTENTET. A taglista igen (`GUILD_MEMBERS`),
+ * és azt a fejlesztői portálon kell engedélyezni — a csatornák és a
+ * szerepkörök viszont a bot alap jogosultságaival lekérdezhetők. Ezért van
+ * ez a két nézet valós adattal, miközben a tagstatisztika nincs.
+ *
+ * NULL, HA NEM ÉRJÜK EL. A hívó ilyenkor megmondja, miért nincs adat —
+ * üres listát mutatni annyi volna, mint azt állítani, hogy a szerveren
+ * nincs egyetlen csatorna sem.
+ */
+export async function fetchChannels (guildId: string): Promise<Array<{
+  id: string, name: string, type: number, position: number, parentId: string | null
+}> | null> {
+  if (!isConfigured()) return null
+  try {
+    const { status, body } = await request(`/guilds/${safeId(guildId, 'guild')}/channels`)
+    if (status >= 400 || !Array.isArray(body)) return null
+    return (body as unknown as Array<Record<string, unknown>>).map(c => ({
+      id: String(c.id ?? ''),
+      name: String(c.name ?? ''),
+      type: Number(c.type ?? -1),
+      position: Number(c.position ?? 0),
+      parentId: c.parent_id === null || c.parent_id === undefined ? null : String(c.parent_id)
+    }))
+  } catch {
+    return null
+  }
+}
+
+export async function fetchRoles (guildId: string): Promise<Array<{
+  id: string, name: string, color: number, position: number, managed: boolean, permissions: string
+}> | null> {
+  if (!isConfigured()) return null
+  try {
+    const { status, body } = await request(`/guilds/${safeId(guildId, 'guild')}/roles`)
+    if (status >= 400 || !Array.isArray(body)) return null
+    return (body as unknown as Array<Record<string, unknown>>).map(r => ({
+      id: String(r.id ?? ''),
+      name: String(r.name ?? ''),
+      color: Number(r.color ?? 0),
+      position: Number(r.position ?? 0),
+      managed: r.managed === true,
+      permissions: String(r.permissions ?? '0')
+    }))
+  } catch {
+    return null
+  }
+}
+
 /** Üzemeltetői diagnosztika: mi hiányzik a bot jogosultságaiból egy csatornán. */
 export async function diagnoseChannel (channelId: string): Promise<{
   ok: boolean, missing: string[], reason: string | null

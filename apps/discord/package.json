@@ -1,0 +1,7 @@
+{
+  "name": "@yume/discord",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Yume Discord dashboard — framework-free, served at discord.animehub.hu"
+}

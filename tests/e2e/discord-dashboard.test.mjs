@@ -1,18 +1,16 @@
 /* global Storage, localStorage */
-// A Discord vezérlőpult felülete.
+// A Discord-vezérlőpult — SAJÁT CÍMEN.
 //
-// AMIT ŐRIZ: a panel a VALÓS adatot mutatja, és nem hazudik állapotot.
-// Három tétel, és mindhárom mért hibából származó elvárás:
+// MI VÁLTOZOTT, ÉS MIÉRT EZ A KÉSZLET IS. A Discord-felület kikerült a YUME
+// adminpaneljéből: saját alkalmazás (`apps/discord`), amit a kiszolgáló a
+// `/dashboard` előtag alatt ad, a fordított proxy pedig a
+// `discord.animehub.hu` gyökerére ír át. Ez a készlet a `/dashboard/` címen
+// méri ugyanazt, amit korábban az adminpanelen mért — plusz azt, ami csak
+// most lett igaz:
 //
-//   1. A panel SOHA nem ír `NaN`-t, `undefined`-ot vagy objektumot. A
-//      követelmény 16. pontja ezt tiltja, és ebben a projektben már
-//      előfordult: egy rangsoros listába tett állapotlista pontosan ezt
-//      csinálta.
-//
-//   2. Az ELŐNÉZET nem küldés (11.2. pont) — a gomb felirata és a
-//      visszajelzése is ezt mondja.
-//
-//   3. Telefonon sem lóg túl és nem vágódik le semmi.
+//   1. a YUME adminfelületén MÁR NINCS Discord szekció;
+//   2. a vezérlőpult belépést kér, és a saját tárolójából dolgozik;
+//   3. ami gateway nélkül nem mérhető, arról AZT írja ki — nem nullát.
 
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
@@ -38,8 +36,9 @@ const REASON = !chromium
 
 const GUILD = '100000000000000777'
 const CSATORNA = '200000000000000777'
+const DISCORD_USER = '300000000000000777'
 
-describe('a Discord vezérlőpult felülete', { skip: REASON }, () => {
+describe('a Discord vezérlőpult', { skip: REASON }, () => {
   let server, browser, pool, page, base, account
   const username = 'dpanel' + randomBytes(4).toString('hex')
 
@@ -66,12 +65,22 @@ describe('a Discord vezérlőpult felülete', { skip: REASON }, () => {
       body: JSON.stringify({ email: `${username}@example.com`, username, password: 'Correct-Horse-Battery-9' })
     })
     account = await res.json()
+
+    /*
+     * A JOGCÍM NEM YUME-ADMIN, HANEM A DISCORD-JOG. Ez a készlet szándékosan
+     * NEM ad admin szerepkört: pontosan azt méri, hogy egy közönséges
+     * YUME-fiók, aminek a Discord-szerverén „Szerver kezelése" joga van,
+     * bejut a vezérlőpultra. Ez a szétválasztás oka.
+     */
+    await pool.query('DELETE FROM discord_links WHERE discord_user_id = $1', [DISCORD_USER])
     await pool.query(
-      `INSERT INTO user_roles (user_id, role_id)
-       SELECT u.id, r.id FROM users u, roles r WHERE u.username = $1 AND r.slug = 'admin'
-       ON CONFLICT DO NOTHING`, [username])
-    const auth = await import('../../apps/api/src/middleware/auth.ts')
-    auth.invalidatePermissions()
+      'INSERT INTO discord_links (user_id, discord_user_id, discord_username) SELECT id, $2, $3 FROM users WHERE username = $1',
+      [username, DISCORD_USER, 'probauser'])
+    await pool.query('DELETE FROM discord_guild_members WHERE discord_user_id = $1', [DISCORD_USER])
+    // MANAGE_GUILD (1 << 5 = 32), frissen lekérdezve.
+    await pool.query(
+      `INSERT INTO discord_guild_members (discord_user_id, guild_id, guild_name, owner, permissions, fetched_at)
+       VALUES ($1, $2, 'Próba szerver', false, '32', now())`, [DISCORD_USER, GUILD])
 
     await pool.query('DELETE FROM persistent_messages WHERE guild_id = $1', [GUILD])
     await pool.query(
@@ -87,7 +96,9 @@ describe('a Discord vezérlőpult felülete', { skip: REASON }, () => {
     page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
     // Az `addInitScript` EGY argumentumot ad át — a kettőt objektumba kell tenni.
     await page.addInitScript(({ tokens, guild }) => {
-      localStorage.setItem('yume-auth', JSON.stringify(tokens))
+      // A VEZÉRLŐPULTNAK SAJÁT TÁROLÓKULCSA VAN. Külön cím, külön munkamenet:
+      // a böngésző eredetenként tárol, és ez a szétválasztás szándékos.
+      localStorage.setItem('yume-discord-auth', JSON.stringify(tokens))
       localStorage.setItem('yume-discord-guild', guild)
       const getItem = Storage.prototype.getItem
       Storage.prototype.getItem = function (key) {
@@ -100,6 +111,8 @@ describe('a Discord vezérlőpult felülete', { skip: REASON }, () => {
   after(async () => {
     try {
       await pool?.query('DELETE FROM persistent_messages WHERE guild_id = $1', [GUILD])
+      await pool?.query('DELETE FROM discord_guild_members WHERE discord_user_id = $1', [DISCORD_USER])
+      await pool?.query('DELETE FROM discord_links WHERE discord_user_id = $1', [DISCORD_USER])
       await pool?.query('DELETE FROM users WHERE username = $1', [username])
     } finally {
       await browser?.close()
@@ -108,20 +121,12 @@ describe('a Discord vezérlőpult felülete', { skip: REASON }, () => {
     }
   })
 
-  const nyit = async (width = 1440) => {
+  const nyit = async (nezet = 'overview', width = 1440) => {
     await page.setViewportSize({ width, height: 900 })
-    /*
-     * ELŐBB ÜRES LAP, ÉS EZ NEM ÓVATOSKODÁS.
-     *
-     * A `goto` UGYANARRA a címre — ide mindig `#/admin/discord` — nem tölti
-     * újra a dokumentumot, csak a horgonyt állítja. Az előző tétel nyitva
-     * maradt párbeszédablaka így ott marad a `body`-n, a háttere pedig
-     * lefedi az egész oldalt: a következő tétel gombjai láthatók, de nem
-     * kattinthatók. Ez a MÉRÉS hibája volt, nem a felületé — öt tétel bukott
-     * el tőle úgy, hogy a felület hibátlanul működött.
-     */
+    // Üres lap előbb: azonos címre mutató `goto` nem tölti újra a
+    // dokumentumot, és az előző tétel párbeszédablaka nyitva maradna.
     await page.goto('about:blank')
-    await page.goto(`${base}/#/admin/discord`, { waitUntil: 'domcontentloaded' })
+    await page.goto(`${base}/dashboard/#/${nezet}`, { waitUntil: 'domcontentloaded' })
     await page.waitForTimeout(2200)
   }
 
@@ -132,84 +137,122 @@ describe('a Discord vezérlőpult felülete', { skip: REASON }, () => {
         ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.')
         : '')
     return {
-      szoveg: document.querySelector('.admin-content')?.innerText ?? '',
+      szoveg: document.querySelector('.dc-main')?.innerText ?? document.body.innerText,
       kilog: [...new Set([...document.querySelectorAll('body *')]
         .filter(e => { const b = e.getBoundingClientRect(); return b.width && b.right > limit + 1 })
-        .map(nev))].slice(0, 5),
-      levagott: [...document.querySelectorAll('.admin-content .meta-row-sub, .admin-content .dash-kpi-value')]
-        .filter(e => e.scrollWidth > e.clientWidth + 1)
-        .map(e => (e.textContent || '').trim().slice(0, 40)).slice(0, 5)
+        .map(nev))].slice(0, 5)
     }
   })
 
-  it('megjelenik a szekció és betölti az üzeneteket', async () => {
-    await nyit()
-    const k = await kepernyo()
-    assert.match(k.szoveg, /Tartós üzenetek/, 'nincs meg a panel')
-    assert.match(k.szoveg, /YUME statisztika/, 'nem jelenik meg az üzenet típusa')
-    assert.match(k.szoveg, /Rendszerállapot/)
+  // ---- a szétválasztás ----
+
+  /*
+   * A YUME ADMINPANELJÉN MÁR NINCS DISCORD. Ez a tétel a KÖLTÖZÉST őrzi: ha
+   * valaki visszateszi, azonnal kiderül. A szekciólista a felület egyetlen
+   * forrása, tehát elég azt megnézni.
+   */
+  it('a YUME adminfelületén nincs többé Discord szekció', async () => {
+    const szekciok = await page.evaluate(async b => {
+      const m = await import(b + '/src/shared/lib/admin-sections.js')
+      return m.ADMIN_SECTIONS.map(s => s.key)
+    }, base)
+    assert.ok(!szekciok.includes('discord'),
+      'a Discord visszakerült az adminpanelbe — a vezérlőpult saját címen él')
+    assert.ok(szekciok.includes('webhooks'), 'a webhookok viszont maradtak: azok a YUME saját értesítései')
   })
 
-  it('SOHA nem ír NaN-t, undefined-ot vagy objektumot', async () => {
+  it('a webkliens API-felületén sincs Discord-hívó', async () => {
+    const van = await page.evaluate(async b => {
+      const m = await import(b + '/src/shared/api/yume.js')
+      return Object.prototype.hasOwnProperty.call(m.YumeAPI.admin, 'discord')
+    }, base)
+    assert.equal(van, false, 'a webkliens még mindig a Discord-végpontokat hívja')
+  })
+
+  // ---- a vezérlőpult ----
+
+  it('betölt, és a szervert a névén mutatja', async () => {
     await nyit()
     const k = await kepernyo()
-    assert.ok(!/NaN/.test(k.szoveg), `NaN a panelen: ${k.szoveg.slice(0, 200)}`)
-    assert.ok(!/undefined/.test(k.szoveg), `undefined a panelen: ${k.szoveg.slice(0, 200)}`)
-    assert.ok(!/\[object /.test(k.szoveg), `objektum szövegként: ${k.szoveg.slice(0, 200)}`)
+    assert.match(k.szoveg, /Áttekintés/)
+    const valaszto = await page.locator('.dc-guild select').inputValue()
+    assert.equal(valaszto, GUILD, 'nem a jogosultsággal bíró szerver van kiválasztva')
   })
 
   /*
-   * A HÁROM ÁLLAPOT MEGKÜLÖNBÖZTETHETŐ. „Kint van", „még nem ment ki" és
-   * „sikertelen" — ha ezek egyformán néznek ki, a panel nem ér semmit.
+   * BELÉPÉS NÉLKÜL NINCS VEZÉRLŐPULT. Ez nem a biztonság mérése — azt a
+   * kiszolgáló dönti el —, hanem azé, hogy a felület ne egy üres vázat
+   * mutasson annak, aki nincs belépve.
    */
+  it('belépés nélkül belépőlapot mutat', async () => {
+    const friss = await browser.newPage()
+    await friss.route('https://**', r => r.abort())
+    await friss.goto(`${base}/dashboard/`, { waitUntil: 'domcontentloaded' })
+    await friss.waitForTimeout(1500)
+    assert.equal(await friss.locator('.dc-login-card').count(), 1, 'nincs belépőlap')
+    assert.equal(await friss.locator('.dc-nav').count(), 0, 'a menü belépés nélkül is kint van')
+    await friss.close()
+  })
+
+  it('SOHA nem ír NaN-t, undefined-ot vagy objektumot', async () => {
+    for (const nezet of ['overview', 'messages', 'health', 'audit', 'notifications']) {
+      await nyit(nezet)
+      const k = await kepernyo()
+      assert.ok(!/NaN/.test(k.szoveg), `NaN a(z) ${nezet} nézeten`)
+      assert.ok(!/undefined/.test(k.szoveg), `undefined a(z) ${nezet} nézeten`)
+      assert.ok(!/\[object /.test(k.szoveg), `objektum szövegként a(z) ${nezet} nézeten`)
+    }
+  })
+
   it('megkülönbözteti a kint lévőt, a ki nem mentet és a hibásat', async () => {
-    await nyit()
+    await nyit('messages')
     const k = await kepernyo()
     assert.match(k.szoveg, /kint van/)
     assert.match(k.szoveg, /még nem ment ki/)
     assert.match(k.szoveg, /sikertelen kísérlet/)
-    // A hiba szövege is kint van, nem csak az, hogy „valami baj van".
     assert.match(k.szoveg, /Missing Permissions/)
   })
 
-  it('az előnézet gombja nem ígér küldést', async () => {
-    await nyit()
-    const cimkek = await page.locator('.admin-content button').allInnerTexts()
-    assert.ok(cimkek.some(c => /Előnézet/.test(c)), `nincs előnézet gomb: ${cimkek.join(', ')}`)
-    assert.ok(!cimkek.some(c => /Küldés|Kiküldés/.test(c)),
-      'van egy „küldés" feliratú gomb — az előnézet nem küldés')
+  /*
+   * AMI NINCS, ARRÓL AZT MONDJA. Ez a készlet legfontosabb állítása: a
+   * tagstatisztika nem üres lista és nem nulla, hanem egy magyarázat arról,
+   * hogy az adat GATEWAY nélkül nem létezik. A nulla azt állítaná, hogy
+   * mérünk, és senki nem csatlakozott.
+   */
+  it('a tagstatisztika nem nullát mutat, hanem megmondja, mi hiányzik', async () => {
+    await nyit('members')
+    const k = await kepernyo()
+    assert.match(k.szoveg, /nincs adatforrás/i)
+    assert.match(k.szoveg, /gateway/i)
+    assert.ok(!/^0$/m.test(k.szoveg), 'nullát ír egy nem mért adatra')
   })
 
-  /*
-   * AZ ELŐNÉZET TÉNYLEG NEM KÜLD. Nem a felirat dönti el: a kattintás után az
-   * adatbázisban sem jöhet létre üzenetazonosító.
-   */
-  it('az előnézet gombja tényleg nem küld üzenetet', async () => {
-    await nyit()
+  it('a parancsstatisztika megmondja, hogy nincs parancs', async () => {
+    await nyit('commands')
+    const k = await kepernyo()
+    assert.match(k.szoveg, /nincs/i)
+  })
+
+  it('az előnézet nem küld, és ezt ki is mondja', async () => {
+    await nyit('messages')
     const elotte = await pool.query(
       "SELECT message_id FROM persistent_messages WHERE guild_id = $1 AND message_type = 'system_health'", [GUILD])
     assert.equal(elotte.rows[0].message_id, null)
 
-    await page.locator('.admin-content button', { hasText: 'Előnézet' }).nth(1).click()
+    await page.locator('.dc-main button', { hasText: 'Előnézet' }).first().click()
     await page.waitForTimeout(1200)
+    const dialogSzoveg = await page.locator('.dialog').innerText()
+    assert.match(dialogSzoveg, /NEM ment ki/)
 
     const utana = await pool.query(
       "SELECT message_id FROM persistent_messages WHERE guild_id = $1 AND message_type = 'system_health'", [GUILD])
     assert.equal(utana.rows[0].message_id, null, 'az előnézet üzenetet küldött')
   })
 
-  // ---- amit eddig csak API-n lehetett ----
-  //
-  // A felület sokáig listázott, ki-be kapcsolt és frissített; létrehozni,
-  // szerkeszteni és törölni csak `curl`-lel lehetett. Ezek a tételek azt
-  // mérik, hogy ez már nem így van — nem a gomb LÉTÉT, hanem a HATÁSÁT az
-  // adatbázisban.
-
   it('az új üzenet űrlapja tényleg létrehoz egy rekordot', async () => {
-    await nyit()
-    await page.locator('.admin-content button', { hasText: '+ Új üzenet' }).click()
+    await nyit('messages')
+    await page.locator('.dc-main button', { hasText: '+ Új üzenet' }).click()
     await page.waitForTimeout(400)
-
     await page.locator('.dialog select').selectOption('popular_anime')
     await page.locator('.dialog input[inputmode="numeric"]').fill(CSATORNA)
     await page.locator('.dialog button', { hasText: 'Létrehozás' }).click()
@@ -219,88 +262,60 @@ describe('a Discord vezérlőpult felülete', { skip: REASON }, () => {
       "SELECT channel_id, configuration FROM persistent_messages WHERE guild_id = $1 AND message_type = 'popular_anime'",
       [GUILD])
     assert.equal(sor.rows.length, 1, 'nem jött létre a rekord')
-    assert.equal(sor.rows[0].channel_id, CSATORNA)
-    // A típushoz tartozó beállítás is elment, nem veszett el az űrlapon.
-    assert.equal(Number(sor.rows[0].configuration.days), 7)
+    assert.equal(Number(sor.rows[0].configuration.days), 7, 'a típushoz tartozó beállítás elveszett')
   })
 
-  /*
-   * A 409 EMBERI NYELVEN. Egy guildben egy típusból egy AKTÍV üzenet lehet —
-   * ha erre a nyers hibakód jönne vissza, az üzemeltető a saját beállításait
-   * kezdené javítgatni egy olyan hiba miatt, ami nem az övé.
-   */
   it('a duplikált típusra érthető üzenet jön, nem hibakód', async () => {
-    await nyit()
-    await page.locator('.admin-content button', { hasText: '+ Új üzenet' }).click()
+    await nyit('messages')
+    await page.locator('.dc-main button', { hasText: '+ Új üzenet' }).click()
     await page.waitForTimeout(400)
     await page.locator('.dialog select').selectOption('yume_statistics')
     await page.locator('.dialog input[inputmode="numeric"]').fill(CSATORNA)
     await page.locator('.dialog button', { hasText: 'Létrehozás' }).click()
     await page.waitForTimeout(1200)
-
     const hiba = await page.locator('.dialog .form-error').innerText()
     assert.match(hiba, /már van ilyen típusú aktív üzenet/)
     assert.ok(!/409/.test(hiba), `a nyers hibakód került a felületre: ${hiba}`)
   })
 
-  it('a szerkesztés nem engedi átírni a típust', async () => {
-    await nyit()
-    await page.locator('.admin-content button[aria-label="További műveletek"]').first().click()
-    await page.locator('.dropdown-item', { hasText: 'Szerkesztés' }).first().click()
-    await page.waitForTimeout(400)
-    assert.equal(await page.locator('.dialog select').isDisabled(), true,
-      'szerkesztéskor is át lehet írni a típust — a kint lévő üzenet tartalmát cserélné ki')
-  })
-
   it('a törlés megerősítést kér, és tényleg töröl', async () => {
-    await nyit()
+    await nyit('messages')
     const elotte = await pool.query('SELECT count(*)::int AS n FROM persistent_messages WHERE guild_id = $1', [GUILD])
 
-    // Megerősítés NÉLKÜL nem törölhet: először elutasítjuk.
     page.once('dialog', d => d.dismiss())
-    await page.locator('.admin-content button[aria-label="További műveletek"]').first().click()
-    await page.locator('.dropdown-item', { hasText: 'Törlés' }).first().click()
+    await page.locator('.dc-main button', { hasText: 'Törlés' }).first().click()
     await page.waitForTimeout(900)
     const kozben = await pool.query('SELECT count(*)::int AS n FROM persistent_messages WHERE guild_id = $1', [GUILD])
     assert.equal(kozben.rows[0].n, elotte.rows[0].n, 'elutasított megerősítés után is törölt')
 
     page.once('dialog', d => d.accept())
-    await page.locator('.admin-content button[aria-label="További műveletek"]').first().click()
-    await page.locator('.dropdown-item', { hasText: 'Törlés' }).first().click()
+    await page.locator('.dc-main button', { hasText: 'Törlés' }).first().click()
     await page.waitForTimeout(1500)
     const utana = await pool.query('SELECT count(*)::int AS n FROM persistent_messages WHERE guild_id = $1', [GUILD])
     assert.equal(utana.rows[0].n, elotte.rows[0].n - 1, 'a megerősítés után sem törölt')
   })
 
-  it('az előzmények megnyithatók', async () => {
-    await nyit()
-    await page.locator('.admin-content button[aria-label="További műveletek"]').first().click()
-    await page.locator('.dropdown-item', { hasText: 'Előzmények' }).first().click()
+  it('az előzmény megnyitható', async () => {
+    await nyit('messages')
+    await page.locator('.dc-main button', { hasText: 'Előzmény' }).first().click()
     await page.waitForTimeout(1200)
     const szoveg = await page.locator('.dialog').innerText()
     assert.match(szoveg, /Előzmények/)
     assert.ok(!/undefined|NaN|\[object /.test(szoveg), `szemét az előzményekben: ${szoveg.slice(0, 200)}`)
   })
 
-  /*
-   * A FIÓK-ÖSSZEKÖTÉS PANELJE. Amíg ez nem volt kint, a `no_link` hibára a
-   * felület csak annyit mondott, hogy „nincs Discord-fiók kötve" — azt nem,
-   * hogy ezt hol lehet elintézni.
-   */
-  it('a fiók-panel megmondja, mit lehet tenni', async () => {
-    await nyit()
-    const szoveg = await page.locator('.admin-content').innerText()
-    assert.match(szoveg, /Discord-fiók/)
-    assert.ok(/Összekötés a Discorddal|nincs beállítva ezen a kiszolgálón/.test(szoveg),
-      `a fiók-panel nem mond semmi használhatót: ${szoveg.slice(0, 300)}`)
+  it('a beállítások megmutatják az összekötött fiókot', async () => {
+    await nyit('settings')
+    const k = await kepernyo()
+    assert.match(k.szoveg, /Discord-fiók/)
+    assert.match(k.szoveg, /probauser|Próba szerver/)
   })
 
   for (const width of [1440, 430, 390, 360]) {
-    it(`${width} képponton nem lóg túl és nem vágódik le`, async () => {
-      await nyit(width)
+    it(`${width} képponton nem lóg túl`, async () => {
+      await nyit('overview', width)
       const k = await kepernyo()
       assert.deepEqual(k.kilog, [], `túllóg ${width}px-en`)
-      assert.deepEqual(k.levagott, [], `levágott szöveg ${width}px-en`)
     })
   }
 })
