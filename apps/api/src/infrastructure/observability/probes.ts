@@ -263,11 +263,54 @@ async function probePersistentMessages (): Promise<ProbeResult> {
   })
 }
 
+/**
+ * A GATEWAY — és miért nem a saját állítását hisszük el.
+ *
+ * A kapcsolat állapotát a gateway-folyamat írja az adatbázisba. Egy
+ * LEFAGYOTT folyamat viszont `ready` állapotban hagyja a sort, és onnantól a
+ * rendszer örökké azt hinné, hogy gyűjtünk. Az utolsó esemény IDEJE a valódi
+ * jel: a Discord szívverése ~41 másodperc, tehát ha percekig semmi nem jött,
+ * a kapcsolat halott, akármit mond magáról.
+ *
+ * A KIKAPCSOLT GATEWAY NEM HIBA. Ha nincs token vagy az üzemeltető
+ * kikapcsolta, ez `not_configured` — pirosra festeni annyi volna, mint
+ * folyamatos hibát jelezni egy szándékos állapotra, és onnantól senki nem
+ * nézi a panelt.
+ */
+async function probeGateway (): Promise<ProbeResult> {
+  if (!process.env.DISCORD_BOT_TOKEN) return notConfigured('discord-gateway')
+  if (process.env.DISCORD_GATEWAY_ENABLED === 'false') return notConfigured('discord-gateway')
+
+  return await timed('discord-gateway', async () => {
+    const row = await queryOne<{
+      status: string, last_event_at: string | null, reconnects: string, last_error: string | null
+    }>('SELECT status, last_event_at, reconnects, last_error FROM discord_gateway_state WHERE id = 1')
+
+    if (!row) return { status: 'yellow' as const, detail: 'nincs állapotsor' }
+    if (row.status === 'failed') {
+      // BEÁLLÍTÁSI HIBA — ezt nem javítja az idő, és az üzemeltetőnek kell
+      // beavatkoznia. A `last_error` már meg van tisztítva a forrásnál.
+      return { status: 'red' as const, detail: row.last_error ?? 'a gateway leállt' }
+    }
+
+    const utolso = row.last_event_at ? new Date(row.last_event_at).getTime() : 0
+    const eltelt = Date.now() - utolso
+    if (row.status !== 'ready') return { status: 'yellow' as const, detail: row.status }
+    if (eltelt > STALE_MS) {
+      return { status: 'yellow' as const, detail: `${Math.round(eltelt / 60_000)} perce nem jött esemény` }
+    }
+    return
+  })
+}
+
+/** Meddig hisszük el, hogy a gateway él. Lásd `probeGateway`. */
+const STALE_MS = Number(process.env.DISCORD_GATEWAY_STALE_MS ?? 5 * 60_000)
+
 export async function probeAll (): Promise<ProbeResult[]> {
   return Promise.all([
     probePostgres(), probeRedis(), probeRabbit(),
     probeOpenSearch(), probeMinio(), probeApi(), probeWorker(),
-    probeDiscord(), probePersistentMessages()
+    probeDiscord(), probePersistentMessages(), probeGateway()
   ])
 }
 
