@@ -287,6 +287,41 @@ describe('a Discord OAuth', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => 
     assert.equal(await oauth.linkOf(idA), null, 'állapot nélkül összekötött egy fiókot')
   })
 
+  /*
+   * A ZÁRT PÉLDÁNY KAPUJA NEM ZÁRHATJA KI A DISCORD VISSZAIRÁNYÍTÁSÁT.
+   *
+   * MÉRT HIBA. A Discord engedélyezési lapjáról a böngésző KERESZTOLDALI
+   * átirányítással érkezik — `Authorization` fejléc nélkül, mert azt nem a mi
+   * kliensünk küldi, és a munkamenet a `localStorage`-ban ül, nem sütiben. A
+   * privát-példány kapu ezért 401-gyel utasította vissza, és a
+   * fiók-összekötés zárt példányon SOHA nem tudott volna befejeződni —
+   * akkor sem, ha minden titok a helyén van.
+   *
+   * Ez a tétel a kaput állítja zártra, és úgy méri.
+   */
+  it('zárt példányon is átmegy a visszairányítás', async () => {
+    const { settings } = await import('../src/modules/settings/site-settings.ts')
+    const eredeti = settings.requiresLogin.bind(settings)
+    // A kapu a gyorsítótárazott olvasón át kérdez; itt azt mondatjuk vele,
+    // hogy a példány zárt.
+    settings.requiresLogin = async () => true
+    try {
+      const res = await app.inject({ method: 'GET', url: '/v1/discord/oauth/callback?error=access_denied' })
+      assert.equal(res.statusCode, 302, 'a zárt példány kapuja kizárta a Discord visszairányítását')
+      assert.match(String(res.headers.location), /link=cancelled/)
+    } finally {
+      settings.requiresLogin = eredeti
+    }
+  })
+
+  it('a többi Discord-végpont zárt példányon is hitelesítést kér', async () => {
+    // A kivétel PONTOSAN egy útvonalra szól. Ha az előtagra szólna, a
+    // vezérlőpult minden adata kifolyna egy zárt példányról.
+    for (const url of ['/v1/discord/status', '/v1/discord/oauth/link']) {
+      assert.equal((await app.inject({ url })).statusCode, 401, `${url} hitelesítés nélkül válaszolt`)
+    }
+  })
+
   it('az elutasított engedély nem hiba', async () => {
     const res = await app.inject({ method: 'GET', url: '/v1/discord/oauth/callback?error=access_denied' })
     assert.equal(res.statusCode, 302)

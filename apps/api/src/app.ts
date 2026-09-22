@@ -400,7 +400,28 @@ export async function buildApp (): Promise<FastifyInstance> {
    * Ez nem tágítja a támadási felületet: nyitott példányon ez a végpont
    * amúgy is hitelesítés nélkül hívható, és írási sebességkorlát alatt van.
    */
-  const loginExempt = /^\/v1\/(health|config|auth|status|analytics\/view)\b/
+  /*
+   * AZ ÖTÖDIK: A DISCORD VISSZAIRÁNYÍTÁSA.
+   *
+   * A Discord engedélyezési lapjáról a böngésző egy KERESZTOLDALI
+   * átirányítással érkezik ide — `Authorization` fejléc nélkül, mert azt nem
+   * a mi kliensünk küldi, és a munkamenet a `localStorage`-ban ül, nem
+   * sütiben. A kapu tehát MINDIG 401-et adott volna, és a fiók-összekötés
+   * zárt példányon soha nem tudott volna befejeződni. Mérve: 401, „This
+   * instance is private".
+   *
+   * NEM TÁGÍTJA A TÁMADÁSI FELÜLETET, és ezt érdemes pontosan kimondani. Ez
+   * a végpont nem ad ki semmit: egyetlen dolgot csinál, hogy bevált egy
+   * `state`-et, amit MI adtunk ki, egy bejelentkezett felhasználónak,
+   * egyszer használhatóan és lejárattal. Állapot nélkül — vagyis pontosan
+   * abban az esetben, amikor egy idegen hívja meg — a válasz egy
+   * átirányítás, és az adatbázishoz hozzá sem nyúl.
+   *
+   * CSAK EZ AZ EGY ÚTVONAL, nem a `discord` előtag: minden más
+   * Discord-végpont hitelesítést ÉS guild-jogosultságot kér, és az így is
+   * marad.
+   */
+  const loginExempt = /^\/v1\/(health|config|auth|status|analytics\/view|discord\/oauth\/callback)\b/
   app.addHook('onRequest', async (request, reply) => {
     if (!/^\/(v1|graphql)\b/.test(request.url)) return
     if (loginExempt.test(request.url)) return
