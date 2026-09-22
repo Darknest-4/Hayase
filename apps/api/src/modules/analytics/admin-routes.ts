@@ -304,11 +304,40 @@ const routes: FastifyPluginAsync = async fastify => {
           GROUP BY normalized ORDER BY searches DESC LIMIT 50`,
         [w.from, w.to]),
       query(
-        `SELECT day, searches, zero_result_searches FROM analytics_daily
+        `SELECT day, searches, zero_result_searches, search_result_opens FROM analytics_daily
           WHERE day BETWEEN $1::date AND $2::date ORDER BY day`,
         [w.from, w.to])
     ])
-    return { window: w, top, zero, daily }
+
+    /*
+     * A KERESÉS → MEGNYITÁS ARÁNYA. Ez az egyetlen szám, ami megmondja, hogy
+     * a keresés MŰKÖDIK-E: nem az számít, hányan kerestek, hanem hogy hányan
+     * találták meg, amit kerestek.
+     *
+     * NULLA KERESÉSNÉL NINCS ARÁNY, nem nulla százalék. A `null` azt jelenti,
+     * hogy nincs mihez mérni — a nulla azt állítaná, hogy senki nem találta
+     * meg, amit keresett.
+     */
+    const keresesek = daily.reduce((n, d) => n + Number((d as { searches: number }).searches), 0)
+    const megnyitasok = daily.reduce((n, d) => n + Number((d as { search_result_opens: number }).search_result_opens), 0)
+
+    return {
+      window: w,
+      top,
+      zero,
+      daily,
+      conversion: {
+        searches: keresesek,
+        opens: megnyitasok,
+        rate: keresesek > 0 ? Math.round((megnyitasok / keresesek) * 1000) / 10 : null,
+        // MIÓTA MÉRJÜK. Ez az esemény újabb, mint a keresés maga: egy régi
+        // időszakban a nulla nem azt jelenti, hogy senki nem kattintott,
+        // hanem hogy akkor még nem mértük.
+        since: (await queryOne<{ since: string | null }>(
+          "SELECT min(created_at)::date::text AS since FROM analytics_events WHERE event_type = 'search.result.open'"
+        ))?.since ?? null
+      }
+    }
   })
 
   // ---- teljesítmény ------------------------------------------------------

@@ -19,6 +19,7 @@
 // haladását is átírja, már nem éri meg.
 
 import { enqueueView } from './collector.ts'
+import { EVENT_TYPES, isEventType, record } from './events.ts'
 import { languageOf, referrerHost, screenClass, shapeOf, visitorKey } from './visitor.ts'
 import { WRITE_LIMIT } from '../../middleware/security.ts'
 
@@ -112,6 +113,80 @@ const routes: FastifyPluginAsync = async fastify => {
       country: typeof request.headers['cf-ipcountry'] === 'string'
         ? request.headers['cf-ipcountry'].slice(0, 2).toUpperCase()
         : null,
+      at: new Date()
+    })
+
+    return await reply.code(204).send()
+  })
+
+  /**
+   * EGY ESEMÉNY — az egységes sémába.
+   *
+   * MIÉRT VAN KÜLÖN A `/view`-tól. Az oldalletöltés a KERET: hol jár a
+   * látogató. Az esemény a SZÁNDÉK: rákattintott egy találatra, felvett egy
+   * címet. A kettőnek más az alakja és más a megőrzése.
+   *
+   * UGYANAZ A SZABÁLY, MINT A `/view`-nál: a kliens PONTOSAN annyit mondhat,
+   * hogy MI történt és MIRE — hogy KI ő, MIKOR volt, és melyik munkamenetben,
+   * azt a kiszolgáló írja. Egy kliens által küldött időbélyeg vagy azonosító
+   * ingyen hamisítható.
+   *
+   * A TÍPUS ZÁRT SZÓTÁRBÓL jön. Egy szabad szöveg némán új eseményfajtát
+   * hozna létre egy elgépelt névből, és a kimutatásból pont az hiányozna,
+   * amit mérni akartunk.
+   *
+   * A VÁLASZ MINDIG 204, akkor is, ha duplikátum volt. Nem mondjuk meg a
+   * kliensnek, hogy annak számítottuk — abból lehetne kitalálni, hogyan kell
+   * nem annak látszani.
+   */
+  fastify.post('/event', {
+    config: WRITE_LIMIT,
+    onRequest: fastify.identify,
+    schema: {
+      body: {
+        type: 'object',
+        required: ['type'],
+        additionalProperties: false,
+        properties: {
+          type: { enum: [...EVENT_TYPES] },
+          subjectType: { type: 'string', maxLength: 32 },
+          subjectId: { type: 'string', maxLength: 64 },
+          /*
+           * A METAADAT SZŰK ÉS ZÁRT. Szabad objektumot elfogadni annyi
+           * volna, mint egy nyilvános végponton korlátlan JSON-t tárolni —
+           * és a „mit keresett" mezőbe bármi belefér, amit valaki beír.
+           * Itt csak a találat POZÍCIÓJA fér el, mert a keresés→megnyitás
+           * arányhoz az kell, meg a keresés azonosítója.
+           */
+          position: { type: 'integer', minimum: 1, maximum: 500 },
+          searchId: { type: 'string', maxLength: 64 }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const body = request.body as {
+      type: string
+      subjectType?: string
+      subjectId?: string
+      position?: number
+      searchId?: string
+    }
+    // A séma úgyis szűr; ez az utolsó kapu, ha a séma egyszer lazulna.
+    if (!isEventType(body.type)) return await reply.code(204).send()
+
+    const metadata: Record<string, unknown> = {}
+    if (body.position !== undefined) metadata.position = body.position
+    if (body.searchId !== undefined) metadata.searchId = body.searchId
+
+    record({
+      type: body.type,
+      userId: request.user?.sub ?? null,
+      visitorKey: request.user?.sub
+        ? null
+        : await visitorKey(request.ip, request.headers['user-agent'] ?? ''),
+      subjectType: body.subjectType ?? null,
+      subjectId: body.subjectId ?? null,
+      metadata,
       at: new Date()
     })
 

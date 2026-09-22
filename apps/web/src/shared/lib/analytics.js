@@ -60,3 +60,28 @@ export function pageView (route, entityId) {
   // egy hibajelentés belőle csak zaj a triázsban.
   YumeAPI.analytics?.view(body)?.catch(() => {})
 }
+
+/**
+ * EGY ESEMÉNY — nem oldalletöltés, hanem SZÁNDÉK.
+ *
+ * Az oldalletöltés a keret: hol jár a látogató. Az esemény az, hogy mit
+ * AKART: rákattintott egy találatra, felvett egy címet. A kettő külön
+ * végponton megy, mert más az alakjuk és más a megőrzésük.
+ *
+ * UGYANAZ A NÉGY SZABÁLY: nem blokkol, nem hibázik, nem tárol semmit a
+ * böngészőben, és a kiszolgáló dönti el, ki a hívó és mikor volt. Amit a
+ * kliens küld — típus, alany, pozíció —, az minden; a `userId` vagy egy
+ * időbélyeg innen hatástalan, a séma ledobja.
+ *
+ * @param {string} type       zárt szótárból, lásd `analytics/events.ts`
+ * @param {object} [detail]   { subjectType, subjectId, position, searchId }
+ */
+export function trackEvent (type, detail = {}) {
+  const body = { type }
+  if (detail.subjectType) body.subjectType = String(detail.subjectType).slice(0, 32)
+  if (detail.subjectId) body.subjectId = String(detail.subjectId).slice(0, 64)
+  if (Number.isFinite(detail.position)) body.position = Math.max(1, Math.min(500, Math.round(detail.position)))
+  if (detail.searchId) body.searchId = String(detail.searchId).slice(0, 64)
+
+  YumeAPI.analytics?.event(body)?.catch(() => {})
+}

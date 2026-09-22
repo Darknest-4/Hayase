@@ -808,7 +808,10 @@ export const YumeAPI = {
      * 204-et ad vissza mindenre, ami nem szabálysértés — a kliens számára ez
      * egy jelzés, nem művelet. A hívó nem is várja meg.
      */
-    view: body => YumeAPI._request('/v1/analytics/view', { method: 'POST', body, anonymous: false })
+    view: body => YumeAPI._request('/v1/analytics/view', { method: 'POST', body, anonymous: false }),
+    // Az egységes eseményséma. A kliens a TÍPUST és az ALANYT mondja meg;
+    // hogy ki ő és mikor volt, azt a kiszolgáló írja.
+    event: body => YumeAPI._request('/v1/analytics/event', { method: 'POST', body, anonymous: false })
   },
 
   admin: {

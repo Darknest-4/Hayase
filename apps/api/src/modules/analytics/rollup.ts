@@ -170,6 +170,23 @@ export async function rollupActivity (day?: string): Promise<void> {
     [d]
   )
 
+  /*
+   * A KERESÉS → MEGNYITÁS. Ez az egyetlen szám, ami megmondja, hogy a
+   * keresés MŰKÖDIK-E: nem az számít, hányan kerestek, hanem hogy hányan
+   * találták meg, amit kerestek. Az egységes eseménytáblából jön
+   * (`search.result.open`), mert a két oldalt csak ott lehet összekötni.
+   */
+  await query(
+    `INSERT INTO analytics_daily (day, search_result_opens, updated_at)
+     SELECT $1::date, count(*), now()
+       FROM analytics_events
+      WHERE event_type = 'search.result.open'
+        AND created_at >= $1::date AND created_at < $1::date + 1
+     ON CONFLICT (day) DO UPDATE SET
+        search_result_opens = EXCLUDED.search_result_opens, updated_at = now()`,
+    [d]
+  )
+
   await query(
     `INSERT INTO analytics_daily (day, errors, updated_at)
      SELECT $1::date, count(*), now()

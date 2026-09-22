@@ -1208,6 +1208,46 @@ export const PageAdmin = {
   async analyticsSearch (body, range) {
     const data = await YumeAPI.admin.analytics.search(range)
     body.replaceChildren()
+
+    /*
+     * A KERESÉS → MEGNYITÁS ARÁNYA. Ez az egyetlen szám, ami megmondja, hogy
+     * a keresés MŰKÖDIK-E: nem az számít, hányan kerestek, hanem hogy hányan
+     * találták meg, amit kerestek.
+     *
+     * NULLA KERESÉSNÉL NINCS ARÁNY, nem nulla százalék — és ha a mérés az
+     * időszak után indult, azt is kiírjuk. Egy régi időszakban a nulla nem
+     * azt jelenti, hogy senki nem kattintott, hanem hogy akkor még nem
+     * mértük.
+     */
+    const konv = data.conversion ?? {}
+    body.append(U.el('div', { class: 'dash-cards' }, [
+      this.analyticsKpi('Keresés', konv.searches ?? 0, null,
+        { tone: 'blue', icon: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>' }),
+      this.analyticsKpi('Találatra kattintás', konv.opens ?? 0, null,
+        { tone: 'green', icon: '<path d="m9 11 3 3 8-8"/>' }),
+      this.analyticsKpi('Megtalálási arány', konv.rate ?? 0, null, {
+        tone: konv.rate == null ? 'amber' : konv.rate < 30 ? 'red' : 'green',
+        suffix: '%',
+        ...(konv.rate == null ? { display: 'nincs adat' } : {}),
+        icon: '<path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>'
+      })
+    ]))
+
+    if (!konv.since) {
+      body.append(U.el('p', {
+        class: 'list-row-sub',
+        style: 'margin:0 0 var(--space-4);max-width:44rem;',
+        text: 'A találatra kattintást még nem mértük egyszer sem. Az első kattintással indul — visszamenőleg nincs adat.'
+      }))
+    } else {
+      body.append(U.el('p', {
+        class: 'list-row-sub',
+        style: 'margin:0 0 var(--space-4);max-width:44rem;',
+        text: `A találatra kattintás mérése ${konv.since} óta tart. Az ennél korábbi időszakokban a nulla nem azt ` +
+          'jelenti, hogy senki nem kattintott, hanem hogy akkor még nem mértük.'
+      }))
+    }
+
     const lower = U.el('div', { class: 'dash-lower' })
 
     lower.append(this.dashPanel({
