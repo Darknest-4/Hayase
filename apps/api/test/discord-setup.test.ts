@@ -37,6 +37,8 @@ interface FakeState {
   roles: Array<{ id: string, name: string, color: number, position: number, managed: boolean, permissions: string }>
   /** Mit NEM enged a hamis Discord — a jogosultsági ágak méréséhez. */
   deny: Set<string>
+  /** Hányszor adjon még 429-et erre az útvonalra. A korlátkezelés méréséhez. */
+  rateLimit: Map<string, number>
   calls: string[]
 }
 
@@ -51,6 +53,7 @@ function ujAllapot (): FakeState {
       { id: '900000000000000001', name: 'YUME Bot', color: 0, position: BOT_ROLE_POS, managed: true, permissions: String((1n << 4n) | (1n << 28n)) }
     ],
     deny: new Set(),
+    rateLimit: new Map(),
     calls: []
   }
 }
@@ -73,6 +76,12 @@ function hamisDiscord (): void {
 
     if (allapot.deny.has(`${method} ${path}`)) {
       return valasz(403, { code: 50013, message: 'Missing Permissions' })
+    }
+    const hatra = allapot.rateLimit.get(`${method} ${path}`) ?? 0
+    if (hatra > 0) {
+      allapot.rateLimit.set(`${method} ${path}`, hatra - 1)
+      // A Discord MÁSODPERCBEN adja meg, mennyit kell várni.
+      return valasz(429, { retry_after: 0.05, message: 'You are being rate limited.' })
     }
 
     if (method === 'GET' && path === `/guilds/${GUILD}/channels`) return valasz(200, allapot.channels)
@@ -597,6 +606,41 @@ describe('a Discord-setup', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => 
     const naplo = await registry.history(GUILD, 500)
     assert.ok(naplo.some(e => e.action === 'deleted' && e.logical_key === 'idegen-2'),
       'a törlés nem került a naplóba')
+  })
+
+  /*
+   * A SEBESSÉGKORLÁT KIVÁRÁSA — mért hiány.
+   *
+   * Egy 65 objektumos takarításnál a Discord a hetedik rang törlésénél
+   * korlátozni kezdett, és hét törlés `rate_limited` hibával elbukott. Nem
+   * üzemzavar volt: a Discord PONTOSAN megmondta, mennyit kell várni, csak
+   * nem vártuk ki.
+   */
+  it('a sebességkorlátot kivárja, nem hibának veszi', async () => {
+    await setup.apply(GUILD, 'setup', null)
+    allapot.channels.push({ id: '600000000000000020', name: 'idegen-korlat', type: 0, position: 0, parent_id: null })
+    // Az első KÉT törlési kísérlet 429-et kap, a harmadik megy át.
+    allapot.rateLimit.set('DELETE /channels/600000000000000020', 2)
+
+    const e = await setup.purgeForeign(GUILD, null)
+    assert.equal(e.counts.failed ?? 0, 0, `korlátozás miatt elbukott: ${JSON.stringify(e.counts)}`)
+    assert.ok(!allapot.channels.some(c => c.id === '600000000000000020'), 'nem törölte a korlátozás után sem')
+  })
+
+  it('a tartós korlátozást viszont őszintén hibának jelenti', async () => {
+    await setup.apply(GUILD, 'setup', null)
+    allapot.channels.push({ id: '600000000000000021', name: 'idegen-orok-korlat', type: 0, position: 0, parent_id: null })
+    // Több 429, mint ahányszor újrapróbálunk.
+    allapot.rateLimit.set('DELETE /channels/600000000000000021', 50)
+
+    const e = await setup.purgeForeign(GUILD, null)
+    assert.ok((e.counts.failed ?? 0) > 0, 'a tartós korlátozást sikernek vette')
+    /*
+     * `failed`, NEM `partial` — és ezt először elrontottam a tesztben. A
+     * `partial` azt jelenti, hogy VALAMI sikerült; itt az egyetlen törlendő
+     * objektum bukott el, tehát semmi. A kód jól osztályozott.
+     */
+    assert.equal(e.status, 'failed')
   })
 
   // ---- a struktúra épsége ----

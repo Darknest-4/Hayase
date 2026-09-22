@@ -303,31 +303,66 @@ export function lastError (): string | null {
   return utolsoHiba
 }
 
+/**
+ * Hányszor várjuk ki a Discord sebességkorlátját egy íráson belül.
+ *
+ * MÉRT HIÁNY: egy 65 objektumos takarításnál a Discord a hetedik rang
+ * törlésénél korlátozni kezdett, és hét törlés `rate_limited` hibával
+ * elbukott. Nem üzemzavar volt — a Discord PONTOSAN megmondta, mennyit kell
+ * várni, csak nem vártuk ki.
+ */
+const RATE_LIMIT_RETRIES = Number(process.env.DISCORD_RATE_LIMIT_RETRIES ?? 4)
+const RATE_LIMIT_MAX_WAIT_MS = Number(process.env.DISCORD_RATE_LIMIT_MAX_WAIT_MS ?? 15_000)
+
 async function ir (
   path: string, method: string, body?: unknown, reason?: string
 ): Promise<Record<string, unknown> | null> {
   utolsoHiba = null
-  try {
-    const { status, body: valasz } = await request(path, {
-      method,
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      /*
-       * AZ AUDIT REASON A DISCORD SAJÁT NAPLÓJÁBA MEGY. Enélkül a szerver
-       * naplójában csak annyi állna, hogy „YUME Bot törölt egy csatornát" —
-       * így az is, hogy miért. A fejléc URL-kódolt, mert ékezetes.
-       */
-      ...(reason ? { headers: { 'x-audit-log-reason': encodeURIComponent(reason).slice(0, 500) } } : {})
-    })
-    if (status >= 400) {
-      const kod = typeof valasz.code === 'number' ? valasz.code : null
-      utolsoHiba = `${kindOf(status, kod)}: ${typeof valasz.message === 'string' ? valasz.message : 'HTTP ' + status}`
+
+  for (let probalkozas = 0; probalkozas <= RATE_LIMIT_RETRIES; probalkozas++) {
+    try {
+      const { status, body: valasz } = await request(path, {
+        method,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        /*
+         * AZ AUDIT REASON A DISCORD SAJÁT NAPLÓJÁBA MEGY. Enélkül a szerver
+         * naplójában csak annyi állna, hogy „YUME Bot törölt egy csatornát" —
+         * így az is, hogy miért. A fejléc URL-kódolt, mert ékezetes.
+         */
+        ...(reason ? { headers: { 'x-audit-log-reason': encodeURIComponent(reason).slice(0, 500) } } : {})
+      })
+
+      if (status === 429) {
+        /*
+         * A DISCORD MEGMONDJA, MENNYIT KELL VÁRNI — és ezt ki kell várni,
+         * nem újrapróbálni azonnal. A `retry_after` másodpercben jön.
+         *
+         * FELSŐ KORLÁTTAL: egy percekre szóló korlátozásnál nem várunk a
+         * kérés közepén; olyankor a hívó jobban jár egy őszinte hibával,
+         * mint egy beragadt művelettel.
+         */
+        const varas = Math.ceil(Number(valasz.retry_after ?? 1) * 1000)
+        if (probalkozas < RATE_LIMIT_RETRIES && varas <= RATE_LIMIT_MAX_WAIT_MS) {
+          await new Promise(resolve => setTimeout(resolve, varas + 100))
+          continue
+        }
+        utolsoHiba = `rate_limited: ${varas} ms várakozás kellene`
+        return null
+      }
+
+      if (status >= 400) {
+        const kod = typeof valasz.code === 'number' ? valasz.code : null
+        utolsoHiba = `${kindOf(status, kod)}: ${typeof valasz.message === 'string' ? valasz.message : 'HTTP ' + status}`
+        return null
+      }
+      return valasz
+    } catch (error) {
+      utolsoHiba = String((error as DiscordError)?.kind ?? (error as Error)?.message ?? 'ismeretlen hiba')
       return null
     }
-    return valasz
-  } catch (error) {
-    utolsoHiba = String((error as DiscordError)?.kind ?? (error as Error)?.message ?? 'ismeretlen hiba')
-    return null
   }
+
+  return null
 }
 
 export interface PermissionOverwrite {

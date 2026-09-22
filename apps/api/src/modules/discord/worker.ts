@@ -23,6 +23,7 @@ import { due, syncMessage } from './persistent-messages.ts'
 import { renderMessage } from './render.ts'
 import { pruneStates } from './oauth.ts'
 import { query } from '../../infrastructure/database/index.ts'
+import { announceNew } from './episode-feed.ts'
 
 import type { Job } from '../../infrastructure/queue/index.ts'
 
@@ -104,5 +105,26 @@ export async function handleDiscordJob (job: Job): Promise<void> {
   if (summary.skippedReason) return
   if (summary.processed > 0) {
     console.info('[discord] tartós üzenetek:', JSON.stringify(summary.outcomes))
+  }
+
+  /*
+   * AZ ÚJ EPIZÓDOK BEJELENTÉSE — ugyanabban a körben, de KÜLÖN úton.
+   *
+   * A tartós üzenet egyet tart kint és azt szerkeszti; ez epizódonként egy
+   * új üzenetet küld. A kettő egy feladatban fut, mert mindkettő
+   * percenkénti — de külön hibázik: ha a bejelentés elakad, a tartós
+   * üzenetek attól még frissülnek.
+   */
+  for (const { guild_id: guildId } of await query<{ guild_id: string }>(
+    'SELECT DISTINCT guild_id FROM discord_registry WHERE deleted_at IS NULL')) {
+    try {
+      const e = await announceNew(guildId)
+      if (e.sent > 0 || e.failed > 0) {
+        console.info('[discord] új epizódok:', JSON.stringify(e))
+      }
+    } catch (error) {
+      console.warn('[discord] az epizódbejelentés elhasalt:',
+        String((error as Error)?.message ?? error).slice(0, 200))
+    }
   }
 }

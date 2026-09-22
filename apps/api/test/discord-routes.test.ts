@@ -286,9 +286,15 @@ describe('a Discord vezérlőpult végpontjai', { skip: HAS_DB ? false : 'no DAT
     const letre = (await letrehoz(MIENK, adminToken)).json()
     const body = (await hivas('GET', `/v1/discord/guilds/${MIENK}/persistent-messages/${letre.id}/preview`, adminToken)).json()
     const embed = body.payload.embeds[0]
-    const animeMezo = embed.fields.find((f: { name: string }) => f.name === 'Animék')
+    // A mezőnév emodzsit kapott a tervrajz szerint; a keresés a SZÖVEGRE megy,
+    // nem a pontos egyezésre — különben minden vizuális változás megbuktatná
+    // ezt a tételt, pedig nem arról szól.
+    const animeMezo = embed.fields.find((f: { name: string }) => f.name.includes('Animék'))
     const valodi = await pool.query<{ n: number }>("SELECT count(*)::int AS n FROM anime WHERE visibility = 'public'")
-    assert.equal(animeMezo.value, String(valodi.rows[0]!.n), 'az embed száma nem a katalógusból jön')
+    // Az érték félkövér (`**32 534**`) és ezres tagolású — a SZÁM az, ami
+    // számít, nem a formázás.
+    const szam = String(animeMezo.value).replace(/[^0-9]/g, '')
+    assert.equal(szam, String(valodi.rows[0]!.n), 'az embed száma nem a katalógusból jön')
   })
 
   // ---- token nélkül ----

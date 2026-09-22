@@ -119,8 +119,12 @@ describe('a tartós üzenetek tartalma', { skip: HAS_DB ? false : 'no DATABASE_U
     const p = await render.renderMessage('server_statistics', CTX) as {
       embeds: Array<{ fields: Array<{ name: string, value: string }>, footer: { text: string } }>
     }
-    const tagok = p.embeds[0]!.fields.find(f => f.name === 'Tagok')
-    assert.equal(tagok?.value, '—')
+    // A mezőnév emodzsit kapott a tervrajz szerint; a KERESÉS a szövegre megy.
+    const tagok = p.embeds[0]!.fields.find(f => f.name.includes('Összes tag'))
+    assert.ok(tagok, `nincs taglétszám mező: ${p.embeds[0]!.fields.map(f => f.name).join(', ')}`)
+    // Az érték most félkövér; a lényeg, hogy „—" és nem nulla.
+    assert.match(String(tagok?.value), /—/)
+    assert.ok(!/\*\*0\*\*/.test(String(tagok?.value)), 'nullát ír a nem mérhető létszámra')
     assert.match(p.embeds[0]!.footer.text, /nem érhetők el/)
   })
 
