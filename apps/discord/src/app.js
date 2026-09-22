@@ -24,6 +24,7 @@ const NEZETEK = [
   ['overview', 'Áttekintés', '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>'],
   ['messages', 'Tartós üzenetek', '<path d="M4 4h16v12H5.17L4 17.17z"/>'],
   ['members', 'Tagok', '<path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 20a8 8 0 0 1 16 0"/>'],
+  ['activity', 'Aktivitás', '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>'],
   ['channels', 'Csatornák', '<path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/>'],
   ['roles', 'Szerepkörök', '<path d="M12 2 4 7v10l8 5 8-5V7z"/>'],
   ['commands', 'Parancsok', '<path d="m4 17 6-6-6-6"/><path d="M12 19h8"/>'],
@@ -199,7 +200,8 @@ async function nezetTartalom (kulcs, ujraRajzol) {
   switch (kulcs) {
     case 'overview': return await Views.overview(g)
     case 'messages': return await messages(g, ujraRajzol)
-    case 'members': return Views.members()
+    case 'members': return await Views.members(g)
+    case 'activity': return await Views.activity(g)
     case 'channels': return await Views.channels(g)
     case 'roles': return await Views.roles(g)
     case 'commands': return Views.commands()
@@ -215,6 +217,7 @@ const LEIRAS = {
   overview: 'A szerver számai és a bot állapota egy helyen.',
   messages: 'Egy üzenet, ami frissül — nem szaporodik.',
   members: 'Tagmozgás és növekedés.',
+  activity: 'Üzenetforgalom naponta és csatornánként.',
   channels: 'A szerver csatornái, ahogy a Discord látja őket.',
   roles: 'A szerepkörök rangsor szerint.',
   commands: 'A bot parancsainak használata.',

@@ -16,6 +16,7 @@ import { audit } from '../audit/audit.ts'
 import { query, queryOne } from '../../infrastructure/database/index.ts'
 import { guildAccess } from './guild-access.ts'
 import { createRestClient, diagnoseChannel, fetchChannels, fetchGuild, fetchRoles, isConfigured } from './rest-client.ts'
+import { allapot as gatewayAllapot, elo as gatewayElo, intentsFromEnv, INTENTS } from './gateway.ts'
 import { findById, listForGuild, recreateMessage, syncMessage, type PersistentMessage } from './persistent-messages.ts'
 import { renderMessage, MESSAGE_TYPES } from './render.ts'
 import * as oauth from './oauth.ts'
@@ -340,7 +341,7 @@ const routes: FastifyPluginAsync = async fastify => {
     const guildId = await gate(request, reply, 'view_stats')
     if (!guildId) return
 
-    const [szondak, esemenyek, hibasak] = await Promise.all([
+    const [szondak, esemenyek, hibasak, gw] = await Promise.all([
       query<{ service: string, status: string, latency_ms: string | null, detail: string | null, checked_at: Date }>(
         `SELECT service, status, latency_ms, left(detail, 200) AS detail, checked_at
            FROM service_status WHERE service LIKE 'discord%' ORDER BY service`),
@@ -353,8 +354,17 @@ const routes: FastifyPluginAsync = async fastify => {
       query<{ message_type: string, failure_count: number, last_error: string | null }>(
         `SELECT message_type, failure_count, left(last_error, 200) AS last_error
            FROM persistent_messages WHERE guild_id = $1 AND failure_count > 0
-          ORDER BY failure_count DESC`, [guildId])
+          ORDER BY failure_count DESC`, [guildId]),
+      gatewayAllapot()
     ])
+
+    /*
+     * A GATEWAY ÉLŐSÉGE NEM A SAJÁT ÁLLÍTÁSÁBÓL JÖN. Egy lefagyott folyamat
+     * `ready` állapotban hagyja a sort, és onnantól a felület örökké azt
+     * hinné, hogy gyűjtünk. Az utolsó esemény ideje a valódi jel.
+     */
+    const gwElo = gatewayElo(gw)
+    const tagIntent = (Number(gw?.intents ?? 0) & INTENTS.GUILD_MEMBERS) !== 0
 
     return {
       configured: isConfigured(),
@@ -365,13 +375,91 @@ const routes: FastifyPluginAsync = async fastify => {
        * AMI MŰKÖDIK, ÉS AMI NEM — a felület ebből tudja, mit mutasson.
        * A gateway nélküli nézetek nem „üresek", hanem nincs adatforrásuk.
        */
+      gateway: gw === undefined
+        ? null
+        : {
+            status: gw.status,
+            live: gwElo,
+            lastReadyAt: gw.last_ready_at ?? null,
+            lastEventAt: gw.last_event_at ?? null,
+            reconnects: Number(gw.reconnects ?? 0),
+            lastError: gw.last_error ?? null,
+            memberIntent: tagIntent,
+            wantedIntents: intentsFromEnv()
+          },
       capabilities: {
         rest: isConfigured(),
-        gateway: false,
-        memberAnalytics: false,
-        messageAnalytics: false,
+        gateway: gwElo,
+        /*
+         * A TAGMOZGÁS KÉT DOLOGTÓL FÜGG: fusson a gateway, ÉS legyen
+         * engedélyezve a privilegizált intent. A kettő közül bármelyik
+         * hiányzik, az adat nem létezik — és ezt a felület kiírja, nem
+         * nullát mutat.
+         */
+        memberAnalytics: gwElo && tagIntent,
+        messageAnalytics: gwElo,
         commandAnalytics: false
       }
+    }
+  })
+
+  /**
+   * AKTIVITÁS — üzenetszám és taglétszám az időben.
+   *
+   * CSAK A GATEWAY ÁLTAL GYŰJTÖTT ADAT. Ami a bekapcsolás előtt történt, az
+   * nem létezik: a Discord az eseményeket akkor küldi, amikor
+   * megtörténnek, és visszamenőleg nem kérdezhetők le. A válasz ezért
+   * megmondja, MIÓTA van adat — enélkül egy 30 napos nézet hibásnak
+   * látszana.
+   */
+  fastify.get('/guilds/:guildId/activity', {
+    onRequest: fastify.authenticate,
+    schema: {
+      params: GUILD_PARAMS,
+      querystring: {
+        type: 'object', additionalProperties: false,
+        properties: { days: { type: 'integer', minimum: 1, maximum: 90 } }
+      }
+    }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'view_stats')
+    if (!guildId) return
+    const { days } = request.query as { days?: number }
+    const ablak = days ?? 30
+
+    const [napok, csatornak, tagok, fedes, gw] = await Promise.all([
+      query(
+        `SELECT day::text AS day,
+                sum(messages)::bigint AS messages,
+                sum(bot_messages)::bigint AS bot_messages
+           FROM discord_message_stats_daily
+          WHERE guild_id = $1 AND day >= current_date - $2::int
+          GROUP BY day ORDER BY day`, [guildId, ablak]),
+      query(
+        `SELECT channel_id, sum(messages)::bigint AS messages, sum(bot_messages)::bigint AS bot_messages
+           FROM discord_message_stats_daily
+          WHERE guild_id = $1 AND day >= current_date - $2::int
+          GROUP BY channel_id ORDER BY sum(messages) DESC LIMIT 25`, [guildId, ablak]),
+      query(
+        `SELECT day::text AS day, member_count, joins, leaves
+           FROM discord_member_stats_daily
+          WHERE guild_id = $1 AND day >= current_date - $2::int
+          ORDER BY day`, [guildId, ablak]),
+      queryOne<{ since: string | null }>(
+        `SELECT min(day)::text AS since FROM discord_message_stats_daily WHERE guild_id = $1`, [guildId]),
+      gatewayAllapot()
+    ])
+
+    return {
+      window: { days: ablak },
+      // MIÓTA VAN ADAT. Null = a gateway még egyetlen üzenetet sem látott
+      // ebben a szerverben.
+      since: fedes?.since ?? null,
+      live: gatewayElo(gw),
+      memberIntent: (Number(gw?.intents ?? 0) & INTENTS.GUILD_MEMBERS) !== 0,
+      days: napok,
+      channels: csatornak,
+      members: tagok
     }
   })
 

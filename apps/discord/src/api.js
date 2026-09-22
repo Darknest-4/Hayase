@@ -118,6 +118,7 @@ export const Api = {
   channels: g => kerd(`/v1/discord/guilds/${g}/channels`),
   roles: g => kerd(`/v1/discord/guilds/${g}/roles`),
   health: g => kerd(`/v1/discord/guilds/${g}/health`),
+  activity: (g, days = 30) => kerd(`/v1/discord/guilds/${g}/activity?days=${days}`),
   audit: g => kerd(`/v1/discord/guilds/${g}/audit?limit=100`),
   notifications: g => kerd(`/v1/discord/guilds/${g}/notifications?limit=25`),
 

@@ -184,17 +184,135 @@ export async function roles (guildId) {
 
 // ---------------------------------------------------------------- tagok
 
-export function members () {
-  return hianyzoForras(
-    'Tagstatisztika: nincs adatforrás',
-    'A csatlakozások és kilépések idősora, a tagnövekedés és a jelenlét mind ESEMÉNY: a Discord akkor küldi el, ' +
-    'amikor történik. Visszamenőleg nem kérdezhető le, tehát ami nem volt begyűjtve, az nem létezik. ' +
-    'A szerver mai összlétszáma az Áttekintésen szerepel — az egyetlen tagadat, amit REST-en meg lehet kapni.',
-    [
-      'GUILD_MEMBERS privilegizált intent engedélyezése a Discord fejlesztői portálon',
-      'futó gateway-szolgáltatás, ami az eseményeket tárolja',
-      'és utána idő: az első értelmes idősor napokkal a bekapcsolás után lesz'
-    ])
+/**
+ * TAGOK — a gateway által gyűjtött létszám és mozgás.
+ *
+ * KÉT KÜLÖNBÖZŐ ADAT, két különböző feltétellel. A LÉTSZÁM napi
+ * pillanatképként megvan, amint a gateway fut: a `GUILD_CREATE` küldi, és
+ * abból a növekedés kirajzolható. A CSATLAKOZÁS ÉS KILÉPÉS viszont
+ * privilegizált intentet igényel — enélkül nem kevesebb adat jön, hanem
+ * semmi. A nézet ezt szétválasztva mondja meg.
+ */
+export async function members (guildId) {
+  const d = await Api.activity(guildId, 30)
+  // NEM `sorok`: az a listaépítő segédfüggvény neve, és egy helyi változó
+  // elfedné — a nézet a rajzolásnál hasalna el, „sorok is not a function"
+  // hibával. Ez a fajta elfedés lintre nem hibás, csak halálos.
+  const tagSorok = (d.members ?? []).filter(m => m.member_count != null || m.joins != null || m.leaves != null)
+
+  if (!d.live && !tagSorok.length) {
+    return hianyzoForras(
+      'Tagstatisztika: nincs adatforrás',
+      'A tagnövekedés, a csatlakozások és a kilépések mind ESEMÉNY: a Discord akkor küldi el, amikor történik. ' +
+      'Visszamenőleg nem kérdezhető le, tehát ami nem volt begyűjtve, az nem létezik. ' +
+      'A szerver MAI összlétszáma az Áttekintésen szerepel — az az egy tagadat, amit REST-en is meg lehet kapni.',
+      [
+        'futó gateway-szolgáltatás (DISCORD_GATEWAY_ENABLED)',
+        'a csatlakozásokhoz és kilépésekhez: GUILD_MEMBERS privilegizált intent a fejlesztői portálon',
+        'és utána idő: az első értelmes idősor napokkal a bekapcsolás után lesz'
+      ])
+  }
+
+  const utolso = tagSorok.filter(m => m.member_count != null).slice(-1)[0]
+  const elso = tagSorok.filter(m => m.member_count != null)[0]
+  const valtozas = utolso && elso ? Number(utolso.member_count) - Number(elso.member_count) : null
+  const belepok = tagSorok.reduce((n, m) => n + (m.joins == null ? 0 : Number(m.joins)), 0)
+  const kilepok = tagSorok.reduce((n, m) => n + (m.leaves == null ? 0 : Number(m.leaves)), 0)
+
+  const wrap = el('div')
+  wrap.append(el('div', { class: 'dash-cards' }, [
+    kpi('Tagok most', utolso?.member_count ?? null, {
+      tone: 'blue', icon: '<path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 20a8 8 0 0 1 16 0"/>'
+    }),
+    kpi('Változás (mért időszak)', valtozas, {
+      tone: valtozas != null && valtozas < 0 ? 'red' : 'green',
+      display: valtozas == null ? '—' : (valtozas > 0 ? '+' : '') + szam(valtozas),
+      icon: '<path d="m3 17 6-6 4 4 8-8"/>'
+    }),
+    kpi('Csatlakozás', d.memberIntent ? belepok : null, {
+      tone: 'green',
+      icon: '<path d="M12 5v14M5 12h14"/>',
+      meta: d.memberIntent ? null : 'privilegizált intent kell'
+    }),
+    kpi('Kilépés', d.memberIntent ? kilepok : null, {
+      tone: 'amber',
+      icon: '<path d="M5 12h14"/>',
+      meta: d.memberIntent ? null : 'privilegizált intent kell'
+    })
+  ]))
+
+  wrap.append(panel('Napi létszám', d.since ? 'mérés kezdete: ' + d.since : 'a gateway gyűjtéséből',
+    sorok(sorokbolTagok(tagSorok), 'Még nincs napi pillanatkép.')))
+
+  if (!d.memberIntent) {
+    wrap.append(hianyzoForras(
+      'A csatlakozás és a kilépés nincs mérve',
+      'Ezekhez a `GUILD_MEMBERS` privilegizált intent kell, amit a Discord fejlesztői portálon kell engedélyezni. ' +
+      'Amíg nincs, a napi LÉTSZÁM megvan (abból a növekedés látszik), a mozgás nem — és a nulla itt félrevezetne.',
+      ['GUILD_MEMBERS engedélyezése a fejlesztői portálon',
+        'DISCORD_GUILD_MEMBERS_INTENT=true a kiszolgáló környezetében, majd a gateway újraindítása']))
+  }
+
+  return wrap
+}
+
+/** A napi tagsorok listaalakban. Külön, hogy a fenti olvasható maradjon. */
+function sorokbolTagok (lista) {
+  return lista.slice().reverse().map(m => ({
+    label: m.day,
+    tone: '',
+    detail: [
+      m.member_count != null ? szam(m.member_count) + ' tag' : 'nincs pillanatkép',
+      m.joins != null ? '+' + m.joins : null,
+      m.leaves != null ? '−' + m.leaves : null
+    ].filter(Boolean).join(' · ')
+  }))
+}
+
+/**
+ * AKTIVITÁS — üzenetszám az időben és csatornánként.
+ *
+ * Csak a gateway gyűjtéséből. Ami a bekapcsolás előtt történt, az nem
+ * létezik; a „mérés kezdete" ezt ki is írja, hogy egy rövid görbe ne
+ * hibának látsszon.
+ */
+export async function activity (guildId) {
+  const d = await Api.activity(guildId, 30)
+  const napok = d.days ?? []
+
+  if (!napok.length) {
+    return hianyzoForras(
+      'Üzenetforgalom: még nincs mérés',
+      d.live
+        ? 'A gateway fut, de ebben a szerverben még nem látott üzenetet. Az első adat a következő üzenettel érkezik.'
+        : 'Az üzenetek ESEMÉNYEK: a Discord akkor küldi el őket, amikor megtörténnek, és visszamenőleg nem ' +
+          'kérdezhetők le. Ami nem volt begyűjtve, az nem létezik.',
+      d.live ? [] : ['futó gateway-szolgáltatás (DISCORD_GATEWAY_ENABLED)'])
+  }
+
+  const osszes = napok.reduce((n, x) => n + Number(x.messages), 0)
+  const botok = napok.reduce((n, x) => n + Number(x.bot_messages), 0)
+  const csucs = napok.reduce((max, x) => Math.max(max, Number(x.messages)), 0)
+
+  return el('div', {}, [
+    el('div', { class: 'dash-cards' }, [
+      kpi('Üzenet (30 nap)', osszes, { tone: 'blue', icon: '<path d="M4 4h16v12H5.17L4 17.17z"/>' }),
+      kpi('Ebből boté', botok, { tone: 'amber', icon: '<rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/>' }),
+      kpi('Legaktívabb nap', csucs, { tone: 'green', icon: '<path d="m3 17 6-6 4 4 8-8"/>' })
+    ]),
+    panel('Naponta', d.since ? 'mérés kezdete: ' + d.since : null,
+      sorok(napok.slice().reverse().map(x => ({
+        label: x.day,
+        tone: '',
+        detail: `${szam(x.messages)} üzenet · ${szam(x.bot_messages)} bottól`
+      })), 'Nincs napi adat.')),
+    panel('Csatornánként', 'a mért időszakban',
+      sorok((d.channels ?? []).map(c => ({
+        label: '#' + c.channel_id,
+        tone: '',
+        detail: `${szam(c.messages)} üzenet · ${szam(c.bot_messages)} bottól`
+      })), 'Nincs csatornaadat.'))
+  ])
 }
 
 export function commands () {

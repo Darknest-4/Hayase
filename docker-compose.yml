@@ -223,6 +223,49 @@ services:
       resources:
         limits: { memory: 512M, pids: 256 }
 
+  # ---- A DISCORD GATEWAY ----
+  #
+  # SAJÁT FOLYAMAT, nem a workerben. A gateway ÁLLANDÓ WebSocket-kapcsolatot
+  # tart, és ~41 másodpercenként szívvernie kell. A worker ciklikus
+  # feladatokat futtat; egy hosszabb feladat alatt a szívverés elmaradna, a
+  # Discord bontaná a kapcsolatot, és a rendszer újracsatlakozási hurokba
+  # kerülne — ami pontosan úgy néz ki, mint egy hálózati hiba, és órákig
+  # lehet keresni.
+  #
+  # ALAPBÓL NEM INDUL EL magától adat nélkül: token nélkül azonnal kilép egy
+  # naplósorral. Ez szándékos — nem hasal el, és nem is próbálkozik
+  # végtelenül.
+  #
+  # A PRIVILEGIZÁLT INTENT KÜLÖN KAPCSOLÓ. A `DISCORD_GUILD_MEMBERS_INTENT`
+  # csak akkor legyen `true`, ha a Discord fejlesztői portálon is
+  # engedélyezve van: enélkül a Discord a CSATLAKOZÁST utasítja vissza
+  # (4014), tehát nem kevesebb adat jönne, hanem semmi.
+  gateway:
+    build: .
+    restart: unless-stopped
+    security_opt: ['no-new-privileges:true']
+    cap_drop: ['ALL']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://yume:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/yume
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      DISCORD_GATEWAY_ENABLED: ${DISCORD_GATEWAY_ENABLED:-true}
+      DISCORD_GUILD_MEMBERS_INTENT: ${DISCORD_GUILD_MEMBERS_INTENT:-false}
+    command: ['npm', 'run', 'gateway']
+    healthcheck:
+      # Ugyanaz, mint a workernél: port nincs, tehát az életjel az, hogy a
+      # folyamat eléri az adatbázist.
+      test: ['CMD', 'node', '--experimental-strip-types', '-e', "import('./src/infrastructure/database/index.ts').then(m=>m.query('SELECT 1')).then(()=>process.exit(0)).catch(()=>process.exit(1))"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits: { memory: 256M, pids: 128 }
+
   # one-shot catalogue seed (25k anime + episodes) into the persistent volume.
   # Run once: docker compose --profile seed run --rm --build seed
   # Downloads the official dump by default; never runs on normal `up`.

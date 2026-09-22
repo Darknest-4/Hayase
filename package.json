@@ -19,6 +19,7 @@
     "lint": "standard --ignore \"apps/web/src/**/vendor/**\" \"apps/web/**/*.js\" \"apps/web/test/*.mjs\" \"apps/discord/src/*.js\" \"tests/e2e/*.mjs\"",
     "migrate": "npm run migrate --workspace @yume/api",
     "worker": "npm run worker --workspace @yume/api",
+    "gateway": "npm run gateway --workspace @yume/api",
     "seed": "npm run seed --workspace @yume/api"
   },
   "devDependencies": {
