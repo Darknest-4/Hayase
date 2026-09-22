@@ -110,6 +110,17 @@ describe('a Discord vezérlőpult felülete', { skip: REASON }, () => {
 
   const nyit = async (width = 1440) => {
     await page.setViewportSize({ width, height: 900 })
+    /*
+     * ELŐBB ÜRES LAP, ÉS EZ NEM ÓVATOSKODÁS.
+     *
+     * A `goto` UGYANARRA a címre — ide mindig `#/admin/discord` — nem tölti
+     * újra a dokumentumot, csak a horgonyt állítja. Az előző tétel nyitva
+     * maradt párbeszédablaka így ott marad a `body`-n, a háttere pedig
+     * lefedi az egész oldalt: a következő tétel gombjai láthatók, de nem
+     * kattinthatók. Ez a MÉRÉS hibája volt, nem a felületé — öt tétel bukott
+     * el tőle úgy, hogy a felület hibátlanul működött.
+     */
+    await page.goto('about:blank')
     await page.goto(`${base}/#/admin/discord`, { waitUntil: 'domcontentloaded' })
     await page.waitForTimeout(2200)
   }
@@ -185,6 +196,103 @@ describe('a Discord vezérlőpult felülete', { skip: REASON }, () => {
     const utana = await pool.query(
       "SELECT message_id FROM persistent_messages WHERE guild_id = $1 AND message_type = 'system_health'", [GUILD])
     assert.equal(utana.rows[0].message_id, null, 'az előnézet üzenetet küldött')
+  })
+
+  // ---- amit eddig csak API-n lehetett ----
+  //
+  // A felület sokáig listázott, ki-be kapcsolt és frissített; létrehozni,
+  // szerkeszteni és törölni csak `curl`-lel lehetett. Ezek a tételek azt
+  // mérik, hogy ez már nem így van — nem a gomb LÉTÉT, hanem a HATÁSÁT az
+  // adatbázisban.
+
+  it('az új üzenet űrlapja tényleg létrehoz egy rekordot', async () => {
+    await nyit()
+    await page.locator('.admin-content button', { hasText: '+ Új üzenet' }).click()
+    await page.waitForTimeout(400)
+
+    await page.locator('.dialog select').selectOption('popular_anime')
+    await page.locator('.dialog input[inputmode="numeric"]').fill(CSATORNA)
+    await page.locator('.dialog button', { hasText: 'Létrehozás' }).click()
+    await page.waitForTimeout(1500)
+
+    const sor = await pool.query(
+      "SELECT channel_id, configuration FROM persistent_messages WHERE guild_id = $1 AND message_type = 'popular_anime'",
+      [GUILD])
+    assert.equal(sor.rows.length, 1, 'nem jött létre a rekord')
+    assert.equal(sor.rows[0].channel_id, CSATORNA)
+    // A típushoz tartozó beállítás is elment, nem veszett el az űrlapon.
+    assert.equal(Number(sor.rows[0].configuration.days), 7)
+  })
+
+  /*
+   * A 409 EMBERI NYELVEN. Egy guildben egy típusból egy AKTÍV üzenet lehet —
+   * ha erre a nyers hibakód jönne vissza, az üzemeltető a saját beállításait
+   * kezdené javítgatni egy olyan hiba miatt, ami nem az övé.
+   */
+  it('a duplikált típusra érthető üzenet jön, nem hibakód', async () => {
+    await nyit()
+    await page.locator('.admin-content button', { hasText: '+ Új üzenet' }).click()
+    await page.waitForTimeout(400)
+    await page.locator('.dialog select').selectOption('yume_statistics')
+    await page.locator('.dialog input[inputmode="numeric"]').fill(CSATORNA)
+    await page.locator('.dialog button', { hasText: 'Létrehozás' }).click()
+    await page.waitForTimeout(1200)
+
+    const hiba = await page.locator('.dialog .form-error').innerText()
+    assert.match(hiba, /már van ilyen típusú aktív üzenet/)
+    assert.ok(!/409/.test(hiba), `a nyers hibakód került a felületre: ${hiba}`)
+  })
+
+  it('a szerkesztés nem engedi átírni a típust', async () => {
+    await nyit()
+    await page.locator('.admin-content button[aria-label="További műveletek"]').first().click()
+    await page.locator('.dropdown-item', { hasText: 'Szerkesztés' }).first().click()
+    await page.waitForTimeout(400)
+    assert.equal(await page.locator('.dialog select').isDisabled(), true,
+      'szerkesztéskor is át lehet írni a típust — a kint lévő üzenet tartalmát cserélné ki')
+  })
+
+  it('a törlés megerősítést kér, és tényleg töröl', async () => {
+    await nyit()
+    const elotte = await pool.query('SELECT count(*)::int AS n FROM persistent_messages WHERE guild_id = $1', [GUILD])
+
+    // Megerősítés NÉLKÜL nem törölhet: először elutasítjuk.
+    page.once('dialog', d => d.dismiss())
+    await page.locator('.admin-content button[aria-label="További műveletek"]').first().click()
+    await page.locator('.dropdown-item', { hasText: 'Törlés' }).first().click()
+    await page.waitForTimeout(900)
+    const kozben = await pool.query('SELECT count(*)::int AS n FROM persistent_messages WHERE guild_id = $1', [GUILD])
+    assert.equal(kozben.rows[0].n, elotte.rows[0].n, 'elutasított megerősítés után is törölt')
+
+    page.once('dialog', d => d.accept())
+    await page.locator('.admin-content button[aria-label="További műveletek"]').first().click()
+    await page.locator('.dropdown-item', { hasText: 'Törlés' }).first().click()
+    await page.waitForTimeout(1500)
+    const utana = await pool.query('SELECT count(*)::int AS n FROM persistent_messages WHERE guild_id = $1', [GUILD])
+    assert.equal(utana.rows[0].n, elotte.rows[0].n - 1, 'a megerősítés után sem törölt')
+  })
+
+  it('az előzmények megnyithatók', async () => {
+    await nyit()
+    await page.locator('.admin-content button[aria-label="További műveletek"]').first().click()
+    await page.locator('.dropdown-item', { hasText: 'Előzmények' }).first().click()
+    await page.waitForTimeout(1200)
+    const szoveg = await page.locator('.dialog').innerText()
+    assert.match(szoveg, /Előzmények/)
+    assert.ok(!/undefined|NaN|\[object /.test(szoveg), `szemét az előzményekben: ${szoveg.slice(0, 200)}`)
+  })
+
+  /*
+   * A FIÓK-ÖSSZEKÖTÉS PANELJE. Amíg ez nem volt kint, a `no_link` hibára a
+   * felület csak annyit mondott, hogy „nincs Discord-fiók kötve" — azt nem,
+   * hogy ezt hol lehet elintézni.
+   */
+  it('a fiók-panel megmondja, mit lehet tenni', async () => {
+    await nyit()
+    const szoveg = await page.locator('.admin-content').innerText()
+    assert.match(szoveg, /Discord-fiók/)
+    assert.ok(/Összekötés a Discorddal|nincs beállítva ezen a kiszolgálón/.test(szoveg),
+      `a fiók-panel nem mond semmi használhatót: ${szoveg.slice(0, 300)}`)
   })
 
   for (const width of [1440, 430, 390, 360]) {

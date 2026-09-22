@@ -237,7 +237,51 @@ export const App = {
    */
   _boot: 'pending',
 
-  async navigate () {
+  /**
+   * EGYSZERRE EGY NAVIGÁCIÓ FUT — ÉS EZ EGY MÉRT HIBA JAVÍTÁSA.
+   *
+   * A `navigate()` kiüríti a `#page`-et, aztán MEGVÁRJA az oldal kezelőjét;
+   * a kezelő a végén beteszi, amit rajzolt. Két egyidejű navigáció ezért
+   * egymásba tud csúszni:
+   *
+   *   A: kiürít → várakozik a jogosultságokra…
+   *   B: kiürít (nincs mit) → rajzol → BETESZI a saját felületét
+   *   A: felébred → BETESZI a magáét is
+   *
+   * Az eredmény KÉT adminfelület egyetlen lapon: két navigációs sáv, két
+   * időzítő, minden kérés duplán, és a gombok kétszer szerepelnek. A meglévő
+   * generációs őr ezt nem fogta meg, mert csak a kezelő UTÁN néz — a beszúrás
+   * addigra megtörtént.
+   *
+   * MÉRVE: a második megnyitáskor két `.admin-content` volt a lapon. A két
+   * navigáció a bootstrap záró hívása és a nyelvi preferencia változására
+   * induló újrarajzolás volt; a `_boot` őr csak addig véd, amíg a bootstrap
+   * tart, és a második betöltéskor (gyorsítótárazott beállításokkal) a
+   * preferencia már utána érkezett.
+   *
+   * A MEGOLDÁS A SORBA ÁLLÍTÁS: az újabb navigáció megvárja a korábbit,
+   * aztán tiszta lappal rajzol. Így mindig a LEGUTOLSÓ nyer, és soha nem
+   * marad benn két oldal. A várakozás felső korlátos: egy beragadt kezelő
+   * nem fagyaszthatja be örökre a navigációt.
+   */
+  _navChain: null,
+  NAV_WAIT_MS: 3000,
+
+  navigate () {
+    const elozo = this._navChain
+    this._navChain = (async () => {
+      if (elozo) {
+        await Promise.race([
+          elozo.catch(() => {}),
+          new Promise(resolve => setTimeout(resolve, this.NAV_WAIT_MS))
+        ])
+      }
+      return await this._navigateOnce()
+    })()
+    return this._navChain
+  },
+
+  async _navigateOnce () {
     /*
      * ELŐBB A KRITIKUS BOOTSTRAP, UTÁNA AZ ELSŐ ÚTVONAL.
      *

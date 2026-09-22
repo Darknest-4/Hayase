@@ -177,6 +177,49 @@ describe('admin panel layout', { skip: REASON }, () => {
     await page.close()
   })
 
+  /*
+   * EGY LAPON EGY ADMINFELÜLET.
+   *
+   * MÉRT HIBA. A `navigate()` kiüríti a `#page`-et, aztán megvárja az oldal
+   * kezelőjét — két egyidejű navigáció így egymásba csúszott: az egyik már
+   * betette a felületét, amikor a másik felébredt és betette a magáét is. Két
+   * navigációs sáv, két időzítő, minden kérés duplán. A generációs őr ezt nem
+   * fogta meg, mert csak a kezelő UTÁN néz, a beszúrás pedig addigra megvolt.
+   *
+   * A második megnyitáskor jelentkezett, mert az első után a beállítások már
+   * a gyorsítótárból jöttek, és a nyelvi preferencia változása a bootstrap
+   * ŐRE UTÁN indított egy második navigációt.
+   */
+  it('kétszer megnyitva sem lesz két adminfelület', async () => {
+    const { page } = await open({ width: 1280, height: 900 })
+    assert.equal(await page.locator('.admin-content').count(), 1, 'már az elsőre kettő')
+
+    // Teljes dokumentumcsere, majd vissza — pontosan ez hozta elő.
+    await page.goto('about:blank')
+    await page.goto(`${base}/#/admin`, { waitUntil: 'domcontentloaded' })
+    await page.waitForSelector('.admin-nav-item', { state: 'attached', timeout: 15000 })
+    await page.waitForTimeout(1500)
+    assert.equal(await page.locator('.admin-content').count(), 1,
+      'két adminfelület egy lapon — két navigációs sáv és minden kérés duplán')
+    assert.equal(await page.locator('.admin-nav').count(), 1)
+    await page.close()
+  })
+
+  /*
+   * A GYORS OLDALVÁLTÁSBÓL A LEGUTOLSÓ NYER. A sorba állítás nem állhat meg
+   * az elsőnél: aki kétszer kattint, a másodikat akarja látni.
+   */
+  it('gyors váltásnál a legutolsó oldal marad a képen', async () => {
+    const { page } = await open({ width: 1280, height: 900 })
+    await page.evaluate(() => { window.location.hash = '#/home' })
+    await page.evaluate(() => { window.location.hash = '#/admin' })
+    await page.waitForTimeout(2500)
+    assert.equal(await page.locator('.admin-content').count(), 1, 'nem egy adminfelület maradt')
+    assert.equal(await page.evaluate(() => document.body.className.includes('admin-route')), true,
+      'nem az utolsó navigáció nyert')
+    await page.close()
+  })
+
   it('collapses the rail to icons and remembers it', async () => {
     const { page } = await open({ width: 1280, height: 900 })
     const width = () => page.evaluate(() => document.querySelector('.admin-nav').getBoundingClientRect().width)
