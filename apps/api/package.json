@@ -11,6 +11,7 @@
     "migrate": "node --experimental-strip-types src/infrastructure/migrations/migrate.ts",
     "check": "tsc --noEmit",
     "worker": "node --experimental-strip-types src/workers/index.ts",
+    "gateway": "node --experimental-strip-types src/modules/discord/gateway-main.ts",
     "worker:once": "node --experimental-strip-types src/workers/index.ts --once",
     "seed": "node --experimental-strip-types scripts/seed.ts",
     "seed:founder": "node --experimental-strip-types scripts/seed-founder.ts",

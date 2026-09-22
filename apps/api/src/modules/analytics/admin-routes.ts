@@ -20,6 +20,7 @@
 import { audit } from '../audit/audit.ts'
 import { query, queryOne } from '../../infrastructure/database/index.ts'
 import { accountHistory } from './account-events.ts'
+import { LATENCY_BUCKETS, percentileFrom } from '../providers/metrics.ts'
 
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify'
 
@@ -303,11 +304,40 @@ const routes: FastifyPluginAsync = async fastify => {
           GROUP BY normalized ORDER BY searches DESC LIMIT 50`,
         [w.from, w.to]),
       query(
-        `SELECT day, searches, zero_result_searches FROM analytics_daily
+        `SELECT day, searches, zero_result_searches, search_result_opens FROM analytics_daily
           WHERE day BETWEEN $1::date AND $2::date ORDER BY day`,
         [w.from, w.to])
     ])
-    return { window: w, top, zero, daily }
+
+    /*
+     * A KERESÉS → MEGNYITÁS ARÁNYA. Ez az egyetlen szám, ami megmondja, hogy
+     * a keresés MŰKÖDIK-E: nem az számít, hányan kerestek, hanem hogy hányan
+     * találták meg, amit kerestek.
+     *
+     * NULLA KERESÉSNÉL NINCS ARÁNY, nem nulla százalék. A `null` azt jelenti,
+     * hogy nincs mihez mérni — a nulla azt állítaná, hogy senki nem találta
+     * meg, amit keresett.
+     */
+    const keresesek = daily.reduce((n, d) => n + Number((d as { searches: number }).searches), 0)
+    const megnyitasok = daily.reduce((n, d) => n + Number((d as { search_result_opens: number }).search_result_opens), 0)
+
+    return {
+      window: w,
+      top,
+      zero,
+      daily,
+      conversion: {
+        searches: keresesek,
+        opens: megnyitasok,
+        rate: keresesek > 0 ? Math.round((megnyitasok / keresesek) * 1000) / 10 : null,
+        // MIÓTA MÉRJÜK. Ez az esemény újabb, mint a keresés maga: egy régi
+        // időszakban a nulla nem azt jelenti, hogy senki nem kattintott,
+        // hanem hogy akkor még nem mértük.
+        since: (await queryOne<{ since: string | null }>(
+          "SELECT min(created_at)::date::text AS since FROM analytics_events WHERE event_type = 'search.result.open'"
+        ))?.since ?? null
+      }
+    }
   })
 
   // ---- teljesítmény ------------------------------------------------------
@@ -502,6 +532,413 @@ const routes: FastifyPluginAsync = async fastify => {
     const text = value instanceof Date ? value.toISOString() : String(value)
     return /[",\n;]/.test(text) ? '"' + text.replaceAll('"', '""') + '"' : text
   }
+
+  // ---- szolgáltatók ------------------------------------------------------
+
+  /**
+   * A szolgáltatólánc mérőszámai.
+   *
+   * KÉT TÁBLÁBÓL, ÉS A KETTŐ MÁST MOND. A `provider_metrics_daily` a
+   * KÉRÉSEKET összesíti (hány kísérlet, mennyi hiba, milyen gyorsan); a
+   * `provider_events` az ÁLLAPOTVÁLTOZÁSOKAT naplózza („leesett",
+   * „visszajött"). A panelen mindkettő kell: a számok megmondják, mennyire
+   * rossz, az események azt, hogy mikor romlott el.
+   *
+   * A HIBAARÁNY SZÁMLÁLÓJÁBAN nincs benne az `empty` és a `skipped`. Az
+   * `empty` a lánc szerint SIKER — a szolgáltató felelt, csak nincs nála ez a
+   * cím —, a `skipped` pedig azt jelenti, hogy meg sem kérdeztük, mert a
+   * megszakító kizárta. Egy ritka címet keresgélő néző nem tehet úgy, mintha
+   * a szolgáltató romlana.
+   */
+  fastify.get('/providers', {
+    onRequest: fastify.requirePermission('analytics.view'),
+    schema: { querystring: RANGE_QUERY }
+  }, async request => {
+    const w = windowOf(request)
+
+    const [totals, days, events, buckets] = await Promise.all([
+      query(
+        `SELECT slug,
+                coalesce(sum(attempts), 0)::int AS attempts,
+                coalesce(sum(attempts) FILTER (WHERE outcome = 'ok'), 0)::int AS ok,
+                coalesce(sum(attempts) FILTER (WHERE outcome = 'empty'), 0)::int AS empty,
+                coalesce(sum(attempts) FILTER (WHERE outcome = 'error'), 0)::int AS errors,
+                coalesce(sum(attempts) FILTER (WHERE outcome = 'timeout'), 0)::int AS timeouts,
+                coalesce(sum(attempts) FILTER (WHERE outcome = 'skipped'), 0)::int AS skipped,
+                coalesce(sum(sources), 0)::int AS sources,
+                coalesce(max(latency_ms_max), 0)::int AS latency_max,
+                -- Az átlag az ÖSSZEGBŐL és a DARABSZÁMBÓL, nem napi átlagok
+                -- átlagából: az utóbbi egy forgalmas napot ugyanannyit
+                -- számítana, mint egy üreset.
+                CASE WHEN sum(attempts) FILTER (WHERE outcome IN ('ok','empty','error','timeout')) > 0
+                     THEN round(
+                       sum(latency_ms_sum) FILTER (WHERE outcome IN ('ok','empty','error','timeout'))::numeric
+                       / sum(attempts) FILTER (WHERE outcome IN ('ok','empty','error','timeout')))::int
+                     ELSE 0 END AS latency_avg
+           FROM provider_metrics_daily
+          WHERE day BETWEEN $1::date AND $2::date
+          GROUP BY slug
+          ORDER BY attempts DESC, slug`,
+        [w.from, w.to]),
+      query(
+        `SELECT day, slug,
+                coalesce(sum(attempts), 0)::int AS attempts,
+                coalesce(sum(attempts) FILTER (WHERE outcome = 'ok'), 0)::int AS ok,
+                coalesce(sum(attempts) FILTER (WHERE outcome IN ('error','timeout')), 0)::int AS failures
+           FROM provider_metrics_daily
+          WHERE day BETWEEN $1::date AND $2::date
+          GROUP BY day, slug
+          ORDER BY day, slug`,
+        [w.from, w.to]),
+      query(
+        // Az esemény `detail` mezője a szolgáltató hibaüzenete. Ez a panel
+        // üzemeltetőnek szól, és a mező már a forrásnál meg van tisztítva
+        // (lásd `providers/scrub.ts`), de a hosszát itt is korlátozzuk.
+        `SELECT slug, event, left(detail, 300) AS detail, latency_ms, sources, at
+           FROM provider_events
+          WHERE at >= now() - ($1::int || ' days')::interval
+          ORDER BY at DESC
+          LIMIT 50`,
+        [w.days]),
+      /*
+       * A KÉSLELTETÉS ELOSZLÁSA — ebből lesz a percentilis.
+       *
+       * Az átlag és a maximum együtt sem mondja meg, milyen egy
+       * szolgáltató: száz kérésből kilencvenkilenc 200 ms alatt és egy tíz
+       * másodpercben ugyanazt az átlagot adja, mint a mind-300-ms-körül.
+       */
+      query<{ slug: string, bucket_ms: number, count: string }>(
+        `SELECT slug, bucket_ms, sum(count)::bigint AS count
+           FROM provider_latency_daily
+          WHERE day BETWEEN $1::date AND $2::date
+          GROUP BY slug, bucket_ms
+          ORDER BY slug, bucket_ms`,
+        [w.from, w.to])
+    ])
+
+    /*
+     * A PERCENTILIS FELSŐ KORLÁT, NEM PONTOS ÉRTÉK — és a válasz ezt ki is
+     * mondja (`bucketed: true`). Vödrökből számoljuk, tehát a helyes
+     * olvasata: „a kérések 95%-a ennyi alatt volt". Egy pontosnak látszó
+     * `487 ms` itt találgatás lenne.
+     */
+    const eloszlas = new Map<string, Array<{ bucket_ms: number, count: number }>>()
+    for (const b of buckets) {
+      const lista = eloszlas.get(b.slug) ?? []
+      lista.push({ bucket_ms: b.bucket_ms, count: Number(b.count) })
+      eloszlas.set(b.slug, lista)
+    }
+
+    const percentiles = [...eloszlas.entries()].map(([slug, lista]) => ({
+      slug,
+      samples: lista.reduce((n, b) => n + b.count, 0),
+      p50: percentileFrom(lista, 50),
+      p95: percentileFrom(lista, 95),
+      p99: percentileFrom(lista, 99),
+      bucketed: true,
+      buckets: lista
+    }))
+
+    return { window: w, totals, days, events, percentiles, latencyBuckets: LATENCY_BUCKETS }
+  })
+
+  // ---- összefoglaló ------------------------------------------------------
+
+  /**
+   * AZ ÁTTEKINTŐ FÜL — amit egy üzemeltető először akar látni.
+   *
+   * A NEVE `/summary`, NEM `/overview`, és ezt a modul feje ki is mondja: az
+   * `/overview` ezen az előtagon MÁR LÉTEZIK, és a platform egészéről szól
+   * (felhasználók, hibák, sorok). Ezt először elrontottam — a Fastify
+   * `FST_ERR_DUPLICATED_ROUTE`-tal el sem indult, és a teljes analitikai
+   * készlet elhasalt egy olyan hibán, aminek a figyelmeztetése húsz sorral
+   * följebb áll ebben a fájlban.
+   *
+   * Nem új mérés: a meglévő összesítőkből áll össze, egyetlen körben. A
+   * külön fülek attól maradnak meg, hogy ott van a részletezés; ide az
+   * kerül, amiért az ember egyáltalán megnyitja a panelt.
+   *
+   * A „MIÓTA MÉRÜNK" NEM DÍSZ. Ez a rendszer 2026 szeptemberében kezdett
+   * gyűjteni; egy 365 napos nézet nem azért üres, mert elromlott valami. A
+   * `since` és a `days` megmondja, mennyi adat van egyáltalán — enélkül a
+   * panel minden hosszú tartományon hibásnak látszik.
+   */
+  fastify.get('/summary', {
+    onRequest: fastify.requirePermission('analytics.view'),
+    schema: { querystring: RANGE_QUERY }
+  }, async request => {
+    const w = windowOf(request)
+
+    const [katalogus, idoszak, elozo, meddig, felsoAnime, szolgaltatok, allapot] = await Promise.all([
+      queryOne(
+        `SELECT (SELECT count(*) FROM anime WHERE visibility = 'public')::int AS anime,
+                (SELECT count(*) FROM episodes WHERE visibility = 'public')::int AS episodes,
+                (SELECT count(*) FROM users)::int AS users,
+                (SELECT count(*) FROM users WHERE created_at >= now() - interval '30 days')::int AS new_users`),
+      queryOne(
+        `SELECT coalesce(sum(sessions), 0)::int AS sessions,
+                coalesce(sum(visitors), 0)::int AS visitor_days,
+                coalesce(sum(page_views), 0)::int AS page_views,
+                coalesce(sum(registrations), 0)::int AS registrations,
+                coalesce(sum(searches), 0)::int AS searches,
+                coalesce(sum(episode_starts), 0)::int AS episode_starts,
+                coalesce(sum(episode_completions), 0)::int AS episode_completions,
+                coalesce(sum(errors), 0)::int AS errors,
+                count(*)::int AS days_with_data
+           FROM analytics_daily WHERE day BETWEEN $1::date AND $2::date`,
+        [w.from, w.to]),
+      // Az előző, AZONOS HOSSZÚ időszak — enélkül egy szám nem mond semmit.
+      queryOne(
+        // MINDEN PARAMÉTERT HASZNÁLNI KELL. Egy fel nem használt `$2` esetén
+        // a Postgres nem tudja kikövetkeztetni a típusát, és az egész kérés
+        // 500-zal áll meg — mérve.
+        `SELECT coalesce(sum(sessions), 0)::int AS sessions,
+                coalesce(sum(page_views), 0)::int AS page_views,
+                coalesce(sum(registrations), 0)::int AS registrations
+           FROM analytics_daily
+          WHERE day >= ($1::date - ($2::int || ' days')::interval)::date
+            AND day <  $1::date`,
+        [w.from, w.days]),
+      queryOne(
+        `SELECT min(day)::text AS since, max(day)::text AS until, count(*)::int AS days
+           FROM analytics_daily`),
+      query(
+        `SELECT a.canonical_title AS title, sum(s.views)::int AS views
+           FROM anime_stats_daily s JOIN anime a ON a.id = s.anime_id
+          WHERE s.day BETWEEN $1::date AND $2::date AND a.visibility = 'public'
+          GROUP BY a.canonical_title HAVING sum(s.views) > 0
+          ORDER BY sum(s.views) DESC, a.canonical_title LIMIT 5`,
+        [w.from, w.to]),
+      queryOne(
+        `SELECT coalesce(sum(attempts), 0)::int AS attempts,
+                coalesce(sum(attempts) FILTER (WHERE outcome IN ('error','timeout')), 0)::int AS failures,
+                count(DISTINCT slug)::int AS providers
+           FROM provider_metrics_daily WHERE day BETWEEN $1::date AND $2::date`,
+        [w.from, w.to]),
+      queryOne(
+        `SELECT count(*) FILTER (WHERE status = 'green')::int AS green,
+                count(*) FILTER (WHERE status NOT IN ('green', 'not_configured'))::int AS problem,
+                count(*) FILTER (WHERE status = 'not_configured')::int AS off,
+                max(checked_at) AS checked_at
+           FROM service_status`)
+    ])
+
+    return {
+      window: w,
+      catalogue: katalogus,
+      period: idoszak,
+      previous: elozo,
+      coverage: meddig,
+      topAnime: felsoAnime,
+      providers: szolgaltatok,
+      services: allapot
+    }
+  })
+
+  // ---- idősor ------------------------------------------------------------
+
+  /**
+   * EGY MÉRŐSZÁM AZ IDŐBEN — napi, heti vagy havi bontásban.
+   *
+   * A MÉRŐSZÁM NEVE FEHÉRLISTÁS, és ez nem formaiság: az oszlopnév a
+   * lekérdezésbe kerül, ahová paraméter nem tehető. Egy szabad szöveg itt
+   * SQL-injekció lenne.
+   *
+   * A HETI/HAVI BONTÁS AZ `analytics_periods`-ból jön, nem napi sorok
+   * összegzéséből — és ott a „látogató" neve `visitor_days`, mert a napi
+   * sóval képzett kulcsból heti egyedi látogató nem áll elő. Lásd a 0073-as
+   * migráció fejlécét.
+   */
+  const METRIKAK: Record<string, { napi: string, idoszaki: string | null, label: string }> = {
+    sessions: { napi: 'sessions', idoszaki: 'sessions', label: 'Munkamenet' },
+    visitors: { napi: 'visitors', idoszaki: 'visitor_days', label: 'Látogató' },
+    page_views: { napi: 'page_views', idoszaki: 'page_views', label: 'Oldalletöltés' },
+    registrations: { napi: 'registrations', idoszaki: 'registrations', label: 'Regisztráció' },
+    logins: { napi: 'logins', idoszaki: 'logins', label: 'Belépés' },
+    searches: { napi: 'searches', idoszaki: 'searches', label: 'Keresés' },
+    episode_starts: { napi: 'episode_starts', idoszaki: 'episode_starts', label: 'Epizód indítás' },
+    episode_completions: { napi: 'episode_completions', idoszaki: 'episode_completions', label: 'Epizód befejezés' },
+    watch_seconds: { napi: 'watch_seconds', idoszaki: 'watch_seconds', label: 'Nézett másodperc' },
+    errors: { napi: 'errors', idoszaki: null, label: 'Hiba' },
+    zero_result_searches: { napi: 'zero_result_searches', idoszaki: null, label: 'Nulla találatú keresés' }
+  }
+
+  fastify.get('/timeseries', {
+    onRequest: fastify.requirePermission('analytics.view'),
+    schema: {
+      querystring: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          range: { enum: Object.keys(RANGES) },
+          from: { type: 'string', format: 'date' },
+          to: { type: 'string', format: 'date' },
+          metric: { enum: Object.keys(METRIKAK) },
+          granularity: { enum: ['day', 'week', 'month'] }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const w = windowOf(request)
+    const q = request.query as { metric?: string, granularity?: 'day' | 'week' | 'month' }
+    const nev = q.metric ?? 'sessions'
+    const metrika = METRIKAK[nev]!
+    const bontas = q.granularity ?? 'day'
+
+    if (bontas !== 'day' && metrika.idoszaki === null) {
+      return await reply.code(400).send({
+        type: 'about:blank', title: 'Bad Request', status: 400,
+        detail: `a(z) ${nev} mérőszám csak napi bontásban létezik`
+      })
+    }
+
+    const sorok = bontas === 'day'
+      ? await query(
+        `SELECT day::text AS at, ${metrika.napi}::bigint AS value, true AS complete
+           FROM analytics_daily WHERE day BETWEEN $1::date AND $2::date ORDER BY day`,
+        [w.from, w.to])
+      : await query(
+        // A `days_counted` mondja meg, teljes-e az időszak. Egy folyamatban
+        // lévő hét nem hasonlítható egy lezárthoz, és enélkül a grafikon
+        // utolsó oszlopa mindig „visszaesést" mutatna.
+        `SELECT period_start::text AS at, ${metrika.idoszaki!}::bigint AS value,
+                days_counted >= $3::int AS complete, days_counted
+           FROM analytics_periods
+          WHERE period = $4 AND period_start BETWEEN ($1::date - $3::int) AND $2::date
+          ORDER BY period_start`,
+        [w.from, w.to, bontas === 'week' ? 7 : 28, bontas])
+
+    return { window: w, metric: nev, label: metrika.label, granularity: bontas, data: sorok }
+  })
+
+  // ---- adatminőség -------------------------------------------------------
+
+  /**
+   * ADATMINŐSÉG — „mit mérünk, mióta, és hol van lyuk".
+   *
+   * EZ A FÜL A PANEL ŐSZINTESÉGE. Minden más nézet számokat mutat; ez azt
+   * mutatja meg, mennyit érnek. Három kérdésre válaszol:
+   *
+   *   * MIÓTA van adat — egy 365 napos nézet nem azért üres, mert elromlott
+   *     valami, hanem mert a rendszer szeptemberben kezdett gyűjteni;
+   *   * VAN-E LYUK a napi összesítőben — egy leállt worker nem hiányzó
+   *     forgalomként, hanem hiányzó SORKÉNT látszik, és a kettő nem ugyanaz;
+   *   * MEDDIG ŐRIZZÜK — a nyers sorok eltűnnek, tehát a régi időszakok
+   *     bizonyos számai már nem számolhatók újra.
+   *
+   * A sorszámlálás pontos (`count(*)`), nem becslés: ezek a táblák ma
+   * tízezres nagyságrendűek. Ha egyszer milliósak lesznek, a becslés
+   * (`pg_class.reltuples`) a helyes csere — de akkor a válasz mondja is meg,
+   * hogy becslés.
+   */
+  // AZ IDŐOSZLOP NEVE TÁBLÁNKÉNT MÁS, és ezt megmérni kellett, nem
+  // kitalálni: a legtöbb `created_at`, a Discord-eseményeké `at`, a nézési
+  // előzményé `started_at`. Egy elgépelt oszlopnévtől az egész végpont
+  // 500-zal áll meg — pontosan ez történt az első változatával.
+  const FORRASOK: Array<{ tabla: string, oszlop: string, cimke: string, megorzes: string | null }> = [
+    { tabla: 'analytics_daily', oszlop: 'day', cimke: 'Napi összesítő', megorzes: null },
+    { tabla: 'analytics_periods', oszlop: 'period_start', cimke: 'Heti/havi összesítő', megorzes: null },
+    { tabla: 'analytics_sessions', oszlop: 'started_at', cimke: 'Munkamenet', megorzes: 'ANALYTICS_SESSION_RETENTION_DAYS' },
+    { tabla: 'page_views', oszlop: 'created_at', cimke: 'Oldalletöltés', megorzes: 'ANALYTICS_RAW_RETENTION_DAYS' },
+    { tabla: 'search_stats', oszlop: 'created_at', cimke: 'Keresés', megorzes: 'ANALYTICS_SEARCH_RAW_DAYS' },
+    { tabla: 'account_events', oszlop: 'created_at', cimke: 'Fiókesemény', megorzes: 'ACCOUNT_EVENT_RETENTION_DAYS' },
+    { tabla: 'security_logs', oszlop: 'created_at', cimke: 'Biztonsági napló', megorzes: 'SECURITY_LOG_RETENTION_DAYS' },
+    { tabla: 'performance_metrics', oszlop: 'created_at', cimke: 'Teljesítmény', megorzes: null },
+    { tabla: 'watch_history', oszlop: 'started_at', cimke: 'Nézési előzmény', megorzes: null },
+    { tabla: 'anime_stats_daily', oszlop: 'day', cimke: 'Cím-összesítő', megorzes: null },
+    { tabla: 'episode_stats_daily', oszlop: 'day', cimke: 'Epizód-összesítő', megorzes: null },
+    { tabla: 'provider_metrics_daily', oszlop: 'day', cimke: 'Szolgáltatói mérés', megorzes: null },
+    { tabla: 'provider_latency_daily', oszlop: 'day', cimke: 'Szolgáltatói eloszlás', megorzes: null },
+    { tabla: 'audit_logs', oszlop: 'created_at', cimke: 'Adminnapló', megorzes: null },
+    { tabla: 'persistent_message_events', oszlop: 'at', cimke: 'Discord-frissítés', megorzes: 'DISCORD_EVENT_RETENTION_DAYS' }
+  ]
+
+  fastify.get('/data-quality', {
+    onRequest: fastify.requirePermission('analytics.view')
+  }, async () => {
+    // A táblanevek a kódból jönnek, nem a kérésből — a fenti listából.
+    const unios = FORRASOK.map((f, i) =>
+      `SELECT ${i} AS sorszam, count(*)::bigint AS rows,
+              min(${f.oszlop})::text AS first_at, max(${f.oszlop})::text AS last_at
+         FROM ${f.tabla}`).join(' UNION ALL ')
+    const meresek = await query<{ sorszam: number, rows: string, first_at: string | null, last_at: string | null }>(unios)
+
+    /*
+     * A LYUKAK A NAPI ÖSSZESÍTŐBEN. Az utolsó 30 nap közül melyikre nincs
+     * sor. A MAI NAP KIMARAD: az még nem futott le véglegesen, és minden
+     * délelőtt „hiányzó napot" jelentene.
+     */
+    const lyukak = await query<{ day: string }>(
+      `SELECT g::date::text AS day
+         FROM generate_series(current_date - 30, current_date - 1, interval '1 day') g
+        WHERE NOT EXISTS (SELECT 1 FROM analytics_daily d WHERE d.day = g::date)
+        ORDER BY g`)
+
+    const utolsoOsszesites = await queryOne<{ at: string | null }>(
+      'SELECT max(updated_at)::text AS at FROM analytics_daily')
+
+    return {
+      sources: FORRASOK.map((f, i) => {
+        const m = meresek.find(x => Number(x.sorszam) === i)
+        return {
+          table: f.tabla,
+          label: f.cimke,
+          rows: Number(m?.rows ?? 0),
+          firstAt: m?.first_at ?? null,
+          lastAt: m?.last_at ?? null,
+          // A megőrzés a KÖRNYEZETBŐL, nem beégetve: ami itt látszik, az
+          // tényleg az, ami a nyeséskor érvényes.
+          retentionDays: f.megorzes ? Number(process.env[f.megorzes] ?? 0) || null : null
+        }
+      }),
+      gaps: lyukak.map(l => l.day),
+      lastRollupAt: utolsoOsszesites?.at ?? null,
+      // Nem becslés — lásd a fenti megjegyzést.
+      exact: true
+    }
+  })
+
+  // ---- rendszerállapot ---------------------------------------------------
+
+  /**
+   * Komponensenkénti állapot, a KISZOLGÁLÓ tényleges ellenőrzéseiből.
+   *
+   * A `service_status` táblát a `infrastructure/observability` írja; ez a
+   * végpont csak olvassa. A panel semmit nem talál ki: ami itt nincs, az
+   * `unknown`, nem „healthy".
+   *
+   * A `not_configured` NEM HIBA, és ezt külön ki kell mondani. Ma négy
+   * komponens áll így (redis, rabbitmq, opensearch, minio) — ezek a
+   * telepítésben szándékosan nincsenek bekapcsolva. Pirosra festeni őket
+   * annyit tenne, hogy a panel folyamatosan hibát jelez egy működő
+   * rendszerre, és onnantól senki nem nézi.
+   */
+  fastify.get('/system-health', {
+    onRequest: fastify.requirePermission('analytics.view')
+  }, async () => {
+    const services = await query(
+      `SELECT service, status, latency_ms, left(detail, 200) AS detail, checked_at, since,
+              extract(epoch FROM (now() - since))::bigint AS since_seconds
+         FROM service_status
+        ORDER BY service`)
+
+    const recent = await query(
+      `SELECT service, status, checked_at
+         FROM service_status
+        WHERE checked_at < now() - interval '10 minutes'
+        ORDER BY service`)
+
+    return {
+      services,
+      /*
+       * ELAVULT ELLENŐRZÉS. Egy tíz perce nem frissült sor nem „zöld" — azt
+       * jelenti, hogy az ellenőrző maga nem fut. A panel ezt külön mutatja,
+       * mert különben egy leállt megfigyelő a legjobb állapotnak látszik.
+       */
+      stale: recent.map(r => r.service),
+      checkedAt: new Date().toISOString()
+    }
+  })
 
   fastify.get('/export', {
     onRequest: fastify.requirePermission('analytics.export', { hide: true }),

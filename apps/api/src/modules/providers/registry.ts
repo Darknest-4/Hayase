@@ -113,6 +113,11 @@ async function decisions (): Promise<Map<string, Row>> {
  * AMIHEZ NINCS SOR A TÁBLÁBAN, az BE VAN KAPCSOLVA. Egy frissen telepített
  * adapter működjön anélkül, hogy valaki kézzel felvenné — a kikapcsolás a
  * kifejezett döntés, nem a bekapcsolás.
+ *
+ * KIVÉTEL: az adapter maga mondhatja, hogy ő alapból KI legyen kapcsolva
+ * (`defaultEnabled: false`). Aki minden feloldásnál idegen kiszolgálót hív,
+ * annál a bekapcsolás a kifejezett döntés — különben egy kódfrissítés
+ * magától indítana forgalmat egy harmadik fél felé.
  */
 export async function ranked (): Promise<RegisteredProvider[]> {
   const rows = await decisions()
@@ -121,7 +126,7 @@ export async function ranked (): Promise<RegisteredProvider[]> {
       const row = rows.get(provider.id)
       return {
         provider,
-        enabled: row?.enabled ?? true,
+        enabled: row?.enabled ?? provider.defaultEnabled ?? true,
         priority: row?.priority ?? provider.defaultPriority ?? 100,
         label: row?.label ?? provider.label,
         config: row?.config ?? {}
@@ -139,7 +144,7 @@ export async function all (): Promise<RegisteredProvider[]> {
       const row = rows.get(provider.id)
       return {
         provider,
-        enabled: row?.enabled ?? true,
+        enabled: row?.enabled ?? provider.defaultEnabled ?? true,
         priority: row?.priority ?? provider.defaultPriority ?? 100,
         label: row?.label ?? provider.label,
         config: row?.config ?? {}

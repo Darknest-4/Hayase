@@ -34,6 +34,9 @@ export const PARTITIONED = [
   { table: 'messages', column: 'created_at', retentionMonths: null },
   { table: 'page_views', column: 'created_at', retentionMonths: 3 },
   { table: 'search_stats', column: 'created_at', retentionMonths: 3 },
+  // Az egységes eseménytábla. Ugyanaz a megőrzés, mint a többi nyers
+  // eseményé: az ÖSSZESÍTŐ marad, a nyers sor nem.
+  { table: 'analytics_events', column: 'created_at', retentionMonths: 3 },
   { table: 'performance_metrics', column: 'created_at', retentionMonths: 3 },
   { table: 'audit_logs', column: 'created_at', retentionMonths: null },
   { table: 'error_logs', column: 'created_at', retentionMonths: 1 },

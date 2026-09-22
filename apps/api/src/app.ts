@@ -65,6 +65,7 @@ import { adminMaintenance, publicStatus } from './modules/maintenance/routes.ts'
 import { verifyMediaBase } from './modules/media/public-url.ts'
 import { verifyVideoBase } from './modules/maintenance/video-resolver.ts'
 import providerAdmin from './modules/providers/admin-routes.ts'
+import discordRoutes from './modules/discord/routes.ts'
 import { registerBuiltInProviders } from './modules/providers/index.ts'
 
 /**
@@ -399,7 +400,28 @@ export async function buildApp (): Promise<FastifyInstance> {
    * Ez nem tágítja a támadási felületet: nyitott példányon ez a végpont
    * amúgy is hitelesítés nélkül hívható, és írási sebességkorlát alatt van.
    */
-  const loginExempt = /^\/v1\/(health|config|auth|status|analytics\/view)\b/
+  /*
+   * AZ ÖTÖDIK: A DISCORD VISSZAIRÁNYÍTÁSA.
+   *
+   * A Discord engedélyezési lapjáról a böngésző egy KERESZTOLDALI
+   * átirányítással érkezik ide — `Authorization` fejléc nélkül, mert azt nem
+   * a mi kliensünk küldi, és a munkamenet a `localStorage`-ban ül, nem
+   * sütiben. A kapu tehát MINDIG 401-et adott volna, és a fiók-összekötés
+   * zárt példányon soha nem tudott volna befejeződni. Mérve: 401, „This
+   * instance is private".
+   *
+   * NEM TÁGÍTJA A TÁMADÁSI FELÜLETET, és ezt érdemes pontosan kimondani. Ez
+   * a végpont nem ad ki semmit: egyetlen dolgot csinál, hogy bevált egy
+   * `state`-et, amit MI adtunk ki, egy bejelentkezett felhasználónak,
+   * egyszer használhatóan és lejárattal. Állapot nélkül — vagyis pontosan
+   * abban az esetben, amikor egy idegen hívja meg — a válasz egy
+   * átirányítás, és az adatbázishoz hozzá sem nyúl.
+   *
+   * CSAK EZ AZ EGY ÚTVONAL, nem a `discord` előtag: minden más
+   * Discord-végpont hitelesítést ÉS guild-jogosultságot kér, és az így is
+   * marad.
+   */
+  const loginExempt = /^\/v1\/(health|config|auth|status|analytics\/view|discord\/oauth\/callback)\b/
   app.addHook('onRequest', async (request, reply) => {
     if (!/^\/(v1|graphql)\b/.test(request.url)) return
     if (loginExempt.test(request.url)) return
@@ -643,6 +665,16 @@ export async function buildApp (): Promise<FastifyInstance> {
    */
   registerBuiltInProviders()
   await app.register(providerAdmin, { prefix: '/v1/admin/providers' })
+  /*
+   * A DISCORD VEZÉRLŐPULT VÉGPONTJAI.
+   *
+   * `/v1/discord`, nem `/v1/admin/discord`: a hozzáférést nem a YUME
+   * adminisztrátori szerepe adja, hanem a Discord guild-jogosultsága — egy
+   * szerver tulajdonosa a saját guildjét kezelheti anélkül, hogy a YUME-ban
+   * bármilyen adminisztrátori joga lenne. A kaput a `guild-access.ts` őrzi,
+   * minden kérésnél.
+   */
+  await app.register(discordRoutes, { prefix: '/v1/discord' })
   await app.register(publicReadiness, { prefix: '/v1/health' })
   await app.register(adminMonitoring, { prefix: '/v1/admin/monitoring' })
 
@@ -894,9 +926,109 @@ export async function buildApp (): Promise<FastifyInstance> {
       return page.html
     }
 
+    /*
+     * ---- A DISCORD-VEZÉRLŐPULT ----
+     *
+     * KÜLÖN FELÜLET, UGYANAZ AZ ALKALMAZÁS. A `discord.animehub.hu` a
+     * fordított proxyn keresztül ugyanide érkezik, és a proxy minden nem-API
+     * címet a `/dashboard` előtag alá ír át. Így a vezérlőpult SAJÁT CÍMEN
+     * él, de nincs külön konténer, külön telepítés és — mivel az API is
+     * ugyanez az eredet — nincs CORS sem.
+     *
+     * MIÉRT KÜLÖN FELÜLET EGYÁLTALÁN. Ide az is beléphet, akinek a YUME-ban
+     * NINCS admin jogosultsága, csak a Discord-szerverén van „Szerver
+     * kezelése" joga. Egy ilyen embernek nem kell — és nem is szabad —
+     * látnia a katalógust, a felhasználókat vagy a moderációt. A
+     * jogosultságot a kiszolgáló dönti el (`guildAccess`); ez a szétválasztás
+     * nem védelem, hanem az, hogy a két közönség ne egymás felületét kapja.
+     *
+     * A LAPKÉSZLET ÉS A KÉPEK A WEBKLIENSÉI: ugyanaz a termék, ugyanazok a
+     * tokenek. Két példány a design-rendszerből azt jelentené, hogy két
+     * helyen kell javítani ugyanazt, és a második mindig elmarad.
+     */
+    const discordRoot = process.env.DISCORD_WEB_ROOT ??
+      join(dirname(fileURLToPath(import.meta.url)), '../../discord')
+
+    let discordPage: { mtimeMs: number, html: string } | null = null
+    const serveDashboard = async (reply: FastifyReply): Promise<string> => {
+      reply.type('text/html; charset=utf-8')
+      reply.header('cache-control', 'no-cache')
+      const path = join(discordRoot, 'index.html')
+      const { mtimeMs } = await stat(path)
+      if (discordPage?.mtimeMs !== mtimeMs) {
+        discordPage = { mtimeMs, html: await readFile(path, 'utf8') }
+      }
+      return discordPage.html
+    }
+
+    const hasDashboard = existsSync(join(discordRoot, 'index.html'))
+    if (hasDashboard) {
+      /*
+       * A GYORSÍTÓTÁR UGYANAZ A SZABÁLY, MINT A WEBKLIENSNÉL — és ezt
+       * kihagyni mért hiba volt.
+       *
+       * A vezérlőpultnak sincs build lépése: a böngésző azokat a
+       * fájlneveket tölti le, amik a lemezen vannak. Egy telepítés után tehát
+       * ugyanarról a CÍMRŐL kérné az ÚJ kódot — és ha a régit
+       * gyorsítótárazta, nem kéri.
+       *
+       * ÉS EZ MEG IS TÖRTÉNT. Az eredet `max-age=0`-t küldött, a Cloudflare
+       * pedig felülírta. Mérve, ugyanarra a fájlra:
+       *
+       *   konténer:               cache-control: public, max-age=0
+       *   discord.animehub.hu:    cache-control: public, max-age=14400
+       *
+       * Négy órán át a régi JS ment ki, miközben a kiszolgálón már az új
+       * volt: a belépőlap a javítás UTÁN is a régi mezőnevet küldte, és a
+       * felhasználó ugyanazt a hibát látta.
+       *
+       * A `no-cache` NEM azt jelenti, hogy „ne tárold" — azt, hogy „tárold,
+       * de HASZNÁLAT ELŐTT kérdezd meg". Az ETag megmarad, tehát a válasz
+       * jellemzően egy pár száz bájtos 304.
+       */
+      const dashboardCache = (response: { header: (k: string, v: string) => void }, filePath: string): void => {
+        const forras = /\.(?:js|mjs|css|html|webmanifest)$/i.test(filePath)
+        response.header('cache-control', forras ? 'no-cache' : 'public, max-age=86400')
+      }
+
+      await app.register(async scope => {
+        // Csak az EGYIK bővítmény díszítheti a választ; a többi ugyanabban a
+        // hatókörben `decorateReply: false`-szal él meg egymás mellett.
+        await scope.register(fastifyStatic, {
+          root: discordRoot, prefix: '/dashboard/', decorateReply: false,
+          index: false, list: false, dotfiles: 'ignore', setHeaders: dashboardCache
+        })
+        await scope.register(fastifyStatic, {
+          root: join(webRoot, 'css'), prefix: '/dashboard/css/', decorateReply: false,
+          index: false, list: false, dotfiles: 'ignore', setHeaders: dashboardCache
+        })
+        await scope.register(fastifyStatic, {
+          root: join(webRoot, 'assets'), prefix: '/dashboard/assets/', decorateReply: false,
+          index: false, list: false, dotfiles: 'ignore', setHeaders: dashboardCache
+        })
+      })
+      /*
+       * A GYÖKÉR A LAPÉ, nem a fájlkiszolgálóé — ugyanaz a felállás, mint a
+       * webkliensnél. A `fastify-static` egy KÖNYVTÁRKÉRÉSRE (`/dashboard/`)
+       * könyvtárindex nélkül 403-at ad, nem lapot; mérve: pontosan ez
+       * történt, és a böngésző egy hibatestet kapott HTML helyett.
+       */
+      app.get('/dashboard', async (_request, reply) => await serveDashboard(reply))
+      app.get('/dashboard/', async (_request, reply) => await serveDashboard(reply))
+      app.log.info(`serving discord dashboard from ${discordRoot}`)
+    }
+
     app.setNotFoundHandler(async (request, reply) => {
-      if (request.method === 'GET' && !/^\/(v1|graphql|graphiql|ws)\b/.test(request.url) && !isClientAsset(request.url)) {
-        return await servePage(reply)
+      if (request.method === 'GET' && !/^\/(v1|graphql|graphiql|ws)\b/.test(request.url)) {
+        /*
+         * A VEZÉRLŐPULT SAJÁT LAPJA. Enélkül a `/dashboard/bármi` a YUME
+         * index.html-jét kapná — vagyis a rossz alkalmazást, 200-zal, és a
+         * hiba csak a böngészőben derülne ki.
+         */
+        if (hasDashboard && /^\/dashboard(\/|$)/.test(request.url)) {
+          return await serveDashboard(reply)
+        }
+        if (!isClientAsset(request.url)) return await servePage(reply)
       }
       return reply.code(404).type('application/problem+json').send({ type: 'about:blank', title: 'Not Found', status: 404 })
     })

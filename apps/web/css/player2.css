@@ -40,6 +40,23 @@
   background: var(--ink-black);
 }
 
+/*
+ * BEÁGYAZOTT LEJÁTSZÓ — ugyanaz a felület, mint a videóé.
+ *
+ * Az `iframe` alapból a saját tartalmi méretét venné fel (300×150 képpont),
+ * ezért kell az `inset: 0`. A `.yp` `aspect-ratio`-ja adja a méretet, tehát
+ * a keret telefonon is a lap szélességéhez igazodik.
+ */
+.yp .player-embed {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: var(--ink-black);
+}
+
 /* Az EGÉRMUTATÓ is eltűnik a vezérlőkkel. Egy mozdulatlan nyíl a kép közepén
    ugyanúgy zavar, mint egy kint felejtett sáv. */
 .yp.yp-idle { cursor: none; }
@@ -113,9 +130,20 @@
   pointer-events: none;
   transition: bottom var(--dur) var(--ease);
 }
-/* Kint lévő vezérlőknél a felirat FELJEBB CSÚSZIK. A sáv különben pont a
-   feliratot takarja, és a néző a szöveg kedvéért kénytelen elvenni az egeret. */
-.yp:not(.yp-idle) .yp-subtitles { bottom: calc(var(--yp-sub-bottom) + 64px); }
+/*
+ * Kint lévő vezérlőknél a felirat FELJEBB CSÚSZIK — különben a sáv pont a
+ * feliratot takarja.
+ *
+ * AZ EMELÉS VÁLTOZÓ, NEM FIX SZÁM, és ez egy mért hiba javítása. Itt `64px`
+ * állt, ami az asztali sáv magasságához készült. Telefonon a sáv 108 képpont,
+ * tehát a felirat 64 képponttal feljebb csúszva PONT a gombok sorába esett —
+ * a mérésen a „845年 シガンシナ区" felirat az idő és a feliratgomb között ült.
+ *
+ * Egy változóval a két érték nem tud szétcsúszni: aki a sáv magasságát
+ * állítja, annak az emelést is itt kell állítania.
+ */
+.yp { --yp-controls-lift: 64px; }
+.yp:not(.yp-idle) .yp-subtitles { bottom: calc(var(--yp-sub-bottom) + var(--yp-controls-lift)); }
 
 .yp-subtitles > * {
   font-size: calc(var(--text-lg) * var(--yp-sub-size));
@@ -520,7 +548,20 @@
   text-align: center;
   color: var(--on-media);
 }
-.yp-error-text { margin: 0; line-height: var(--leading-normal); }
+/*
+ * A HIBASZÖVEG TÖRDELHETŐ.
+ *
+ * A böngésző néha egyetlen, szóköz nélküli technikai sort ad vissza —
+ * `PipelineStatus::DEMUXER_ERROR_COULD_NOT_PARSE` —, és az a doboz szélén
+ * túlfutva egyszerűen levágódik. Mérve, 390 képpontos telefonon: a szöveg
+ * vége eltűnt a képernyő szélén.
+ */
+.yp-error-text {
+  margin: 0;
+  line-height: var(--leading-normal);
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
 .yp-btn-text {
   padding: var(--space-2) var(--space-5);
   font: inherit;
@@ -682,7 +723,27 @@
  */
 @media (max-width: 640px) {
   .yp { border-radius: var(--radius-md); }
-  .yp-controls { padding: var(--space-5) var(--space-2) var(--space-2); }
+  /*
+   * A SÁV NE TAKARJA EL A KÉPET.
+   *
+   * Mérve, 390 képpontos telefonon: a lejátszó 219 képpont magas (16:9), a
+   * vezérlősáv pedig 108 — a KÉP FELE. A felső belső margó volt a legnagyobb
+   * tétel benne, és semmit nem tart: a sötétítés átmenete adja a
+   * olvashatóságot, nem az üres hely.
+   */
+  .yp-controls { padding: var(--space-3) var(--space-2) var(--space-2); }
+  /* A sáv alacsonyabb lett, de a feliratnak így is el kell kerülnie. */
+  .yp { --yp-controls-lift: 100px; }
+  /*
+   * A FOGANTYÚ ÉRINTÉSEN MINDIG LÁTSZIK.
+   *
+   * Alapból `scale(0)`, és csak `:hover`-re nő ki — egy telefonon viszont
+   * NINCS hover, tehát a néző soha nem látta, hol fogja meg a sávot. Mérve:
+   * a keresősáv egy sima vonal volt, fogantyú nélkül.
+   */
+  .yp-seek-head { transform: scale(1); }
+  /* A vékony sáv ujjal nehezen célozható; a fogási terület marad vastag. */
+  .yp-seek-rail { height: 5px; }
   /* Telefonon a hangerőcsúszka, a mozi mód és a részváltó gombok elmaradnak:
      a hangerőt a készülék gombjai állítják, a mozi módnak nincs mit
      tágítania, a részváltás pedig az epizódlistából egy koppintás.
@@ -729,6 +790,14 @@
   .yp-btn-back,
   .yp-btn-fwd,
   .yp-btn-mute { display: none; }
-  .yp-controls { padding: var(--space-5) var(--space-1) var(--space-1); }
+  /*
+   * A FELSŐ MARGÓ ITT IS SZŰK MARAD.
+   *
+   * Itt `var(--space-5)` állt, és mivel ez a blokk a 640-es UTÁN jön, csendben
+   * VISSZAÁLLÍTOTTA a magas sávot minden 400 képpont alatti telefonon — mérve:
+   * a 640-es blokkban csökkentett margó után a sáv így is 109 képpont maradt,
+   * a 219-ből. Két blokk ugyanarra a tulajdonságra: a későbbi nyer.
+   */
+  .yp-controls { padding: var(--space-3) var(--space-1) var(--space-1); }
   .yp-time { padding: 0 var(--space-1); }
 }

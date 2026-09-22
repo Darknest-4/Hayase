@@ -7,6 +7,7 @@ import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
 import { T } from '../shared/i18n/i18n.js'
 import { P } from '../shared/ui/primitives.js'
+import { trackEvent } from '../shared/lib/analytics.js'
 import { U } from '../shared/lib/dom.js'
 
 export const PageSearch = {
@@ -198,6 +199,33 @@ export const PageSearch = {
       offset: (state.page - 1) * 30,
       cursor: state.cursor,
       perPage: 30
+    })
+
+    /*
+     * A TALÁLATRA KATTINTÁS — ez köti össze a keresést a megnyitással.
+     *
+     * Ez az egyetlen szám, ami megmondja, hogy a keresés MŰKÖDIK-E: nem az
+     * számít, hányan kerestek, hanem hogy hányan találták meg, amit kerestek.
+     * A keresést eddig is mértük, a megnyitást is — a KETTŐ KÖZTI kapcsolatot
+     * nem.
+     *
+     * ESEMÉNYDELEGÁLÁS, egy figyelővel a rácson: kártyánként külön figyelő
+     * harminc találatnál harminc figyelő, és minden lapozásnál újabb harminc.
+     *
+     * A POZÍCIÓ IS MEGY, mert egy első helyen talált cím és egy huszadik
+     * helyen talált cím nem ugyanaz a siker.
+     */
+    results.addEventListener('click', event => {
+      const kartya = event.target?.closest?.('a.card')
+      if (!kartya) return
+      const id = String(kartya.getAttribute('href') ?? '').split('#/anime/')[1]
+      if (!id) return
+      const kartyak = [...results.querySelectorAll('a.card')]
+      trackEvent('search.result.open', {
+        subjectType: 'anime',
+        subjectId: id,
+        position: kartyak.indexOf(kartya) + 1
+      })
     })
 
     const load = async (append = false) => {

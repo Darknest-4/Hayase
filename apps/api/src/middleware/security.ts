@@ -14,6 +14,7 @@ import { isLoadTestRequest, loadTestConfigured } from './load-test.ts'
 import { settings as siteSettings, type RateLimits } from '../modules/settings/site-settings.ts'
 
 import type { FastifyRequest } from 'fastify'
+import { frameSrcEntries } from '../modules/providers/embed-hosts.ts'
 
 /**
  * Content-Security-Policy for the served web client.
@@ -70,8 +71,28 @@ const CSP = [
   "img-src 'self' data: blob: https:",      // artwork comes from AniList/MAL CDNs
   "media-src 'self' blob: https:",          // video sources are external by design
   "connect-src 'self' https:",              // AniList/Jikan/ani.zip are called from the client
-  'frame-src https://www.youtube-nocookie.com https://www.youtube.com' +   // trailers
-    (turnstileEnabled() ? ` ${TURNSTILE_ORIGIN}` : ''),                       // az emberpróba iframe-je
+  /*
+   * A `frame-src` — ÉS AZ, AMI EBBŐL KIMARADT, EGY MÉRT ÉLES HIBA VOLT.
+   *
+   * A beágyazott lejátszók (Anikoto → `megaplay.buzz`) ezen az irányelven
+   * múlnak. Amíg nem szerepeltek itt, a böngésző CSENDBEN eldobta a keretet:
+   *
+   *   Framing 'https://megaplay.buzz/' violates the following Content
+   *   Security Policy directive: "frame-src https://www.youtube-nocookie.com …"
+   *
+   * A szerver közben forrást adott, a lejátszó keretet készített — a nézőnek
+   * mégis az jött ki, hogy „ezt a részt egyik elérhető forrásból sem sikerült
+   * lejátszani". Ez a fajta hiba csak VALÓDI BÖNGÉSZŐBEN látszik: a
+   * szerveroldali mérés végig azt mutatta, hogy minden rendben.
+   *
+   * A lista NEM ITT van felsorolva, hanem az `embed-hosts.ts`-ben — ugyanaz,
+   * amit a szerveroldali cím-ellenőrzés használ. Két külön lista előbb-utóbb
+   * szétcsúszna, és a szétcsúszás pont ilyen néma hibát szül.
+   */
+  ['frame-src https://www.youtube-nocookie.com https://www.youtube.com',    // előzetesek
+    ...frameSrcEntries(),                                                    // beágyazott lejátszók
+    ...(turnstileEnabled() ? [TURNSTILE_ORIGIN] : [])                        // az emberpróba iframe-je
+  ].join(' '),
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",

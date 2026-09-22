@@ -38,6 +38,37 @@ export type AuditAction =
   | 'anime.translation.create' | 'anime.translation.update' | 'anime.translation.delete'
   | 'config.flag' | 'config.setting'
   /*
+   * Tartós Discord-üzenetek.
+   *
+   * Azért naplózott, mert egy ilyen üzenet EGY IDEGEN SZERVER csatornájába
+   * ír a nevünkben, és a beállítását olyan is módosíthatja, aki a YUME-ban
+   * nem adminisztrátor — csak a Discord guildjében van joga. „Ki állította
+   * be, hogy ide írjon a bot" utólag megválaszolhatatlan kérdés lenne.
+   *
+   * A `resync` is szerepel: az kézzel indított KÜLDÉS, nem olvasás.
+   */
+  | 'discord.persistent_message.create'
+  | 'discord.persistent_message.update'
+  | 'discord.persistent_message.delete'
+  | 'discord.persistent_message.resync'
+  | 'discord.persistent_message.recreate'
+  | 'discord.setup.run'
+  | 'discord.setup.repair'
+  | 'discord.setup.factory_reset'
+  | 'discord.commands.register'
+  | 'discord.welcome.update'
+  | 'discord.welcome.test'
+  /*
+   * A Discord-fiók összekötése és bontása.
+   *
+   * Azért naplózott, mert ez DÖNTI EL, ki mely guildek adataihoz fér hozzá.
+   * „Ki kötötte ehhez a fiókhoz ezt a Discord-azonosítót" utólag
+   * megválaszolhatatlan kérdés lenne — és pont ez az a lépés, amivel valaki
+   * jogosultságot szerez.
+   */
+  | 'discord.account.link'
+  | 'discord.account.unlink'
+  /*
    * Forrásszolgáltató ki- vagy bekapcsolása, sorrendjének átállítása.
    *
    * Azért naplózott, mert egy kikapcsolt szolgáltató első TÜNETE az, hogy

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="hu">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>YUME — Discord vezérlőpult</title>
+  <meta name="description" content="A YUME Discord-botjának vezérlőpultja." />
+  <!-- A KERESŐK ELŐL ELZÁRVA. Ez egy üzemeltetői felület; a puszta LÉTE sem
+       tartozik a találati listákra. A kiszolgáló ugyanezt fejlécben is
+       elküldi — egy meta önmagában nem elég. -->
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="icon" href="./assets/yume.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet">
+  <!-- UGYANAZ A LAPKÉSZLET, MINT A FŐOLDALON, és ez szándékos: ez a felület
+       külön címen él, de ugyanannak a terméknek a része. A sorrend itt is
+       szerződés — tokenek, primitívek, képernyők, adminfelület.
+
+       MINDEN HIVATKOZÁS RELATÍV, és ez nem stílus. Ez a lap KÉT címen
+       ugyanaz: közvetlenül `/dashboard/`-ként, és a fordított proxyn át a
+       `discord.animehub.hu` GYÖKERÉN. Egy abszolút `/css/...` az elsőnél a
+       webkliens könyvtárába mutatna — mérve: a `/src/app.js` 404 lett, és a
+       lap a „Betöltés…" feliratnál állt meg. -->
+  <link rel="stylesheet" href="./css/tokens.css">
+  <link rel="stylesheet" href="./css/components.css">
+  <link rel="stylesheet" href="./css/style.css">
+  <link rel="stylesheet" href="./css/admin.css">
+  <link rel="stylesheet" href="./css/discord.css">
+</head>
+
+<body>
+  <div id="app" class="dc-app">
+    <div class="dc-boot">Betöltés…</div>
+  </div>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <script type="module" src="./src/app.js"></script>
+</body>
+
+</html>

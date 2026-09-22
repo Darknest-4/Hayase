@@ -176,6 +176,51 @@ describe('a providerréteg', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () =>
     assert.equal((await resolveMod.resolveEpisode(REF)).provider, 'sz')
   })
 
+  /*
+   * AZ ALAPÉRTELMEZÉS AZ ADAPTERÉ, NEM A TÁBLÁÉ.
+   *
+   * Sor nélkül minden adapter be van kapcsolva — egy frissen telepített
+   * bővítmény működjön magától. A KIVÉTEL a külső hálózati szolgáltató: aki
+   * minden feloldásnál idegen kiszolgálót hív, annak a bekapcsolása
+   * kifejezett döntés legyen.
+   *
+   * Ez nem elméleti: az Anikoto adapter alapból bekapcsolva volt, és emiatt a
+   * TESZTFUTTATÁS élő kéréseket indított egy harmadik fél API-ja felé — 180
+   * lapot egyetlen katalógusindexért.
+   */
+  it('a `defaultEnabled: false` sor nélkül is kikapcsolva hagyja', async () => {
+    let kerdeztek = false
+    registry.register({
+      ...fake('kulso', { sources: 1, priority: 1 }),
+      defaultEnabled: false,
+      async resolve () { kerdeztek = true; return { sources: [], subtitles: [] } }
+    })
+    registry.register(fake('helyi', { sources: 1, priority: 2 }))
+    resolveMod.clearCache()
+
+    const r = await resolveMod.resolveEpisode(REF)
+
+    assert.equal(kerdeztek, false, 'a külső szolgáltatót sor nélkül is megkérdeztük')
+    assert.equal(r.provider, 'helyi')
+  })
+
+  it('a kifejezett sor FELÜLÍRJA az adapter alapértelmezését', async () => {
+    registry.register({ ...fake('kulso2', { sources: 1, priority: 1 }), defaultEnabled: false })
+    resolveMod.clearCache()
+    assert.equal((await resolveMod.resolveEpisode(REF)).provider, null)
+
+    await registry.setState('kulso2', { enabled: true })
+    resolveMod.clearCache()
+    assert.equal((await resolveMod.resolveEpisode(REF)).provider, 'kulso2',
+      'a bekapcsolt sor nem hatott — a kapcsoló nem tudja felülírni az alapértelmezést')
+  })
+
+  it('az alapértelmezés továbbra is BEKAPCSOLVA, ha az adapter nem mond mást', async () => {
+    registry.register(fake('sima', { sources: 1, priority: 1 }))
+    resolveMod.clearCache()
+    assert.equal((await resolveMod.resolveEpisode(REF)).provider, 'sima')
+  })
+
   it('a sorrendet a prioritás dönti, nem a regisztráció sorrendje', async () => {
     registry.register(fake('kesobb', { sources: 1, priority: 5 }))
     registry.register(fake('elobb', { sources: 1, priority: 1 }))

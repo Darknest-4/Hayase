@@ -14,6 +14,8 @@
 // reported honestly rather than pretended away.
 
 import { Prefs } from '../../shared/state/preferences.js'
+import { attachEmbed, sandboxFor } from './embed-frame.js'
+import { featureOn, flagDeclared } from '../../shared/lib/site-config.js'
 
 /**
  * Mi bizonyítja, hogy egy forrás MŰKÖDIK.
@@ -176,6 +178,13 @@ export const StreamEngine = {
       if (probe.canPlayType(mime)) return { playable: true, reason: null }
       return { playable: false, reason: `${kind.toUpperCase()} is not supported by this browser` }
     }
+    /*
+     * A BEÁGYAZÁST NEM A MI MOTORUNK JÁTSSZA LE, hanem az idegen lejátszó
+     * egy `iframe`-ben. Nincs tehát kodek, amit a böngészőtől kérdezni
+     * kellene — a `canPlayType` itt értelmetlen kérdés volna, és a `false`
+     * válasza egy tökéletesen működő forrást zárna ki.
+     */
+    if (kind === 'embed') return { playable: true, reason: null }
     if (kind === 'unknown') return { playable: false, reason: 'unrecognised stream URL' }
     if (container && !document.createElement('video').canPlayType(container)) {
       return { playable: false, reason: `codec ${container} is not supported by this browser` }
@@ -197,7 +206,22 @@ export const StreamEngine = {
     // failure, which looked exactly like "nothing found".
     const url = String(raw?.url || raw?.link || '')
     if (!url) return null
-    const kind = this.classify(url)
+    /*
+     * A SZERVER BEJELENTÉSE ERŐSEBB, MINT A CÍMBŐL VALÓ TALÁLGATÁS.
+     *
+     * A `classify()` a kiterjesztésből dolgozik, és ez sok címnél nem
+     * működik. Mérve, valódi Firefoxban, egy élő AnimeParadise manifeszten
+     * (`…/m3u8?url=<token>` — nincs `.m3u8` kiterjesztés): a cím `direct`-nek
+     * minősült, a natív motorhoz került, és `SOURCE_UNSUPPORTED`-del
+     * elbukott — miközben ugyanazt a címet a HLS motor hibátlanul
+     * lejátszotta.
+     *
+     * CSAK A SZERVERTŐL fogadjuk el. A néző által beillesztett rekord nem
+     * hordoz `kind` mezőt (lásd a `watch.js` `manual` ágát), tehát ezen az
+     * úton nem lehet motort választatni vagy `iframe`-et kikényszeríteni.
+     */
+    const DECLARED = { hls: 'hls', dash: 'dash', mp4: 'direct', embed: 'embed' }
+    const kind = (typeof raw?.kind === 'string' && DECLARED[raw.kind]) || this.classify(url)
     const container = raw?.container ? String(raw.container).slice(0, 60) : null
     const { playable, reason } = this.playability(kind, container)
 
@@ -376,6 +400,22 @@ export const StreamEngine = {
 
   /** Attach one candidate and wait for it to prove it can play. */
   _attach (video, candidate) {
+    /*
+     * A BEÁGYAZÁS A VIDEÓELEM ESEMÉNYEI ELŐTT ÁGAZIK EL.
+     *
+     * Az alábbi gépezet a `<video>` `loadedmetadata`/`canplay` eseményére
+     * vár bizonyítékként. Egy `iframe`-nél ezek SOHA nem következnek be —
+     * a videó a keretben van, nem a mi elemünkben —, tehát a beágyazás
+     * minden alkalommal az időtúllépésbe futna, és a néző azt látná, hogy
+     * „a folyam nem indult el időben", miközben a lejátszó mellette megy.
+     */
+    if (candidate.kind === 'embed') {
+      return attachEmbed(video, candidate.url, {
+        timeoutMs: this.START_TIMEOUT_MS,
+        // A homokozó feloldása KAPCSOLÓ MÖGÖTT van: alapból homokozunk.
+        sandbox: sandboxFor({ flagDeclared, featureOn })
+      })
+    }
     return new Promise((resolve, reject) => {
       const handler = this._handlers.get(candidate.kind)
       let detach = null

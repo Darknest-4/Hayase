@@ -19,6 +19,13 @@ import { pool, query, queryOne } from '../database/index.ts'
 import { listenForJobs, notifyJob, sleepUntilWork } from './wake.ts'
 
 export type QueueName = 'stats' | 'notify' | 'maintenance' | 'import' | 'search-index' | 'ext-review' | 'webhook' | 'monitor' | 'metadata' | 'founder' | 'analytics' | 'edge' | 'media'
+  /*
+   * A tartós Discord-üzenetek frissítése. Saját sor, mert IDEGEN
+   * KISZOLGÁLÓRA megy: egy lassú vagy korlátozó Discord nem tarthatja fel a
+   * saját összesítőinket, és egy elakadt üzenet nem foghatja meg a
+   * webhookokat.
+   */
+  | 'discord'
 
 export interface Job {
   id: string

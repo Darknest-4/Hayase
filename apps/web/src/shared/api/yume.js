@@ -808,7 +808,10 @@ export const YumeAPI = {
      * 204-et ad vissza mindenre, ami nem szabálysértés — a kliens számára ez
      * egy jelzés, nem művelet. A hívó nem is várja meg.
      */
-    view: body => YumeAPI._request('/v1/analytics/view', { method: 'POST', body, anonymous: false })
+    view: body => YumeAPI._request('/v1/analytics/view', { method: 'POST', body, anonymous: false }),
+    // Az egységes eseményséma. A kliens a TÍPUST és az ALANYT mondja meg;
+    // hogy ki ő és mikor volt, azt a kiszolgáló írja.
+    event: body => YumeAPI._request('/v1/analytics/event', { method: 'POST', body, anonymous: false })
   },
 
   admin: {
@@ -874,8 +877,25 @@ export const YumeAPI = {
       config: body => YumeAPI._request('/v1/admin/edge/config', { method: 'PATCH', auth: true, body })
     },
 
+    /*
+     * A DISCORD-KLIENS ELKÖLTÖZÖTT. A vezérlőpult saját címen él
+     * (`discord.animehub.hu`), és saját, önálló API-kliense van
+     * (`apps/discord/src/api.js`) — a webkliensnek nincs többé dolga a
+     * `/v1/discord/...` végpontokkal.
+     *
+     * A kiszolgálóoldal változatlan; csak a hívó került át.
+     */
+
     analytics: {
       visitors: range => YumeAPI._request(`/v1/admin/analytics/visitors?range=${range}`, { auth: true }),
+      providers: range => YumeAPI._request(`/v1/admin/analytics/providers?range=${range}`, { auth: true }),
+      systemHealth: () => YumeAPI._request('/v1/admin/analytics/system-health', { auth: true }),
+      // `/summary`, nem `/overview`: az utóbbi ezen az előtagon már foglalt
+      // (a platform egészéről szóló nézet, fent).
+      summary: range => YumeAPI._request(`/v1/admin/analytics/summary?range=${range}`, { auth: true }),
+      timeseries: (range, metric, granularity) =>
+        YumeAPI._request(`/v1/admin/analytics/timeseries?range=${range}&metric=${metric}&granularity=${granularity}`, { auth: true }),
+      dataQuality: () => YumeAPI._request('/v1/admin/analytics/data-quality', { auth: true }),
       breakdown: (dimension, range, limit = 20) =>
         YumeAPI._request(`/v1/admin/analytics/breakdown?dimension=${dimension}&range=${range}&limit=${limit}`, { auth: true }),
       realtime: () => YumeAPI._request('/v1/admin/analytics/realtime', { auth: true }),

@@ -1,0 +1,205 @@
+/*
+ * A Discord vezérlőpult saját lapja.
+ *
+ * MIÉRT ITT, A WEB CSS-EI KÖZÖTT. A vezérlőpult külön címen él
+ * (discord.animehub.hu), de ugyanannak a terméknek a része, és ugyanazokat a
+ * tokeneket, gombokat és sorokat használja. Egy külön példány a
+ * design-rendszerből azt jelentené, hogy két helyen kell javítani ugyanazt a
+ * hibát — és a második mindig elmarad.
+ *
+ * Ez a fájl CSAK azt tartalmazza, ami a főoldalon nincs: a vezérlőpult
+ * vázát. Minden más a `tokens.css`, `components.css`, `style.css` és
+ * `admin.css` szabályaiból jön.
+ */
+
+.dc-app {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.dc-boot {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  color: var(--text-dim);
+}
+
+/* ---- fejléc ---- */
+
+.dc-top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.dc-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.dc-brand-sub {
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+}
+
+.dc-spacer { flex: 1 1 auto; }
+
+/* A szerverválasztó a fejlécben: ez a felület MINDIG egy guildről szól, és
+   enélkül nem derülne ki, melyikről. */
+.dc-guild {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.dc-guild select { max-width: 16rem; }
+
+/* ---- váz ---- */
+
+.dc-body {
+  display: grid;
+  grid-template-columns: 15rem 1fr;
+  align-items: start;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  max-width: 88rem;
+  margin: 0 auto;
+}
+
+.dc-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: 5rem;
+}
+
+.dc-nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dc-nav-item:hover { background: var(--bg-sunken); color: var(--text); }
+.dc-nav-item.on { background: var(--accent-soft, var(--bg-sunken)); color: var(--accent); }
+
+.dc-main { min-width: 0; }
+
+.dc-head {
+  margin-bottom: var(--space-4);
+}
+
+.dc-head h1 {
+  margin: 0 0 4px;
+  font-size: var(--text-xl);
+}
+
+.dc-head p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  max-width: 44rem;
+}
+
+/*
+ * A „NINCS ADATFORRÁS" DOBOZ — és miért külön stílus.
+ *
+ * Ez nem hibaüzenet és nem üres állapot: azt mondja meg, hogy egy nézetnek
+ * SZERKEZETILEG nincs miből dolgoznia, amíg a gateway nem fut. Ha úgy nézne
+ * ki, mint egy hiba, az üzemeltető javítani próbálná; ha úgy, mint egy üres
+ * lista, azt hinné, tényleg nulla.
+ */
+.dc-gap {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  background: var(--bg-sunken);
+}
+
+.dc-gap h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-base);
+}
+
+.dc-gap p {
+  margin: 0 0 var(--space-2);
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  max-width: 46rem;
+}
+
+.dc-gap ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+}
+
+/* ---- belépés ---- */
+
+.dc-login {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: var(--space-4);
+}
+
+.dc-login-card {
+  width: min(24rem, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+
+@media (max-width: 860px) {
+  .dc-body { grid-template-columns: 1fr; }
+
+  /*
+   * Telefonon a menü TÖRDELVE, nem vízszintesen görgetve.
+   *
+   * Egy oldalsáv a képernyő felét enné meg. A görgethető szalag viszont
+   * KILÓG a képernyőből — mérve: 430, 390 és 360 képpontnál a gombok jobb
+   * széle a viewporton túlra esett, és a lap vízszintesen is görgethetővé
+   * vált. Tíz elem két-három sorban elfér; a tördelés mindent a képernyőn
+   * tart.
+   */
+  .dc-nav {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding-bottom: var(--space-2);
+  }
+
+  .dc-nav-item {
+    white-space: nowrap;
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+}

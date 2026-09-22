@@ -161,7 +161,30 @@ body::before {
 
 .page > .site-footer { margin-top: auto; }
 
-.page-pad { padding: var(--space-5) var(--space-6) var(--space-8); }
+/*
+ * A LAP SOHA NEM LEHET SZÉLESEBB A KÉPERNYŐNÉL — és a `width: 100%` itt nem
+ * díszítés, hanem egy MÉRT HIBA javítása.
+ *
+ * Ez egy nyújtott flex elem a `.page`-ben. Nyújtott elemnél a használt
+ * szélesség a tartalom minimális szélességére oldódhat fel, ha az nagyobb a
+ * rendelkezésre álló helynél — és a lejátszóoldalon pontosan ez történt:
+ *
+ *   viewport 390px → .page-pad 460px  (a tartalom 70px-e levágva)
+ *   viewport 360px → .page-pad 460px  (100px levágva)
+ *
+ * Az ok az epizódlista `white-space: nowrap` címe volt: ellipszisezik, tehát
+ * a képernyőn rendben néz ki, de a MIN-CONTENT szélessége a teljes szöveg
+ * (333px), és ez tolta szét az egész oldalt. A `.page` `overflow-x: clip`-je
+ * miatt nem is lehetett oldalra görgetni: a tartalom csak eltűnt a szélein.
+ *
+ * A `min-width: 0` NEM elég — mérve: a szélesség maradt 460px. A `width`
+ * rögzítése a tartalmazó blokkhoz viszont az: onnantól a belső elemeknek kell
+ * elférniük, nem fordítva.
+ */
+.page-pad {
+  padding: var(--space-5) var(--space-6) var(--space-8);
+  width: 100%;
+}
 
 /* ===== hero (home) ===== */
 
@@ -2233,6 +2256,46 @@ a.ext-name:hover { color: var(--accent); text-decoration: underline; }
 .watch-ep-info { margin-top: var(--space-4); }
 .watch-ep-summary { font-size: var(--text-sm); color: var(--fg-muted); margin-top: var(--space-1); max-width: 52rem; }
 .player-video { width: 100%; height: 100%; object-fit: contain; background: var(--scrim); }
+
+/*
+ * BEÁGYAZOTT LEJÁTSZÓ.
+ *
+ * A keret a videóelem HELYÉT veszi át a `.player-shell`-ben, ezért ugyanúgy
+ * kitölti. A `position: absolute; inset: 0` nem díszítés: a szülő `flex`
+ * elrendezésű, és egy `iframe` ott a saját tartalmi méretét venné fel —
+ * alapból 300×150 képpontot —, vagyis egy apró doboz ülne a 16/9-es
+ * felület közepén.
+ *
+ * A méretezés a `.player-box` `aspect-ratio`-jából jön, tehát MOBILON IS
+ * helyes: a doboz szélessége a lapé, a magasság ebből következik.
+ */
+/*
+ * „Beágyazott lejátszó" jelölés a forrássávban.
+ *
+ * SZÁNDÉKOSAN NEM GOMB: nincs mit tenni vele, csak tudni kell róla. Egy
+ * kattinthatónak látszó elem itt hamis ígéret lenne.
+ */
+.vbar-note {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill, 999px);
+  border: 1px solid var(--border);
+  background: var(--bg-subtle, transparent);
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.player-embed {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: var(--scrim);
+}
 
 .player-top {
   position: absolute;
@@ -4380,14 +4443,23 @@ body.login-route .page { padding-bottom: 0; }
      legible enough to look like a rendering fault. Clear it properly. */
   .page { padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px)); }
 
-  /* On a watch page the episode list is the second most useful thing after the
-     player. It was ordered after the comments, which put it below a screen of
-     empty discussion on every phone. */
-  /* align-items: start is inherited from the desktop grid; in a flex column it
-     shrinks children to their content width, which left the episode panel half
-     the screen wide floating in space. */
+  /*
+   * A TELEFONOS SORREND: lejátszó → műveletek → epizódlista → hozzászólások.
+   *
+   * Az epizódlista `order: -1`-gyel a LEJÁTSZÓ FÖLÉ került. A szándék jó volt
+   * — a lista korábban a hozzászólások alá szorult —, de túllőtt a célon:
+   * mérve, 390px-en a videó a hajtás alá csúszott, és a nézőnek végig kellett
+   * görgetnie egy tizenkét soros listát ahhoz, amiért az oldalt megnyitotta.
+   *
+   * Puszta `order`-rel nem megoldható, mert a hozzászólások a `.watch-main`
+   * BELSEJÉBEN vannak, a lista pedig annak testvére — két külön szinten.
+   * A `display: contents` feloldja a `.watch-main` dobozát, így minden elem
+   * EGY sorba kerül, és rendezhetővé válik.
+   */
   .watch-layout { display: flex; flex-direction: column; align-items: stretch; }
-  .watch-side { order: -1; width: 100%; }
+  .watch-main { display: contents; }
+  .watch-side { order: 1; width: 100%; }
+  .comments-section { order: 2; }
   .wep-panel { max-height: 18rem; }
 }
 
@@ -5151,7 +5223,30 @@ body.login-route .page { padding-bottom: 0; }
   .footer-credits a { padding: var(--space-1) 0; }
   /* The small button variant. It is small on purpose on a desktop toolbar and
      still has to be pressable with a thumb. */
+  /*
+   * A RÉGI LEJÁTSZÓ VEZÉRLŐSÁVJA TELEFONON.
+   *
+   * Ehhez a lejátszóhoz EGYETLEN mobil szabály sem tartozott, és ez mérhető
+   * kárt okozott: 390 képpontos telefonon a gombsor 414 képpontig ért, vagyis
+   * a teljes képernyő gombja LEVÁGÓDOTT. Nem elméleti eset — ez fut mindenütt,
+   * ahol a `feature.player2` kapcsoló nincs bekapcsolva.
+   *
+   * Ami elmarad, az mind ELÉRHETŐ MÁSHOL: a hangerőt a készülék gombjai
+   * állítják, a sebesség és a kép a képben pedig ritkán kell — és egyik sem
+   * ér annyit, hogy a teljes képernyő gombja ne férjen ki.
+   */
+  .player-controls { padding: var(--space-2) var(--space-3) var(--space-3); }
+  .player-controls-row { gap: var(--space-2); }
+  .player-volume,
+  .player-speed,
+  .player-pip { display: none; }
+
   .btn-sm { min-height: 40px; }
+  /*
+   * A VISSZAÚT A SOROZATHOZ. Egy 24 képpont magas szövegsor a lejátszó fölött
+   * — a lap többi linkje ugyanebben a blokkban 44-et kap, ez kimaradt.
+   */
+  .player-back { min-height: 44px; display: inline-flex; align-items: center; }
   .dash-widget-link { min-height: 40px; display: inline-flex; align-items: center; }
   /* Genre chips under the hero, and the "from <title>" credit under a
      spotlight: both are links people do press, and both were under 32 px.

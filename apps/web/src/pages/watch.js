@@ -392,6 +392,24 @@ export const PageWatch = {
     const wanted = Prefs?.get('playback.variant') ?? 'any'
     const row = []
 
+    /*
+     * MEGMONDJUK A NÉZŐNEK, HA IDEGEN LEJÁTSZÓT LÁT.
+     *
+     * Nem apróság: a beágyazott lejátszóban a MI vezérlőink nem működnek —
+     * a billentyűparancsok, a minőségváltás, a feliratkapcsoló és a
+     * haladásmentés mind a saját `<video>`-nkra épül, ami ilyenkor nincs
+     * képen. Enélkül a néző azt hinné, hogy a lejátszó romlott el.
+     */
+    if (active?.kind === 'embed') {
+      row.push(U.el('div', { class: 'vbar-group' }, [
+        U.el('span', { class: 'vbar-label', text: T('Player') }),
+        U.el('span', {
+          class: 'vbar-note',
+          title: T('This episode plays in the provider\u2019s own player. The site\u2019s playback controls do not apply to it.')
+        }, [document.createTextNode(T('Embedded player'))])
+      ]))
+    }
+
     if (variants.length > 1) {
       row.push(U.el('div', { class: 'vbar-group' }, [
         U.el('span', { class: 'vbar-label', text: T('Version') }),
@@ -828,12 +846,12 @@ export const PageWatch = {
     const seekBuffer = U.el('div', { class: 'player-seek-buffer' })
     const seekBar = U.el('div', { class: 'player-seek' }, [seekBuffer, seekFill])
     const volSlider = U.el('input', { class: 'player-volume', type: 'range', min: '0', max: '1', step: '0.05', value: '1', 'aria-label': 'Volume' })
-    const muteBtn = U.el('button', { class: 'player-btn', 'aria-label': 'Mute' })
+    const muteBtn = U.el('button', { class: 'player-btn player-mute', 'aria-label': 'Mute' })
     muteBtn.append(U.svg('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>', 18))
     const speedBtn = U.el('button', { class: 'player-btn player-speed', text: '1×', 'aria-label': 'Playback speed' })
-    const pipBtn = U.el('button', { class: 'player-btn', 'aria-label': 'Picture in picture', title: T('Picture in picture') })
+    const pipBtn = U.el('button', { class: 'player-btn player-pip', 'aria-label': 'Picture in picture', title: T('Picture in picture') })
     pipBtn.append(U.svg('<rect x="2" y="4" width="20" height="16" rx="2"/><rect x="12" y="12" width="8" height="6" rx="1" fill="currentColor" stroke="none"/>', 18))
-    const fsBtn = U.el('button', { class: 'player-btn', 'aria-label': 'Fullscreen', title: T('Fullscreen') })
+    const fsBtn = U.el('button', { class: 'player-btn player-fs', 'aria-label': 'Fullscreen', title: T('Fullscreen') })
     fsBtn.append(U.svg('<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>', 18))
     const skipBtn = U.el('button', { class: 'btn btn-primary btn-sm player-skip hidden', text: T('Skip intro') })
 

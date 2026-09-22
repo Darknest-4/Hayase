@@ -65,11 +65,33 @@ export const I18n = {
    */
   LOCALES: { hu: 'hu-HU', en: 'en-GB' },
 
+  /** Egy kért nyelv, aminek a szótára még nem érkezett meg. Lásd `register`. */
+  _pending: null,
+
   // ---------------------------------------------------------------- registry
 
   /** Called by apps/web/i18n/<lang>.js at load time. */
   register (lang, entries) {
     this._dicts[lang] = Object.assign(this._dicts[lang] ?? Object.create(null), entries)
+
+    /*
+     * A KÉSVE ÉRKEZŐ SZÓTÁR MÉG ÉRVÉNYESÜL.
+     *
+     * A `setLanguage` visszalép, ha a kért nyelv szótára még nincs
+     * regisztrálva — különben üres szótárra váltanánk, és minden felirat a
+     * kulcsát mutatná. A kérés viszont nem vész el: itt utoljára
+     * megpróbáljuk.
+     *
+     * MÉRT HIBA. A modulok betöltési sorrendje nem garantált. Ha az `init()`
+     * a `hu.js` regisztrációja ELŐTT fut le, a nyelv csendben `en` maradt —
+     * és a felület angolul jelent meg egy magyar oldalon. A lejátszó
+     * hibaüzenete így lett „Could not play this episode…" a „Ezt a részt…"
+     * helyett; e2e-ben mérve.
+     */
+    if (this._pending === lang && this._lang !== lang) {
+      this._pending = null
+      this.setLanguage(lang)
+    }
   },
 
   dictionary (lang) {
@@ -91,7 +113,12 @@ export const I18n = {
    * browser's own spell-checker read it, and it was hardcoded to "en".
    */
   setLanguage (lang) {
-    if (!this._dicts[lang] && lang !== 'en') return this._lang
+    if (!this._dicts[lang] && lang !== 'en') {
+      // A szótár még nincs itt. Megjegyezzük a szándékot: a `register`
+      // érvényesíti, amint megérkezik.
+      this._pending = lang
+      return this._lang
+    }
     this._lang = lang
     if (typeof document !== 'undefined') {
       document.documentElement.setAttribute('lang', lang)
