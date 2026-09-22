@@ -194,6 +194,72 @@ describe('a Discord vezérlőpult', { skip: REASON }, () => {
     await friss.close()
   })
 
+  /*
+   * A BELÉPŐŰRLAP TÉNYLEG BELÉPTET.
+   *
+   * MÉRT HIBA, ÉS EZ A TÉTEL AZÉRT VAN. A készlet többi tétele a tárolóba
+   * írt tokennel indul — vagyis az ŰRLAPOT egyik sem használta. Élesben
+   * derült ki, hogy a kliens `email` néven küldte azt, amit a kiszolgáló
+   * `identifier` néven vár (e-mailt ÉS felhasználónevet is elfogad
+   * ugyanazon a mezőn), és a felhasználó egy angol validációs üzenetet
+   * kapott: „body must have required property 'identifier'".
+   *
+   * Ezt egyetlen egységteszt sem foghatta meg: mindkét oldal önmagában
+   * helyes volt, csak a KETTŐ KÖZTI szerződés nem.
+   */
+  it('a belépőűrlappal tényleg be lehet lépni', async () => {
+    const friss = await browser.newPage()
+    await friss.route('https://**', r => r.abort())
+    await friss.goto(`${base}/dashboard/`, { waitUntil: 'domcontentloaded' })
+    await friss.waitForSelector('.dc-login-card', { timeout: 15000 })
+
+    await friss.locator('.dc-login-card input').first().fill(`${username}@example.com`)
+    await friss.locator('.dc-login-card input[type="password"]').fill('Correct-Horse-Battery-9')
+    await friss.locator('.dc-login-card button').click()
+    await friss.waitForTimeout(3000)
+
+    const hiba = await friss.locator('.dc-login-card .form-error').count()
+      ? await friss.locator('.dc-login-card .form-error').innerText()
+      : ''
+    assert.equal(hiba, '', `a belépés hibát adott: ${hiba}`)
+    assert.equal(await friss.locator('.dc-nav').count(), 1, 'nem jutott be a vezérlőpultra')
+    await friss.close()
+  })
+
+  /* Felhasználónévvel is — a kiszolgáló ugyanazon a mezőn fogadja. */
+  it('felhasználónévvel is be lehet lépni', async () => {
+    const friss = await browser.newPage()
+    await friss.route('https://**', r => r.abort())
+    await friss.goto(`${base}/dashboard/`, { waitUntil: 'domcontentloaded' })
+    await friss.waitForSelector('.dc-login-card', { timeout: 15000 })
+
+    await friss.locator('.dc-login-card input').first().fill(username)
+    await friss.locator('.dc-login-card input[type="password"]').fill('Correct-Horse-Battery-9')
+    await friss.locator('.dc-login-card button').click()
+    await friss.waitForTimeout(3000)
+    assert.equal(await friss.locator('.dc-nav').count(), 1, 'felhasználónévvel nem jutott be')
+    await friss.close()
+  })
+
+  it('rossz jelszóra magyar üzenetet ad, nem sémahibát', async () => {
+    const friss = await browser.newPage()
+    await friss.route('https://**', r => r.abort())
+    await friss.goto(`${base}/dashboard/`, { waitUntil: 'domcontentloaded' })
+    await friss.waitForSelector('.dc-login-card', { timeout: 15000 })
+
+    await friss.locator('.dc-login-card input').first().fill(`${username}@example.com`)
+    await friss.locator('.dc-login-card input[type="password"]').fill('rossz-jelszo-mert-nem-ez')
+    await friss.locator('.dc-login-card button').click()
+    await friss.waitForTimeout(2500)
+
+    const hiba = await friss.locator('.dc-login-card .form-error').innerText()
+    assert.match(hiba, /jelszó/, `nem emberi üzenet: ${hiba}`)
+    // A SÉMAHIBA ITT A LEGÁRULKODÓBB JEL: azt jelenti, hogy a kérés alakja
+    // rossz, nem a jelszó.
+    assert.ok(!/property|required|body must/i.test(hiba), `sémahiba került a felületre: ${hiba}`)
+    await friss.close()
+  })
+
   it('SOHA nem ír NaN-t, undefined-ot vagy objektumot', async () => {
     for (const nezet of ['overview', 'messages', 'health', 'audit', 'notifications']) {
       await nyit(nezet)

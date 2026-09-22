@@ -52,6 +52,18 @@ services:
       # A `.env`-ből jön, és SEHOL máshol nem szerepel: nem kerül a repóba, a
       # naplóba, a válaszba és a hibaüzenetbe sem.
       DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      # A DISCORD-FIÓK ÖSSZEKÖTÉSÉHEZ (OAuth). Ezek CSAK az `app`-nak
+      # kellenek: a folyamatot a böngésző indítja, és a visszairányítást is
+      # az `app` fogadja. A worker és a gateway nem köt össze fiókot.
+      #
+      # `:-` alapértelmezéssel: az OAuth nem kötelező. Enélkül a
+      # `POST /oauth/start` 503-at ad („nincs beállítva Discord OAuth"), a
+      # vezérlőpult pedig kiírja, mi hiányzik — nem hasal el.
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
+      # A visszairányítási cím. Alapból a vezérlőpult saját neve; felülírni
+      # csak akkor kell, ha a telepítés máshol él.
+      DISCORD_REDIRECT_URI: ${DISCORD_REDIRECT_URI:-}
       # HONNAN JÖN A KATALÓGUS KÉPE.
       #
       # Üresen a saját `/media/` útvonalunk, ami külső beállítás nélkül

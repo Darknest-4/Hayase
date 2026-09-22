@@ -51,7 +51,10 @@ const gyoker = () => document.getElementById('app')
 // ---------------------------------------------------------------- belépés
 
 function belepoLap (uzenet = null) {
-  const email = el('input', { class: 'input', type: 'email', placeholder: 'e-mail', autocomplete: 'username' })
+  // E-MAIL VAGY FELHASZNÁLÓNÉV. A kiszolgáló mindkettőt elfogadja ugyanazon a
+  // mezőn; egy `type="email"` viszont a böngészővel utasíttatná el a
+  // felhasználónevet, mielőtt a kérés elindulna.
+  const email = el('input', { class: 'input', type: 'text', placeholder: 'e-mail vagy felhasználónév', autocomplete: 'username' })
   const jelszo = el('input', { class: 'input', type: 'password', placeholder: 'jelszó', autocomplete: 'current-password' })
   const hiba = el('div', { class: 'form-error', hidden: !uzenet, text: uzenet ?? '' })
   const gomb = el('button', { class: 'btn btn-primary', type: 'submit' }, ['Belépés'])
@@ -71,7 +74,7 @@ function belepoLap (uzenet = null) {
        * sem tehet mást.
        */
       hiba.textContent = err.status === 401
-        ? 'Hibás e-mail vagy jelszó.'
+        ? 'Hibás e-mail/felhasználónév vagy jelszó.'
         : 'A belépés nem sikerült: ' + err.message
       hiba.hidden = false
       gomb.disabled = false

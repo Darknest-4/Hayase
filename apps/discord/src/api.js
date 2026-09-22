@@ -107,7 +107,14 @@ async function kerd (url, { method = 'GET', body = null, auth = true } = {}) {
 }
 
 export const Api = {
-  login: (email, password) => kerd('/v1/auth/login', { method: 'POST', auth: false, body: { email, password } }),
+  /*
+   * A MEZŐ NEVE `identifier`, NEM `email` — és ez nem szőrszálhasogatás: a
+   * kiszolgáló e-mailt ÉS felhasználónevet is elfogad ugyanazon a néven. Az
+   * `email` kulccsal a séma elutasítja a kérést, és a felületen egy angol
+   * validációs üzenet jelenik meg magyar szöveg helyett. Élesben mérve:
+   * „body must have required property 'identifier'".
+   */
+  login: (identifier, password) => kerd('/v1/auth/login', { method: 'POST', auth: false, body: { identifier, password } }),
 
   status: () => kerd('/v1/discord/status'),
   linkStatus: () => kerd('/v1/discord/oauth/link'),
