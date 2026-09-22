@@ -963,20 +963,48 @@ export async function buildApp (): Promise<FastifyInstance> {
 
     const hasDashboard = existsSync(join(discordRoot, 'index.html'))
     if (hasDashboard) {
+      /*
+       * A GYORSÍTÓTÁR UGYANAZ A SZABÁLY, MINT A WEBKLIENSNÉL — és ezt
+       * kihagyni mért hiba volt.
+       *
+       * A vezérlőpultnak sincs build lépése: a böngésző azokat a
+       * fájlneveket tölti le, amik a lemezen vannak. Egy telepítés után tehát
+       * ugyanarról a CÍMRŐL kérné az ÚJ kódot — és ha a régit
+       * gyorsítótárazta, nem kéri.
+       *
+       * ÉS EZ MEG IS TÖRTÉNT. Az eredet `max-age=0`-t küldött, a Cloudflare
+       * pedig felülírta. Mérve, ugyanarra a fájlra:
+       *
+       *   konténer:               cache-control: public, max-age=0
+       *   discord.animehub.hu:    cache-control: public, max-age=14400
+       *
+       * Négy órán át a régi JS ment ki, miközben a kiszolgálón már az új
+       * volt: a belépőlap a javítás UTÁN is a régi mezőnevet küldte, és a
+       * felhasználó ugyanazt a hibát látta.
+       *
+       * A `no-cache` NEM azt jelenti, hogy „ne tárold" — azt, hogy „tárold,
+       * de HASZNÁLAT ELŐTT kérdezd meg". Az ETag megmarad, tehát a válasz
+       * jellemzően egy pár száz bájtos 304.
+       */
+      const dashboardCache = (response: { header: (k: string, v: string) => void }, filePath: string): void => {
+        const forras = /\.(?:js|mjs|css|html|webmanifest)$/i.test(filePath)
+        response.header('cache-control', forras ? 'no-cache' : 'public, max-age=86400')
+      }
+
       await app.register(async scope => {
         // Csak az EGYIK bővítmény díszítheti a választ; a többi ugyanabban a
         // hatókörben `decorateReply: false`-szal él meg egymás mellett.
         await scope.register(fastifyStatic, {
           root: discordRoot, prefix: '/dashboard/', decorateReply: false,
-          index: false, list: false, dotfiles: 'ignore'
+          index: false, list: false, dotfiles: 'ignore', setHeaders: dashboardCache
         })
         await scope.register(fastifyStatic, {
           root: join(webRoot, 'css'), prefix: '/dashboard/css/', decorateReply: false,
-          index: false, list: false, dotfiles: 'ignore'
+          index: false, list: false, dotfiles: 'ignore', setHeaders: dashboardCache
         })
         await scope.register(fastifyStatic, {
           root: join(webRoot, 'assets'), prefix: '/dashboard/assets/', decorateReply: false,
-          index: false, list: false, dotfiles: 'ignore'
+          index: false, list: false, dotfiles: 'ignore', setHeaders: dashboardCache
         })
       })
       /*

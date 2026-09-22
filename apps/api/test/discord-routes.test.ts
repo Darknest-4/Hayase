@@ -340,6 +340,37 @@ describe('a Discord vezérlőpult végpontjai', { skip: HAS_DB ? false : 'no DAT
     assert.equal(utana.rows[0]!.message_id, null)
   })
 
+  /*
+   * A VEZÉRLŐPULT FORRÁSA NEM RAGADHAT BE.
+   *
+   * MÉRT HIBA. A felületnek nincs build lépése: a böngésző azokat a
+   * fájlneveket tölti le, amik a lemezen vannak — egy telepítés után tehát
+   * ugyanarról a CÍMRŐL kérné az új kódot, és ha a régit gyorsítótárazta,
+   * nem kéri. Az eredet `max-age=0`-t küldött, a Cloudflare felülírta
+   * `max-age=14400`-ra, és négy órán át a JAVÍTÁS ELŐTTI kód ment ki.
+   *
+   * A `no-cache` nem azt jelenti, hogy „ne tárold", hanem hogy „használat
+   * előtt kérdezd meg" — az ETag megmarad, a válasz jellemzően 304.
+   */
+  it('a vezérlőpult forrását nem engedi gyorsítótárba ragadni', async () => {
+    for (const url of ['/dashboard/src/app.js', '/dashboard/index.html', '/dashboard/css/tokens.css']) {
+      const res = await app.inject({ url })
+      assert.equal(res.statusCode, 200, `${url} nem érhető el`)
+      assert.match(String(res.headers['cache-control']), /no-cache/,
+        `${url}: ${res.headers['cache-control']} — a régi kód négy órán át kimenne`)
+    }
+  })
+
+  it('a képek viszont maradhatnak a gyorsítótárban', async () => {
+    // Egy elavult kép legrosszabb esetben csúnya; egy elavult modul törött
+    // alkalmazás. A kettőnek nem kell ugyanaz a szabály.
+    const res = await app.inject({ url: '/dashboard/assets/yume.svg' })
+    if (res.statusCode === 200) {
+      assert.ok(!/no-cache/.test(String(res.headers['cache-control'])),
+        'a képekre is no-cache jár, pedig nem kell')
+    }
+  })
+
   it('a státusz megmondja, be van-e kötve a bot', async () => {
     const res = await hivas('GET', '/v1/discord/status', adminToken)
     assert.equal(res.statusCode, 200)
