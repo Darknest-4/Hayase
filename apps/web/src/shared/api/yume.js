@@ -132,8 +132,13 @@ export const YumeAPI = {
     // into a 401 the client never tried to recover from. A refresh that fails
     // clears the tokens, so the retry goes out anonymously and a public
     // instance still answers it.
+    //
+    // Ha a tárolt token közben kicserélődött — egy korábbi frissítés ebben a
+    // fülben, vagy egy másik fülé —, a kérés a régivel ment el, és az újjal
+    // kell megismételni. Egy újabb frissítés csak még egyszer forgatná a
+    // sütit: mérve, egy fül így egy betöltés alatt háromszor is frissített.
     if (res.status === 401 && retry && tokens?.accessToken) {
-      await this._refresh().catch(() => {})
+      if (this._tokens()?.accessToken === tokens.accessToken) await this._refresh().catch(() => {})
       return this._request(path, { method, body, auth: auth && !!this._tokens(), retry: false, headers: extra })
     }
 
@@ -194,22 +199,64 @@ export const YumeAPI = {
    * Ezért egyszerre egy frissítés fut, és a többi hívó ugyanarra a
    * művelet-ígéretre vár. Nem gyorsítótár: az ígéret a futás végén eltűnik,
    * tehát a következő lejáratkor újra lesz frissítés.
+   *
+   * FÜLEK KÖZÖTT IS EGY.
+   *
+   * A hozzáférési token a localStorage-ban van, tehát minden fül ugyanazt
+   * látja — a frissítés viszont fülenként futott. Ha több fül egyszerre tölt
+   * be lejárt tokennel (böngésző-újraindítás, visszaállított munkamenet),
+   * mindegyik ugyanazzal a sütivel frissített. Mérve, négy füllel: hét
+   * frissítés, ebből öt `refresh_rotated`, és a végén ÜRES localStorage — a
+   * felület kijelentkezett, miközben a munkamenet élt (a sütivel indított
+   * próbafrissítés 200-at adott).
+   *
+   * Ezért a frissítés a böngésző zárja (Web Locks) alatt fut, és aki a
+   * zárra várt, előbb megnézi, kicserélte-e már más a tokent, amellyel ő
+   * elbukott — ha igen, azt használja, és nem forgat újra. Zár nélküli
+   * böngészőben a régi út marad: a kiszolgáló türelmi ideje és az egyszeri
+   * újrapróbálás.
    */
   async _refresh () {
     if (this._refreshing) return this._refreshing
 
+    const exchange = () => this._request('/v1/auth/refresh', {
+      method: 'POST',
+      body: {},
+      anonymous: true,
+      credentials: 'include',
+      retry: false
+    })
+    // A token, amelyet ez a frissítés lecserélne.
+    const stale = this._tokens()?.accessToken ?? null
+
     this._refreshing = (async () => {
       try {
-        const fresh = await this._request('/v1/auth/refresh', {
-          method: 'POST',
-          body: {},
-          anonymous: true,
-          credentials: 'include',
-          retry: false
+        await this._exclusive(async () => {
+          const current = this._tokens()?.accessToken ?? null
+          if (stale && current && current !== stale) return // egy másik fül már frissített
+          let fresh
+          try {
+            fresh = await exchange()
+          } catch (e) {
+            /*
+             * EGY MÁSIK FÜL MEGELŐZHETETT.
+             *
+             * Zár nélküli böngészőben két fül nem tud egymásról. Ha a másik
+             * egy pillanattal előbb forgatta a tokent, a kiszolgáló
+             * `refresh_rotated`-del felel, és a böngésző ekkorra már a MÁSIK
+             * fül új sütijét tartja — egy második próbálkozás azzal sikerül.
+             */
+            if (e?.status !== 401 || e?.code !== 'refresh_rotated') throw e
+            await new Promise(resolve => setTimeout(resolve, 300))
+            fresh = await exchange()
+          }
+          this._saveTokens(fresh)
         })
-        this._saveTokens(fresh)
       } catch (e) {
-        this._saveTokens(null) // refresh refused → signed out
+        // Refresh refused → signed out — de csak a SAJÁT, elbukott tokenünket
+        // töröljük. Ha közben egy másik fül újat tett le, az él: eddig az
+        // utolsóként elbukó fül az összes fület kijelentkeztette vele.
+        if ((this._tokens()?.accessToken ?? null) === stale) this._saveTokens(null)
         throw e
       } finally {
         this._refreshing = null
@@ -217,6 +264,16 @@ export const YumeAPI = {
     })()
 
     return this._refreshing
+  },
+
+  /**
+   * `fn` a böngésző `yume-auth-refresh` zárja alatt: egyszerre egy fül
+   * frissít. Zár nélkül (régi böngésző, nem biztonságos környezet) egyszerűen
+   * lefut.
+   */
+  _exclusive (fn) {
+    const locks = globalThis.navigator?.locks
+    return typeof locks?.request === 'function' ? locks.request('yume-auth-refresh', fn) : fn()
   },
 
   /** A futó frissítés ígérete, ha van. Lásd `_refresh`. */
