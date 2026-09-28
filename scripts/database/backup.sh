@@ -16,8 +16,11 @@
 #   BACKUP_KEEP_DAYS how long to keep them     (default 14)
 #   BACKUP_VERIFY_DB scratch database name     (default yume_verify)
 #   BACKUP_SYNC_CMD  optional off-site copy command, receives the dump as $1
+#   BACKUP_CODE_DIR  optional — the repository root; when set, the site's code
+#                    is backed up too (backup-code.sh), after the database
 #
 # Exit codes: 0 success · 1 dump failed · 2 verification failed · 3 misconfigured
+# (the code backup never changes the exit code: it is loud, but separate)
 
 set -eu
 
@@ -168,6 +171,19 @@ if [ -n "${BACKUP_SYNC_CMD:-}" ]; then
   fi
 else
   log "note: BACKUP_SYNC_CMD is not set, so backups live only on this machine"
+fi
+
+# ---------------------------------------------------------------- code
+# A WEBOLDAL KÓDJA IS KIMEGY a gépről — lásd backup-code.sh. Minden mentés
+# viszi (az ütemezett, a panelről kért és a kézi is), de csak akkor tölt fel új
+# példányt, ha a kód változott. Egy itteni hiba hangos, de az adatbázis-mentést
+# nem teszi rosszá: az addigra ellenőrzött és kint van.
+if [ -n "${BACKUP_CODE_DIR:-}" ]; then
+  if ! "$(dirname "$0")/backup-code.sh"; then
+    log "WARNING: the code backup FAILED — see the [code] lines above; the database backup is fine"
+  fi
+else
+  log "note: BACKUP_CODE_DIR is not set, so the site's code is not backed up"
 fi
 
 REMAINING=$(find "$BACKUP_DIR" -maxdepth 1 -name 'yume-*.dump' -type f | wc -l | tr -d ' ')

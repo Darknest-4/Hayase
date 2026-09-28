@@ -29,6 +29,13 @@
 #   R2_SECRET_ACCESS_KEY    a hozzá tartozó titok
 #   R2_PREFIX               opcionális útvonal a vödrön belül (alap: yume)
 #   BACKUP_KEEP_DAYS        a távoli megőrzés is ezt követi (alap: 14)
+#   R2_KEEP_LAST            ha meg van adva: KOR HELYETT DARABSZÁM szerinti
+#                           megőrzés — az R2_KEEP_INCLUDE mintára illő
+#                           objektumok közül a legutóbbi ennyi marad. A kódmentés
+#                           (backup-code.sh) használja: az csak változáskor kap új
+#                           példányt, és egy kor szerinti szabály egy hónapig
+#                           változatlan kód egyetlen példányát is törölné.
+#   R2_KEEP_INCLUDE         a darabszám szerinti megőrzés mintája (rclone-szűrő)
 #
 # Kilépési kódok: 0 siker · 1 hiányzó beállítás · 2 feltöltés bukott ·
 #                 3 az ellenőrzés bukott
@@ -60,20 +67,10 @@ for v in R2_BUCKET R2_ENDPOINT R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
   [ -n "$value" ] || fail "a $v nincs beállítva — lásd .env.example"
 done
 
-# A távoli oldal konfigurációja kizárólag környezeti változókból. Az rclone
-# ezeket `R2` nevű távoliként látja, konfigurációs fájl nélkül — így a
-# hozzáférési kulcs nem kerül lemezre a konténerben.
-export RCLONE_CONFIG_R2_TYPE=s3
-export RCLONE_CONFIG_R2_PROVIDER=Cloudflare
-export RCLONE_CONFIG_R2_ENV_AUTH=false
-export RCLONE_CONFIG_R2_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
-export RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
-export RCLONE_CONFIG_R2_ENDPOINT="$R2_ENDPOINT"
-export RCLONE_CONFIG_R2_REGION=auto
-export RCLONE_CONFIG_R2_ACL=private
-# Az R2 nem támogatja a vödör-létrehozást ugyanúgy, mint az S3, és az rclone
-# ellenőrzése fölösleges hívás minden feltöltésnél.
-export RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true
+# A távoli oldal konfigurációja kizárólag környezeti változókból (r2-env.sh —
+# ugyanaz, amit a letöltő r2.sh használ). Az rclone ezeket `R2` nevű távoliként
+# látja, konfigurációs fájl nélkül — így a hozzáférési kulcs nem kerül lemezre.
+. "$(dirname "$0")/r2-env.sh"
 
 REMOTE="R2:${R2_BUCKET}/${PREFIX}"
 
@@ -120,11 +117,27 @@ log "megérkezett és a mérete egyezik"
 
 # TÁVOLI MEGŐRZÉS. Ugyanaz az ablak, mint helyben: enélkül az R2 örökké nőne,
 # és egy tárhelyszámla az a fajta meglepetés, amit senki nem keres.
-DELETED="$(rclone delete "$REMOTE" --min-age "${KEEP_DAYS}d" --include 'yume-*.dump' \
-  --s3-no-check-bucket --dry-run 2>&1 | grep -c 'Skipped delete' || true)"
-if [ "${DELETED:-0}" -gt 0 ]; then
-  rclone delete "$REMOTE" --min-age "${KEEP_DAYS}d" --include 'yume-*.dump' --s3-no-check-bucket
-  log "$DELETED lejárt másolat törölve (${KEEP_DAYS} napnál régebbi)"
+if [ -n "${R2_KEEP_LAST:-}" ]; then
+  # Darabszám szerint. A nevekben UTC-időbélyeg áll, tehát a névsor az időrend;
+  # a legutóbbi R2_KEEP_LAST marad, a többi megy — kortól függetlenül.
+  case "$R2_KEEP_LAST" in ''|*[!0-9]*|0) fail "az R2_KEEP_LAST pozitív egész legyen, nem: $R2_KEEP_LAST" 1 ;; esac
+  [ -n "${R2_KEEP_INCLUDE:-}" ] || fail "az R2_KEEP_LAST mellé R2_KEEP_INCLUDE is kell" 1
+  OLD="$(rclone lsf "$REMOTE" --files-only --include "$R2_KEEP_INCLUDE" --s3-no-check-bucket 2>/dev/null \
+    | LC_ALL=C sort | awk -v keep="$R2_KEEP_LAST" '{ a[NR] = $0 } END { for (i = 1; i <= NR - keep; i++) print a[i] }')"
+  DELETED=0
+  for name in $OLD; do
+    rclone deletefile "${REMOTE}/${name}" --s3-no-check-bucket && DELETED=$((DELETED + 1))
+  done
+  if [ "$DELETED" -gt 0 ]; then
+    log "$DELETED régebbi változat törölve (a legutóbbi ${R2_KEEP_LAST} marad)"
+  fi
+else
+  DELETED="$(rclone delete "$REMOTE" --min-age "${KEEP_DAYS}d" --include 'yume-*.dump' \
+    --s3-no-check-bucket --dry-run 2>&1 | grep -c 'Skipped delete' || true)"
+  if [ "${DELETED:-0}" -gt 0 ]; then
+    rclone delete "$REMOTE" --min-age "${KEEP_DAYS}d" --include 'yume-*.dump' --s3-no-check-bucket
+    log "$DELETED lejárt másolat törölve (${KEEP_DAYS} napnál régebbi)"
+  fi
 fi
 
 TOTAL="$(rclone size "$REMOTE" --json --s3-no-check-bucket 2>/dev/null \

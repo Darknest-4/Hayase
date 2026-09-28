@@ -422,9 +422,18 @@ services:
       R2_PREFIX: ${R2_PREFIX:-yume}
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      # A WEBOLDAL KÓDJA IS KIMEGY — lásd scripts/database/backup-code.sh. A teljes
+      # git-előzmény (bundle) és a lemezen álló kód (archívum) az R2 `yume-code/`
+      # útvonalára, csak változáskor, a legutóbbi BACKUP_CODE_KEEP változattal. A
+      # `.env` és a `node_modules` nem kerül bele.
+      BACKUP_CODE_DIR: /src
+      BACKUP_CODE_KEEP: ${BACKUP_CODE_KEEP:-5}
+      R2_CODE_PREFIX: ${R2_CODE_PREFIX:-}
     volumes:
       - ./scripts/database:/db:ro
       - backups:/backups
+      # A repó a kódmentéshez — CSAK OLVASHATÓ: a mentés semmit nem írhat bele.
+      - ./:/src:ro
     working_dir: /
     # A MENTÉSEKET ÍRÓ SZOLGÁLTATÁS IS MEGKEMÉNYÍTVE.
     #
