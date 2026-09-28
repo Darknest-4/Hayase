@@ -7,44 +7,36 @@ oversight, and this page records it so nobody has to re-derive it.
 The same standard was applied to OpenSearch (`docs/database/search.md`): infrastructure
 earns its place by solving a problem that exists now.
 
-## The two jobs waiting for it
+## The two jobs it was waiting for — both are covered now
 
-**1. Caching the permission lookup.** `requirePermission` runs a three-table
-join on every privileged request, with no cache — the plugin's comment claims a
-per-request memo that was never implemented. On one instance this is a local
-problem with a local fix: an in-process TTL cache removes the query without any
-new infrastructure. Redis only becomes the right answer when several instances
-must share and invalidate the same cache.
+**1. Caching the permission lookup.** Done in-process:
+`apps/api/src/middleware/auth.ts` keeps the permission set, the role list and
+the token version per user for 30 seconds (`PERMISSION_CACHE_TTL_MS`), and
+drops a user's entries the moment their roles, status or sessions change in
+this process. A revocation made by *another* process takes effect within the
+TTL. That bounded staleness is the one thing Redis would remove.
 
-**2. Backing the WebSocket hub.** `lib/ws.ts` keeps subscriptions in an
-in-process `Map`. Two app instances would not error — they would quietly
-half-work: notifications reaching only one instance's clients, watch-together
-rooms splitting in two, half of a chat's messages vanishing. `publish()` is a
-single deliberate seam, so a Redis pub/sub adapter drops in there without
-touching any call site.
-
-## Why not now
-
-Yume runs on one VPS with one app instance. In that shape Redis adds a resident
-service, a cache-invalidation bug class, and a second thing that can be down —
-in exchange for nothing measurable. The in-process `Map` is *correct* for one
-instance; it is only wrong for two.
+**2. Fanning out WebSocket messages across instances.** Done on Postgres:
+`apps/api/src/infrastructure/pubsub/index.ts` publishes every hub message on
+`LISTEN/NOTIFY`, and every instance delivers what it receives to its own
+sockets. Two app instances therefore do not split a watch-together room or a
+chat — this used to be the argument for Redis, and it no longer applies.
 
 ## When to adopt it
 
-Adopt Redis at the point a second app instance is actually being started —
-because at that moment the WebSocket hub silently breaks, and silent breakage
-is the worst kind. That is the trigger. Not sooner.
+When several app instances run and one of these starts to matter:
 
-Order of work when it comes:
-
-1. Redis pub/sub behind `publish()` in `lib/ws.ts` — the correctness fix.
-2. Shared permission cache in `plugins/auth.ts` — the performance fix, once
-   an in-process cache is no longer enough.
+1. **Rate limiting.** The rate-limit counters (`@fastify/rate-limit`) and the
+   edge layer's counters (`modules/edge/counters.ts`) are per process. With
+   two instances every limit is effectively doubled. A shared store is the
+   fix; `@fastify/rate-limit` accepts a Redis client directly.
+2. **Revocation latency.** If "a ban takes effect everywhere within 30 s" is
+   no longer good enough, the permission and version caches in
+   `middleware/auth.ts` move to a shared cache with explicit invalidation.
 
 Until then, `REDIS_URL` being set does exactly one thing: it turns on the
-health probe in `lib/probes.ts`. Unset, that probe reports `not_configured`
-rather than raising a false alarm.
+health probe in `apps/api/src/infrastructure/observability/probes.ts`. Unset,
+that probe reports `not_configured` rather than raising a false alarm.
 
 ---
 
@@ -71,31 +63,18 @@ Neither is true, and if either becomes true the queue's public surface
 # MinIO — removed
 
 Carried in compose for extension package storage. The extension platform is
-gone and nothing else stores bytes outside the database, so there is nothing
-left for it to hold.
-
-Reach for object storage when something does start storing large files — hosted
-subtitle files, episode thumbnails at scale — and it outgrows a single host's
-disk, or when more than one app instance must serve them. Same trigger as
-Redis.
+gone, and the bytes the app does store now — the mirrored catalogue images and
+the off-site backups — go to S3-compatible object storage (Cloudflare R2,
+`apps/api/src/infrastructure/storage/s3.ts`), which needs no service of our own.
 
 ---
 
-# Cover images — still hotlinked, deliberately
+# Cover images — mirrored, optionally
 
-`anime_images.object_key` holds a full AniList CDN URL rather than a key into
-our own storage — the column name promises more than it delivers. Artwork is
-therefore served by someone else's infrastructure, which we control neither for
-availability nor under their terms of use.
-
-This is **not fixed**, and the reasoning is the same one applied to Redis and
-MinIO: caching ~25,000 covers means a fetch pipeline, several GB of disk, cache
-invalidation when artwork changes, and a migration of existing rows — real work
-for a problem that has not bitten yet. The metadata comes from AniList too, so
-a source that stops serving us breaks more than the images.
-
-**Adopt when** either happens: AniList starts rate-limiting or blocking
-hotlinked images, or the catalogue stops depending on AniList for metadata. The
-machinery already exists — `apps/api/src/lib/package-store.ts` is a
-content-addressed store whose four functions would serve images unchanged, and
-the `packages` volume is already backed up.
+`anime_images.object_key` holds the source URL (AniList's CDN). With
+`R2_ENDPOINT` and `R2_MEDIA_BUCKET` set, the worker mirrors each image into our
+own bucket (`apps/api/src/modules/media/mirror.ts`, `anime_images.mirror_key`)
+and the client is pointed there (`MEDIA_BASE_URL`, or the app's own `/media/`
+route). Without them, images are served from the source — which we control
+neither for availability nor under its terms of use. See
+`docs/operations/media.md`.

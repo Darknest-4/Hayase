@@ -32,12 +32,7 @@ git clone https://github.com/Darknest-4/Hayase.git yume
 cd yume
 ```
 
-A `main` ágon van a legutóbb összefésült állapot. Ha a fejlesztői ágat akarod
-(ott van minden, ami még nincs beolvasztva):
-
-```sh
-git checkout claude/hayase-repo-pull-gcq81x
-```
+A `main` ágon van a legutóbb összefésült, telepíthető állapot — ezt használd.
 
 ## 2. `.env` — ez az egyetlen kézi lépés
 
@@ -66,7 +61,12 @@ POSTGRES_PASSWORD=<a második generált érték>
 # csak ha van domained:
 YUME_DOMAIN=yume.pelda.hu
 ACME_EMAIL=te@pelda.hu
+PUBLIC_URL=https://yume.pelda.hu
 ```
+
+A többi változó a `.env.example`-ben van leírva, csoportonként: Discord-bot,
+Cloudflare R2 (képtükör, mentések), Turnstile, jelszó-visszaállítás. Egyik sem
+kötelező az induláshoz.
 
 > A `POSTGRES_PASSWORD` az adatbázis **létrehozásakor** rögzül. Utólag
 > megváltoztatni csak a `pgdata` kötet eldobásával lehet — vagyis az adatok
@@ -84,7 +84,8 @@ chmod 600 .env
 docker compose up -d --build
 ```
 
-Ez felhúzza: `postgres` → `app` → `worker` → `caddy` → `backup`.
+Ez felhúzza: `postgres` → `app` → `worker` → `gateway` (Discord) → `caddy` → `backup`.
+A `gateway` Discord-token nélkül is elindul, és csak jelzi, hogy nincs mit tennie.
 Az `app` induláskor **magától** lefuttatja a migrációkat — nincs külön
 migrációs lépés.
 
@@ -158,10 +159,11 @@ docker compose --profile enrich run --rm --build enrich
 
 ## 6. Az alapító könyvtára és a közösség tartalma
 
-Az első fiók — amelyiket a regisztráció adminná tett — a teljes katalógussal
-indul: minden cím megnézve, minden achievement feloldva. Új telepítésen ez
-magától megtörténik (a regisztráció betesz egy `founder` jobot a sorba, a worker
-lefuttatja); egy már létező fiókhoz kézzel kell:
+Az alapító-feltöltés egy fiókot a teljes katalógussal tölt fel: minden cím
+megnézve, minden achievement feloldva. **Ez nem történik meg magától** — a
+regisztráció korábban automatikusan elindította, de az kitalált előzményt írt
+azokba a táblákba, amikből a statisztika, a ranglista és az analitika
+számol. Ha tényleg ezt akarod (bemutató példány, demó), kézzel kell:
 
 ```sh
 docker compose --profile founder run --rm --build founder -- --dry-run
@@ -183,11 +185,81 @@ Mindkettő idempotens, minden telepítés után nyugodtan újrafuttatható.
 | Szolgáltatás | Mit csinál |
 |---|---|
 | `worker` | **Kötelező.** Létrehozza a következő havi partíciókat, kézbesíti a webhookokat, számolja a statisztikákat, gyűjti a VPS-metrikákat. Nélküle a particionált táblákba idővel nem lehet írni. |
+| `gateway` | A Discord gateway-kapcsolat (jelenlét, tagok, parancsok). Token nélkül tétlen. |
 | `caddy` | Let's Encrypt tanúsítvány, megújítással együtt. Nincs certbot, nincs cron, ami csendben leáll. |
 | `backup` | Napi `pg_dump`, majd **visszatölti egy scratch adatbázisba** — egy ellenőrizetlen mentés csak reménykedés. Alapból 14 napot tart meg. |
 
 A mentés a **saját lemezén** van. Egy lemezhiba így is véget vet a projektnek.
 Állítsd be a `BACKUP_SYNC_CMD`-t a `.env`-ben, hogy máshová is átmásolja.
+
+---
+
+## Megosztott Caddy és Cloudflare — így fut az éles gépen
+
+A fenti lépések egy **önálló** telepítést írnak le: a stack saját Caddyje kér
+tanúsítványt, és közvetlenül fogadja a forgalmat. Az éles gép (`dark-1`) nem
+így fut, és ennek a leírása eddig csak a gépen létezett:
+
+```
+látogató ─► Cloudflare ─► közös Caddy (yonagi-caddy-1) ─► yume-app-1:4000
+                           │  /opt/YonagiFansub/Caddyfile
+                           └─ ugyanez a Caddy szolgál ki más projekteket is
+```
+
+1. **A beépített Caddy ki van kapcsolva**, és az app a közös proxy `web`
+   hálózatára csatlakozik. Ezt a gépre szabott `docker-compose.override.yml`
+   csinálja — a repóban a mintája van:
+
+   ```sh
+   cp docker-compose.override.example.yml docker-compose.override.yml
+   ```
+
+2. **A YUME része a közös Caddyfile-ban** a repóból jön
+   (`infrastructure/reverse-proxy/yume.caddy`), és a telepítő teszi a
+   jelölők közé, helyben írva:
+
+   ```sh
+   scripts/reverse-proxy/install.sh /opt/YonagiFansub/Caddyfile --dry-run   # előbb nézd meg
+   scripts/reverse-proxy/install.sh /opt/YonagiFansub/Caddyfile
+   docker run --rm -v /opt/YonagiFansub/Caddyfile:/etc/caddy/Caddyfile:ro \
+     caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+   cd /opt/YonagiFansub && docker compose restart caddy
+   ```
+
+   A `restart` a másik projekt oldalait is érinti (pár másodperc).
+
+3. **A látogató címe.** A Caddy a Cloudflare-tartományokból érkező kérésnél a
+   `CF-Connecting-IP` fejlécből állapítja meg a látogatót (ezt a Cloudflare
+   maga írja), és az appnak egyetlen címet ad tovább `X-Forwarded-For`-ban.
+   Ezért az appnak csak a Docker-hálózatot kell megbíznia:
+
+   ```dotenv
+   TRUST_PROXY=172.16.0.0/12
+   ```
+
+   A Cloudflare-tartományok **ne** legyenek a `TRUST_PROXY`-ban: akkor bárki,
+   aki Cloudflare-címről tud küldeni (egy Worker elég), maga választhatná
+   meg a „saját" címét — és vele a sebességkorlát és a tiltás kulcsát. A
+   tartománylistát a `scripts/cloudflare/trust-proxy.sh --caddy` frissíti
+   (csak a `yume.caddy`-n futtasd: az önálló `Caddyfile` globális blokkját
+   felülírná).
+
+4. **A Cloudflare megkerülése kizárva.** Az `animehub.hu` és a
+   `discord.animehub.hu` csak Cloudflare-címről (és a Docker-hálózatról)
+   fogad kérést. A régi `yumee.duckdns.org` név átirányít az
+   `animehub.hu`-ra — korábban Cloudflare nélkül szolgálta ki ugyanazt az
+   alkalmazást, ami a kizárást hatástalanná tette.
+
+5. **Discord.** A `gateway` konténer és a bot a `DISCORD_*` változókból
+   dolgozik (lásd `.env.example`); a vezérlőpult a `discord.animehub.hu`
+   néven fut, ugyanabból az appból.
+
+Frissítés az éles gépen:
+
+```sh
+git pull
+docker compose up -d --build app worker gateway   # a migrációk az app indulásakor futnak
+```
 
 ---
 

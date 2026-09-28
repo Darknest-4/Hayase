@@ -1,5 +1,8 @@
 # A látogatottsági rendszer felépítése
 
+> **Korábbi változat (2026-09-15/16).** Ugyanerről a témáról az újabb, a mai kódot leíró dokumentum: [analytics-architecture.md](../analytics-architecture.md). Ahol a kettő eltér, az újabb a mérvadó; ez a fájl a korábbi mérések és döntések miatt maradt meg.
+
+
 ## Az egy mondat, amiből minden más következik
 
 **A panel soha nem olvas nyers eseménytáblát.**

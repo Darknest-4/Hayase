@@ -72,7 +72,7 @@ accepts.
 project does not control — and they are interpolated into HTML, into
 double-quoted attributes, and into a `<script type="application/ld+json">`
 block. Three contexts, three ways to get it wrong, one consequence: a catalogue
-row becomes script execution in every visitor's browser. `lib/seo.ts` escapes at
+row becomes script execution in every visitor's browser. `modules/seo/meta.ts` escapes at
 the point of use (`escapeHtml`, `jsonLdScript` — the latter escapes `<`, `>`,
 `&` and U+2028/9 to their `\u` forms so `</script` cannot end the block), and
 most of `apps/api/test/seo.test.ts` is injection attempts.

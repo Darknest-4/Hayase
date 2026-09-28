@@ -100,5 +100,5 @@ fut — az a nyers mennyiséget fogja meg olcsón, ez a mintát nézi.
   VPN-é. Nem tettünk úgy, mintha lehetne: a helyi provider azt mondja meg,
   amit tényleg tud, és a `confidence` mező kimondja, mennyire.
 
-Részletek: [RISK.md](RISK.md), [WAF.md](WAF.md), [BANS.md](BANS.md),
+Részletek a forrásban: a pontozás `apps/api/src/modules/edge/risk.ts`, a szabályok `waf.ts`, a tiltások `bans.ts` (külön leírásuk nem készült el),
 [OPERATIONS.md](OPERATIONS.md).

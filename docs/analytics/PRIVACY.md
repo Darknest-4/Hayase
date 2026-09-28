@@ -1,5 +1,8 @@
 # Adatvédelem
 
+> **Korábbi változat (2026-09-15/16).** Ugyanerről a témáról az újabb, a mai kódot leíró dokumentum: [analytics-privacy.md](../analytics-privacy.md). Ahol a kettő eltér, az újabb a mérvadó; ez a fájl a korábbi mérések és döntések miatt maradt meg.
+
+
 Ez a dokumentum azt írja le, **mit gyűjtünk, miért, ki láthatja, és meddig
 marad meg**. Nem jogi szöveg; ez az, ami a kódban tényleg történik.
 

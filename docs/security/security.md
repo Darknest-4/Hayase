@@ -170,7 +170,7 @@ never as code.
   error detail, hostnames, versions, paths or configuration.
 * Probe failures are redacted before they are stored: URLs, credentials and IP
   addresses are stripped and the message truncated (`safeDetail` in
-  `lib/probes.ts`, covered by tests).
+  `apps/api/src/infrastructure/observability/probes.ts`, covered by tests).
 * The Docker socket is **not** mounted. It grants root-equivalent access to the
   host, so per-container detail is deliberately traded away for that boundary.
 * The only host path exposed to a container is `/` mounted **read-only** at
