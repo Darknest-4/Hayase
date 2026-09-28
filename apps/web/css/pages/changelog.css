@@ -1,0 +1,75 @@
+/* ===========================================================================
+   Útvonal: #/changelog — csak ennek a képernyőnek a szabályai.
+
+   Betölti: a router (`ROUTE_STYLES.changelog`), a képernyő moduljával együtt, és
+   a képernyő csak utána rajzol. Ami több oldalon kell, az nem itt van: a
+   keret a style.css-ben, a közös modulok a css/features/ alatt.
+   =========================================================================== */
+
+/* Olvasásra szánt oszlop, BALRA a cím alatt: a lap ugyanott kezdődik, mint a
+   többi (a fejléc címe alatt), csak a tartalma keskeny. Eddig az egész lap volt
+   52rem széles és középre igazított, így a fülek és a kártyák 144 képponttal
+   beljebb kezdődtek, mint a cím fölöttük. */
+.page-pad-narrow > * { max-width: 52rem; }
+
+/* ===========================================================================
+   Development log
+   =========================================================================== */
+
+.changelog { display: flex; flex-direction: column; gap: var(--space-5); margin-top: var(--space-5); }
+
+.release {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  padding: var(--space-5);
+}
+/* The stripe is the status: shipped is settled, in progress is the accent,
+   planned is deliberately quiet. */
+.release.rel-released { border-left-color: var(--ok); }
+.release.rel-progress { border-left-color: var(--accent); }
+.release.rel-planned { border-left-color: var(--border-strong); opacity: .88; }
+
+.release-head { display: flex; align-items: flex-start; gap: var(--space-4); flex-wrap: wrap; }
+.release-version {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-black); font-size: var(--text-lg);
+  font-variant-numeric: tabular-nums;
+}
+/* `flex: 1 1 12rem` és `min-width: 0`, nem `flex-grow` + `min-width: 12rem`.
+   A különbség a kiindulási szélesség: `auto` bázissal a blokk a leghosszabb
+   sora szerint kér helyet, tehát egy két mondatos összefoglaló kitolta az
+   állapotjelzőt a sor végéről, és az a cím alá csúszott — más elrendezéssel,
+   mint a rövidebb összefoglalójú kiadásoké. A rögzített bázis mellett a szöveg
+   tördel, a jelzés pedig marad a helyén. */
+.release-titles { flex: 1 1 12rem; min-width: 0; }
+.release-title { margin: 0; font-size: var(--text-base); font-weight: var(--weight-bold); }
+.release-summary { margin: var(--space-1) 0 0; font-size: var(--text-sm); color: var(--fg-muted); }
+.release-meta { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-1); flex-shrink: 0; }
+.release-status {
+  font-size: var(--text-xs); font-weight: var(--weight-bold); letter-spacing: .06em; text-transform: uppercase;
+  padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm);
+  background: var(--bg-sunken); color: var(--fg-muted);
+}
+.rel-progress .release-status { background: var(--accent-soft); color: var(--accent); }
+.release-date { font-size: var(--text-xs); color: var(--fg-faint); }
+
+.release-groups { display: flex; flex-direction: column; gap: var(--space-4); margin-top: var(--space-4); }
+.release-kind {
+  font-size: var(--text-xs); font-weight: var(--weight-bold); letter-spacing: .08em; text-transform: uppercase;
+  color: var(--fg-faint); margin-bottom: var(--space-1);
+}
+.release-group.kind-security .release-kind { color: var(--danger); }
+.release-lines { margin: 0; padding-left: var(--space-4); display: flex; flex-direction: column; gap: var(--space-1); }
+.release-lines li { font-size: var(--text-sm); line-height: 1.55; }
+.release-empty { font-size: var(--text-sm); color: var(--fg-faint); margin: var(--space-3) 0 0; }
+
+/* Telefonon és keskeny táblán az állapot és a dátum a cím alá kerül, egy
+   sorba, balra. Az oszlopos, jobbra zárt változat itt úgy tördelt, hogy a
+   jelvény a dátum jobb széléhez igazodott — a dátum nélküli kiadásoknál
+   viszont balra állt, így két szomszédos kártya két különböző helyen mutatta
+   ugyanazt. */
+@media (max-width: 767px) {
+  .release-meta { flex: 1 0 100%; flex-direction: row; align-items: center; gap: var(--space-3); }
+}

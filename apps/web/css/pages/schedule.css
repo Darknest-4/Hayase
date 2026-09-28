@@ -1,0 +1,46 @@
+/* ===========================================================================
+   Útvonal: #/schedule — csak ennek a képernyőnek a szabályai.
+
+   Betölti: a router (`ROUTE_STYLES.schedule`), a képernyő moduljával együtt, és
+   a képernyő csak utána rajzol. Ami több oldalon kell, az nem itt van: a
+   keret a style.css-ben, a közös modulok a css/features/ alatt.
+   =========================================================================== */
+
+/* ===== schedule ===== */
+
+.sched-page .tabs { margin-bottom: var(--space-3); }
+.sched-tools { display: flex; justify-content: flex-end; margin-bottom: var(--space-3); }
+.sched-page .tab-panel:focus-visible { box-shadow: none; }
+.sched-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-width: 60rem; }
+.sched-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 4rem 2.75rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  transition: background-color var(--dur) var(--ease);
+}
+.sched-row:hover { background: var(--bg-raised); }
+.sched-time { font: var(--weight-black) 1rem/1 var(--font-sans); color: var(--fg); }
+.sched-cover { display: block; aspect-ratio: 2 / 3; border-radius: var(--radius-sm); overflow: clip; background: var(--bg-raised); }
+.sched-cover img { width: 100%; height: 100%; object-fit: cover; }
+.sched-main { min-width: 0; display: flex; flex-direction: column; gap: .15rem; }
+.sched-title { color: var(--fg); font: var(--weight-bold) .9375rem/1.3 var(--font-sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sched-title:hover { text-decoration: underline; text-underline-offset: .15em; }
+.sched-sub { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); color: var(--fg-faint); font: var(--type-caption); margin: 0; }
+.sched-ep { color: var(--fg-muted); font-weight: var(--weight-bold); }
+.sched-badge { min-height: 1.25rem; }
+.sched-when { color: var(--fg-faint); font: var(--weight-bold) .8125rem/1.2 var(--font-sans); white-space: nowrap; }
+.sched-aired { opacity: .55; }
+.sched-aired:hover { opacity: 1; }
+.sched-next { background: var(--accent-soft); }
+.sched-next .sched-when { color: var(--accent-text); }
+.sched-next::before { content: ''; position: absolute; left: 0; top: 20%; bottom: 20%; width: 3px; border-radius: var(--radius-full); background: var(--accent); }
+
+@media (max-width: 767px) {
+  .sched-row { grid-template-columns: 3.25rem 2.5rem minmax(0, 1fr); gap: var(--space-3); padding: var(--space-2); }
+  .sched-when { grid-column: 3; justify-self: start; margin-top: -.35rem; font-size: .75rem; }
+  .sched-tools { justify-content: flex-start; }
+}

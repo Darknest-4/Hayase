@@ -1,0 +1,9 @@
+/* ===========================================================================
+   Útvonal: #/reset — csak ennek a képernyőnek a szabályai.
+
+   Betölti: a router (`ROUTE_STYLES.reset`), a képernyő moduljával együtt, és
+   a képernyő csak utána rajzol. Ami több oldalon kell, az nem itt van: a
+   keret a style.css-ben, a közös modulok a css/features/ alatt.
+   =========================================================================== */
+
+.reset-again { margin: 0; font: var(--type-caption); }

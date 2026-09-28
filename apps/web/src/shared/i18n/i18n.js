@@ -68,6 +68,20 @@ export const I18n = {
   /** Egy kért nyelv, aminek a szótára még nem érkezett meg. Lásd `register`. */
   _pending: null,
 
+  /**
+   * A szótárak betöltői.
+   *
+   * A magyar szótár (~50 KB) eddig a `main.js` mellékhatás-importja volt, tehát
+   * minden látogató letöltötte — az is, aki angolul olvas. Most annak jön le,
+   * akinek a nyelve kéri: a `setLanguage` indítja, a router az első festés
+   * előtt megvárja (`ensure`), így a lap nem villan angolul.
+   */
+  _loaders: { hu: () => import('./hu.js') },
+  _loading: Object.create(null),
+
+  /** A visszahívás, amit az `init` kapott: egy későn érkező szótár ezzel rajzoltat újra. */
+  _onChange: null,
+
   // ---------------------------------------------------------------- registry
 
   /** Called by apps/web/i18n/<lang>.js at load time. */
@@ -91,7 +105,29 @@ export const I18n = {
     if (this._pending === lang && this._lang !== lang) {
       this._pending = null
       this.setLanguage(lang)
+      // Futás közbeni váltásnál (beállítások, bemutató) a lap már kirajzolódott
+      // a régi nyelven: most, hogy a szótár megjött, újra kell rajzolni.
+      if (typeof this._onChange === 'function') this._onChange(this._lang)
     }
+  },
+
+  /**
+   * A nyelv szótára, ha még nincs itt: betölti, és megvárható. Sosem dob —
+   * egy elhasalt letöltés után a felület angolul megy tovább, ahogy egy
+   * hiányzó fordításnál is.
+   *
+   * @param {string} lang
+   * @returns {Promise<void>}
+   */
+  ensure (lang) {
+    if (!lang || lang === 'en' || this._dicts[lang] || !this._loaders[lang]) return Promise.resolve()
+    this._loading[lang] ??= this._loaders[lang]().then(() => {}, () => {})
+    return this._loading[lang]
+  },
+
+  /** Minden folyamatban lévő szótárletöltés vége — a router az első festés előtt várja. */
+  ready () {
+    return Promise.all(Object.values(this._loading)).then(() => {})
   },
 
   dictionary (lang) {
@@ -114,9 +150,10 @@ export const I18n = {
    */
   setLanguage (lang) {
     if (!this._dicts[lang] && lang !== 'en') {
-      // A szótár még nincs itt. Megjegyezzük a szándékot: a `register`
-      // érvényesíti, amint megérkezik.
+      // A szótár még nincs itt. Megjegyezzük a szándékot, és elindítjuk a
+      // letöltést: a `register` érvényesíti, amint megérkezik.
       this._pending = lang
+      this.ensure(lang)
       return this._lang
     }
     this._lang = lang
@@ -188,6 +225,7 @@ export const I18n = {
    */
   init (onLanguageChange, policy = null) {
     const prefs = Prefs
+    this._onChange = onLanguageChange
     // A példány házirendje erősebb a néző preferenciájánál, ha a váltás ki van
     // kapcsolva: ilyenkor nincs mit választani, tehát a tárolt érték sem
     // számít. Ez nem elrejtés — a beállítások és az onboarding nyelvi lépése

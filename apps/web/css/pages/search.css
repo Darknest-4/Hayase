@@ -1,0 +1,51 @@
+/* ===========================================================================
+   Útvonal: #/search — csak ennek a képernyőnek a szabályai.
+
+   Betölti: a router (`ROUTE_STYLES.search`), a képernyő moduljával együtt, és
+   a képernyő csak utána rajzol. Ami több oldalon kell, az nem itt van: a
+   keret a style.css-ben, a közös modulok a css/features/ alatt.
+   =========================================================================== */
+
+/* ===== search ===== */
+
+.search-bar { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-4); margin-bottom: var(--space-5); }
+.search-bar-row { display: flex; align-items: center; gap: var(--space-2); }
+.search-field { flex: 1 1 auto; }
+.search-field-input { min-height: var(--control-lg); border-radius: var(--radius-full); font-size: 1.0625rem; padding-right: 2.75rem; }
+.search-field-input::-webkit-search-cancel-button { display: none; }
+.search-field > svg { left: 1rem; }
+.search-field > .input { padding-left: 2.85rem; }
+.search-filter-toggle { display: none; }
+
+.search-filters {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.search-filter .select,
+.search-sort .select { width: 100%; }
+.search-bar-foot { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-3); }
+.search-bar-foot:has(.search-active:empty) { justify-content: flex-end; }
+.search-active { flex: 1 1 18rem; align-items: center; }
+.search-sort { flex: 0 1 14rem; flex-direction: row; align-items: center; gap: var(--space-2); }
+.search-sort .field-label { white-space: nowrap; }
+.chip-removable svg { opacity: .7; }
+.chip-removable:hover svg { opacity: 1; }
+.search-clear-all { font-size: .875rem; margin-left: var(--space-1); }
+.search-summary { color: var(--fg-faint); font: var(--type-caption); margin: 0 0 var(--space-3); min-height: 1.3em; }
+
+@media (max-width: 1023px) {
+  .search-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 767px) {
+  .search-bar { padding: var(--space-3); gap: var(--space-3); border-radius: var(--radius-lg); }
+  .search-bar-row { flex-wrap: wrap; }
+  .search-field { flex-basis: 100%; }
+  .search-filter-toggle { display: inline-flex; flex: 1 1 auto; }
+  .search-bar-row .btn-ghost span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .search-bar-row .btn-ghost { padding: 0; width: var(--touch-min); flex-shrink: 0; }
+  .search-filters { display: none; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .search-filters.open { display: grid; }
+  .search-sort { flex: 1 1 100%; }
+  .search-sort .select { flex: 1 1 auto; }
+}

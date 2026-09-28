@@ -1,0 +1,100 @@
+/* ===========================================================================
+   Útvonal: #/landing — csak ennek a képernyőnek a szabályai.
+
+   Betölti: a router (`ROUTE_STYLES.landing`), a képernyő moduljával együtt, és
+   a képernyő csak utána rajzol. Ami több oldalon kell, az nem itt van: a
+   keret a style.css-ben, a közös modulok a css/features/ alatt.
+   =========================================================================== */
+
+.lp-header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+  margin: 0 calc(var(--gutter) * -1);
+  padding-inline: var(--gutter);
+  border-bottom: 1px solid transparent;
+  transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.lp-header-solid { background: var(--glass); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border-bottom-color: var(--border); }
+.lp-header-nav { display: none; gap: var(--space-5); }
+.lp-header-nav a { display: inline-flex; align-items: center; min-height: 2.5rem; color: var(--fg-muted); font: var(--weight-bold) .9375rem/1 var(--font-sans); }
+.lp-header-nav a:hover { color: var(--fg); }
+.lp-account {
+  display: grid; place-items: center;
+  width: 2.5rem; height: 2.5rem;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-raised);
+  color: var(--fg);
+  cursor: pointer;
+  transition: background-color var(--dur) var(--ease);
+}
+.lp-account:hover { background: var(--bg-hover); }
+.lp-account:focus-visible { border-radius: var(--radius-full); }
+.lp-account svg { width: 1.1rem; height: 1.1rem; }
+.lp-account-letter { font: var(--weight-black) .9375rem/1 var(--font-sans); }
+
+.lp-hero {
+  position: relative;
+  isolation: isolate;
+  min-height: min(80dvh, 44rem);
+  display: flex; flex-direction: column; justify-content: center;
+  padding: var(--space-8) 0;
+}
+.lp-watermark {
+  position: absolute;
+  inset-inline-start: -0.06em;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: -1;
+  font: var(--weight-black) clamp(6rem, 28vw, 20rem)/1 var(--font-sans);
+  letter-spacing: -0.04em;
+  color: transparent;
+  -webkit-text-stroke: 1px color-mix(in oklab, var(--fg) 6%, transparent);
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 100%;
+}
+.lp-title {
+  font: var(--weight-black) clamp(2.6rem, 1.5rem + 5.5vw, 5.75rem)/1.02 var(--font-sans);
+  letter-spacing: -0.035em;
+  margin: 0 0 var(--space-5);
+  max-width: 16ch;
+}
+.lp-title-lead,
+.lp-display-lead {
+  background: linear-gradient(100deg, var(--fg) 20%, color-mix(in oklab, var(--fg) 40%, var(--bg)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.lp-sub { font: var(--weight-medium) clamp(1.05rem, .95rem + .4vw, 1.25rem)/1.5 var(--font-sans); color: var(--fg-muted); max-width: 36rem; margin: 0 0 var(--space-6); }
+.lp-cta { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+.lp-section { padding: var(--space-8) 0; border-top: 1px solid var(--border); }
+.lp-eyebrow { font: var(--weight-bold) var(--text-xs)/1.3 var(--font-sans); text-transform: uppercase; letter-spacing: .2em; color: var(--fg-faint); margin: 0 0 var(--space-3); }
+.lp-display { font: var(--weight-black) clamp(1.9rem, 1.2rem + 3vw, 3.4rem)/1.08 var(--font-sans); letter-spacing: -0.025em; margin: 0 0 var(--space-4); }
+.lp-lead { font: var(--type-body); color: var(--fg-muted); max-width: 38rem; margin: 0 0 var(--space-7); }
+.lp-features { display: grid; gap: var(--space-6); grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); }
+.lp-feature { display: flex; gap: var(--space-4); align-items: flex-start; }
+.lp-feature-icon {
+  display: grid; place-items: center;
+  width: 2.75rem; height: 2.75rem; flex-shrink: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  color: var(--accent-text);
+}
+.lp-feature-icon svg { width: 1.2rem; height: 1.2rem; }
+.lp-feature-title { font: var(--weight-extrabold) 1.0625rem/1.3 var(--font-sans); margin: 0 0 var(--space-1); }
+.lp-feature-body { font: var(--type-caption); color: var(--fg-muted); margin: 0; }
+.lp-close { scroll-margin-top: var(--space-5); }
+
+@media (min-width: 768px) {
+  .lp-header-nav { display: flex; }
+}
