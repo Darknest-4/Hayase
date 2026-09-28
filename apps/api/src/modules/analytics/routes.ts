@@ -111,7 +111,7 @@ const routes: FastifyPluginAsync = async fastify => {
                 FROM watch_stats_daily WHERE day > current_date - 7`),
       query(`SELECT canonical_title, trending FROM anime WHERE trending > 0 ORDER BY trending DESC LIMIT 5`),
       queryOne(`SELECT count(*) FILTER (WHERE done_at IS NULL) AS pending,
-                       count(*) FILTER (WHERE done_at IS NULL AND attempts >= max_attempts) AS dead,
+                       count(*) FILTER (WHERE done_at IS NULL AND dead_at IS NOT NULL) AS dead,
                        count(*) FILTER (WHERE last_error IS NOT NULL AND created_at > now() - interval '1 day') AS failed_1d
                 FROM jobs`),
       query(`SELECT title, event_count, last_seen FROM error_groups WHERE status = 'open' ORDER BY last_seen DESC LIMIT 5`)

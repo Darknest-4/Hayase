@@ -148,6 +148,33 @@ async function channelPermissions (channelId: string): Promise<bigint | null> {
   return perms === undefined ? null : parsePermissions(perms)
 }
 
+/**
+ * Which guild a channel belongs to, as Discord sees it.
+ *
+ *   `{ guildId }`   — found; the caller compares it with the guild it meant
+ *   `'not_found'`   — no such channel
+ *   `'no_access'`   — the bot cannot see it (another server, or no rights)
+ *   `'unknown'`     — no token, or Discord could not be asked
+ *
+ * A channel id arrives from the dashboard, and the guild in the URL is the
+ * only thing the permission gate checked. Without this a server manager could
+ * point the bot at a channel of ANY guild the bot is in, and it would post
+ * there under their configuration.
+ */
+export async function channelGuild (channelId: string): Promise<{ guildId: string } | 'not_found' | 'no_access' | 'unknown'> {
+  if (!isConfigured()) return 'unknown'
+  try {
+    const { status, body } = await request(`/channels/${safeId(channelId, 'csatorna')}`)
+    if (status === 404) return 'not_found'
+    if (status === 403 || status === 401) return 'no_access'
+    if (status >= 400) return 'unknown'
+    const guildId = (body as { guild_id?: unknown }).guild_id
+    return typeof guildId === 'string' && guildId ? { guildId } : 'no_access'
+  } catch {
+    return 'unknown'
+  }
+}
+
 export function createRestClient (): DiscordClient {
   return {
     async send (channelId: string, payload: unknown): Promise<SentMessage> {
@@ -185,6 +212,11 @@ export function createRestClient (): DiscordClient {
         { method: 'DELETE' })
       if (status === 404 || body.code === 10008) return
       assertOk(status, body)
+    },
+
+    async guildOf (channelId: string): Promise<string | null> {
+      const found = await channelGuild(channelId)
+      return typeof found === 'object' ? found.guildId : null
     },
 
     async canPost (channelId: string): Promise<boolean> {

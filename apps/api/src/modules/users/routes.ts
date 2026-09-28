@@ -10,9 +10,39 @@
 
 import { UserRepository, userRepository as accounts } from './repository.ts'
 import { emitEvent } from '../webhooks/delivery.ts'
-import { invalidatePermissions } from '../../middleware/auth.ts'
+import { invalidatePermissions, loadPermissions, loadRoles } from '../../middleware/auth.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
+
+/**
+ * May `actorId` act on `targetId` at all?
+ *
+ * The account permissions are coarse — whoever holds `admin.users.manage` or
+ * `session.revoke` could ban, or sign out, anybody, administrators included.
+ * The one line that matters is kept here: an administrator's account is
+ * touched only by another administrator.
+ */
+async function outranked (actorId: string, targetId: string): Promise<boolean> {
+  const [actor, target] = await Promise.all([loadRoles(actorId), loadRoles(targetId)])
+  return target.includes('admin') && !actor.includes('admin')
+}
+
+/**
+ * The permissions of a role that the actor does not hold themselves.
+ *
+ * Granting a role is granting everything in it. Without this, holding
+ * `role.assign` was enough to give an account — one's own second account —
+ * any role at all, including one with permissions the granter never had.
+ */
+async function beyondActor (actorId: string, roleId: string): Promise<string[]> {
+  const [held, granted] = await Promise.all([
+    loadPermissions(actorId),
+    accounts.permissionsOfRole(roleId)
+  ])
+  return granted.filter(slug => !held.has(slug))
+}
+
+const refusedAdmin = { type: 'about:blank', title: 'Forbidden', status: 403, detail: 'Only an administrator can do this to an administrator' } as const
 
 const routes: FastifyPluginAsync = async fastify => {
   fastify.get('/users', {
@@ -82,6 +112,7 @@ const routes: FastifyPluginAsync = async fastify => {
 
     const before = await accounts.statusOf(id)
     if (!before) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    if (await outranked(request.user.sub, id)) return reply.code(403).send(refusedAdmin)
 
     // Sessions and the token version move with the status, in one unit — see
     // the repository for why they cannot be two statements.
@@ -191,6 +222,17 @@ const routes: FastifyPluginAsync = async fastify => {
     const roleRow = await accounts.roleBySlug(role)
     if (!roleRow) return bad(`No role named "${role}"`)
 
+    if (await outranked(request.user.sub, id)) return reply.code(403).send(refusedAdmin)
+    if (granted) {
+      const missing = await beyondActor(request.user.sub, roleRow.id)
+      if (missing.length) {
+        return reply.code(403).send({
+          type: 'about:blank', title: 'Forbidden', status: 403,
+          detail: `You cannot grant a role that carries permissions you do not hold: ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? '…' : ''}`
+        })
+      }
+    }
+
     if (!granted && roleRow.slug === 'admin' && await accounts.otherAdmins(id) === 0) {
       return bad('This is the last administrator — promote somebody else first')
     }
@@ -250,6 +292,7 @@ const routes: FastifyPluginAsync = async fastify => {
     if (!await accounts.usernameOf(id)) {
       return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
     }
+    if (await outranked(request.user.sub, id)) return reply.code(403).send(refusedAdmin)
 
     const revoked = await accounts.revokeAllSessions(id, request.user.sub, reason)
     invalidatePermissions(id)

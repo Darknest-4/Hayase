@@ -46,7 +46,7 @@ export function isLoopback (address: string | undefined): boolean {
  * és rajta keresztül jön be az egész internet. Ezért a hívó a proxyfejlécek
  * hiányát is megköveteli.
  */
-export function isPrivateAddress (address: string | undefined): boolean {
+export function isInternalAddress (address: string | undefined): boolean {
   if (!address) return false
   const plain = address.replace(/^::ffff:/i, '')
   if (isLoopback(plain)) return true
@@ -82,7 +82,7 @@ export function isInternalRequest (request: FastifyRequest): boolean {
   for (const header of PROXY_HEADERS) {
     if (request.headers[header] !== undefined) return false
   }
-  return isPrivateAddress(request.socket?.remoteAddress ?? undefined)
+  return isInternalAddress(request.socket?.remoteAddress ?? undefined)
 }
 
 /**

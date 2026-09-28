@@ -7,9 +7,9 @@
 // settings live, and one import an architecture rule has to watch.
 //
 // The helpers are re-exported as plain functions rather than as a `db` object
-// because that is how the ~77 call sites already read (`query(...)`,
-// `queryOne(...)`), and changing the shape of every one of them would have
-// buried the actual change of this pass in noise.
+// because that is how the call sites read (`query(...)`, `queryOne(...)`).
+// `db` is exported too, for a repository that takes the helpers as a
+// constructor argument.
 
 import { createPool, helpers } from '@yume/database'
 

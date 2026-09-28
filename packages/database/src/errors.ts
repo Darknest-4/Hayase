@@ -1,10 +1,10 @@
 // Postgres error codes, named.
 //
-// Audit 13 found the same mistake in four places: registration, the like
-// toggle and the watch-together room code both wrote to a
-// column the database will not let them duplicate, and all four let the
-// resulting 23505 escape as a 500 carrying the constraint name. Each was
-// fixed individually, which is how a fifth one gets written next month.
+// The same mistake was once made in four places: registration, the like
+// toggle and the watch-together room code each wrote to a column the database
+// will not let them duplicate, and each let the resulting 23505 escape as a
+// 500 carrying the constraint name. Fixing them one by one is how a fifth one
+// gets written next month, so the handling lives here.
 //
 // The pattern that produces it is worth naming, because both halves look
 // correct in review:

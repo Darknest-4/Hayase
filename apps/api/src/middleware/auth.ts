@@ -2,9 +2,9 @@
 //  - registers @fastify/jwt for access tokens
 //  - decorates fastify.authenticate (route preHandler)
 //  - decorates fastify.requirePermission(slug, { hide }) — resolves the user's
-//    permission set (users → user_roles → role_permissions) with a
-//    per-request memo; Redis caching slots in here later without touching
-//    call sites.
+//    permission set (users → user_roles → role_permissions) through a short,
+//    in-process TTL cache (see `permissionCache` below). A second app instance
+//    would need a shared cache instead — see docs/operations/redis.md.
 
 import fastifyJwt from '@fastify/jwt'
 import fp from 'fastify-plugin'
@@ -56,14 +56,13 @@ declare module 'fastify' {
 /**
  * Permission-set cache.
  *
- * Every privileged request ran a three-table join, with no cache anywhere —
- * the comment above promised a per-request memo that was never written. An
- * admin page load meant a dozen of those against a small connection pool.
+ * Without it every privileged request ran a three-table join — an admin page
+ * load meant a dozen of those against a small connection pool.
  *
  * In-process and short-lived on purpose: correct for a single instance, and
  * bounded staleness (a revoked role takes effect within the TTL) rather than
  * an invalidation protocol nothing yet needs. When a second app instance
- * appears this is one of the two places Redis takes over — see docs/redis.md.
+ * appears this is one of the two places Redis takes over — see docs/operations/redis.md.
  */
 const PERMISSION_TTL_MS = Number(process.env.PERMISSION_CACHE_TTL_MS ?? 30_000)
 const permissionCache = new Map<string, { permissions: Set<string>, expires: number }>()
@@ -78,6 +77,22 @@ const permissionCache = new Map<string, { permissions: Set<string>, expires: num
  * sign-out.
  */
 const versionCache = new Map<string, { version: number, expires: number, liveSessions: Set<string> }>()
+
+/** The role slugs a user holds, on the same TTL. Only maintenance asks for it. */
+const roleCache = new Map<string, { roles: string[], expires: number }>()
+
+/**
+ * Entries expire but are only ever replaced, never removed, when read — so a
+ * long-running process that has seen many users keeps all of them. Every
+ * cache here is swept of expired entries once it grows past this size.
+ */
+const CACHE_SWEEP_AT = 5_000
+
+function sweep<V extends { expires: number }> (cache: Map<string, V>): void {
+  if (cache.size <= CACHE_SWEEP_AT) return
+  const now = Date.now()
+  for (const [key, entry] of cache) if (entry.expires <= now) cache.delete(key)
+}
 
 /**
  * True when the token is still the one the account and the session agree on.
@@ -122,6 +137,7 @@ export async function tokenIsCurrent (payload: AccessTokenPayload): Promise<bool
     expires: Date.now() + PERMISSION_TTL_MS,
     liveSessions: live
   })
+  sweep(versionCache)
   return rows[0].token_version === claimed
 }
 
@@ -147,12 +163,13 @@ export async function revokeTokens (userId: string): Promise<void> {
   await query('UPDATE users SET token_version = token_version + 1 WHERE id = $1', [userId])
   versionCache.delete(userId)
   permissionCache.delete(userId)
+  roleCache.delete(userId)
 }
 
 /** Drop a user's cached set — called whenever their roles change. */
 export function invalidatePermissions (userId?: string): void {
-  if (userId) { permissionCache.delete(userId); versionCache.delete(userId) }
-  else { permissionCache.clear(); versionCache.clear() }
+  if (userId) { permissionCache.delete(userId); versionCache.delete(userId); roleCache.delete(userId) }
+  else { permissionCache.clear(); versionCache.clear(); roleCache.clear() }
 }
 
 /**
@@ -178,14 +195,36 @@ export async function loadPermissions (userId: string): Promise<Set<string>> {
   )
   const permissions = new Set(rows.map(row => row.slug))
   permissionCache.set(userId, { permissions, expires: Date.now() + PERMISSION_TTL_MS })
-
-  // The cache is keyed per user and entries expire, but a long-lived process
-  // with many users would still grow — so it is swept when it gets large.
-  if (permissionCache.size > 5_000) {
-    const now = Date.now()
-    for (const [key, entry] of permissionCache) if (entry.expires <= now) permissionCache.delete(key)
-  }
+  sweep(permissionCache)
   return permissions
+}
+
+/** The role slugs a user holds (`admin`, `moderator`, …), cached like permissions. */
+export async function loadRoles (userId: string): Promise<string[]> {
+  const hit = roleCache.get(userId)
+  if (hit && hit.expires > Date.now()) return hit.roles
+
+  const rows = await query<{ slug: string }>(
+    `SELECT r.slug FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = $1`,
+    [userId]
+  )
+  const roles = rows.map(row => row.slug)
+  roleCache.set(userId, { roles, expires: Date.now() + PERMISSION_TTL_MS })
+  sweep(roleCache)
+  return roles
+}
+
+/**
+ * When the sign-in behind this session happened.
+ *
+ * Not the session row's own `created_at`: a refresh rotates the session, so
+ * that is the time of the last refresh. `started_at` is carried over from row
+ * to row and stays the moment the person actually signed in.
+ */
+export async function sessionStartedAt (sessionId: string): Promise<Date | null> {
+  const rows = await query<{ started_at: Date }>(
+    'SELECT started_at FROM sessions WHERE id = $1::uuid', [sessionId])
+  return rows[0]?.started_at ?? null
 }
 
 export default fp(async fastify => {

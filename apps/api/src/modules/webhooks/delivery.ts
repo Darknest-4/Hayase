@@ -11,10 +11,14 @@ import { query, queryOne } from '../../infrastructure/database/index.ts'
 import { enqueue } from '../../infrastructure/queue/index.ts'
 import { settings } from '../settings/site-settings.ts'
 import { checkOutboundUrl } from '../../infrastructure/http/ssrf.ts'
+import { guardedRequest } from '../../infrastructure/http/outbound.ts'
+
+/** Answers that mean the endpoint no longer exists or no longer accepts us. */
+const PERMANENT = new Set([401, 404, 410])
 
 import type { Job } from '../../infrastructure/queue/index.ts'
 
-// ---- event catalog (docs/api.md lists these too) ----
+// ---- event catalog (docs/api/api.md lists these too) ----
 export const WEBHOOK_EVENTS = [
   'user.registered',        // new account
   'user.moderated',         // suspend/ban/restore
@@ -54,22 +58,32 @@ export async function emitEvent (event: WebhookEvent, data: Record<string, unkno
    */
   if (process.env.YUME_SUPPRESS_WEBHOOKS === '1') return
 
-  // The emergency stop, checked before anything is queued rather than at
-  // delivery: a receiver that has started paging somebody every thirty seconds
-  // should stop being sent to immediately, and jobs already in the queue for
-  // it are refused at deliver() below by the same switch.
-  if (!await settings.webhooksEnabled()) return
+  /*
+   * Never rejects. Every caller emits AFTER its own work is done — the account
+   * exists, the comment is saved — so a failure here must not turn that into a
+   * 500, and several callers fire it without waiting, where a rejection would
+   * be unhandled and end the process. A lost notification is logged instead.
+   */
+  try {
+    // The emergency stop, checked before anything is queued rather than at
+    // delivery: a receiver that has started paging somebody every thirty
+    // seconds should stop being sent to immediately, and jobs already in the
+    // queue for it are refused at deliver() below by the same switch.
+    if (!await settings.webhooksEnabled()) return
 
-  const hooks = await query<{ id: string }>(
-    'SELECT id FROM webhooks WHERE enabled AND $1 = ANY(events)',
-    [event]
-  )
-  const at = new Date().toISOString()
-  for (const hook of hooks) {
-    // One id per (event, webhook), minted here so it survives every retry of
-    // the delivery job — that is what makes it usable for deduplication on
-    // the receiving side.
-    await enqueue('webhook', { webhookId: hook.id, event, data, at, deliveryId: randomUUID() })
+    const hooks = await query<{ id: string }>(
+      'SELECT id FROM webhooks WHERE enabled AND $1 = ANY(events)',
+      [event]
+    )
+    const at = new Date().toISOString()
+    for (const hook of hooks) {
+      // One id per (event, webhook), minted here so it survives every retry of
+      // the delivery job — that is what makes it usable for deduplication on
+      // the receiving side.
+      await enqueue('webhook', { webhookId: hook.id, event, data, at, deliveryId: randomUUID() })
+    }
+  } catch (error) {
+    console.error(`webhook event ${event} was not queued:`, (error as Error).message)
   }
 }
 
@@ -114,7 +128,7 @@ function renderEmbed (event: WebhookEvent, d: Record<string, unknown>): Embed {
       return { title: '🗑️ Account deleted', color: COLORS.warn, fields: [field('Username', d.username)] }
     // Deliberately carries no token: this event is fanned out to every
     // subscribed webhook, including ones that render into chat. The token
-    // travels only via PASSWORD_RESET_WEBHOOK_URL — see lib/reset-delivery.ts.
+    // travels only via PASSWORD_RESET_WEBHOOK_URL — see modules/auth/reset-delivery.ts.
     case 'user.password_reset_requested':
       return { title: '🔑 Password reset requested', color: COLORS.warn, fields: [field('Username', d.username)] }
     case 'user.moderated':
@@ -319,7 +333,7 @@ interface Envelope {
  * felső korlát azért van, mert egy elgépelt fejléc ne tudjon egy kézbesítést
  * a jövő hétre tolni.
  */
-function readRetryAfter (res: Response): number {
+function readRetryAfter (res: { headers: { get: (name: string) => string | null } }): number {
   // `Number(null)` nulla, nem NaN — a hiányzó fejléc ezért „várj nulla
   // ezredmásodpercet"-nek olvasódott, ami pont az a szoros újrapróbálkozás,
   // ami ellen ez az egész készült. A hiányt külön kell nézni az értéktől.
@@ -459,10 +473,11 @@ export async function deliver (
 
   let retryAfterMs: number | null = null
   try {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 10_000)
-    const res = await fetch(hook.url, { method: 'POST', headers, body, signal: controller.signal })
-    clearTimeout(timer)
+    // Not `fetch`: it follows redirects, so a public endpoint answering with
+    // a Location on the loopback walked straight past the check above. The
+    // guarded client never follows one and checks the address the socket
+    // actually connects to — see infrastructure/http/outbound.ts.
+    const res = await guardedRequest(hook.url, { method: 'POST', headers, body, timeoutMs: 10_000, maxBytes: 65_536 })
     statusCode = res.status
     if (!res.ok) error = `HTTP ${res.status}`
     if (res.status === 429) retryAfterMs = readRetryAfter(res)
@@ -493,6 +508,22 @@ export async function deliver (
     const throttled = new Error(`webhook ${hook.id}: rate limited`) as Error & { retryAfterMs: number }
     throttled.retryAfterMs = retryAfterMs
     throw throttled
+  }
+
+  /*
+   * A végpont, ami NINCS TÖBBÉ.
+   *
+   * A Discord egy törölt webhookra 404-et ad („Unknown Webhook"), egy
+   * visszavont tokenre 401-et. Ezek nem múló hibák: az újrapróbálkozás
+   * eseményenként ötször fut le ugyanabba a falba, és élesben pontosan ez
+   * termelte a holt feladatokat percenként. Az első ilyen válasz kikapcsolja
+   * a webhookot, és a feladat sem próbálkozik tovább.
+   */
+  if (statusCode !== null && PERMANENT.has(statusCode)) {
+    await query(
+      `UPDATE webhooks SET failure_count = failure_count + 1, last_error = $2, enabled = false WHERE id = $1`,
+      [hook.id, `${error ?? `HTTP ${statusCode}`} — the endpoint is gone, the webhook was switched off`])
+    return
   }
 
   if (error) {

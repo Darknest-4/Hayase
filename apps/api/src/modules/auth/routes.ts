@@ -9,7 +9,7 @@
 // parts of this file legible: a handler here is a decision about a request,
 // and what that decision touches in the database has a name.
 
-import { createHash, randomBytes } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import { fromRequest, recordAccountEvent } from '../analytics/account-events.ts'
 import { shapeOf } from '../analytics/visitor.ts'
 
@@ -25,8 +25,9 @@ import { settings as siteSettings } from '../settings/site-settings.ts'
 import { emitEvent } from '../webhooks/delivery.ts'
 
 import type { FastifyPluginAsync, FastifyReply } from 'fastify'
+import { sha256Hex } from '../../infrastructure/text.ts'
 
-const sha256 = (value: string): string => createHash('sha256').update(value).digest('hex')
+const sha256 = sha256Hex
 
 /**
  * A real scrypt hash of a random secret, used to equalise login timing for
@@ -37,6 +38,13 @@ const DECOY_HASH = await hashPassword(randomBytes(32).toString('base64url'))
 
 /** How long a reset link stays usable. Short: it is a full account credential. */
 const RESET_TTL_MS = Number(process.env.PASSWORD_RESET_TTL_MS ?? 3_600_000)
+
+/**
+ * How long after a rotation the old refresh token is taken for a lost race
+ * rather than a replay. Long enough for a second tab's request in flight,
+ * short enough that a stolen copy is almost always caught.
+ */
+const REFRESH_REUSE_GRACE_MS = Number(process.env.REFRESH_REUSE_GRACE_MS ?? 30_000)
 
 /**
  * Az emberpróba tokenje — MINDENHOL VÁLASZTHATÓ A SÉMÁBAN.
@@ -140,7 +148,9 @@ const routes: FastifyPluginAsync = async fastify => {
     user: { id: string, username: string, token_version?: number },
     reply: FastifyReply,
     ip?: string,
-    userAgent?: string
+    userAgent?: string,
+    /** The sign-in a refresh continues; absent for a sign-in itself. */
+    startedAt?: Date
   ) {
     const refreshToken = randomBytes(32).toString('base64url')
     const expiresAt = new Date(Date.now() + config.refreshTokenTtlDays * 86_400_000)
@@ -175,7 +185,8 @@ const routes: FastifyPluginAsync = async fastify => {
       ip: ip ?? null,
       userAgent: userAgent ?? null,
       expiresAt,
-      deviceId
+      deviceId,
+      startedAt: startedAt ?? null
     })
     // An INSERT … RETURNING that comes back empty means the write did not
     // happen. Minting a token for a session that does not exist would produce
@@ -188,19 +199,15 @@ const routes: FastifyPluginAsync = async fastify => {
     reply.setCookie(REFRESH_COOKIE, refreshToken, refreshCookieOptions)
 
     /*
-     * The token is still in the body, and that is deliberate for now.
+     * The refresh token travels in the HttpOnly cookie only.
      *
-     * A deploy must not sign everybody out. A client loaded before this change
-     * has the old code, stores what it is given and sends it back in the body;
-     * one loaded after ignores the field and relies on the cookie. Both work
-     * against this server, which is what makes the change rollable rather than
-     * a flag day.
-     *
-     * It costs nothing today — the current client no longer writes it down, so
-     * the value is transient — and the field comes out once no client that
-     * reads it can still be running. See docs/security/refresh-cookie.md.
+     * It was also in the body for a transition, so a client loaded before the
+     * cookie existed kept working. That made the cookie's point moot: a script
+     * injected into the page could read the thirty-day credential straight out
+     * of the login response. A client that still sends a body token is served
+     * by the cookie the same response sets, so dropping it signs nobody out.
      */
-    return { accessToken, refreshToken, expiresAt: expiresAt.toISOString() }
+    return { accessToken, expiresAt: expiresAt.toISOString() }
   }
 
   /**
@@ -396,8 +403,39 @@ const routes: FastifyPluginAsync = async fastify => {
       return reply.code(401).send({ type: 'about:blank', title: 'Unauthorized', status: 401, detail: 'No refresh token' })
     }
 
-    const session = await accounts.sessionByRefreshHash(sha256(refreshToken))
+    const hash = sha256(refreshToken)
+    // Claimed and retired in one statement: see `rotateSession`.
+    const session = await accounts.rotateSession(hash)
     if (!session) {
+      /*
+       * A token whose session a refresh already retired.
+       *
+       * Within a few seconds that is a race — two tabs refreshing together,
+       * one of them a moment late. The browser may already hold the cookie
+       * the winner was given, so this answer must not clear it; the client
+       * retries once and succeeds with the new one.
+       *
+       * Later than that, the old token is being replayed: its only legitimate
+       * holder moved on long ago. That is what a stolen refresh token looks
+       * like, and every session of the account is ended.
+       */
+      const rotated = await accounts.rotatedSession(hash)
+      if (rotated && Date.now() - new Date(rotated.rotated_at).getTime() <= REFRESH_REUSE_GRACE_MS) {
+        return reply.code(401).send({
+          type: 'about:blank', title: 'Unauthorized', status: 401,
+          detail: 'This refresh token was just rotated — retry with the new one',
+          code: 'refresh_rotated'
+        })
+      }
+      if (rotated) {
+        await accounts.revokeAllSessions(rotated.user_id)
+        await revokeTokens(rotated.user_id)
+        await accounts.log(rotated.user_id, 'refresh_token_reuse', request.ip, request.headers['user-agent'] ?? null)
+        await recordAccountEvent('SESSIONS_REVOKED_ALL', {
+          userId: rotated.user_id, result: 'blocked', ...fromRequest(request), metadata: { reason: 'refresh_token_reuse' }
+        })
+        request.log.warn({ userId: rotated.user_id }, 'a rotated refresh token was replayed; every session of the account was ended')
+      }
       // The cookie names a session that no longer exists — revoked, expired,
       // or from a database this browser has outlived. Clearing it stops the
       // client retrying with it on every load for the next thirty days.
@@ -405,9 +443,9 @@ const routes: FastifyPluginAsync = async fastify => {
       return reply.code(401).send({ type: 'about:blank', title: 'Unauthorized', status: 401, detail: 'Invalid refresh token' })
     }
 
-    // rotation: revoke the used session, issue a fresh one
-    await accounts.revokeSession(session.id)
-    return issueTokens({ id: session.user_id, username: session.username }, reply, request.ip, request.headers['user-agent'])
+    return issueTokens(
+      { id: session.user_id, username: session.username },
+      reply, request.ip, request.headers['user-agent'], session.started_at)
   })
 
   // the client uses this to decide whether to show moderation/admin UI
@@ -660,31 +698,47 @@ const routes: FastifyPluginAsync = async fastify => {
 
     const user = await accounts.activeByIdentifier(identifier)
 
+    /*
+     * The same answer, in about the same time, whether or not the account
+     * exists.
+     *
+     * The slow part — the request to the operator's mail endpoint, with its
+     * five-second timeout — used to happen before the response, so an
+     * existing account answered measurably later than a missing one, and the
+     * timing said what the body carefully did not. It now runs after the
+     * response has gone; a failure there is logged.
+     *
+     * The token itself is still written before answering, in one locked
+     * transaction that also retires every older one. Two requests racing
+     * each other therefore leave exactly one usable token, which a
+     * background write could not promise.
+     */
     if (user) {
-      // Supersede any outstanding request: a second click must not leave the
-      // first token usable, or a stolen older email still opens the account.
-      await accounts.supersedeResets(user.id)
-      // Csak akkor, ha a fiók létezik. A válasz a hívónak így is ugyanaz
-      // (nem áruljuk el, van-e ilyen fiók), de nem létező fióknak nincs
-      // előzménye, amibe írni lehetne.
-      await recordAccountEvent('PASSWORD_RESET_REQUEST', { userId: user.id, ...fromRequest(request) })
-
       const token = randomBytes(32).toString('base64url')
       const expiresAt = new Date(Date.now() + RESET_TTL_MS)
-      await accounts.openReset({ userId: user.id, tokenHash: sha256(token), ip: request.ip, expiresAt })
-      await accounts.log(user.id, 'password_reset_requested', request.ip)
+      await accounts.replaceReset({ userId: user.id, tokenHash: sha256(token), ip: request.ip, expiresAt })
 
-      // The token goes to the operator's endpoint only — never through the
-      // admin-managed webhook fan-out, which has a Discord formatter and would
-      // render a live account credential into a chat channel. See
-      // lib/reset-delivery.ts.
-      await deliverReset(
-        { email: user.email, username: user.username, token, expiresAt: expiresAt.toISOString() },
-        (message, error) => { request.log.warn({ err: error }, message) }
-      )
-      // What the general webhooks DO get: that it happened, and to whom. No
-      // token, so a subscriber cannot take over the account with it.
-      await emitEvent('user.password_reset_requested', { username: user.username })
+      const ip = request.ip
+      const context = fromRequest(request)
+      void (async () => {
+        // Csak akkor, ha a fiók létezik. A válasz a hívónak így is ugyanaz
+        // (nem áruljuk el, van-e ilyen fiók), de nem létező fióknak nincs
+        // előzménye, amibe írni lehetne.
+        await recordAccountEvent('PASSWORD_RESET_REQUEST', { userId: user.id, ...context })
+        await accounts.log(user.id, 'password_reset_requested', ip)
+
+        // The token goes to the operator's endpoint only — never through the
+        // admin-managed webhook fan-out, which has a Discord formatter and
+        // would render a live account credential into a chat channel. See
+        // modules/auth/reset-delivery.ts.
+        await deliverReset(
+          { email: user.email, username: user.username, token, expiresAt: expiresAt.toISOString() },
+          (message, error) => { request.log.warn({ err: error }, message) }
+        )
+        // What the general webhooks DO get: that it happened, and to whom. No
+        // token, so a subscriber cannot take over the account with it.
+        await emitEvent('user.password_reset_requested', { username: user.username })
+      })().catch(error => { request.log.error({ err: error }, 'password reset follow-up failed') })
     }
 
     return reply.code(204).send()
@@ -736,7 +790,15 @@ const routes: FastifyPluginAsync = async fastify => {
   fastify.post('/ws-ticket', { preHandler: fastify.authenticate }, async request => {
     const ticket = randomBytes(32).toString('base64url')
     const expiresAt = new Date(Date.now() + 30_000)
-    await accounts.openWsTicket(sha256(ticket), request.user.sub, expiresAt)
+    // The socket stays bound to what opened it: the hub closes it when this
+    // session ends or the account's tokens are revoked.
+    await accounts.openWsTicket({
+      hash: sha256(ticket),
+      userId: request.user.sub,
+      expiresAt,
+      sessionId: request.user.sid ?? null,
+      tokenVersion: request.user.tv ?? null
+    })
     return { ticket, expiresAt: expiresAt.toISOString() }
   })
 }

@@ -2,10 +2,11 @@
 // All routes require auth + X-Profile-Id header (must belong to the user).
 
 import { query, queryOne } from '../../infrastructure/database/index.ts'
-import { enqueue } from '../../infrastructure/queue/index.ts'
 import { WRITE_LIMIT } from '../../middleware/security.ts'
 import { recomputeProfileStats } from '../system/stats-worker.ts'
 import { evaluate, grantNew, measure } from './achievements.ts'
+import { LIBRARY_STATUSES, addFavorite, removeEntry, saveEntry, validate, type EntryChange } from './entries.ts'
+import { recordProgress } from './progress.ts'
 
 import { requireProfile } from '../../middleware/profile.ts'
 
@@ -13,7 +14,6 @@ import type { FastifyPluginAsync } from 'fastify'
 import { imageUrlSql } from '../media/public-url.ts'
 import { uuidParams } from '../../infrastructure/http/params.ts'
 
-const LIBRARY_STATUSES = ['WATCHING', 'PLANNING', 'COMPLETED', 'PAUSED', 'DROPPED', 'REWATCHING'] as const
 
 
 const routes: FastifyPluginAsync = async fastify => {
@@ -121,28 +121,14 @@ const routes: FastifyPluginAsync = async fastify => {
     if (!profileId) return
 
     const { animeId } = request.params as { animeId: string }
-    const body = request.body as { status?: string, progress?: number, score?: number, notes?: string }
+    const body = request.body as EntryChange
 
-    const anime = await queryOne<{ episode_count: number | null }>('SELECT episode_count FROM anime WHERE id = $1', [animeId])
-    if (!anime) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
-
-    // auto-complete when progress reaches the total
-    let status = body.status
-    if (status === undefined && body.progress !== undefined && anime.episode_count && body.progress >= anime.episode_count) {
-      status = 'COMPLETED'
-    }
-
-    const entry = await queryOne(
-      `INSERT INTO library_entries (profile_id, anime_id, status, progress, score, notes)
-       VALUES ($1, $2, coalesce($3, 'PLANNING')::library_status, coalesce($4, 0), $5, $6)
-       ON CONFLICT (profile_id, anime_id) DO UPDATE SET
-         status = coalesce($3::library_status, library_entries.status),
-         progress = coalesce($4, library_entries.progress),
-         score = coalesce($5, library_entries.score),
-         notes = coalesce($6, library_entries.notes)
-       RETURNING *`,
-      [profileId, animeId, status ?? null, body.progress ?? null, body.score ?? null, body.notes ?? null]
-    )
+    // Auto-completion, validation and the visibility check live in
+    // entries.ts — shared with the GraphQL mutation, so the two cannot drift.
+    const problem = validate(body)
+    if (problem) return reply.code(400).send({ type: 'about:blank', title: 'Bad Request', status: 400, detail: problem })
+    const entry = await saveEntry(profileId, animeId, body)
+    if (!entry) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
     return entry
   })
 
@@ -150,7 +136,7 @@ const routes: FastifyPluginAsync = async fastify => {
     const profileId = await requireProfile(request, reply)
     if (!profileId) return
     const { animeId } = request.params as { animeId: string }
-    await query('DELETE FROM library_entries WHERE profile_id = $1 AND anime_id = $2', [profileId, animeId])
+    await removeEntry(profileId, animeId)
     return reply.code(204).send()
   })
 
@@ -191,7 +177,7 @@ const routes: FastifyPluginAsync = async fastify => {
    * stays rather than being collapsed to anime-only.
    *
    * Spelled the American way here, matching the `favorites` table and the
-   * path docs/api.md has specified all along. The client says "favourites"
+   * path docs/api/api.md has specified all along. The client says "favourites"
    * because that is what the interface says to the reader — the split is
    * deliberate, and this note is here so it does not read as a typo.
    */
@@ -220,15 +206,11 @@ const routes: FastifyPluginAsync = async fastify => {
     const { animeId } = request.params as { animeId: string }
 
     // A favourite pointing at nothing is a broken row on somebody's profile
-    // screen, so the subject is checked rather than trusted.
-    const exists = await queryOne('SELECT 1 FROM anime WHERE id = $1', [animeId])
-    if (!exists) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
-
-    await query(
-      `INSERT INTO favorites (profile_id, subject_type, subject_id) VALUES ($1, 'anime', $2)
-       ON CONFLICT DO NOTHING`,
-      [profileId, animeId]
-    )
+    // screen, and one pointing at a hidden title would put it on show — so
+    // the subject is checked rather than trusted.
+    if (!await addFavorite(profileId, animeId)) {
+      return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    }
     return reply.code(204).send()
   })
 
@@ -421,113 +403,26 @@ const routes: FastifyPluginAsync = async fastify => {
 
     const { episodeId } = request.params as { episodeId: string }
     const body = request.body as { positionSec: number, durationSec?: number, completed?: boolean }
-    const { positionSec, durationSec } = body
-
-    const episode = await queryOne<{ anime_id: string }>('SELECT anime_id FROM episodes WHERE id = $1', [episodeId])
-    if (!episode) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
 
     /*
-     * Who decides an episode was watched.
+     * Who decides an episode was watched, how a watch-history session is
+     * continued or opened, and when XP is due: all in progress.ts, shared with
+     * the GraphQL `saveProgress` mutation and written in one transaction.
      *
-     * There were two answers to that and they never met. The client measures
-     * the seconds the video actually played (apps/web/js/watch-time.js) because
-     * position alone credits dragging the scrubber to the end. The server
-     * computed its own verdict from `positionSec / durationSec`, and the
-     * client has never sent `durationSec` — so the server's rule could not
-     * fire, and `watch_history`, `xp_events`, `watch_stats_daily` and
-     * `profile_stats` stayed empty on every deployment.
-     *
-     * The measurement is the answer, and only the client can take it. It is
-     * accepted here, with a floor: a completion claim that arrives at a
-     * position under a minute and under half the runtime is not a measurement,
-     * it is a malformed or forged call. That floor is not a security boundary
-     * — a client that lies about position can lie about anything, and XP is
-     * cosmetic — it just stops an obviously wrong call from writing history.
-     *
-     * The positional rule stays as the fallback for a caller that sends a
-     * duration and no verdict.
+     * The client measures the seconds the video actually played, so its
+     * `completed` verdict is accepted with a plausibility floor; a caller that
+     * sends a duration and no verdict is judged by position (85%).
      */
-    const positional = durationSec != null && durationSec > 0 && positionSec / durationSec >= 0.85
-    const plausible = positionSec >= 60 || (durationSec != null && durationSec > 0 && positionSec / durationSec >= 0.5)
-    const completed = body.completed === true ? plausible : positional
+    const saved = await recordProgress({
+      profileId,
+      episodeId,
+      positionSec: body.positionSec,
+      durationSec: body.durationSec,
+      completed: body.completed
+    })
+    if (!saved) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
 
-    // NOTE: direct write; swaps for the Redis write-behind path at scale
-    // without changing this contract.
-    const row = await queryOne<{ position_sec: string, completed: boolean, was_completed: boolean, updated_at: string }>(
-      `INSERT INTO watch_progress (profile_id, episode_id, anime_id, position_sec, duration_sec, completed)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (profile_id, episode_id) DO UPDATE SET
-         position_sec = $4, duration_sec = coalesce($5, watch_progress.duration_sec),
-         completed = watch_progress.completed OR $6, updated_at = now()
-       RETURNING position_sec, completed,
-                 (SELECT completed FROM watch_progress wp2 WHERE wp2.profile_id = $1 AND wp2.episode_id = $2) AS was_completed,
-                 updated_at`,
-      [profileId, episodeId, episode.anime_id, positionSec, durationSec ?? null, completed]
-    )
-
-    /*
-     * A nézés előzménye — az indítástól, nem csak a befejezéstől.
-     *
-     * Eddig kizárólag a befejezés írt ide sort. A tábla viszont `started_at`,
-     * `ended_at` és `finished` hármassal van megtervezve, és ennek a háromnak
-     * csak akkor van értelme, ha van indítás is. Enélkül két kérdésre nem
-     * lehetett válaszolni, és mindkettő pont az érdekes:
-     *
-     *   * hányan INDÍTOTTÁK el ezt az epizódot (nem hányan fejezték be);
-     *   * hol hagyják abba — a befejezési arány a kettő hányadosa, és
-     *     befejezésekből önmagában nem számolható.
-     *
-     * Nem új kliensesemény: a lejátszó úgyis küld haladást, és egy olyan
-     * esemény, aminek van adatbázisbeli következménye (a saját haladásod),
-     * drágábban hamisítható, mint egy, ami csak a statisztikát mozdítja.
-     *
-     * Egy menet = egy sor. A hat órás ablak ugyanaz, ami eddig a duplikált
-     * befejezést fogta: ugyanannak az epizódnak az újranézése holnap új sor,
-     * a szünet utáni folytatás ma nem.
-     */
-    const session = await queryOne<{ id: string, finished: boolean, started_at: string }>(
-      `SELECT id, finished, started_at FROM watch_history
-        WHERE profile_id = $1 AND episode_id = $2 AND started_at > now() - interval '6 hours'
-        ORDER BY started_at DESC LIMIT 1`,
-      [profileId, episodeId]
-    )
-
-    const watched = Math.round(positionSec)
-    if (!session) {
-      // Ez az indítás.
-      await query(
-        `INSERT INTO watch_history (profile_id, episode_id, anime_id, watched_sec, finished, started_at, ended_at)
-         VALUES ($1, $2, $3, $4, $5, now(), CASE WHEN $5 THEN now() END)`,
-        [profileId, episodeId, episode.anime_id, watched, completed && row?.completed === true]
-      )
-    } else {
-      // A menet halad. A `watched_sec` nem csökkenhet: a visszatekerés nem
-      // veszi vissza a már megnézett időt.
-      //
-      // A `started_at` is szerepel a feltételben, pedig az `id` egyedi: a
-      // tábla particionált, és enélkül a tervező minden partíciót megnézne
-      // egyetlen sorért.
-      await query(
-        `UPDATE watch_history
-            SET watched_sec = GREATEST(watched_sec, $3),
-                finished = finished OR $4,
-                ended_at = CASE WHEN finished OR $4 THEN now() ELSE ended_at END
-          WHERE id = $1 AND started_at = $2`,
-        [session.id, session.started_at, watched, completed && row?.completed === true]
-      )
-    }
-
-    // Az első befejezés jár XP-vel és statisztikafrissítéssel — ez nem
-    // változott, csak most már a menet sorát nézi, nem egy külön beszúrást.
-    if (completed && row?.completed && !session?.finished) {
-      await query(
-        `INSERT INTO xp_events (profile_id, amount, reason, ref_id) VALUES ($1, 10, 'episode_watched', $2)`,
-        [profileId, episodeId]
-      )
-      await enqueue('stats', { profileId, dedupe: `profile:${profileId}` })
-    }
-
-    return { position_sec: row?.position_sec, completed: row?.completed, updated_at: row?.updated_at }
+    return { position_sec: String(saved.positionSec), completed: saved.completed, updated_at: saved.updatedAt }
   })
 }
 

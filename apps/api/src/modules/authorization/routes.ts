@@ -3,7 +3,7 @@
 // role's granted slugs are readable here; individual grants toggle live.
 
 import { query, queryOne } from '../../infrastructure/database/index.ts'
-import { invalidatePermissions } from '../../middleware/auth.ts'
+import { invalidatePermissions, loadPermissions } from '../../middleware/auth.ts'
 import { audit } from '../audit/audit.ts'
 import { emitEvent } from '../webhooks/delivery.ts'
 
@@ -55,6 +55,15 @@ const routes: FastifyPluginAsync = async fastify => {
 
     const perm = await queryOne<{ id: string }>('SELECT id FROM permissions WHERE slug = $1', [slug])
     if (!perm) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404, detail: 'Permission not found' })
+
+    // Nobody hands out a power they do not have. Without this, `roles.manage`
+    // alone could add any permission to one's own role.
+    if (granted && !(await loadPermissions(request.user.sub)).has(slug)) {
+      return reply.code(403).send({
+        type: 'about:blank', title: 'Forbidden', status: 403,
+        detail: `You cannot grant ${slug}: you do not hold it yourself`
+      })
+    }
 
     if (granted) {
       await query('INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [roleId, perm.id])

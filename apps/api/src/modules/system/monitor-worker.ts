@@ -116,8 +116,8 @@ export function toSamples (
 
 async function queueDepth (): Promise<{ pending: number, dead: number }> {
   const row = await queryOne<{ pending: string, dead: string }>(
-    `SELECT count(*) FILTER (WHERE done_at IS NULL AND run_at <= now() AND attempts < max_attempts) AS pending,
-            count(*) FILTER (WHERE done_at IS NULL AND attempts >= max_attempts) AS dead
+    `SELECT count(*) FILTER (WHERE done_at IS NULL AND run_at <= now() AND dead_at IS NULL) AS pending,
+            count(*) FILTER (WHERE done_at IS NULL AND dead_at IS NOT NULL) AS dead
      FROM jobs`
   )
   return { pending: Number(row?.pending ?? 0), dead: Number(row?.dead ?? 0) }

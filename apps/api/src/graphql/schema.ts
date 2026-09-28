@@ -1,9 +1,24 @@
-// GraphQL layer (mercurius). Resolvers call the same SQL/service patterns
-// as the REST routes — GraphQL composes them, it does not own logic.
-// Child collections (titles, genres, images, mappings) use mercurius
-// loaders so nested queries stay free of N+1s.
+// GraphQL layer (mercurius) over the same rules as the REST routes.
+//
+// What a caller may see is decided exactly as REST decides it: a hidden title
+// does not exist, an unlisted one is reachable by id but never listed, and an
+// episode is listed only when it is public. These resolvers used to run their
+// own SQL without any of that, so every unpublished title in the catalogue was
+// one `anime(id:)` away.
+//
+// Writes go through the library services the REST routes use
+// (modules/library/entries.ts, progress.ts) — one set of validation, one way
+// of counting a finished episode.
+//
+// Every field that resolves a title for a list of parents is a batched loader,
+// so a nested query costs one statement per field, not one per row.
 
-import { query, queryOne } from '../infrastructure/database/index.ts'
+import mercurius from 'mercurius'
+
+import { pool, query, queryOne } from '../infrastructure/database/index.ts'
+import { removeEntry, saveEntry, validate } from '../modules/library/entries.ts'
+import { recordProgress } from '../modules/library/progress.ts'
+import { searchAnime } from '../modules/search/search.ts'
 
 import type { MercuriusContext, MercuriusLoaders, IResolvers } from 'mercurius'
 
@@ -101,7 +116,7 @@ export const schema = /* GraphQL */ `
   type Viewer {
     id: ID!
     username: String!
-    library(status: LibraryStatus): [LibraryEntry!]!
+    library(status: LibraryStatus, limit: Int = 500): [LibraryEntry!]!
     continueWatching: [WatchProgress!]!
     notifications(unreadOnly: Boolean = false, limit: Int = 25): [Notification!]!
     stats: ProfileStats
@@ -124,11 +139,31 @@ export const schema = /* GraphQL */ `
   }
 `
 
-interface Ctx extends MercuriusContext {
+export interface Ctx extends MercuriusContext {
   userId?: string
   username?: string
   profileId?: string
 }
+
+/** A refusal the caller is meant to read. Anything else is masked in production. */
+export function refuse (message: string, code: string, statusCode = 400): never {
+  throw new mercurius.ErrorWithProps(message, { code }, statusCode)
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** A malformed id is not a lookup — Postgres would answer it with an error. */
+const isUuid = (value: unknown): value is string => typeof value === 'string' && UUID.test(value)
+
+/** Listed: browse, search, relations, the schedule. */
+const LISTED = "a.visibility = 'public'"
+/** Reachable by id: the detail of one title. Unlisted titles are, hidden ones are not. */
+const REACHABLE = "a.visibility <> 'hidden'"
+
+/** The widest schedule window one request may ask for. */
+const SCHEDULE_MAX_DAYS = 62
+/** The deepest page `animePage` will go to. OFFSET pages cost what they skip. */
+const PAGE_OFFSET_MAX = 10_000
 
 const SORTS: Record<string, string> = {
   POPULARITY: 'a.popularity DESC',
@@ -174,13 +209,13 @@ const mapAnime = (row: AnimeRow) => ({
 })
 
 async function requireProfile (ctx: Ctx): Promise<string> {
-  if (!ctx.userId) throw new Error('Unauthorized')
+  if (!ctx.userId) refuse('Sign in first', 'UNAUTHENTICATED', 401)
   if (ctx.profileId) return ctx.profileId
   const profile = await queryOne<{ id: string }>(
     'SELECT id FROM user_profiles WHERE user_id = $1 ORDER BY is_default DESC LIMIT 1',
     [ctx.userId]
   )
-  if (!profile) throw new Error('Account has no profile')
+  if (!profile) refuse('This account has no profile', 'NO_PROFILE', 409)
   ctx.profileId = profile.id
   return profile.id
 }
@@ -194,15 +229,29 @@ const mapEntry = (row: Record<string, unknown>) => ({
   updatedAt: row.updated_at
 })
 
+/**
+ * Titles by id for a batch of parents, in the parents' order.
+ *
+ * Deliberately NOT filtered by visibility: the parents are the viewer's own
+ * library and resume positions, or schedule rows that were filtered already.
+ * A title hidden after somebody listed it stays on that person's list.
+ */
+async function animeFor (ids: string[]): Promise<Array<ReturnType<typeof mapAnime> | null>> {
+  const rows = await query<AnimeRow>(`SELECT ${ANIME_COLS} FROM anime a WHERE a.id = ANY($1::uuid[])`, [ids])
+  const byId = new Map(rows.map(row => [row.id, mapAnime(row)]))
+  return ids.map(id => byId.get(id) ?? null)
+}
+
 export const resolvers: IResolvers = {
   Query: {
     async anime (_root, args: { id: string }) {
-      const row = await queryOne<AnimeRow>(`SELECT ${ANIME_COLS} FROM anime a WHERE a.id = $1`, [args.id])
+      if (!isUuid(args.id)) return null
+      const row = await queryOne<AnimeRow>(`SELECT ${ANIME_COLS} FROM anime a WHERE a.id = $1 AND ${REACHABLE}`, [args.id])
       return row ? mapAnime(row) : null
     },
 
     async animePage (_root, args: { season?: string, year?: number, genre?: string, format?: string, status?: string, sort: string, limit: number, cursor?: string, nsfw: boolean }) {
-      const where: string[] = []
+      const where: string[] = [LISTED]
       const params: unknown[] = []
       const add = (clause: string, value: unknown): void => {
         params.push(value)
@@ -215,54 +264,54 @@ export const resolvers: IResolvers = {
       if (args.status) add('a.status = ?', args.status)
       if (args.genre) add('EXISTS (SELECT 1 FROM anime_genres ag JOIN genres g ON g.id = ag.genre_id WHERE ag.anime_id = a.id AND g.slug = ?)', args.genre)
 
-      const limit = Math.min(args.limit, 50)
-      const offset = args.cursor ? Number(Buffer.from(args.cursor, 'base64url').toString()) || 0 : 0
+      const limit = Math.min(Math.max(1, args.limit), 50)
+      const decoded = args.cursor ? Number(Buffer.from(args.cursor, 'base64url').toString()) : 0
+      const offset = Number.isInteger(decoded) && decoded > 0 ? Math.min(decoded, PAGE_OFFSET_MAX) : 0
       params.push(limit + 1, offset)
 
       const rows = await query<AnimeRow>(
         `SELECT ${ANIME_COLS} FROM anime a
-         ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+         WHERE ${where.join(' AND ')}
          ORDER BY ${SORTS[args.sort] ?? SORTS.POPULARITY}, a.id
          LIMIT $${params.length - 1} OFFSET $${params.length}`,
         params
       )
-      const hasMore = rows.length > limit
+      const hasMore = rows.length > limit && offset + limit < PAGE_OFFSET_MAX
       return {
         data: rows.slice(0, limit).map(mapAnime),
         nextCursor: hasMore ? Buffer.from(String(offset + limit)).toString('base64url') : null
       }
     },
 
-    // full-text + typo-tolerant search over tsvector and trigram indexes,
-    // checking synonyms as well — the OpenSearch fallback path from the docs
+    // The REST search, not a second implementation of it: the same ranking,
+    // the same accent folding, the same visibility rule.
     async search (_root, args: { query: string, limit: number, nsfw: boolean }) {
-      const rows = await query<AnimeRow>(
-        `SELECT DISTINCT ON (a.id) ${ANIME_COLS},
-                greatest(
-                  similarity(a.canonical_title, $1),
-                  coalesce((SELECT max(similarity(s.synonym, $1)) FROM anime_synonyms s WHERE s.anime_id = a.id), 0)
-                ) AS sim,
-                ts_rank(a.search, websearch_to_tsquery('simple', $1)) AS rank
-         FROM anime a
-         WHERE (${args.nsfw ? 'true' : 'NOT a.is_adult'})
-           AND (a.search @@ websearch_to_tsquery('simple', $1)
-                OR a.canonical_title % $1
-                OR EXISTS (SELECT 1 FROM anime_synonyms s WHERE s.anime_id = a.id AND s.synonym % $1))
-         ORDER BY a.id, sim DESC
-         LIMIT 200`,
-        [args.query]
-      )
-      return rows
-        .sort((x, y) => Number((y as unknown as { sim: number }).sim) - Number((x as unknown as { sim: number }).sim))
-        .slice(0, Math.min(args.limit, 50))
-        .map(mapAnime)
+      const limit = Math.min(Math.max(1, args.limit), 50)
+      const found = await searchAnime(pool, args.query, { limit, nsfw: args.nsfw })
+      if (!found.length) return []
+      const ids = found.map(row => row.id)
+      const rows = await query<AnimeRow>(`SELECT ${ANIME_COLS} FROM anime a WHERE a.id = ANY($1::uuid[])`, [ids])
+      const byId = new Map(rows.map(row => [row.id, mapAnime(row)]))
+      return ids.map(id => byId.get(id)).filter(Boolean)
     },
 
     async schedule (_root, args: { from: string, to: string }) {
-      const rows = await query(
+      const from = new Date(args.from)
+      const to = new Date(args.to)
+      if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+        refuse('`from` and `to` must be ISO dates', 'BAD_DATE')
+      }
+      if (to <= from) refuse('`to` must be later than `from`', 'BAD_RANGE')
+      if (to.getTime() - from.getTime() > SCHEDULE_MAX_DAYS * 86_400_000) {
+        refuse(`A schedule spans at most ${SCHEDULE_MAX_DAYS} days`, 'RANGE_TOO_WIDE')
+      }
+      const rows = await query<{ episode_id: string, anime_id: string, number: string, air_date: string }>(
         `SELECT e.id AS episode_id, e.anime_id, e.number, e.air_date::text AS air_date
-         FROM episodes e WHERE e.air_date >= $1 AND e.air_date < $2 ORDER BY e.air_date`,
-        [args.from, args.to]
+           FROM episodes e JOIN anime a ON a.id = e.anime_id
+          WHERE e.air_date >= $1 AND e.air_date < $2
+            AND ${LISTED} AND e.visibility = 'public'
+          ORDER BY e.air_date`,
+        [from.toISOString(), to.toISOString()]
       )
       return rows.map(row => ({
         episodeId: row.episode_id,
@@ -272,7 +321,6 @@ export const resolvers: IResolvers = {
       }))
     },
 
-
     me (_root, _args, ctx: Ctx) {
       if (!ctx.userId) return null
       return { id: ctx.userId, username: ctx.username }
@@ -280,14 +328,16 @@ export const resolvers: IResolvers = {
   },
 
   Viewer: {
-    async library (_viewer, args: { status?: string }, ctx: Ctx) {
+    async library (_viewer, args: { status?: string, limit: number }, ctx: Ctx) {
       const profileId = await requireProfile(ctx)
       const params: unknown[] = [profileId]
       if (args.status) params.push(args.status)
+      params.push(Math.min(Math.max(1, args.limit), 1000))
       const rows = await query(
         `SELECT anime_id, status, progress, score, rewatches, updated_at
          FROM library_entries WHERE profile_id = $1 ${args.status ? 'AND status = $2' : ''}
-         ORDER BY updated_at DESC`,
+         ORDER BY updated_at DESC
+         LIMIT $${params.length}`,
         params
       )
       return rows.map(mapEntry)
@@ -312,11 +362,12 @@ export const resolvers: IResolvers = {
     },
 
     async notifications (_viewer, args: { unreadOnly: boolean, limit: number }, ctx: Ctx) {
+      if (!ctx.userId) refuse('Sign in first', 'UNAUTHENTICATED', 401)
       const rows = await query(
         `SELECT id, type, payload, read_at, created_at FROM notifications
          WHERE user_id = $1 ${args.unreadOnly ? 'AND read_at IS NULL' : ''}
          ORDER BY created_at DESC LIMIT $2`,
-        [ctx.userId, Math.min(args.limit, 100)]
+        [ctx.userId, Math.min(Math.max(1, args.limit), 100)]
       )
       return rows.map(row => ({
         id: row.id,
@@ -345,92 +396,60 @@ export const resolvers: IResolvers = {
     }
   },
 
-  LibraryEntry: {
-    async anime (entry: { animeId: string }) {
-      const row = await queryOne<AnimeRow>(`SELECT ${ANIME_COLS} FROM anime a WHERE a.id = $1`, [entry.animeId])
-      return row ? mapAnime(row) : null
-    }
-  },
-
-  WatchProgress: {
-    async anime (progress: { animeId: string }) {
-      const row = await queryOne<AnimeRow>(`SELECT ${ANIME_COLS} FROM anime a WHERE a.id = $1`, [progress.animeId])
-      return row ? mapAnime(row) : null
-    }
-  },
-
-  AiringEpisode: {
-    async anime (airing: { animeId: string }) {
-      const row = await queryOne<AnimeRow>(`SELECT ${ANIME_COLS} FROM anime a WHERE a.id = $1`, [airing.animeId])
-      return row ? mapAnime(row) : null
-    }
-  },
-
   Mutation: {
     async saveLibraryEntry (_root, args: { animeId: string, status?: string, progress?: number, score?: number }, ctx: Ctx) {
       const profileId = await requireProfile(ctx)
-      const anime = await queryOne<{ episode_count: number | null }>('SELECT episode_count FROM anime WHERE id = $1', [args.animeId])
-      if (!anime) throw new Error('Unknown anime')
-
-      let status = args.status
-      if (!status && args.progress != null && anime.episode_count && args.progress >= anime.episode_count) status = 'COMPLETED'
-
-      const row = await queryOne(
-        `INSERT INTO library_entries (profile_id, anime_id, status, progress, score)
-         VALUES ($1, $2, coalesce($3, 'PLANNING')::library_status, coalesce($4, 0), $5)
-         ON CONFLICT (profile_id, anime_id) DO UPDATE SET
-           status = coalesce($3::library_status, library_entries.status),
-           progress = coalesce($4, library_entries.progress),
-           score = coalesce($5, library_entries.score)
-         RETURNING anime_id, status, progress, score, rewatches, updated_at`,
-        [profileId, args.animeId, status ?? null, args.progress ?? null, args.score ?? null]
-      )
-      return mapEntry(row!)
+      if (!isUuid(args.animeId)) refuse('Unknown anime', 'NOT_FOUND', 404)
+      const change = {
+        status: args.status ?? undefined,
+        progress: args.progress ?? undefined,
+        score: args.score ?? undefined
+      }
+      const problem = validate(change)
+      if (problem) refuse(problem, 'BAD_INPUT')
+      const row = await saveEntry(profileId, args.animeId, change)
+      if (!row) refuse('Unknown anime', 'NOT_FOUND', 404)
+      return mapEntry(row)
     },
 
     async deleteLibraryEntry (_root, args: { animeId: string }, ctx: Ctx) {
       const profileId = await requireProfile(ctx)
-      await query('DELETE FROM library_entries WHERE profile_id = $1 AND anime_id = $2', [profileId, args.animeId])
+      if (isUuid(args.animeId)) await removeEntry(profileId, args.animeId)
       return true
     },
 
     async saveProgress (_root, args: { episodeId: string, positionSec: number, durationSec?: number }, ctx: Ctx) {
       const profileId = await requireProfile(ctx)
-      const episode = await queryOne<{ anime_id: string }>('SELECT anime_id FROM episodes WHERE id = $1', [args.episodeId])
-      if (!episode) throw new Error('Unknown episode')
-
-      const completed = args.durationSec != null && args.durationSec > 0 && args.positionSec / args.durationSec >= 0.85
-      const row = await queryOne(
-        `INSERT INTO watch_progress (profile_id, episode_id, anime_id, position_sec, duration_sec, completed)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT (profile_id, episode_id) DO UPDATE SET
-           position_sec = $4, duration_sec = coalesce($5, watch_progress.duration_sec),
-           completed = watch_progress.completed OR $6, updated_at = now()
-         RETURNING episode_id, anime_id, position_sec, duration_sec, completed, updated_at`,
-        [profileId, args.episodeId, episode.anime_id, args.positionSec, args.durationSec ?? null, completed]
-      )
-      return {
-        episodeId: row!.episode_id,
-        animeId: row!.anime_id,
-        positionSec: Number(row!.position_sec),
-        durationSec: row!.duration_sec == null ? null : Number(row!.duration_sec),
-        completed: row!.completed,
-        updatedAt: row!.updated_at
+      if (!isUuid(args.episodeId)) refuse('Unknown episode', 'NOT_FOUND', 404)
+      if (!Number.isFinite(args.positionSec) || args.positionSec < 0) refuse('positionSec must be zero or more', 'BAD_INPUT')
+      if (args.durationSec != null && (!Number.isFinite(args.durationSec) || args.durationSec < 0)) {
+        refuse('durationSec must be zero or more', 'BAD_INPUT')
       }
+      const saved = await recordProgress({
+        profileId,
+        episodeId: args.episodeId,
+        positionSec: args.positionSec,
+        durationSec: args.durationSec ?? null
+      })
+      if (!saved) refuse('Unknown episode', 'NOT_FOUND', 404)
+      return saved
     },
 
     async markNotificationsRead (_root, args: { ids: string[] }, ctx: Ctx) {
-      if (!ctx.userId) throw new Error('Unauthorized')
+      if (!ctx.userId) refuse('Sign in first', 'UNAUTHENTICATED', 401)
+      const ids = args.ids.filter(isUuid).slice(0, 200)
+      if (!ids.length) return 0
       const rows = await query(
-        `UPDATE notifications SET read_at = now() WHERE user_id = $1 AND id = ANY($2) AND read_at IS NULL RETURNING id`,
-        [ctx.userId, args.ids]
+        `UPDATE notifications SET read_at = now() WHERE user_id = $1 AND id = ANY($2::uuid[]) AND read_at IS NULL RETURNING id`,
+        [ctx.userId, ids]
       )
       return rows.length
     }
   }
 }
 
-// batched child-field loaders — one query per field per request
+// ---- batched child-field loaders — one query per field per request ----
+
 export const loaders: MercuriusLoaders = {
   Anime: {
     async titles (queries) {
@@ -508,11 +527,12 @@ export const loaders: MercuriusLoaders = {
       return ids.map(id => byId.get(id) ?? null)
     },
 
+    // Public episodes only — the rule the REST episode list applies.
     async episodes (queries) {
       const ids = queries.map(q => (q.obj as { id: string }).id)
       const rows = await query<Record<string, unknown> & { anime_id: string }>(
         `SELECT id, anime_id, number, title, synopsis, air_date::text AS air_date, duration, is_filler, is_recap
-         FROM episodes WHERE anime_id = ANY($1) ORDER BY number`, [ids]
+         FROM episodes WHERE anime_id = ANY($1) AND visibility = 'public' ORDER BY number`, [ids]
       )
       const byId = new Map<string, unknown[]>()
       for (const row of rows) {
@@ -525,12 +545,13 @@ export const loaders: MercuriusLoaders = {
       return ids.map(id => byId.get(id) ?? [])
     },
 
+    // Related titles are a listing, so only listed ones appear in it.
     async relations (queries) {
       const ids = queries.map(q => (q.obj as { id: string }).id)
       const rows = await query<AnimeRow & { src_id: string, relation: string }>(
         `SELECT r.anime_id AS src_id, r.relation, ${ANIME_COLS}
          FROM anime_relations r JOIN anime a ON a.id = r.related_id
-         WHERE r.anime_id = ANY($1)`, [ids]
+         WHERE r.anime_id = ANY($1) AND ${LISTED}`, [ids]
       )
       const byId = new Map<string, unknown[]>()
       for (const row of rows) {
@@ -553,5 +574,17 @@ export const loaders: MercuriusLoaders = {
       const byId = new Map(rows.map(row => [row.anime_id as string, mapEntry(row)]))
       return ids.map(id => byId.get(id) ?? null)
     }
+  },
+
+  // One statement per field for the whole list — these resolved a title per
+  // row before, so a schedule of a thousand episodes was a thousand queries.
+  LibraryEntry: {
+    async anime (queries) { return await animeFor(queries.map(q => (q.obj as { animeId: string }).animeId)) }
+  },
+  WatchProgress: {
+    async anime (queries) { return await animeFor(queries.map(q => (q.obj as { animeId: string }).animeId)) }
+  },
+  AiringEpisode: {
+    async anime (queries) { return await animeFor(queries.map(q => (q.obj as { animeId: string }).animeId)) }
   }
 }

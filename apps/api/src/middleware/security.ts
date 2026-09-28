@@ -6,6 +6,7 @@
 
 import rateLimit from '@fastify/rate-limit'
 import { internalTrustEnabled, isInternalRequest } from './internal-request.ts'
+import { pathOf } from '../infrastructure/http/request-path.ts'
 import fp from 'fastify-plugin'
 
 import { config } from '../config.ts'
@@ -163,7 +164,7 @@ export default fp(async fastify => {
      * hamisítható — részletek az `internal-request.ts` fejlécében.
      */
     allowList: request =>
-      request.url.startsWith('/v1/health') ||
+      /^\/v1\/health(\/|$)/.test(pathOf(request)) ||
       isInternalRequest(request) ||
       isLoadTestRequest(request),
     // trustProxy is on, so request.ip is the real client behind a reverse proxy

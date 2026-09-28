@@ -1,11 +1,11 @@
 // Maintenance worker: creates upcoming partitions for the time-partitioned
 // event tables and prunes expired data per the retention policy
-// (docs/database.md).
+// (docs/database/database.md).
 
 import { query } from './database/index.ts'
 // Partition creation is shared with the migration runner, which has to leave a
 // freshly applied schema in a writable state rather than waiting for the first
-// run of this job. See lib/partitions.ts.
+// run of this job. See infrastructure/migrations/partitions.ts.
 import { PARTITIONED, ensurePartitions, monthStart } from './migrations/partitions.ts'
 import { pruneDoneJobs } from './queue/index.ts'
 

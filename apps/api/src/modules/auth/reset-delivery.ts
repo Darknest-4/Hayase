@@ -21,7 +21,10 @@
 // flow is complete and inert: tokens are minted and recorded, nothing is
 // delivered, and the log says so on every attempt rather than once at startup.
 
+import { createHmac } from 'node:crypto'
+
 import { checkOutboundUrl } from '../../infrastructure/http/ssrf.ts'
+import { guardedRequest } from '../../infrastructure/http/outbound.ts'
 
 const TARGET = process.env.PASSWORD_RESET_WEBHOOK_URL
 const SECRET = process.env.PASSWORD_RESET_WEBHOOK_SECRET
@@ -66,22 +69,30 @@ export async function deliverReset (
     return
   }
 
-  const controller = new AbortController()
-  const timer = setTimeout(() => { controller.abort() }, TIMEOUT_MS)
+  /*
+   * Signed, not stamped with the secret.
+   *
+   * The header used to carry PASSWORD_RESET_WEBHOOK_SECRET itself, so anyone
+   * who saw one request — a proxy log, a misrouted copy — held the key to
+   * forge every later one. It is now an HMAC of the timestamp and the body,
+   * the same scheme the generic webhooks use:
+   *
+   *   X-Yume-Timestamp: <ISO time>
+   *   X-Yume-Signature: sha256=<hex HMAC-SHA256(secret, "<timestamp>.<body>")>
+   *
+   * The receiver recomputes it, compares in constant time, and refuses a
+   * timestamp older than a few minutes, which is what stops a replay.
+   */
+  const body = JSON.stringify({ type: 'password_reset', ...delivery })
+  const timestamp = new Date().toISOString()
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', 'X-Yume-Timestamp': timestamp }
+  if (SECRET) {
+    headers['X-Yume-Signature'] = 'sha256=' + createHmac('sha256', SECRET).update(`${timestamp}.${body}`).digest('hex')
+  }
   try {
-    const response = await fetch(TARGET, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(SECRET ? { 'X-Yume-Signature': SECRET } : {})
-      },
-      body: JSON.stringify({ type: 'password_reset', ...delivery }),
-      signal: controller.signal
-    })
+    const response = await guardedRequest(TARGET, { method: 'POST', headers, body, timeoutMs: TIMEOUT_MS })
     if (!response.ok) log(`password reset delivery returned HTTP ${response.status}`)
   } catch (error) {
     log('password reset delivery failed', error)
-  } finally {
-    clearTimeout(timer)
   }
 }

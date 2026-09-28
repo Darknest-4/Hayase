@@ -18,14 +18,14 @@ import { randomUUID } from 'node:crypto'
 import { GraphQLError, type ValidationRule } from 'graphql'
 
 import { config } from './config.ts'
-import { query } from './infrastructure/database/index.ts'
+import { query, queryOne } from './infrastructure/database/index.ts'
 import { errorCode } from './errors/codes.ts'
 import { recordError } from './errors/reporting.ts'
 import { noIndexPath } from './modules/seo/meta.ts'
 import { settings as siteSettings } from './modules/settings/site-settings.ts'
 import { schema, resolvers, loaders } from './graphql/schema.ts'
 import wsPlugin from './infrastructure/websocket/index.ts'
-import authPlugin, { tokenIsCurrent } from './middleware/auth.ts'
+import authPlugin, { tokenIsCurrent, type AccessTokenPayload } from './middleware/auth.ts'
 import securityPlugin from './middleware/security.ts'
 import animeRoutes from './modules/catalogue/public-routes.ts'
 import authRoutes from './modules/auth/routes.ts'
@@ -58,7 +58,7 @@ import translationRoutes from './modules/translations/routes.ts'
 import type { FastifyError, FastifyInstance, FastifyReply } from 'fastify'
 import { renderStatusPage, wantsHtml } from './infrastructure/http/status-page.ts'
 import { STAMP_PREFIX, apiBaseUrl, clientVersion, stampApiBase, stampAssets, unstamp } from './infrastructure/http/client-version.ts'
-import { guard as maintenanceGuard } from './modules/maintenance/middleware.ts'
+import { guard as maintenanceGuard, writesAllowed as maintenanceAllowsWrite } from './modules/maintenance/middleware.ts'
 import { watch as watchMaintenance } from './modules/maintenance/cache.ts'
 import { stopListener } from './infrastructure/queue/wake.ts'
 import { adminMaintenance, publicStatus } from './modules/maintenance/routes.ts'
@@ -67,6 +67,7 @@ import { verifyVideoBase } from './modules/maintenance/video-resolver.ts'
 import providerAdmin from './modules/providers/admin-routes.ts'
 import discordRoutes from './modules/discord/routes.ts'
 import { registerBuiltInProviders } from './modules/providers/index.ts'
+import { isApiPath, pathOf } from './infrastructure/http/request-path.ts'
 
 /**
  * Reject introspection queries.
@@ -83,6 +84,22 @@ const noIntrospection: ValidationRule = context => ({
   }
 })
 
+/**
+ * Postgres SQLSTATEs that mean "this value is not a valid <type>": invalid
+ * text representation, invalid datetime format, datetime field overflow,
+ * numeric value out of range.
+ */
+const PG_INPUT_ERRORS = new Set(['22P02', '22007', '22008', '22003'])
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    /** Every route registered on this instance, in registration order. */
+    routeTable: Array<{ method: string, url: string }>
+  }
+}
+
 export async function buildApp (): Promise<FastifyInstance> {
   const app = Fastify({
     // LOG_LEVEL is honoured so a test run can silence request logging: the
@@ -92,8 +109,13 @@ export async function buildApp (): Promise<FastifyInstance> {
     // A stable id per request, echoed back on every response. Without it a
     // user reporting "it failed at 14:03" cannot be tied to a log line, and a
     // 500 gives them nothing to quote.
-    genReqId: (req) => (req.headers['x-request-id'] as string | undefined)?.slice(0, 64) ?? randomUUID(),
-    requestIdHeader: 'x-request-id',
+    //
+    // Always minted here, never taken from the request. It used to honour an
+    // incoming X-Request-Id, so any caller could choose the id its errors were
+    // filed under — including one already belonging to somebody else's
+    // report, which the error lookup by request id would then mix together.
+    genReqId: () => randomUUID(),
+    requestIdHeader: false,
     // Never a blanket true — see config.trustProxy for why that made the rate
     // limiter bypassable with a single header.
     trustProxy: config.trustProxy,
@@ -105,6 +127,17 @@ export async function buildApp (): Promise<FastifyInstance> {
     requestTimeout: config.requestTimeoutMs,
     connectionTimeout: config.connectionTimeoutMs
   })
+
+  /*
+   * Every route this app registers — for the endpoint inventory
+   * (scripts/list-routes.ts → docs/api/endpoints.md) and the test that keeps
+   * that document from drifting away from the code again.
+   */
+  const routeTable: Array<{ method: string, url: string }> = []
+  app.addHook('onRoute', route => {
+    for (const method of [route.method].flat()) routeTable.push({ method: String(method), url: route.url })
+  })
+  app.decorate('routeTable', routeTable)
 
   await app.register(securityPlugin)
   // Reads and writes exactly one cookie: the HttpOnly refresh token. No
@@ -151,23 +184,82 @@ export async function buildApp (): Promise<FastifyInstance> {
      * this, so it is enforced as a validation rule.
      */
     validationRules: config.isProd ? [noIntrospection] : [],
+    /*
+     * Who is asking — with the same checks REST makes.
+     *
+     * The signature alone used to be enough here: a token from a session that
+     * had been signed out, or an account that had been banned, kept working
+     * against GraphQL for the rest of its fifteen minutes. And the profile
+     * header went to Postgres unchecked, where a malformed one was an error
+     * rather than "not yours".
+     */
     context: async request => {
       const ctx: { userId?: string, username?: string, profileId?: string } = {}
       const auth = request.headers.authorization
-      if (auth?.startsWith('Bearer ')) {
-        try {
-          const payload = app.jwt.verify<{ sub: string, username: string }>(auth.slice(7))
-          ctx.userId = payload.sub
-          ctx.username = payload.username
-          const profileHeader = request.headers['x-profile-id']
-          if (typeof profileHeader === 'string') {
-            const { queryOne } = await import('./infrastructure/database/index.ts')
-            const owned = await queryOne('SELECT 1 FROM user_profiles WHERE id = $1 AND user_id = $2', [profileHeader, payload.sub])
-            if (owned) ctx.profileId = profileHeader
-          }
-        } catch { /* anonymous */ }
+      if (!auth?.startsWith('Bearer ')) return ctx
+      let payload: AccessTokenPayload
+      try {
+        payload = app.jwt.verify<AccessTokenPayload>(auth.slice(7))
+      } catch {
+        return ctx // a bad token is anonymous, as it is on REST's open routes
+      }
+      if (!await tokenIsCurrent(payload)) return ctx
+      ctx.userId = payload.sub
+      ctx.username = payload.username
+      const profileHeader = request.headers['x-profile-id']
+      if (typeof profileHeader === 'string' && UUID_PATTERN.test(profileHeader)) {
+        const owned = await queryOne('SELECT 1 FROM user_profiles WHERE id = $1 AND user_id = $2', [profileHeader, payload.sub])
+        if (owned) ctx.profileId = profileHeader
       }
       return ctx
+    },
+    /*
+     * What a failed operation tells the caller.
+     *
+     * A refusal written for the caller (`refuse()` in graphql/schema.ts, and
+     * the parser's own syntax and validation errors) is passed through. Any
+     * other error is an internal fault — a database message, a stack — and in
+     * production it is logged with the request id and replaced, exactly as the
+     * REST error handler replaces a 500.
+     */
+    errorFormatter: (execution, context) => {
+      if (!config.isProd) return mercurius.defaultErrorFormatter(execution, context)
+      const reply = (context as { reply?: FastifyReply }).reply
+      /*
+       * Masked one error at a time, BEFORE the default formatter runs: it
+       * flattens a validation failure into several entries, so masking its
+       * output by position could hit a message meant for the caller.
+       */
+      const errors = execution.errors.map(error => {
+        const original = error.originalError as (Error & { errors?: unknown }) | undefined
+        if (!original || original instanceof mercurius.ErrorWithProps || Array.isArray(original.errors)) return error
+        reply?.request.log.error({ err: original }, 'graphql resolver failed')
+        return new GraphQLError(`Internal error — quote request ${reply?.request.id ?? 'unknown'} when reporting it`, {
+          nodes: error.nodes ?? null,
+          source: error.source ?? null,
+          positions: error.positions ?? null,
+          path: error.path ?? null
+        })
+      })
+      return mercurius.defaultErrorFormatter({ ...execution, errors }, context)
+    }
+  })
+
+  /*
+   * Read-only and maintenance modes, per operation.
+   *
+   * GraphQL sends a read as POST just like a write, so the method-based gates
+   * cannot tell them apart: they let /graphql through, and this refuses the
+   * mutations. Before, read-only mode answered every GraphQL query with 503.
+   */
+  app.graphql.addHook('preExecution', async (_schema, document, context) => {
+    const mutates = document.definitions.some(definition =>
+      definition.kind === 'OperationDefinition' && definition.operation === 'mutation')
+    if (!mutates) return
+    const request = (context as { reply: FastifyReply }).reply.request
+    if (await siteSettings.readOnly() || !await maintenanceAllowsWrite(request)) {
+      throw new mercurius.ErrorWithProps(
+        'This instance is not accepting changes right now', { code: 'READ_ONLY' }, 503)
     }
   })
 
@@ -279,6 +371,25 @@ export async function buildApp (): Promise<FastifyInstance> {
       }
       return reply.code(shaped.status).type('application/problem+json')
         .send({ ...shaped, instance: request.id, code: errorCode(route, shaped.status) })
+    }
+
+    /*
+     * A value Postgres could not read as its column type — a malformed uuid,
+     * an impossible date, a number out of range — is the caller's mistake,
+     * not ours. It reached the database because a route took a string on
+     * trust; the answer is 400, and the database's own message (which quotes
+     * the value and names the type) stays out of the response.
+     */
+    const pgCode = (error as { code?: unknown }).code
+    if (error.statusCode === undefined && typeof pgCode === 'string' && PG_INPUT_ERRORS.has(pgCode)) {
+      return reply.code(400).type('application/problem+json').send({
+        type: 'about:blank',
+        title: 'Bad Request',
+        status: 400,
+        detail: 'A request value has the wrong format',
+        instance: request.id,
+        code: errorCode(route, 400)
+      })
     }
 
     const status = error.statusCode ?? 500
@@ -421,10 +532,17 @@ export async function buildApp (): Promise<FastifyInstance> {
    * Discord-végpont hitelesítést ÉS guild-jogosultságot kér, és az így is
    * marad.
    */
-  const loginExempt = /^\/v1\/(health|config|auth|status|analytics\/view|discord\/oauth\/callback)\b/
+  /*
+   * The decision is made on the path the router matches, not on the raw
+   * request target — see infrastructure/http/request-path.ts. On the raw
+   * target `/%761/anime` did not look like `/v1`, and served the catalogue of
+   * a private instance to anyone.
+   */
+  const loginExempt = /^\/v1\/(health|config|auth|status|analytics\/view|discord\/oauth\/callback)(\/|$)/
   app.addHook('onRequest', async (request, reply) => {
-    if (!/^\/(v1|graphql)\b/.test(request.url)) return
-    if (loginExempt.test(request.url)) return
+    const path = pathOf(request)
+    if (!isApiPath(path)) return
+    if (loginExempt.test(path)) return
     if (!await siteSettings.requiresLogin()) return
     try {
       await request.jwtVerify()
@@ -444,38 +562,6 @@ export async function buildApp (): Promise<FastifyInstance> {
     }
   })
 
-  /*
-   * Read-only mode.
-   *
-   * The emergency lever: refuse everything that writes, keep everything that
-   * reads. For an instance under attack, mid-incident, or being restored — a
-   * site that answers but changes nothing is a far better state than one that
-   * is switched off, and it is the state you actually want while working out
-   * what happened.
-   *
-   * Three exemptions, each of them the reason the mode is survivable:
-   *
-   *   * /v1/auth — sign-in, refresh and sign-out. Locking people out of their
-   *     own sessions is not what read-only means, and an operator who cannot
-   *     sign in cannot turn it off.
-   *   * /v1/admin/config — the switch itself. Without this the mode has no
-   *     exit that is not a database console.
-   *   * /v1/admin/security — the other emergency controls, for the same reason.
-   *   * /v1/admin/backups — and this one is not a convenience. A restore is
-   *     REFUSED unless the instance is in read-only mode, because a write
-   *     arriving mid-restore either vanishes or lands in a half-restored
-   *     database. Without this exemption the two rules met in the middle and
-   *     the restore button could never be pressed at all: read-only is its
-   *     precondition, and read-only is what blocked it.
-   *
-   * 503 with Retry-After, not 403: nothing is wrong with the caller or their
-   * permissions, the instance is deliberately not accepting this right now,
-   * and a client that retries later is behaving correctly.
-   *
-   * Background jobs are untouched. This is about what the site accepts from
-   * outside; freezing the worker would stop the stats and partition
-   * maintenance that keep the instance healthy while somebody works.
-   */
   /*
    * YUME Edge — a kockázati réteg.
    *
@@ -599,6 +685,38 @@ export async function buildApp (): Promise<FastifyInstance> {
   })
 
   /*
+   * Read-only mode.
+   *
+   * The emergency lever: refuse everything that writes, keep everything that
+   * reads. For an instance under attack, mid-incident, or being restored — a
+   * site that answers but changes nothing is a far better state than one that
+   * is switched off, and it is the state you actually want while working out
+   * what happened.
+   *
+   * Three exemptions, each of them the reason the mode is survivable:
+   *
+   *   * /v1/auth — sign-in, refresh and sign-out. Locking people out of their
+   *     own sessions is not what read-only means, and an operator who cannot
+   *     sign in cannot turn it off.
+   *   * /v1/admin/config — the switch itself. Without this the mode has no
+   *     exit that is not a database console.
+   *   * /v1/admin/security — the other emergency controls, for the same reason.
+   *   * /v1/admin/backups — and this one is not a convenience. A restore is
+   *     REFUSED unless the instance is in read-only mode, because a write
+   *     arriving mid-restore either vanishes or lands in a half-restored
+   *     database. Without this exemption the two rules met in the middle and
+   *     the restore button could never be pressed at all: read-only is its
+   *     precondition, and read-only is what blocked it.
+   *
+   * 503 with Retry-After, not 403: nothing is wrong with the caller or their
+   * permissions, the instance is deliberately not accepting this right now,
+   * and a client that retries later is behaving correctly.
+   *
+   * Background jobs are untouched. This is about what the site accepts from
+   * outside; freezing the worker would stop the stats and partition
+   * maintenance that keep the instance healthy while somebody works.
+   */
+  /*
    * A RÉGI CSAK-OLVASHATÓ KAPCSOLÓ.
    *
    * Megmarad, változatlan viselkedéssel. Nem azért, mert nem lehetne beolvasztani
@@ -610,11 +728,18 @@ export async function buildApp (): Promise<FastifyInstance> {
    * fut, tehát ami ott elbukik, ide el sem jut.
    */
   const WRITES = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
-  const readOnlyExempt = /^\/v1\/(auth|admin\/(config|security|backups|maintenance))\b/
+  const readOnlyExempt = /^\/v1\/(auth|admin\/(config|security|backups|maintenance))(\/|$)/
   app.addHook('onRequest', async (request, reply) => {
     if (!WRITES.has(request.method)) return
-    if (!/^\/(v1|graphql)\b/.test(request.url)) return
-    if (readOnlyExempt.test(request.url)) return
+    const path = pathOf(request)
+    if (!isApiPath(path)) return
+    if (readOnlyExempt.test(path)) return
+    /*
+     * GraphQL sends reads as POST too, so the method says nothing about it.
+     * Its mutations are refused per operation instead — see the
+     * `preExecution` hook next to the GraphQL registration.
+     */
+    if (path === '/graphql') return
     if (!await siteSettings.readOnly()) return
     return reply.code(503).header('Retry-After', '120').send({
       type: 'about:blank',
@@ -843,7 +968,7 @@ export async function buildApp (): Promise<FastifyInstance> {
      *
      * Registered after fastify-static so it shares the same resolved webRoot,
      * and it wins over the static wildcard because find-my-way prefers a
-     * literal segment to a `*`. See lib/seo.ts for why a path-shaped anime
+     * literal segment to a `*`. See modules/seo/meta.ts for why a path-shaped anime
      * route exists alongside the client's own #/anime/:id.
      */
     await app.register(seoRoutes, { webRoot })
@@ -964,27 +1089,9 @@ export async function buildApp (): Promise<FastifyInstance> {
     const hasDashboard = existsSync(join(discordRoot, 'index.html'))
     if (hasDashboard) {
       /*
-       * A GYORSÍTÓTÁR UGYANAZ A SZABÁLY, MINT A WEBKLIENSNÉL — és ezt
-       * kihagyni mért hiba volt.
-       *
-       * A vezérlőpultnak sincs build lépése: a böngésző azokat a
-       * fájlneveket tölti le, amik a lemezen vannak. Egy telepítés után tehát
-       * ugyanarról a CÍMRŐL kérné az ÚJ kódot — és ha a régit
-       * gyorsítótárazta, nem kéri.
-       *
-       * ÉS EZ MEG IS TÖRTÉNT. Az eredet `max-age=0`-t küldött, a Cloudflare
-       * pedig felülírta. Mérve, ugyanarra a fájlra:
-       *
-       *   konténer:               cache-control: public, max-age=0
-       *   discord.animehub.hu:    cache-control: public, max-age=14400
-       *
-       * Négy órán át a régi JS ment ki, miközben a kiszolgálón már az új
-       * volt: a belépőlap a javítás UTÁN is a régi mezőnevet küldte, és a
-       * felhasználó ugyanazt a hibát látta.
-       *
-       * A `no-cache` NEM azt jelenti, hogy „ne tárold" — azt, hogy „tárold,
-       * de HASZNÁLAT ELŐTT kérdezd meg". Az ETag megmarad, tehát a válasz
-       * jellemzően egy pár száz bájtos 304.
+       * The dashboard has no build step either, so it gets the web client's
+       * caching rule (see `setHeaders` above): source files are revalidated
+       * on every load, everything else may be kept for a day.
        */
       const dashboardCache = (response: { header: (k: string, v: string) => void }, filePath: string): void => {
         const forras = /\.(?:js|mjs|css|html|webmanifest)$/i.test(filePath)
@@ -1019,16 +1126,17 @@ export async function buildApp (): Promise<FastifyInstance> {
     }
 
     app.setNotFoundHandler(async (request, reply) => {
-      if (request.method === 'GET' && !/^\/(v1|graphql|graphiql|ws)\b/.test(request.url)) {
+      const path = pathOf(request)
+      if (request.method === 'GET' && !/^\/(v1|graphql|graphiql|ws)(\/|$)/.test(path)) {
         /*
          * A VEZÉRLŐPULT SAJÁT LAPJA. Enélkül a `/dashboard/bármi` a YUME
          * index.html-jét kapná — vagyis a rossz alkalmazást, 200-zal, és a
          * hiba csak a böngészőben derülne ki.
          */
-        if (hasDashboard && /^\/dashboard(\/|$)/.test(request.url)) {
+        if (hasDashboard && /^\/dashboard(\/|$)/.test(path)) {
           return await serveDashboard(reply)
         }
-        if (!isClientAsset(request.url)) return await servePage(reply)
+        if (!isClientAsset(path)) return await servePage(reply)
       }
       return reply.code(404).type('application/problem+json').send({ type: 'about:blank', title: 'Not Found', status: 404 })
     })
@@ -1048,7 +1156,7 @@ export async function buildApp (): Promise<FastifyInstance> {
      * emits <meta name="robots">, because a crawler that reads only one of the
      * two exists in both directions.
      */
-    if (noIndexPath(request.url) && !reply.getHeader('X-Robots-Tag')) {
+    if (noIndexPath(pathOf(request)) && !reply.getHeader('X-Robots-Tag')) {
       reply.header('X-Robots-Tag', 'noindex')
     }
 

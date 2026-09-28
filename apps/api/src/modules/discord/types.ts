@@ -33,6 +33,13 @@ export interface DiscordClient {
   /** Van-e a botnak joga írni ebbe a csatornába. */
   canPost: (channelId: string) => Promise<boolean>
   /**
+   * Melyik guildhez tartozik a csatorna — `null`, ha nem derül ki.
+   *
+   * Nem kötelező (a hamis kliensek nem valósítják meg). Ahol megvan, a motor
+   * a küldés ELŐTT megnézi, és egy másik guild csatornájába nem küld.
+   */
+  guildOf?: (channelId: string) => Promise<string | null>
+  /**
    * A SAJÁT üzenetünk törlése — csak az újralétrehozáshoz.
    *
    * Nem kötelező: a motor rendes működéséhez nem kell, és a hamis kliensek

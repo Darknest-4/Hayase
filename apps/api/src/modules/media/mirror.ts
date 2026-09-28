@@ -18,6 +18,10 @@ import { createHash } from 'node:crypto'
 
 import { mediaStorage, putObject, type S3Config } from '../../infrastructure/storage/s3.ts'
 import { query, queryOne } from '../../infrastructure/database/index.ts'
+import { guardedRequest } from '../../infrastructure/http/outbound.ts'
+
+/** A cover or banner larger than this is not an image we want to serve. */
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024
 
 /** Egy futás mérlege. Ez megy a naplóba és a panelre. */
 export interface MirrorResult {
@@ -81,8 +85,13 @@ async function mirrorOne (
 ): Promise<number | null> {
   const key = mirrorKeyFor(kind, sourceUrl)
   try {
-    const res = await fetch(sourceUrl, {
-      signal: AbortSignal.timeout(timeoutMs),
+    // The guarded client, not `fetch`: whatever the catalogue says an image
+    // lives at is fetched and then published from our own storage, so an
+    // address pointing inward would be read and republished to anyone.
+    const res = await guardedRequest(sourceUrl, {
+      method: 'GET',
+      timeoutMs,
+      maxBytes: MAX_IMAGE_BYTES,
       headers: {
         // Megmondjuk, kik vagyunk. Egy névtelen tömeges letöltés az, amit egy
         // CDN üzemeltetője joggal blokkol.
@@ -92,7 +101,7 @@ async function mirrorOne (
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
-    const body = Buffer.from(await res.arrayBuffer())
+    const body = res.body
     if (body.length === 0) throw new Error('üres válasz')
 
     const type = imageTypeOf(res.headers.get('content-type'), key)

@@ -68,13 +68,21 @@ export const SCOPES: readonly Scope[] = Object.freeze(Object.values(SCOPE))
 const SCOPE_PREFIXES: Partial<Record<Scope, readonly string[]>> = {
   [SCOPE.AUTH]: ['/v1/auth'],
   [SCOPE.REGISTRATION]: ['/v1/auth/register'],
+  // The routes that exist are listed alongside the older names. Several
+  // scopes named only paths nothing serves (`/v1/library`, `/v1/profile`), so
+  // switching them on closed nothing: the library lives under /v1/me and
+  // profiles under /v1/profiles.
   [SCOPE.PLAYER]: ['/v1/anime/episodes', '/v1/sources', '/v1/media'],
   [SCOPE.CATALOG]: ['/v1/anime'],
-  [SCOPE.SEARCH]: ['/v1/search', '/v1/anime/search'],
-  [SCOPE.WATCH_HISTORY]: ['/v1/history', '/v1/watch', '/v1/library'],
+  [SCOPE.SEARCH]: ['/v1/search', '/v1/anime/search', '/v1/anime/suggest'],
+  [SCOPE.WATCH_HISTORY]: [
+    '/v1/history', '/v1/watch', '/v1/library',
+    '/v1/me/library', '/v1/me/progress', '/v1/me/continue-watching', '/v1/me/favorites',
+    '/v1/me/stats', '/v1/me/achievements'
+  ],
   [SCOPE.WATCH_PARTY]: ['/v1/watch-together', '/v1/w2g'],
   [SCOPE.COMMENTS]: ['/v1/comments', '/v1/forum', '/v1/chat'],
-  [SCOPE.PROFILES]: ['/v1/profile', '/v1/users'],
+  [SCOPE.PROFILES]: ['/v1/profile', '/v1/profiles', '/v1/me/settings', '/v1/users'],
   [SCOPE.ADMIN]: ['/v1/admin'],
   [SCOPE.API]: ['/v1', '/graphql']
 }

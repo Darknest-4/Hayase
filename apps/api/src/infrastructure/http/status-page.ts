@@ -42,6 +42,8 @@
 // SAJÁT karbantartási oldalán (`features/maintenance/ui/maintenance-page.js`),
 // ami rendes modul, nem beágyazott kód.
 
+import { escapeHtml } from '../text.ts'
+
 /** A YUME sötét palettája, a `tokens.css` szerint. */
 const PALETTE = {
   bg: '#0a0a0c',
@@ -100,10 +102,7 @@ export function wantsHtml (accept: string | undefined): boolean {
   return json === -1 || html < json
 }
 
-function escape (value: unknown): string {
-  return String(value ?? '').replace(/[&<>"']/g, ch =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch] as string)
-}
+const escape = escapeHtml
 
 /** Másodperc → „2 perc", „1 óra 5 perc". Kerekítve, mert a másodperc itt zaj. */
 export function humanDelay (seconds: number | null | undefined): string | null {

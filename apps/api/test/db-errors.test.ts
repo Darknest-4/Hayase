@@ -1,9 +1,9 @@
 // Unique-constraint handling.
 //
-// Audit 13 found the same mistake in four places — registration, the like
-// toggle and the watch-together room code — each letting a
-// 23505 escape as a 500 naming the constraint. Four instances of one mistake
-// across two audits is a pattern, so the handling became a shared helper.
+// The same mistake was once made in four places — registration, the like
+// toggle and the watch-together room code — each letting a 23505 escape as a
+// 500 naming the constraint. Four instances of one mistake is a pattern, so
+// the handling became a shared helper.
 // These pin its behaviour, including the parts that must NOT be swallowed.
 
 import assert from 'node:assert/strict'

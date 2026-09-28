@@ -31,6 +31,7 @@ import { decide, onFailure, type Decision } from './policy.ts'
 import { inspect, worst, type Hit } from './waf.ts'
 
 import type { FastifyRequest } from 'fastify'
+import { pathOf } from '../../infrastructure/http/request-path.ts'
 
 /**
  * A kérésenkénti korlátok.
@@ -99,7 +100,9 @@ export async function evaluate (request: FastifyRequest, config: EdgeConfig): Pr
   const userId = request.user?.sub ?? null
 
   const evidence = noEvidence()
-  evidence.sensitivity = sensitivityOf(url)
+  // Az érzékenység az útvonalé, amit a router illeszt: a `/%761/admin` is
+  // admin-kérés, még ha a nyers címe nem is úgy kezdődik.
+  evidence.sensitivity = sensitivityOf(pathOf(request))
 
   // ---- tiltás ----
   // Ez az egyetlen dolog, ami a pontszámtól függetlenül dönt.
@@ -154,7 +157,7 @@ export async function evaluate (request: FastifyRequest, config: EdgeConfig): Pr
  */
 export function observe (request: FastifyRequest, statusCode: number): void {
   const ip = request.ip
-  const url = request.url
+  const url = pathOf(request)
 
   if (statusCode === 404) {
     hit('ip+route', `${ip} 404`, { burst: { max: 1e9, seconds: 600 }, sustained: { max: 1e9, seconds: 600 }, cooldownSeconds: 0 })
@@ -186,14 +189,17 @@ export async function guard (request: FastifyRequest): Promise<Decision | undefi
   }
 
   if (!config.enabled) return undefined
-  if (!inScope(request.url, config)) return undefined
+  // A kihagyási és a hibára-zárási lista is a router útvonalát nézi. A nyers
+  // címen a `/%761/auth/login` sem a hibára záró `/v1/auth` alá esett.
+  const path = pathOf(request)
+  if (!inScope(path, config)) return undefined
 
   let context: EdgeContext
   try {
     context = await evaluate(request, config)
   } catch (error) {
     // A kiértékelés elhasalt. A szabály útvonalanként dönt — lásd `onFailure`.
-    const failure = onFailure(request.url, config)
+    const failure = onFailure(path, config)
     if (error instanceof BanLookupFailed) {
       console.error('edge: ban lookup failed, falling back to', failure.effective)
     }

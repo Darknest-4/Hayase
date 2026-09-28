@@ -15,7 +15,7 @@
 import { audit } from '../audit/audit.ts'
 import { query, queryOne } from '../../infrastructure/database/index.ts'
 import { guildAccess } from './guild-access.ts'
-import { createRestClient, diagnoseChannel, fetchChannels, fetchGuild, fetchRoles, isConfigured } from './rest-client.ts'
+import { channelGuild, createRestClient, diagnoseChannel, fetchChannels, fetchGuild, fetchRoles, isConfigured } from './rest-client.ts'
 import { allapot as gatewayAllapot, elo as gatewayElo, intentsFromEnv, INTENTS } from './gateway.ts'
 import { findById, listForGuild, recreateMessage, syncMessage, type PersistentMessage } from './persistent-messages.ts'
 import { renderMessage, MESSAGE_TYPES } from './render.ts'
@@ -101,6 +101,33 @@ async function gate (
   }
   return guildId
 }
+
+/**
+ * Why this channel may not be used for this guild — `null` when it may.
+ *
+ * The permission gate checks the guild in the URL; the channel id comes from
+ * the request body. Unchecked, a manager of one server could aim the bot at a
+ * channel of any other server it is in. Without a bot token nothing is sent
+ * at all, so there is nothing to protect yet; the sending engine checks the
+ * same thing again, authoritatively, right before it posts.
+ */
+async function channelRefusal (guildId: string, channelId: string): Promise<{ status: number, detail: string } | null> {
+  if (!isConfigured()) return null
+  const found = await channelGuild(channelId)
+  if (found === 'unknown') return { status: 503, detail: 'A csatorna most nem ellenőrizhető a Discordnál — próbáld újra.' }
+  if (found === 'not_found') return { status: 400, detail: 'Nincs ilyen csatorna.' }
+  if (found === 'no_access') return { status: 400, detail: 'A bot nem látja ezt a csatornát.' }
+  if (found.guildId !== guildId) return { status: 400, detail: 'Ez a csatorna nem ehhez a szerverhez tartozik.' }
+  return null
+}
+
+const refuse = async (reply: FastifyReply, problem: { status: number, detail: string }): Promise<FastifyReply> =>
+  await reply.code(problem.status).send({
+    type: 'about:blank',
+    title: problem.status === 503 ? 'Service Unavailable' : 'Bad Request',
+    status: problem.status,
+    detail: problem.detail
+  })
 
 function publicView (row: PersistentMessage): Record<string, unknown> {
   return {
@@ -838,6 +865,10 @@ const routes: FastifyPluginAsync = async fastify => {
     const guildId = await gate(request, reply, 'manage_guild')
     if (!guildId) return
     const body = request.body as Record<string, unknown>
+    if (typeof body.channelId === 'string') {
+      const problem = await channelRefusal(guildId, body.channelId)
+      if (problem) return await refuse(reply, problem)
+    }
     try {
       const beall = await welcome.saveConfig(guildId, body as never)
       await audit((request.user as { sub: string }).sub, 'discord.welcome.update',
@@ -925,7 +956,7 @@ const routes: FastifyPluginAsync = async fastify => {
         properties: {
           channelId: SNOWFLAKE,
           messageType: { type: 'string', enum: MESSAGE_TYPES },
-          configuration: { type: 'object' },
+          configuration: { type: 'object', maxProperties: 40 },
           enabled: { type: 'boolean' }
         }
       }
@@ -937,6 +968,8 @@ const routes: FastifyPluginAsync = async fastify => {
       channelId: string, messageType: string,
       configuration?: Record<string, unknown>, enabled?: boolean
     }
+    const problem = await channelRefusal(guildId, body.channelId)
+    if (problem) return await refuse(reply, problem)
 
     /*
      * A DUPLIKÁCIÓT AZ ADATBÁZIS DÖNTI EL, nem egy előzetes lekérdezés. Két
@@ -973,7 +1006,7 @@ const routes: FastifyPluginAsync = async fastify => {
         minProperties: 1,
         properties: {
           channelId: SNOWFLAKE,
-          configuration: { type: 'object' },
+          configuration: { type: 'object', maxProperties: 40 },
           enabled: { type: 'boolean' }
         }
       }
@@ -983,6 +1016,10 @@ const routes: FastifyPluginAsync = async fastify => {
     if (!guildId) return
     const { id } = request.params as { id: string }
     const body = request.body as { channelId?: string, configuration?: unknown, enabled?: boolean }
+    if (body.channelId) {
+      const problem = await channelRefusal(guildId, body.channelId)
+      if (problem) return await refuse(reply, problem)
+    }
 
     /*
      * A `guild_id` A `WHERE`-BEN VAN, nem csak a kapuban. Enélkül egy
@@ -1152,6 +1189,14 @@ const routes: FastifyPluginAsync = async fastify => {
     const guildId = await gate(request, reply, 'manage_messages')
     if (!guildId) return
     const { channelId } = request.params as { channelId: string }
+    // Another server's channel is not this server's to inspect.
+    const problem = await channelRefusal(guildId, channelId)
+    if (problem) {
+      return await reply.code(problem.status === 503 ? 503 : 404).send({
+        type: 'about:blank', title: problem.status === 503 ? 'Service Unavailable' : 'Not Found',
+        status: problem.status === 503 ? 503 : 404, detail: problem.detail
+      })
+    }
     return await diagnoseChannel(channelId)
   })
 }

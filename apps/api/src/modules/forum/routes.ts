@@ -13,6 +13,11 @@
 
 import { query, queryOne, transaction } from '../../infrastructure/database/index.ts'
 import { WRITE_LIMIT } from '../../middleware/security.ts'
+import { loadPermissions } from '../../middleware/auth.ts'
+import { onUniqueViolation } from '@yume/database'
+
+/** Boards one member (not staff) may open in a day. */
+const FORUMS_PER_DAY = Number(process.env.FORUMS_PER_DAY ?? 3)
 
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import type pg from 'pg'
@@ -35,16 +40,11 @@ const routes: FastifyPluginAsync = async fastify => {
   fastify.addHook('onRequest', fastify.requireFeature('feature.forum'))
 
   /** Does the caller hold this grant? Used to decide what to *offer*, not to authorise. */
+  // Through the same cached permission set `requirePermission` uses, not a
+  // second, uncached copy of its query.
   async function holds (request: FastifyRequest, slug: string): Promise<boolean> {
     if (!request.user) return false
-    const row = await queryOne(
-      `SELECT 1 FROM user_roles ur
-         JOIN role_permissions rp ON rp.role_id = ur.role_id
-         JOIN permissions p ON p.id = rp.permission_id
-        WHERE ur.user_id = $1 AND p.slug = $2`,
-      [request.user.sub, slug]
-    )
-    return !!row
+    return (await loadPermissions(request.user.sub)).has(slug)
   }
 
   // ---- boards ----
@@ -92,26 +92,56 @@ const routes: FastifyPluginAsync = async fastify => {
   }, async (request, reply) => {
     const { name, description } = request.body as { name: string, description?: string }
 
+    /*
+     * Anyone signed in may start a board — that is the product decision
+     * recorded in migration 0036 — but not an unlimited number of them. A
+     * board is a top-level section of the community page, so without a
+     * ceiling one account could bury it under a hundred in a minute (the
+     * write rate limit alone allows that). Staff, who can edit boards anyway,
+     * are not counted.
+     */
+    if (!await holds(request, 'forum.edit')) {
+      const recent = await queryOne<{ n: number }>(
+        `SELECT count(*)::int AS n FROM forums
+          WHERE created_by = $1 AND created_at > now() - interval '24 hours'`,
+        [request.user.sub])
+      if ((recent?.n ?? 0) >= FORUMS_PER_DAY) {
+        return reply.code(429).send({
+          type: 'about:blank', title: 'Too Many Requests', status: 429,
+          detail: `Naponta legfeljebb ${FORUMS_PER_DAY} fórumot nyithatsz.`
+        })
+      }
+    }
+
     // A slug collision is a rename, not an error: two people naming a board
-    // "Ajánlók" should both get one.
+    // "Ajánlók" should both get one. The unique index decides the race — two
+    // requests picking the same free slug at once used to end in a 500.
     const base = slugify(name)
     const taken = await query<{ slug: string }>(
       'SELECT slug FROM forums WHERE slug = $1 OR slug LIKE $2', [base, base + '-%']
     )
-    let slug = base
-    if (taken.some(row => row.slug === base)) {
-      let n = 2
-      while (taken.some(row => row.slug === `${base}-${n}`)) n++
-      slug = `${base}-${n}`
+    let n = taken.some(row => row.slug === base) ? 2 : 1
+    for (let attempt = 0; ; attempt++) {
+      while (n > 1 && taken.some(row => row.slug === `${base}-${n}`)) n++
+      const slug = n === 1 ? base : `${base}-${n}`
+      const forum = await onUniqueViolation(
+        () => queryOne(
+          `INSERT INTO forums (slug, name, description, created_by, position)
+           VALUES ($1, $2, $3, $4, 100)
+           RETURNING id, slug, name, description, created_at`,
+          [slug, name, description ?? null, request.user.sub]
+        ),
+        () => null,
+        'forums_slug_key'
+      )
+      if (forum) return reply.code(201).send(forum)
+      if (attempt >= 4) {
+        return reply.code(409).send({
+          type: 'about:blank', title: 'Conflict', status: 409, detail: 'Ez a név épp foglalt — próbáld újra.'
+        })
+      }
+      n++
     }
-
-    const forum = await queryOne(
-      `INSERT INTO forums (slug, name, description, created_by, position)
-       VALUES ($1, $2, $3, $4, 100)
-       RETURNING id, slug, name, description, created_at`,
-      [slug, name, description ?? null, request.user.sub]
-    )
-    return reply.code(201).send(forum)
   })
 
   fastify.patch('/:id', {

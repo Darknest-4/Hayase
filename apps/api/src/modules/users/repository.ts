@@ -245,6 +245,16 @@ export class UserRepository extends Repository {
     return Number(row?.n ?? 0)
   }
 
+  /** Every permission slug a role carries. */
+  async permissionsOfRole (roleId: string): Promise<string[]> {
+    const rows = await this.query<{ slug: string }>(
+      `SELECT p.slug FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id
+        WHERE rp.role_id = $1`,
+      [roleId]
+    )
+    return rows.map(row => row.slug)
+  }
+
   async holdsRole (userId: string, roleId: string): Promise<boolean> {
     const row = await this.queryOne<{ n: number }>(
       'SELECT count(*)::int AS n FROM user_roles WHERE user_id = $1 AND role_id = $2', [userId, roleId])

@@ -30,6 +30,7 @@ import { join } from 'node:path'
 import { config } from '../../config.ts'
 
 import type { FastifyRequest } from 'fastify'
+import { escapeHtml } from '../../infrastructure/text.ts'
 
 /** Marks the block in apps/web/index.html that a per-page <head> replaces. */
 const OPEN = '<!--yume:seo-->'
@@ -42,14 +43,7 @@ const CLOSE = '<!--/yume:seo-->'
  * attributes: the cost is nothing and it removes the need for the next person
  * to check which of the two this helper was written for.
  */
-export function escapeHtml (value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
+export { escapeHtml }
 
 /**
  * Serialise a JSON-LD document for embedding in a <script> element.

@@ -105,3 +105,72 @@ describe('outbound URL verdicts', () => {
     assert.equal((await checkOutboundUrl('https://1.1.1.1/hook')).ok, true)
   })
 })
+
+describe('address spellings the URL parser produces', () => {
+  // `new URL('http://[::ffff:127.0.0.1]/')` becomes `[::ffff:7f00:1]`, a
+  // spelling the old pattern did not recognise — the loopback was reachable.
+  const INWARD = [
+    'http://[::ffff:127.0.0.1]:4000/',
+    'http://[::ffff:7f00:1]/',
+    'http://[::ffff:169.254.169.254]/',
+    'http://[::ffff:a9fe:a9fe]/',
+    'http://[64:ff9b::a9fe:a9fe]/',       // NAT64
+    'http://[2002:7f00:1::1]/',           // 6to4 wrapping 127.0.0.1
+    'http://[::7f00:1]/',                 // IPv4-compatible
+    'http://[2001:db8::1]/'               // documentation range
+  ]
+  for (const url of INWARD) {
+    it(`refuses ${url}`, async () => {
+      const verdict = await checkOutboundUrl(url)
+      assert.equal(verdict.ok, false, `${url} must be refused`)
+    })
+  }
+
+  it('still allows a routable IPv6 address', async () => {
+    assert.equal((await checkOutboundUrl('http://[2606:4700::1111]/')).ok, true)
+  })
+})
+
+describe('the guarded client', () => {
+  it('does not follow a redirect — even one to an allowed host', async () => {
+    const { createServer } = await import('node:http')
+    const { guardedRequest } = await import('../src/infrastructure/http/outbound.ts')
+    let reached = 0
+    const target = createServer((_req, res) => { reached++; res.end('secret') })
+    await new Promise<void>(resolve => target.listen(0, '127.0.0.1', resolve))
+    const targetPort = (target.address() as { port: number }).port
+    const redirector = createServer((_req, res) => {
+      res.writeHead(302, { location: `http://127.0.0.1:${targetPort}/admin` })
+      res.end()
+    })
+    await new Promise<void>(resolve => redirector.listen(0, '127.0.0.1', resolve))
+    const port = (redirector.address() as { port: number }).port
+
+    const previous = process.env.WEBHOOK_ALLOWED_HOSTS
+    process.env.WEBHOOK_ALLOWED_HOSTS = '127.0.0.1'
+    try {
+      const res = await guardedRequest(`http://127.0.0.1:${port}/hook`, { method: 'POST', body: '{}' })
+      assert.equal(res.status, 302)
+      assert.equal(res.ok, false, 'a redirect is not a delivery')
+      assert.equal(reached, 0, 'the redirect target must never be contacted')
+    } finally {
+      if (previous === undefined) delete process.env.WEBHOOK_ALLOWED_HOSTS
+      else process.env.WEBHOOK_ALLOWED_HOSTS = previous
+      redirector.close()
+      target.close()
+    }
+  })
+
+  it('refuses an address literal that points inward', async () => {
+    const { guardedRequest, RefusedAddress } = await import('../src/infrastructure/http/outbound.ts')
+    await assert.rejects(() => guardedRequest('http://[::ffff:127.0.0.1]:9/'), RefusedAddress)
+    await assert.rejects(() => guardedRequest('http://169.254.169.254/latest/meta-data/'), RefusedAddress)
+  })
+
+  it('refuses a name that resolves inward, at connect time', async () => {
+    const { guardedRequest } = await import('../src/infrastructure/http/outbound.ts')
+    // `localhost` resolves to the loopback: the socket's own lookup refuses it.
+    await assert.rejects(() => guardedRequest('http://localhost:9/', { timeoutMs: 2_000 }),
+      /private or reserved/)
+  })
+})

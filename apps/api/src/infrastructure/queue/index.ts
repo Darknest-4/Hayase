@@ -32,9 +32,16 @@ export interface Job {
   queue: QueueName
   payload: Record<string, unknown>
   attempts: number
+  /** The claim this run holds — see `claim`. Absent on a job built by hand (tests). */
+  leaseId?: string
 }
 
-export type JobHandler = (job: Job) => Promise<void>
+/**
+ * A job handler. `signal` aborts when the job overruns JOB_TIMEOUT_MS: a
+ * handler that passes it to its fetches and checks it between steps actually
+ * stops, instead of carrying on after the queue has given up on it.
+ */
+export type JobHandler = (job: Job, signal: AbortSignal) => Promise<void>
 
 /** What a dead job looks like to anyone who asked to hear about them. */
 export interface DeadJob {
@@ -121,7 +128,7 @@ async function claim (queues: QueueName[]): Promise<Job | undefined> {
     await client.query('BEGIN')
     const { rows } = await client.query<Job & { payload: Record<string, unknown> }>(
       `SELECT id, queue, payload, attempts FROM jobs
-       WHERE queue = ANY($1) AND done_at IS NULL AND run_at <= now()
+       WHERE queue = ANY($1) AND done_at IS NULL AND dead_at IS NULL AND run_at <= now()
          AND (locked_at IS NULL OR locked_at < now() - make_interval(secs => $2))
          AND attempts < max_attempts
        ORDER BY run_at
@@ -131,7 +138,15 @@ async function claim (queues: QueueName[]): Promise<Job | undefined> {
     )
     const job = rows[0]
     if (job) {
-      await client.query('UPDATE jobs SET locked_at = now(), attempts = attempts + 1 WHERE id = $1', [job.id])
+      // A fresh lease id per claim. A worker whose lease was reclaimed while
+      // it was stuck still holds the old id, and every write it makes about
+      // the job from then on is fenced off by it.
+      const { rows: leased } = await client.query<{ lease_id: string }>(
+        `UPDATE jobs SET locked_at = now(), attempts = attempts + 1, lease_id = gen_random_uuid()
+          WHERE id = $1 RETURNING lease_id`,
+        [job.id])
+      const leaseId = leased[0]?.lease_id
+      if (leaseId) job.leaseId = leaseId
     }
     await client.query('COMMIT')
     return job
@@ -144,30 +159,34 @@ async function claim (queues: QueueName[]): Promise<Job | undefined> {
 }
 
 /** Renew a lease so a long-running job is not reclaimed underneath us. */
-async function beat (jobId: string): Promise<void> {
-  await query('UPDATE jobs SET locked_at = now() WHERE id = $1 AND done_at IS NULL', [jobId])
+async function beat (job: Job): Promise<void> {
+  await query(
+    'UPDATE jobs SET locked_at = now() WHERE id = $1 AND done_at IS NULL AND lease_id IS NOT DISTINCT FROM $2',
+    [job.id, job.leaseId ?? null])
 }
 
 /**
  * Run one handler with a heartbeat and a hard timeout.
  *
- * The timeout rejects the wrapper but cannot unwind the handler itself - no
- * such mechanism exists in-process - so the lease is deliberately released on
- * timeout and the job becomes retryable. That is the right trade: a job that
- * exceeded the ceiling has almost certainly wedged, and the alternative is a
- * worker that never processes anything again.
+ * On timeout the handler's signal is aborted, so a handler that listens stops
+ * where it is. One that does not listen cannot be unwound — no such mechanism
+ * exists in-process — but it can no longer do harm: the job is failed and
+ * retried under a new lease, and when the old run finally finishes, its
+ * completion is fenced off by the lease id instead of marking the retry done.
  */
 async function runWithGuards (job: Job, handler: JobHandler): Promise<void> {
-  const heartbeat = setInterval(() => { void beat(job.id).catch(() => {}) }, HEARTBEAT_MS)
+  const heartbeat = setInterval(() => { void beat(job).catch(() => {}) }, HEARTBEAT_MS)
+  const controller = new AbortController()
   let timer: NodeJS.Timeout | undefined
   try {
     await Promise.race([
-      handler(job),
+      handler(job, controller.signal),
       new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(
-          () => reject(new Error(`job exceeded ${JOB_TIMEOUT_MS} ms and was abandoned`)),
-          JOB_TIMEOUT_MS
-        )
+        timer = setTimeout(() => {
+          const error = new Error(`job exceeded ${JOB_TIMEOUT_MS} ms and was abandoned`)
+          controller.abort(error)
+          reject(error)
+        }, JOB_TIMEOUT_MS)
       })
     ])
   } finally {
@@ -177,7 +196,9 @@ async function runWithGuards (job: Job, handler: JobHandler): Promise<void> {
 }
 
 async function complete (job: Job): Promise<void> {
-  await query('UPDATE jobs SET done_at = now(), locked_at = NULL WHERE id = $1', [job.id])
+  await query(
+    'UPDATE jobs SET done_at = now(), locked_at = NULL WHERE id = $1 AND lease_id IS NOT DISTINCT FROM $2',
+    [job.id, job.leaseId ?? null])
 }
 
 /**
@@ -203,33 +224,39 @@ export async function failJob (job: Job, error: Error): Promise<void> {
   const retryAfterMs = (error as Error & { retryAfterMs?: number }).retryAfterMs
   const asked = typeof retryAfterMs === 'number' && retryAfterMs >= 0
 
-  await query(
-    asked
-      // A kért idő, öt percben maximálva: egy hibás fejléc ne tudjon egy
-      // feladatot a jövő hétre tolni.
-      ? `UPDATE jobs SET locked_at = NULL, last_error = $2,
-           run_at = now() + make_interval(secs => $3)
-         WHERE id = $1`
-      // exponential backoff: 30s, 2m, 8m, 32m
-      : `UPDATE jobs SET locked_at = NULL, last_error = $2,
-           run_at = now() + (interval '30 seconds' * power(4, attempts - 1))
-         WHERE id = $1`,
-    asked
-      ? [job.id, error.message.slice(0, 2000), Math.min(300, Math.ceil((retryAfterMs as number) / 1000))]
-      : [job.id, error.message.slice(0, 2000)]
+  // The retry delay: the time the error asked for, capped at five minutes so
+  // a malformed header cannot push a job into next week — or else the
+  // exponential backoff: 30s, 2m, 8m, 32m.
+  //
+  // A job out of attempts is marked dead in the same statement. That is what
+  // releases its dedupe key: the next enqueue of the same work goes through
+  // instead of being dropped as a duplicate of a job that will never run.
+  //
+  // Fenced by the lease: a run whose lease was reclaimed does not get to
+  // reschedule, or kill, the run that replaced it.
+  const exhausted = await queryOne<{ done: boolean, attempts: number, max_attempts: number }>(
+    `UPDATE jobs SET locked_at = NULL, last_error = $2,
+            run_at = CASE WHEN $3::int IS NOT NULL THEN now() + make_interval(secs => $3::int)
+                          ELSE now() + (interval '30 seconds' * power(4, attempts - 1)) END,
+            dead_at = CASE WHEN attempts >= max_attempts THEN now() END
+      WHERE id = $1 AND lease_id IS NOT DISTINCT FROM $4
+      RETURNING dead_at IS NOT NULL AS done, attempts, max_attempts`,
+    [
+      job.id,
+      error.message.slice(0, 2000),
+      asked ? Math.min(300, Math.ceil((retryAfterMs as number) / 1000)) : null,
+      job.leaseId ?? null
+    ]
   )
 
   // retries exhausted → surface it (never for webhook jobs: avoids loops)
-  const exhausted = await queryOne<{ done: boolean, attempts: number, max_attempts: number }>(
-    'SELECT attempts >= max_attempts AS done, attempts, max_attempts FROM jobs WHERE id = $1', [job.id]
-  )
   if (exhausted?.done && job.queue !== 'webhook' && deadJobListeners.length) {
     // One dead job is noise; the tenth in an hour is an incident, and the
     // difference is the only thing worth knowing on arrival. Counted in the
     // same breath so a listener can say which of the two this is.
     const depth = await queryOne<{ dead: number }>(
       `SELECT count(*)::int AS dead FROM jobs
-        WHERE queue = $1 AND attempts >= max_attempts AND done_at IS NULL`, [job.queue])
+        WHERE queue = $1 AND dead_at IS NOT NULL AND done_at IS NULL`, [job.queue])
     const dead: DeadJob = {
       queue: job.queue,
       jobId: job.id,
@@ -374,10 +401,10 @@ export async function drain (handlers: Partial<Record<QueueName, JobHandler>>): 
  */
 export async function deadLetters (limit = 100): Promise<Job[]> {
   return query<Job>(
-    `SELECT id, queue, payload, attempts, last_error, run_at
+    `SELECT id, queue, payload, attempts, last_error, run_at, dead_at
        FROM jobs
-      WHERE done_at IS NULL AND attempts >= max_attempts
-      ORDER BY run_at DESC
+      WHERE done_at IS NULL AND dead_at IS NOT NULL
+      ORDER BY dead_at DESC
       LIMIT $1`,
     [limit]
   )
@@ -385,13 +412,27 @@ export async function deadLetters (limit = 100): Promise<Job[]> {
 
 /** Give a dead-lettered job one more life, once the cause has been addressed. */
 export async function retryJob (jobId: string): Promise<boolean> {
-  const rows = await query(
-    `UPDATE jobs SET attempts = 0, locked_at = NULL, last_error = NULL, run_at = now()
-      WHERE id = $1 AND done_at IS NULL AND attempts >= max_attempts
-      RETURNING id`,
-    [jobId]
-  )
-  return rows.length > 0
+  try {
+    const rows = await query(
+      `UPDATE jobs SET attempts = 0, locked_at = NULL, lease_id = NULL, dead_at = NULL,
+                       last_error = NULL, run_at = now()
+        WHERE id = $1 AND done_at IS NULL AND dead_at IS NOT NULL
+        RETURNING id`,
+      [jobId]
+    )
+    return rows.length > 0
+  } catch (error) {
+    // Since a dead job no longer holds its dedupe key, the same work may
+    // already be queued again. Reviving this one would be a duplicate, so it
+    // is closed instead: the live job will do what it was going to do.
+    if ((error as { code?: string }).code !== '23505') throw error
+    const rows = await query(
+      `UPDATE jobs SET done_at = now(), last_error = 'superseded: the same work is already queued'
+        WHERE id = $1 AND done_at IS NULL RETURNING id`,
+      [jobId]
+    )
+    return rows.length > 0
+  }
 }
 
 /** Drop dead letters old enough that nobody is going to act on them. */
@@ -399,8 +440,8 @@ export async function pruneDeadLetters (olderThanDays = 30): Promise<number> {
   const res = await queryOne<{ count: string }>(
     `WITH deleted AS (
        DELETE FROM jobs
-        WHERE done_at IS NULL AND attempts >= max_attempts
-          AND run_at < now() - make_interval(days => $1)
+        WHERE done_at IS NULL AND dead_at IS NOT NULL
+          AND dead_at < now() - make_interval(days => $1)
        RETURNING 1
      ) SELECT count(*) FROM deleted`,
     [olderThanDays]

@@ -20,7 +20,7 @@
 // What this gives up is precision within a component: two different 500s in
 // the catalogue share YUME-CATALOGUE-500. That is what the request id is for —
 // it identifies the occurrence, and the admin panel looks the occurrence up by
-// it (see routes/admin.ts, errors/by-request).
+// it (see modules/admin/routes.ts, errors/by-request).
 
 /** Longest-prefix wins, so /v1/admin/catalogue is CATALOGUE, not ADMIN. */
 const COMPONENTS: Array<[RegExp, string]> = [

@@ -97,10 +97,10 @@ export async function overview (days = 7): Promise<{
          FROM watch_stats_daily WHERE day > current_date - ($1::int * 2)`, [days]),
 
     queryOne<Row>(
-      `SELECT count(*) FILTER (WHERE done_at IS NULL AND attempts < max_attempts)         AS pending,
+      `SELECT count(*) FILTER (WHERE done_at IS NULL AND dead_at IS NULL)         AS pending,
               count(*) FILTER (WHERE done_at IS NULL AND locked_at IS NOT NULL
-                                 AND attempts < max_attempts)                             AS running,
-              count(*) FILTER (WHERE done_at IS NULL AND attempts >= max_attempts)        AS dead,
+                                 AND dead_at IS NULL)                             AS running,
+              count(*) FILTER (WHERE done_at IS NULL AND dead_at IS NOT NULL)        AS dead,
               count(*) FILTER (WHERE done_at IS NOT NULL)                                 AS completed,
               count(*) FILTER (WHERE last_error IS NOT NULL)                              AS failed
          FROM jobs`),

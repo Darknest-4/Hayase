@@ -175,6 +175,51 @@ describe('karbantartás a HTTP-n', { skip: REASON }, () => {
     const status = (await get('/v1/status')).json() as Record<string, unknown>
     assert.equal(status.mode, MODE.OFF)
   })
+  it('egy hibásan kódolt mentességi süti NEM nyitja ki a karbantartást', async () => {
+    // A `decodeURIComponent` a `%E0%A4%A`-ra kivételt dob, a guard pedig a
+    // kiértékelés hibájára átenged — ez a karbantartás teljes megkerülése volt.
+    await set({ enabled: true, mode: MODE.ACTIVE })
+    const response = await get('/v1/anime', {
+      accept: 'application/json', cookie: `${bypass.BYPASS_COOKIE}=%E0%A4%A`
+    })
+    assert.equal(response.statusCode, 503)
+  })
+
+  it('a kódolt útvonal is a hatókör alá esik', async () => {
+    await set({ enabled: true, mode: MODE.ACTIVE, scope: SCOPE.CATALOG })
+    assert.equal((await get('/%761/anime', { accept: 'application/json' })).statusCode, 503)
+  })
+
+  it('a hatókör a valódi útvonalakat fedi: a könyvtár a /v1/me alatt van', async () => {
+    await set({ enabled: true, mode: MODE.DEGRADED, scope: SCOPE.WATCH_HISTORY })
+    assert.equal((await get('/v1/me/library', { accept: 'application/json' })).statusCode, 503)
+    assert.notEqual((await get('/v1/anime?limit=1', { accept: 'application/json' })).statusCode, 503)
+  })
+
+  it('a személyzet (admin) nem vészhelyzeti karbantartásban átmegy', async () => {
+    // A szerep eddig a JWT-ből jött volna, amiben nincs szerep — a kivétel
+    // soha nem teljesült.
+    await set({ enabled: false })
+    const username = 'mstaff_' + Math.random().toString(16).slice(2, 10)
+    const registered = await app.inject({
+      method: 'POST', url: '/v1/auth/register', headers: OUTSIDE,
+      payload: { email: `${username}@test.invalid`, username, password: 'a-long-enough-test-password-1' }
+    })
+    assert.equal(registered.statusCode, 201, registered.body)
+    const token = (registered.json() as { accessToken: string }).accessToken
+    try {
+      await db.pool.query(
+        `INSERT INTO user_roles (user_id, role_id)
+         SELECT u.id, r.id FROM users u, roles r WHERE u.username = $1 AND r.slug = 'admin'`, [username])
+      await set({ enabled: true, mode: MODE.ACTIVE })
+      const staff = await get('/v1/anime?limit=1', { accept: 'application/json', authorization: `Bearer ${token}` })
+      assert.notEqual(staff.statusCode, 503, 'an administrator was locked out of a non-emergency maintenance')
+      const visitor = await get('/v1/anime?limit=1', { accept: 'application/json' })
+      assert.equal(visitor.statusCode, 503)
+    } finally {
+      await db.pool.query('DELETE FROM users WHERE username = $1', [username])
+    }
+  })
 })
 
 describe('mentességi jegy', { skip: REASON }, () => {

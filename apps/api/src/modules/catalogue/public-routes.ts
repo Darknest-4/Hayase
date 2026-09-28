@@ -35,6 +35,9 @@ import { resolveEpisode } from '../providers/index.ts'
  */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+/** The widest window `/schedule` answers for. The client asks for a week or two. */
+const SCHEDULE_MAX_DAYS = 62
+
 
 /**
  * Which language this request wants, and how it wants titles written.
@@ -218,8 +221,20 @@ const routes: FastifyPluginAsync = async fastify => {
         }
       }
     }
-  }, async request => {
+  }, async (request, reply) => {
     const { from, to } = request.query as { from: string, to: string }
+    /*
+     * The window is bounded. Unbounded, one anonymous request for
+     * 1900 → 2100 joined every episode in the catalogue — a third of a
+     * million rows — into a single response.
+     */
+    const span = Date.parse(to) - Date.parse(from)
+    if (!(span > 0) || span > SCHEDULE_MAX_DAYS * 86_400_000) {
+      return reply.code(400).send({
+        type: 'about:blank', title: 'Bad Request', status: 400,
+        detail: `\`to\` must be after \`from\`, and at most ${SCHEDULE_MAX_DAYS} days later`
+      })
+    }
     return { data: await animeRepo.schedule(from, to) }
   })
 
@@ -262,7 +277,11 @@ const routes: FastifyPluginAsync = async fastify => {
     // A keresés annak a profilnak a nevében rögzül, akié a fiók — nem annak,
     // amit a fejléc mond. Ellenőrizetlenül bárki bármelyik profil keresési
     // előzményébe írhatott volna.
-    void profileOf(request).then(profileId => recordSearch(pool, q, data.length, profileId))
+    // Fire-and-forget, so it must not be able to reject: an unhandled
+    // rejection ends the process.
+    void profileOf(request)
+      .then(profileId => recordSearch(pool, q, data.length, profileId))
+      .catch(error => { request.log.warn({ err: error }, 'search statistics were not recorded') })
     return { data, query: q, hasMore }
   })
 
@@ -579,8 +598,9 @@ const routes: FastifyPluginAsync = async fastify => {
     }
   })
 
-  fastify.get('/:id/relations', { schema: uuidParams() }, async (request, reply) => {
+  fastify.get('/:id/relations', { schema: uuidParams() }, async request => {
     const { id } = request.params as { id: string }
+    if (!await animeRepo.isVisible(id)) return { data: [] }
     return { data: await animeRepo.relations(id) }
   })
 
@@ -636,6 +656,10 @@ const routes: FastifyPluginAsync = async fastify => {
    */
   fastify.get('/:id/franchise', { schema: uuidParams() }, async (request, reply) => {
     const { id } = request.params as { id: string }
+    // The walk includes the title that was asked about, so a hidden one has
+    // to be stopped here or its own row would come back. It answers exactly
+    // like an id that does not exist: hidden must be indistinguishable.
+    if (!await animeRepo.isVisible(id)) return { data: [], truncated: false }
 
     const data = await animeRepo.franchise(id)
     if (!data.length) return { data: [], truncated: false }
@@ -655,8 +679,16 @@ const routes: FastifyPluginAsync = async fastify => {
    * draws them in separate tabs and most visits open none of them.
    */
 
+  /*
+   * A hidden title does not exist, and neither does anything hanging off it.
+   * These answered for any id, so the cast of an unpublished title was one
+   * request away for anybody holding its id. A hidden id now gets exactly
+   * what an unknown one gets — an empty list — so the answer does not tell
+   * the two apart either.
+   */
   fastify.get('/:id/characters', { schema: uuidParams() }, async request => {
     const { id } = request.params as { id: string }
+    if (!await animeRepo.isVisible(id)) return { data: [] }
     // Voices are aggregated per character rather than joined flat: a character
     // with a Japanese and a Hungarian actor is one card with two credits, and
     // a flat join would return the character twice.
@@ -665,6 +697,7 @@ const routes: FastifyPluginAsync = async fastify => {
 
   fastify.get('/:id/staff', { schema: uuidParams() }, async request => {
     const { id } = request.params as { id: string }
+    if (!await animeRepo.isVisible(id)) return { data: [] }
     return { data: await animeRepo.staff(id) }
   })
 
@@ -679,6 +712,7 @@ const routes: FastifyPluginAsync = async fastify => {
   }, async request => {
     const { id } = request.params as { id: string }
     const { limit } = request.query as { limit?: number }
+    if (!await animeRepo.isVisible(id)) return { data: [] }
     return { data: await animeRepo.recommendations(id, limit ?? 20) }
   })
 }

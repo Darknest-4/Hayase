@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { isInternalRequest, isLoopback, isPrivateAddress } from '../src/middleware/internal-request.ts'
+import { isInternalRequest, isLoopback, isInternalAddress } from '../src/middleware/internal-request.ts'
 
 const req = (address: string | undefined, headers: Record<string, string> = {}) =>
   ({ socket: { remoteAddress: address }, headers } as never)
@@ -23,28 +23,28 @@ describe('címfelismerés', () => {
   })
 
   it('magánhálózati tartományok', () => {
-    assert.equal(isPrivateAddress('10.0.0.5'), true)
-    assert.equal(isPrivateAddress('172.18.0.4'), true)   // a Docker hídja
-    assert.equal(isPrivateAddress('192.168.1.10'), true)
-    assert.equal(isPrivateAddress('fd00::1'), true)
+    assert.equal(isInternalAddress('10.0.0.5'), true)
+    assert.equal(isInternalAddress('172.18.0.4'), true)   // a Docker hídja
+    assert.equal(isInternalAddress('192.168.1.10'), true)
+    assert.equal(isInternalAddress('fd00::1'), true)
   })
 
   it('a szomszédos, de NEM magánhálózati tartományok kimaradnak', () => {
     // A 172.16.0.0/12 a 172.16–172.31 tartomány. A 172.15 és a 172.32 KÍVÜL
     // van rajta, és egy elrontott összehasonlítás pont ezeket engedné be.
-    assert.equal(isPrivateAddress('172.15.0.1'), false)
-    assert.equal(isPrivateAddress('172.32.0.1'), false)
-    assert.equal(isPrivateAddress('11.0.0.1'), false)
-    assert.equal(isPrivateAddress('192.169.1.1'), false)
-    assert.equal(isPrivateAddress('9.255.255.255'), false)
+    assert.equal(isInternalAddress('172.15.0.1'), false)
+    assert.equal(isInternalAddress('172.32.0.1'), false)
+    assert.equal(isInternalAddress('11.0.0.1'), false)
+    assert.equal(isInternalAddress('192.169.1.1'), false)
+    assert.equal(isInternalAddress('9.255.255.255'), false)
   })
 
   it('a hibás bemenetből nem lesz mentesség', () => {
-    assert.equal(isPrivateAddress(''), false)
-    assert.equal(isPrivateAddress(undefined), false)
-    assert.equal(isPrivateAddress('nem-cím'), false)
-    assert.equal(isPrivateAddress('10.0.0'), false)
-    assert.equal(isPrivateAddress('999.0.0.1'), false)
+    assert.equal(isInternalAddress(''), false)
+    assert.equal(isInternalAddress(undefined), false)
+    assert.equal(isInternalAddress('nem-cím'), false)
+    assert.equal(isInternalAddress('10.0.0'), false)
+    assert.equal(isInternalAddress('999.0.0.1'), false)
   })
 })
 

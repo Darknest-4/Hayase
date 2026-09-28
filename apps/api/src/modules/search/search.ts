@@ -63,7 +63,7 @@
 // OpenSearch service, but at 25k catalogue rows pg_trgm + tsvector answer in
 // single-digit milliseconds off the indexes added in migration 0017; a second
 // search engine would cost ~1 GB of RAM on the VPS and an operational
-// dependency for no measurable gain. See docs/search.md.
+// dependency for no measurable gain. See docs/database/search.md.
 
 import type pg from 'pg'
 import { imageUrlSql } from '../media/public-url.ts'
@@ -166,7 +166,7 @@ export function buildSearchSql (filters: SearchFilters, options: SearchSqlOption
   if (filters.status) where.push(`a.status = ${push(filters.status)}::anime_status`)
   if (filters.genre) {
     // Slug OR name, case-insensitively — the client shows genre names, so it
-    // sends "Action" and not "action". See the same fix in routes/anime.ts.
+    // sends "Action" and not "action". See the same fix in modules/catalogue/public-routes.ts.
     const g = push(filters.genre)
     where.push(`EXISTS (SELECT 1 FROM anime_genres ag JOIN genres g ON g.id = ag.genre_id
                          WHERE ag.anime_id = a.id AND (g.slug = lower(${g}) OR lower(g.name) = lower(${g})))`)

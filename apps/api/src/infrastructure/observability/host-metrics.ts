@@ -5,7 +5,7 @@
 // are NOT namespaced by Docker, so these report the VPS host even when the API
 // runs in a container. Filesystem usage is the exception — statfs('/') inside a
 // container measures the overlay, so DISK_PATH should point at a bind-mounted
-// host path (see docs/monitoring.md).
+// host path (see docs/operations/monitoring.md).
 //
 // Rate metrics (CPU, disk I/O, network) need two samples. Previous readings are
 // kept in module state; the first call takes a short inline second sample so a

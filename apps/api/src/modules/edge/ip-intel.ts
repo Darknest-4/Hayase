@@ -159,7 +159,7 @@ export const PROVIDERS: IpProvider[] = [localProvider]
  * A forró út ezt olvassa. Egy támadás alatt ugyanaz a néhány cím jön
  * ezerszer — adatbázis-lekérdezés nélkül kell tudni róluk.
  *
- * Nem Redis: egy app-példány fut, és a `docs/redis.md` leírja, mikor nem lesz
+ * Nem Redis: egy app-példány fut, és a `docs/operations/redis.md` leírja, mikor nem lesz
  * ez így. Több példánynál ez a map lesz az első, amit ki kell cserélni — a
  * hívói felület (`intelOf`) viszont nem változik.
  */

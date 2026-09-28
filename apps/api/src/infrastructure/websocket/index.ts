@@ -3,10 +3,9 @@
 //   w2g:{code}      — watch-together playback sync + presence
 //   chat:{chatId}   — live chat (messages persisted to the messages table)
 //
-// The hub is in-process; publish() is the single seam where a Redis
-// pub/sub adapter slots in for multi-instance deployments.
-
-import { createHash } from 'node:crypto'
+// The hub is in-process. publish() delivers locally and fans out to other
+// instances through Postgres LISTEN/NOTIFY (infrastructure/pubsub) — there
+// is no Redis in this deployment.
 
 import websocket from '@fastify/websocket'
 import fp from 'fastify-plugin'
@@ -16,6 +15,7 @@ import { broadcast, start as startPubSub, stop as stopPubSub } from '../pubsub/i
 
 import type { FastifyInstance } from 'fastify'
 import type { WebSocket } from 'ws'
+import { sha256Hex } from '../text.ts'
 
 interface Client {
   socket: WebSocket
@@ -24,8 +24,13 @@ interface Client {
   /** The picture beside this person's messages, read once at connect. */
   avatar: string | null
   channels: Set<string>
-  /** Token expiry (epoch seconds) — the socket is closed once it passes. */
-  expiresAt: number
+  /**
+   * The session and token version the ticket was issued under. The sweep
+   * closes the socket when either stops being current — a sign-out, a
+   * password change, a ban. `null` for a ticket issued before this existed.
+   */
+  sessionId: string | null
+  tokenVersion: number | null
   /** Token-bucket state for message rate limiting. */
   tokens: number
   lastRefill: number
@@ -33,7 +38,7 @@ interface Client {
   strikes: number
 }
 
-const sha256 = (value: string): string => createHash('sha256').update(value).digest('hex')
+const sha256 = sha256Hex
 
 const channels = new Map<string, Set<Client>>()
 const clients = new Set<Client>()
@@ -235,30 +240,50 @@ async function handleMessage (app: FastifyInstance, client: Client, raw: string)
  * One sweep, one query for all connected users — not one per client.
  */
 async function reauthenticate (app: FastifyInstance): Promise<void> {
-  if (!clients.size) return
-  const now = Math.floor(Date.now() / 1000)
-
+  // Sockets that closed without us hearing about it.
   for (const client of [...clients]) {
-    if (client.expiresAt && client.expiresAt <= now) {
-      client.socket.close(CLOSE_EXPIRED, 'token expired')
-      clients.delete(client)
-    }
+    if (client.socket.readyState !== client.socket.OPEN) forget(client)
   }
   if (!clients.size) return
 
   const userIds = [...new Set([...clients].map(client => client.userId))]
-  const active = await query<{ id: string }>(
-    "SELECT id FROM users WHERE id = ANY($1::uuid[]) AND status = 'active' AND deleted_at IS NULL",
-    [userIds]
-  )
-  const allowed = new Set(active.map(row => row.id))
+  const sessionIds = [...new Set([...clients].map(client => client.sessionId).filter((id): id is string => id !== null))]
+  const [active, live] = await Promise.all([
+    query<{ id: string, token_version: number }>(
+      "SELECT id, token_version FROM users WHERE id = ANY($1::uuid[]) AND status = 'active' AND deleted_at IS NULL",
+      [userIds]
+    ),
+    sessionIds.length
+      ? query<{ id: string }>(
+        'SELECT id FROM sessions WHERE id = ANY($1::uuid[]) AND revoked_at IS NULL AND expires_at > now()',
+        [sessionIds])
+      : Promise.resolve([])
+  ])
+  const versions = new Map(active.map(row => [row.id, row.token_version]))
+  const liveSessions = new Set(live.map(row => row.id))
 
   for (const client of [...clients]) {
-    if (!allowed.has(client.userId)) {
-      app.log.info({ userId: client.userId }, 'closing socket: account no longer active')
-      client.socket.close(CLOSE_POLICY, 'account is no longer active')
-      clients.delete(client)
-    }
+    const version = versions.get(client.userId)
+    const reason = version === undefined
+      ? 'account is no longer active'
+      : client.tokenVersion !== null && version !== client.tokenVersion
+        ? 'signed out everywhere'
+        : client.sessionId !== null && !liveSessions.has(client.sessionId)
+          ? 'session ended'
+          : null
+    if (!reason) continue
+    app.log.info({ userId: client.userId, reason }, 'closing socket')
+    client.socket.close(reason === 'account is no longer active' ? CLOSE_POLICY : CLOSE_EXPIRED, reason)
+    forget(client)
+  }
+}
+
+/** Drop a client from the hub, and tell its watch-together rooms it left. */
+function forget (client: Client): void {
+  if (!clients.delete(client)) return
+  for (const channel of [...client.channels]) {
+    unsubscribe(client, channel)
+    if (channel.startsWith('w2g:')) publish(channel, { type: 'presence', count: presence(channel), left: client.username })
   }
 }
 
@@ -312,16 +337,28 @@ export default fp(async (app: FastifyInstance) => {
       const ticket = (req.query as { ticket?: string }).ticket ?? ''
       if (!ticket) { socket.close(4401, 'unauthorized'); return }
 
-      const row = await queryOne<{ user_id: string, username: string, token_version: number, avatar_key: string | null }>(
+      const row = await queryOne<{
+        user_id: string, username: string, token_version: number, avatar_key: string | null
+        session_id: string | null, ticket_version: number | null
+      }>(
         `UPDATE ws_tickets t SET used_at = now()
            FROM users u
            LEFT JOIN user_profiles p ON p.user_id = u.id
           WHERE t.ticket = $1 AND t.used_at IS NULL AND t.expires_at > now()
             AND u.id = t.user_id AND u.status = 'active' AND u.deleted_at IS NULL
-        RETURNING t.user_id, u.username, u.token_version, p.avatar_key`,
+            AND (t.token_version IS NULL OR t.token_version = u.token_version)
+            AND (t.session_id IS NULL OR EXISTS (
+                  SELECT 1 FROM sessions s
+                   WHERE s.id = t.session_id AND s.revoked_at IS NULL AND s.expires_at > now()))
+        RETURNING t.user_id, u.username, u.token_version, p.avatar_key,
+                  t.session_id, t.token_version AS ticket_version`,
         [sha256(ticket)]
       )
       if (!row) { socket.close(4401, 'unauthorized'); return }
+      // The peer may have gone while the ticket was being checked. A client
+      // registered now would never hear its own `close` event — that fired
+      // already — and would sit in the hub for the life of the process.
+      if (socket.readyState !== socket.OPEN) return
       payload = { sub: row.user_id, username: row.username, tv: row.token_version }
 
     const client: Client = {
@@ -330,7 +367,8 @@ export default fp(async (app: FastifyInstance) => {
       username: payload.username,
       avatar: row.avatar_key,
       channels: new Set(),
-      expiresAt: Number((payload as { exp?: number }).exp ?? 0),
+      sessionId: row.session_id,
+      tokenVersion: row.ticket_version,
       tokens: MSG_BURST,
       lastRefill: Date.now(),
       strikes: 0
@@ -363,13 +401,7 @@ export default fp(async (app: FastifyInstance) => {
     ready = onFrame
     for (const raw of early.splice(0)) onFrame(raw)
 
-      socket.on('close', () => {
-        clients.delete(client)
-        for (const channel of [...client.channels]) {
-          unsubscribe(client, channel)
-          if (channel.startsWith('w2g:')) publish(channel, { type: 'presence', count: presence(channel), left: client.username })
-        }
-      })
+      socket.on('close', () => { forget(client) })
     })().catch(err => {
       app.log.error(err, 'ws handshake failed')
       socket.close(4401, 'unauthorized')

@@ -225,12 +225,18 @@ export async function rollupAnime (day?: string): Promise<void> {
     // kétszer tér vissza, annak két munkamenete van és egy kulcsa — a
     // munkameneteket számolva ugyanaz az ember kétszer szerepelne, és az
     // „egyedi néző" nem lenne egyedi.
+    //
+    // CSAK LÉTEZŐ CÍMRE. Az `entity_id` a klienstől jön (bárki küldhet
+    // bármilyen uuidot), és az epizódoldalak is ide írnak; egy törölt vagy
+    // összevont cím is maradhat benne. Szűrés nélkül egyetlen ilyen sor az
+    // idegen kulcson elbuktatta a teljes napi összesítést — élesben meg is
+    // történt: a 2026-09-21-i futás a holt feladatok közé került.
     `INSERT INTO anime_stats_daily (day, anime_id, views, unique_viewers)
-     SELECT $1::date, entity_id, count(*), count(DISTINCT split_part(session_key, ':', 1))
-       FROM page_views
-      WHERE created_at >= $1::date AND created_at < $1::date + 1
-        AND entity_id IS NOT NULL
-      GROUP BY entity_id
+     SELECT $1::date, pv.entity_id, count(*), count(DISTINCT split_part(pv.session_key, ':', 1))
+       FROM page_views pv
+       JOIN anime a ON a.id = pv.entity_id
+      WHERE pv.created_at >= $1::date AND pv.created_at < $1::date + 1
+      GROUP BY pv.entity_id
      ON CONFLICT (day, anime_id) DO UPDATE SET
         views = EXCLUDED.views, unique_viewers = EXCLUDED.unique_viewers`,
     [d]
@@ -274,9 +280,12 @@ export async function rollupAnime (day?: string): Promise<void> {
          -- tábla tartja a címeket és mindent mást, amit kedvencnek lehet
          -- jelölni. Szűrés nélkül idegen azonosítók kerülnének az
          -- anime-statisztikába, és az idegen kulcs dobná el a beszúrást.
-         SELECT subject_id AS anime_id, 'favorite' FROM favorites
-          WHERE subject_type = 'anime'
-            AND created_at >= $1::date AND created_at < $1::date + 1
+         -- Polimorf, tehát idegen kulcs sincs mögötte: egy azóta törölt cím
+         -- kedvence is itt lehet, és az ugyanúgy elbuktatná a beszúrást.
+         SELECT f.subject_id AS anime_id, 'favorite' FROM favorites f
+          WHERE f.subject_type = 'anime'
+            AND f.created_at >= $1::date AND f.created_at < $1::date + 1
+            AND EXISTS (SELECT 1 FROM anime a WHERE a.id = f.subject_id)
        ) x
       GROUP BY x.anime_id
      ON CONFLICT (day, anime_id) DO UPDATE SET

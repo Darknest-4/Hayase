@@ -99,12 +99,6 @@ function trustProxy (): boolean | string[] {
 }
 
 /**
- * CORS. In development anything goes; in production a wildcard would let any
- * site drive the API with a user's bearer token, so an unset CORS_ORIGINS means
- * same-origin only (which is what the single-container deployment needs).
- * Set CORS_ORIGINS explicitly to allow a separately hosted frontend.
- */
-/**
  * A terheléses mérés kulcsa — lásd middleware/load-test.ts.
  *
  * Éles telepítésen rövid kulcsot nem fogadunk el: ez a sebességkorlát alóli
@@ -123,6 +117,12 @@ function loadTestKey (): string | undefined {
   return raw
 }
 
+/**
+ * CORS. In development anything goes; in production a wildcard would let any
+ * site drive the API with a user's bearer token, so an unset CORS_ORIGINS means
+ * same-origin only (which is what the single-container deployment needs).
+ * Set CORS_ORIGINS explicitly to allow a separately hosted frontend.
+ */
 function corsOrigins (): string[] | boolean {
   const raw = process.env.CORS_ORIGINS
   if (!raw) return isProd ? false : true
@@ -194,7 +194,7 @@ export const config = {
   // than one app instance can share channels — but both are premature on a
   // single instance, and an unused dependency is one more thing to operate and
   // to fail. Adopt it when a second app instance is actually needed; until
-  // then setting REDIS_URL only enables its health probe. See docs/redis.md.
+  // then setting REDIS_URL only enables its health probe. See docs/operations/redis.md.
   redisUrl: process.env.REDIS_URL,
   rabbitUrl: process.env.RABBITMQ_URL,
   openSearchUrl: process.env.OPENSEARCH_URL,
