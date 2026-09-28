@@ -14,36 +14,30 @@ backend with a scalable database. Two ideas are inherited and kept sacred:
 
 ```
 ├─ apps/
-│  ├─ api/                API gateway — Fastify 5 + TypeScript on Node 22
-│  │  ├─ src/             No build step: --experimental-strip-types
-│  │  └─ test/            26 suites, including the adversarial one
-│  └─ web/                Web client — framework-free HTML/CSS/JS SPA
-│     ├─ js/catalogue.js  Which source answers: our database, then AniList
-│     ├─ js/i18n.js       One text lookup: copy catalogue + translation
-│     ├─ i18n/hu.js       Hungarian dictionary, keyed by the English source
-│     └─ test/            Engine, resolver, i18n and DOM-helper tests
+│  ├─ api/                API — Fastify 5 + TypeScript on Node 22, no build step
+│  │  ├─ src/             app.ts (composition), modules/* (one folder per feature),
+│  │  │                   infrastructure/* (database, queue, pubsub, http, storage),
+│  │  │                   middleware/*, workers/ (background jobs), graphql/
+│  │  ├─ scripts/         seeders, importers, test fixtures
+│  │  └─ test/            node:test suites, including the adversarial ones
+│  ├─ web/                Web client — framework-free ES modules, no bundler
+│  │  ├─ src/             app/, pages/, features/, entities/, shared/
+│  │  ├─ css/, assets/    styles, images, the maintenance video
+│  │  └─ test/            client unit tests
+│  └─ discord/            Discord dashboard (served by the API under /dashboard)
 ├─ packages/
-│  └─ design-tokens/      Design tokens shared with native surfaces
+│  ├─ database/           the Postgres pool, the three query helpers, error helpers
+│  └─ design-tokens/      design tokens shared with native surfaces
 ├─ database/
-│  └─ migrations/         PostgreSQL 16 schema — 35 migrations, ~130
-│                         relations, every one commented with its reasoning
+│  └─ migrations/         PostgreSQL 16 schema, applied in filename order on boot
 ├─ infrastructure/
-│  ├─ docker/Dockerfile   Single-stage image; mirrors this layout under /app
-│  └─ reverse-proxy/      Caddy: TLS termination in front of the app
-├─ scripts/
-│  └─ database/           Backup, restore and cron scripts (POSIX sh)
-├─ tests/
-│  └─ e2e/                Browser tests that boot the API and drive the client
-├─ docs/
-│  ├─ architecture/       Services, queue, search, catalogue precedence, SEO
-│  ├─ api/                REST + GraphQL reference
-│  ├─ database/           Schema guide and the search design
-│  ├─ security/           Threat model and the controls that answer it
-│  ├─ deployment/         Deploying to an Ubuntu VPS with Docker (Hungarian)
-│  ├─ integrations/       Streaming sources, Discord bot
-│  └─ operations/         Monitoring, backup, Redis, status snapshots
-├─ .github/workflows/     CI: typecheck, tests, migrations, worker, lint, image
-└─ docker-compose.yml     app · worker · caddy · backup · postgres
+│  ├─ reverse-proxy/      Caddyfile (standalone) and yume.caddy (shared proxy)
+│  └─ backup/             the backup container (pg_dump + verify + R2 copy)
+├─ scripts/               database, Cloudflare, reverse-proxy and load-test tools
+├─ tests/                 browser end-to-end tests and the k6 load scenarios
+├─ docs/                  architecture, API, database, operations, security, …
+├─ Dockerfile             one image for app, worker and gateway
+└─ docker-compose.yml     app · worker · gateway · caddy · backup · postgres
 ```
 
 Two paths are resolved relative to their own source file at runtime — the
@@ -52,16 +46,23 @@ layout under `/app` rather than flattening it. See the comment in
 `Dockerfile` at the repository root.
 
 
-**Infrastructure is deliberately small.** Four times over, the obvious
+**Infrastructure is deliberately small.** Three times over, the obvious
 component was declined in favour of what Postgres already does:
 `LISTEN/NOTIFY` instead of Redis for cross-instance fan-out, full-text search
-instead of OpenSearch, a `jobs` table with `FOR UPDATE SKIP LOCKED` instead of
-RabbitMQ, and content-addressed files on disk instead of MinIO. Each decision
-is written next to the code that implements it. Redis is still read from the
-environment for a health probe and nothing else — see `docs/operations/redis.md`.
+instead of OpenSearch, and a `jobs` table with `FOR UPDATE SKIP LOCKED` instead
+of RabbitMQ. Object storage is S3-compatible (Cloudflare R2) for the image
+mirror and off-site backups, and optional. Redis is read from the environment
+for a health probe and nothing else — see `docs/operations/redis.md`.
 
 
 ## Screenshots
+
+> **Note (2026-09-23):** these screenshots predate the frontend redesign —
+> the shell, the design system and most screens have changed since. What
+> changed, and how it was checked, is in
+> [`docs/design/13-redesign-2026-09.md`](docs/design/13-redesign-2026-09.md).
+> Some features shown here (the extension store, the developer portal) no
+> longer exist in the client.
 
 Every page and feature of the web client, in **desktop and mobile** layouts.
 Platform features (accounts, comments, store, admin, developer portal) are
@@ -416,26 +417,38 @@ client, Postgres, worker, HTTPS and verified daily backups — comes up with
 The rest of this section is the local development loop.
 
 ```sh
-docker compose up -d                 # postgres (app/worker/caddy optional)
-cd server
 cp .env.example .env                 # JWT_SECRET and POSTGRES_PASSWORD are required
-npm install
+docker compose up -d postgres        # just the database
+npm install                          # the whole workspace, from the repository root
+export DATABASE_URL=postgres://yume:<POSTGRES_PASSWORD>@localhost:5432/yume
 npm run migrate                      # applies database/migrations in order, idempotent
-npm run dev                          # API on :4000, no build step
+npm run dev                          # API and web client on :4000, no build step
 ```
+
+The compose file does not publish Postgres on the host; for local development
+either add `ports: ['127.0.0.1:5432:5432']` to it in a
+`docker-compose.override.yml`, or run a Postgres of your own.
 
 ### Tests
 
+The suites run against a database whose name ends in `_test` — anything else
+is refused (`apps/api/test/guard.mjs`), because they create accounts and write
+logs. A throwaway one is enough:
+
 ```sh
+docker run -d --name yume-testdb -e POSTGRES_USER=yume -e POSTGRES_PASSWORD=yume \
+  -e POSTGRES_DB=yume_test -p 127.0.0.1:25432:5432 postgres:16-alpine
+export DATABASE_URL=postgres://yume:yume@127.0.0.1:25432/yume_test
+cd apps/api
+npm run migrate
+node --experimental-strip-types scripts/test-fixture.ts     # an administrator
+node --experimental-strip-types scripts/test-catalogue.ts   # 1,100 test titles
 npm test                             # every server suite
-npm run test:adversarial             # forgery, injection, SSRF, IDOR, races
-node --test ../apps/web/test/*.test.mjs   # engine, catalogue resolver, DOM helper
+node --test ../web/test/*.test.mjs   # the client's own tests
 ```
 
-The adversarial suite needs `DATABASE_URL`; without one it skips itself, which
-is why CI runs it as its own step **after** the database exists rather than
-inside the general unit-test step, where it would report green having checked
-nothing.
+Without `DATABASE_URL` the database suites skip themselves; CI runs them with
+the same fixture (`.github/workflows/check.yml`).
 
 ### Seed a real catalogue
 

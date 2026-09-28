@@ -1,0 +1,26 @@
+/* ===========================================================================
+   Útvonal: #/list — csak ennek a képernyőnek a szabályai.
+
+   Betölti: a router (`ROUTE_STYLES.list`), a képernyő moduljával együtt, és
+   a képernyő csak utána rajzol. Ami több oldalon kell, az nem itt van: a
+   keret a style.css-ben, a közös modulok a css/features/ alatt.
+   =========================================================================== */
+
+/* ===== library ===== */
+
+.lib-page .tab-panel { padding-top: var(--space-4); }
+.lib-page .tab-panel:focus-visible { box-shadow: none; }
+.lib-toolbar { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-4); }
+.lib-filter { flex: 1 1 16rem; max-width: 26rem; }
+.lib-toolbar .select { flex: 0 1 14rem; }
+.lib-progress { max-width: 18rem; margin-top: var(--space-1); }
+.lib-counter { display: flex; align-items: center; gap: var(--space-1); }
+.lib-count { min-width: 4.5rem; text-align: center; font: var(--weight-extrabold) .9375rem/1 var(--font-sans); }
+.lib-status { min-height: var(--control-sm); font-size: .875rem; font-weight: var(--weight-bold); max-width: 11rem; }
+
+@media (max-width: 767px) {
+  .lib-count { min-width: 3.5rem; }
+  .lib-status { flex: 1 1 8rem; max-width: none; min-height: var(--touch-min); }
+  .lib-filter { max-width: none; }
+  .lib-toolbar .select { flex: 1 1 100%; }
+}

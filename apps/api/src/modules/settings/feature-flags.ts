@@ -1,14 +1,14 @@
 // Feature flags: the kill switches an administrator can throw.
 //
 // Why this file exists: `feature_flags` was read in exactly one place —
-// routes/config.ts, which projects the table to the client — and enforced
+// modules/settings/config-routes.ts, which projects the table to the client — and enforced
 // nowhere else. The client gates its routes on the projection, so turning a
 // feature off removed its page and left its API wide open. Comments could
 // still be posted, watch-together rooms could still be created; only the
 // buttons went away.
 //
 // That is the same defect `require_login` and `registration_open` had before
-// lib/site-settings.ts, and it is fixed the same way, deliberately: one cached
+// modules/settings/site-settings.ts, and it is fixed the same way, deliberately: one cached
 // reader, invalidated on write rather than merely expiring, so "Saved" in the
 // admin panel means the next request already sees it. The TTL is the backstop
 // for the case invalidation cannot cover — a second app instance with its own

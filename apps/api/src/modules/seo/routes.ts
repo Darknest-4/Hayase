@@ -1,7 +1,7 @@
 // robots.txt, sitemap.xml, and the crawlable spelling of an anime page.
 //
 // Registered at the root rather than under /v1: these are not API endpoints,
-// they are the three things a crawler asks a website for. See lib/seo.ts for
+// they are the three things a crawler asks a website for. See modules/seo/meta.ts for
 // why the path-shaped /anime/:id exists at all next to the client's #/anime/:id.
 //
 // Two rules run through the whole file:
@@ -11,7 +11,7 @@
 //     operator has made this a private instance — the entire site.
 //   * Every value that reaches the HTML came out of the database, which means
 //     out of an importer, which means it is not trusted. It is escaped at the
-//     point of use by lib/seo.ts and nowhere else.
+//     point of use by modules/seo/meta.ts and nowhere else.
 
 import { query, queryOne } from '../../infrastructure/database/index.ts'
 import { settings as siteSettings } from '../settings/site-settings.ts'

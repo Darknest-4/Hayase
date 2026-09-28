@@ -19,6 +19,7 @@ import { C } from '../../shared/ui/components.js'
 import { T } from '../../shared/i18n/i18n.js'
 import { U } from '../../shared/lib/dom.js'
 import { YumeAPI } from '../../shared/api/yume.js'
+import { featureOn, playbackAvailable } from '../../shared/lib/site-config.js'
 
 /** Szekciócím, az első szón színátmenettel — ahogy a referencia csinálja. */
 function displayHeading (lead, rest) {
@@ -105,22 +106,38 @@ export const Landing = {
 
     // Átlátszó, amíg a lap tetején vagyunk. A `.page` a görgető, nem az ablak
     // — lásd style.css `.app-shell` —, úgyhogy a figyelő is oda kerül.
-    const scroller = root.closest('.page') ?? root
-    const onScroll = () => header.classList.toggle('lp-header-solid', scroller.scrollTop > 24)
-    scroller.addEventListener('scroll', onScroll, { passive: true })
+    // A dokumentum görget (lásd style.css, „shell"): a fejléc az ablak
+    // görgetésére vált tömörre, és a lappal együtt le is iratkozik.
+    const onScroll = () => {
+      if (!page.isConnected) { window.removeEventListener('scroll', onScroll); return }
+      header.classList.toggle('lp-header-solid', window.scrollY > 24)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
     onScroll()
+
+    /*
+     * CSAK AZT ÍGÉRJÜK, AMI ITT TÉNYLEG MŰKÖDIK.
+     *
+     * A kezdőképernyő eddig egy „AniList és MyAnimeList — hozd magaddal a
+     * listádat, és tartsd szinkronban" funkciót hirdetett, ami nem létezik: a
+     * kliensben nincs lista-import, a kiszolgálón nincs szinkron. A közös
+     * nézést és a lejátszást akkor is ígérte, ha a példányon nincs lejátszható
+     * forrás, vagy az üzemeltető kikapcsolta. Most a példány beállítása dönt.
+     */
+    const canPlay = playbackAvailable()
+    const together = canPlay && featureOn('watch_together')
+    const canRegister = site?.registrationOpen !== false
 
     // ---- hero --------------------------------------------------------------
     page.append(U.el('div', { class: 'lp-hero' }, [
       U.el('div', { class: 'lp-watermark', 'aria-hidden': 'true', text: name }),
-      U.el('h1', { class: 'lp-title' }, [
-        U.el('span', { class: 'lp-title-lead', text: T('Nézz animét') }),
-        document.createTextNode(' ' + T('úgy, ahogy neked jó.'))
-      ]),
+      U.el('h1', { class: 'lp-title' }, canPlay
+        ? [U.el('span', { class: 'lp-title-lead', text: T('Nézz animét') }), document.createTextNode(' ' + T('úgy, ahogy neked jó.'))]
+        : [U.el('span', { class: 'lp-title-lead', text: T('Kövesd az animéidet') }), document.createTextNode(' ' + T('úgy, ahogy neked jó.'))]),
       U.el('p', { class: 'lp-sub', text: T('Kövesd, amit nézel. Találd meg, amit keresel. Folytasd ott, ahol abbahagytad — bármelyik eszközön.') }),
       U.el('div', { class: 'lp-cta' }, [
-        U.el('a', { class: 'btn btn-primary', href: '#/home' }, [document.createTextNode(T('Kezdés'))]),
-        U.el('a', { class: 'btn btn-ghost', href: '#what' }, [document.createTextNode(T('Mit tud?'))])
+        U.el('a', { class: 'btn btn-primary btn-lg', href: '#/home' }, [document.createTextNode(T('Kezdés'))]),
+        U.el('a', { class: 'btn btn-ghost btn-lg', href: '#what' }, [document.createTextNode(T('Mit tud?'))])
       ])
     ]))
 
@@ -132,25 +149,25 @@ export const Landing = {
       U.el('div', { class: 'lp-features' }, [
         feature(U.svg(ICON.fast, 22), T('Gyors, és nem áll az utadban'), T('Az oldalváltás ezredmásodpercek kérdése. Semmi felesleges animáció, semmi várakozás.')),
         feature(U.svg(ICON.library, 22), T('A könyvtárad, rendben tartva'), T('Pontszám, haladás, állapot és kedvencek — a nézett epizódok maguktól követve, nem kézzel pipálva.')),
-        feature(U.svg(ICON.sync, 22), T('AniList és MyAnimeList'), T('Hozd magaddal a listádat, és tartsd szinkronban. Nem kell két helyen vezetned ugyanazt.')),
-        feature(U.svg(ICON.schedule, 22), T('Tudd, mikor jön a következő'), T('Vetítési naptár a saját időzónádban, visszaszámlálóval a következő epizódig.')),
-        feature(U.svg(ICON.together, 22), T('Nézzétek együtt'), T('Szinkronizált lejátszás és chat, akárhol vagytok. Egy link, és kezdődhet.')),
+        feature(U.svg(ICON.sync, 22), T('Minden eszközödön ugyanott'), T('Belépve a könyvtárad és a megállás helye a fiókodban él: amit a telefonon abbahagytál, a gépen folytatod.')),
+        feature(U.svg(ICON.schedule, 22), T('Tudd, mikor jön a következő'), T('Vetítési naptár a saját időzónádban, a következő rész idejével.')),
+        together ? feature(U.svg(ICON.together, 22), T('Nézzétek együtt'), T('Szinkronizált lejátszás és chat, akárhol vagytok. Egy link, és kezdődhet.')) : null,
         feature(U.svg(ICON.free, 22), T('Ingyenes, és az is marad'), T('Nincs előfizetés és nincs prémium szint. Ami működik, mindenkinek működik.'))
       ])
     ]))
 
     // ---- záró ---------------------------------------------------------------
+    // Zárt regisztrációnál a gomb a belépésre visz, nem egy elutasított
+    // regisztrációs űrlapra.
+    const user = YumeAPI.user()
     page.append(U.el('section', { class: 'lp-section lp-close' }, [
       displayHeading(T('Kezdjük.'), ''),
       U.el('p', { class: 'lp-lead', text: T('Fiók kell hozzá — így tudjuk megjegyezni, hol tartasz.') }),
       U.el('div', { class: 'lp-cta' }, [
-        U.el('button', {
-          class: 'btn btn-primary',
-          type: 'button',
-          onclick: () => {
-            window.location.hash = YumeAPI.user() ? '#/home' : '#/login/register'
-          }
-        }, [document.createTextNode(YumeAPI.user() ? T('Tovább a főoldalra') : T('Fiók létrehozása'))])
+        U.el('a', {
+          class: 'btn btn-primary btn-lg',
+          href: user ? '#/home' : canRegister ? '#/login/register' : '#/login'
+        }, [document.createTextNode(user ? T('Tovább a főoldalra') : canRegister ? T('Fiók létrehozása') : T('Sign in'))])
       ])
     ]))
 

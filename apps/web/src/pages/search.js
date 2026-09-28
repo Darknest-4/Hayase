@@ -1,14 +1,37 @@
-/* global MutationObserver, window */
-// Search page — text search plus the same filters the original search route has
-// (genre, season, year, format, status, sort), with load-more pagination.
+/* global MutationObserver */
+// Kereső és böngésző — #/search?q=…&genre=…&season=…&year=…&format=…&status=…&sort=…
+//
+// 2026-09, újratervezve. Ami változott, és miért:
+//
+//   * AZ ÁLLAPOT A CÍMBEN ÉL. A szűrők eddig csak betöltéskor olvastak a
+//     címből, utána nem írtak bele: egy szűrt találati lista nem volt
+//     megosztható, és a vissza gomb az adatlapról a szűretlen keresőbe tért
+//     vissza. Most minden változás `replaceState`-tel a címbe kerül.
+//
+//   * A RENDEZÉS SZÖVEGES KERESÉSNÉL IS HAT. A katalógus keresője ismeri
+//     (relevancia, népszerűség, pontszám, legújabb, cím) — a kliens eddig nem
+//     küldte el. A „Felkapott" szöveges keresésnél relevanciát jelent: a
+//     keresőnek nincs felkapottsági sorrendje, és ezt ki is írjuk.
+//
+//   * AKTÍV SZŰRŐK CSEMPÉKBEN, egy „Mind törlése" gombbal. Telefonon a szűrők
+//     egy lenyíló panelben vannak, a gombon a számukkal.
+//
+// Csak azokat a szűrőket kínáljuk, amiket a katalógus végpontja elfogad (lásd
+// apps/api/src/modules/catalogue/public-routes.ts): műfaj, évad, év, formátum,
+// állapot, rendezés.
 
 import { featureOn } from '../shared/lib/site-config.js'
 import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
-import { T } from '../shared/i18n/i18n.js'
+import { I18n, T } from '../shared/i18n/i18n.js'
 import { P } from '../shared/ui/primitives.js'
 import { trackEvent } from '../shared/lib/analytics.js'
 import { U } from '../shared/lib/dom.js'
+
+const SEARCH_ICON = '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>'
+const X_ICON = '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'
+const FILTER_ICON = '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>'
+const IMAGE_ICON = '<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>'
 
 export const PageSearch = {
   GENRES: ['Action', 'Adventure', 'Comedy', 'Drama', 'Ecchi', 'Fantasy', 'Horror', 'Mahou Shoujo', 'Mecha', 'Music', 'Mystery', 'Psychological', 'Romance', 'Sci-Fi', 'Slice of Life', 'Sports', 'Supernatural', 'Thriller'],
@@ -21,6 +44,8 @@ export const PageSearch = {
     ['START_DATE_DESC', 'Newest'],
     ['TITLE_ROMAJI', 'Title']
   ],
+  FILTER_KEYS: ['genre', 'season', 'year', 'format', 'status'],
+  PER_PAGE: 30,
 
   render (root, params) {
     const state = {
@@ -30,159 +55,172 @@ export const PageSearch = {
       year: params.get('year') ?? '',
       format: params.get('format') ?? '',
       status: params.get('status') ?? '',
-      sort: params.get('sort') ?? 'TRENDING_DESC',
+      sort: this.SORTS.some(([v]) => v === params.get('sort')) ? params.get('sort') : 'TRENDING_DESC',
       page: 1,
-      // Set from each browse answer; null means "start at the beginning".
       cursor: null
     }
 
-    const pad = U.el('div', { class: 'page-pad' })
+    const pad = U.el('div', { class: 'page-pad search-page' })
     root.append(pad)
 
-    // The page had no heading of any level. A document whose only headings are
-    // its sections gives a screen reader nothing to announce on arrival and no
-    // way to jump to the top of the content.
-    pad.append(U.el('h1', { class: 'page-title', text: T('Search') }))
+    pad.append(U.el('header', { class: 'page-header' }, [
+      U.el('div', { class: 'page-header-text' }, [
+        U.el('h1', { class: 'page-title', text: T('Search') }),
+        U.el('p', { class: 'page-sub', text: T('Find a title by name, or browse the catalogue with filters.') })
+      ])
+    ]))
 
+    // ---- a keresőmező ----
+    const input = U.el('input', {
+      class: 'input search-field-input',
+      type: 'search',
+      id: 'search-q',
+      name: 'q',
+      placeholder: T('Title, alternative title or abbreviation'),
+      autocomplete: 'off',
+      spellcheck: 'false',
+      enterkeyhint: 'search',
+      value: state.search
+    })
+    const clear = U.el('button', {
+      class: 'icon-btn icon-btn-sm icon-btn-quiet input-trail',
+      type: 'button',
+      'aria-label': T('Clear search'),
+      hidden: !state.search,
+      onclick: () => { input.value = ''; clear.hidden = true; state.search = ''; reset(); input.focus() }
+    }, [U.svg(X_ICON, 16)])
+    const typed = U.debounce(() => { state.search = input.value.trim(); reset() }, 350)
+    input.addEventListener('input', () => { clear.hidden = !input.value; typed() })
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); state.search = input.value.trim(); reset() }
+    })
+
+    // ---- szűrők ----
     const years = []
     for (let y = new Date().getFullYear() + 1; y >= 1970; y--) years.push(y)
-
-    const mkSelect = (label, key, options, labelMap = v => v) => {
+    const selects = {}
+    const mkSelect = (label, key, options, labelMap = v => String(v)) => {
+      const id = `search-${key}`
       const select = U.el('select', {
         class: 'select',
-        // The visible <label> beside this is a sibling with no `for`, so it
-        // names the control for a sighted reader and for nobody else. Rather
-        // than mint ids for six selects, the name is put on the control.
-        'aria-label': T(label),
-        onchange: e => { state[key] = e.target.value; reset() }
+        id,
+        name: key,
+        onchange: () => { state[key] = select.value; reset() }
       }, [
-        U.el('option', { value: '', text: T('Any') }),
+        key === 'sort' ? null : U.el('option', { value: '', text: T('Any') }),
         ...options.map(value => U.el('option', {
           value: String(value),
           text: labelMap(value),
-          ...(String(value) === String(state[key]) ? { selected: '' } : {})
+          selected: String(value) === String(state[key])
         }))
       ])
-      return U.el('div', { class: 'filter-group' }, [U.el('label', { text: T(label) }), select])
-    }
-
-    const searchInput = U.el('input', {
-      class: 'input search-input-big',
-      type: 'text',
-      placeholder: T('Search anime...'),
-      value: state.search,
-      oninput: U.debounce(e => { state.search = e.target.value; reset() })
-    })
-
-    // image search (trace.moe): button, paste or drop a frame anywhere
-    const imageSearch = async blob => {
-      results.replaceChildren(P.spinner())
-      loadMoreWrap.replaceChildren()
-      try {
-        const res = await fetch('https://api.trace.moe/search?anilistInfo&cutBorders', { method: 'POST', body: blob })
-        if (!res.ok) throw new Error('trace.moe ' + res.status)
-        const json = await res.json()
-        const hits = (json.result ?? []).filter(r => r.similarity >= 0.8 && r.anilist?.id)
-        const ids = [...new Set(hits.map(r => r.anilist.id))].slice(0, 10)
-        if (!ids.length) {
-          results.replaceChildren(P.emptyState(T('No confident match for that frame.')))
-          return
-        }
-        const page = await Catalogue.searchOrAniList({ ids, perPage: 20 })
-        results.replaceChildren(C.grid(page.media ?? []))
-        U.toast(`Best match: ${Math.round(hits[0].similarity * 100)}% • episode ${hits[0].episode ?? '?'}`)
-      } catch (e) {
-        results.replaceChildren(P.errorState(T('Image search failed: ') + e.message))
-      }
-    }
-
-    /*
-     * A KAPCSOLÓT ITT KELL MEGKÉRDEZNI, NEM LENTEBB.
-     *
-     * A kép-keresés a böngészőből tölt fel egy KÜLSŐ szolgáltatásra
-     * (`api.trace.moe`) — nincs saját végpontunk, tehát nincs is mit
-     * őrizni a kiszolgálón: itt a gomb elrejtése MAGA a funkció kikapcsolása.
-     *
-     * Csakhogy a beillesztés- és ejtésfigyelők feltétel nélkül kerültek fel a
-     * dokumentumra, a kapcsoló pedig csak lentebb dőlt el. Kikapcsolt
-     * funkció mellett a gomb eltűnt, de aki a keresőlapon beillesztett egy
-     * képet a vágólapról, annak a képe ATTÓL MÉG elment egy harmadik félhez.
-     */
-    const imageOn = featureOn('image_search')
-
-    const filePick = U.el('input', { type: 'file', accept: 'image/*', style: 'display:none;', 'aria-label': 'Kép feltöltése kereséshez' })
-    filePick.addEventListener('change', () => { if (filePick.files[0]) imageSearch(filePick.files[0]) })
-    const imageBtn = U.el('button', { class: 'btn btn-ghost', title: T('Search by image (or paste/drop a frame)'), onclick: () => filePick.click() }, [document.createTextNode(T('Upload a frame'))])
-
-    const onPaste = e => {
-      const item = [...(e.clipboardData?.items ?? [])].find(i => i.type.startsWith('image/'))
-      if (item) imageSearch(item.getAsFile())
-    }
-    const onDragOver = e => e.preventDefault()
-    const onDrop = e => {
-      e.preventDefault()
-      const file = [...(e.dataTransfer?.files ?? [])].find(f => f.type.startsWith('image/'))
-      if (file) imageSearch(file)
-    }
-    if (imageOn) {
-      document.addEventListener('paste', onPaste)
-      document.addEventListener('dragover', onDragOver)
-      document.addEventListener('drop', onDrop)
-    }
-    /*
-     * A `dragover` figyelője is NEVESÍTVE van, nem névtelen függvényként.
-     * Egy névtelen `e => e.preventDefault()`-ot nem lehet leszedni, tehát a
-     * lap elhagyása után is ott maradt volna a dokumentumon — minden
-     * keresőlap-látogatás hagyott egyet.
-     */
-    const cleanup = new MutationObserver(() => {
-      if (!document.body.contains(pad)) {
-        document.removeEventListener('paste', onPaste)
-        document.removeEventListener('dragover', onDragOver)
-        document.removeEventListener('drop', onDrop)
-        cleanup.disconnect()
-      }
-    })
-    cleanup.observe(document.getElementById('page'), { childList: true })
-
-    /**
-     * The filter panel is collapsible, and starts collapsed on a phone.
-     *
-     * At 390px it filled the entire first screen, so the results it filters
-     * were never visible at the same time as the filters — every search meant
-     * scrolling past the whole form to see whether it had worked. A <details>
-     * carries its own toggle and keyboard behaviour, so nothing here has to
-     * reimplement either.
-     *
-     * Open on anything wider, where the panel is a row and costs nothing.
-     */
-    const filterBox = U.el('details', { class: 'filters-box', open: !window.matchMedia('(max-width: 560px)').matches }, [
-      U.el('summary', { class: 'filters-summary' }, [
-        U.el('span', { text: T('Filters') }),
-        U.el('span', { class: 'filters-hint', text: T('search, genre, season, year, format, status, sort') })
+      selects[key] = select
+      return U.el('div', { class: 'field search-filter' }, [
+        U.el('label', { class: 'field-label', for: id, text: T(label) }),
+        select
       ])
-    ])
-    pad.append(filterBox)
-    filterBox.append(U.el('div', { class: 'filters' }, [
-      U.el('div', { class: 'filter-group' }, [U.el('label', { text: T('Search') }), searchInput]),
-      // A blank label put this control under the neighbouring field's heading,
-      // so on a phone the image-search button read as part of GENRE. It says
-      // what it is now.
-      imageOn ? U.el('div', { class: 'filter-group' }, [U.el('label', { text: T('By image') }), imageBtn]) : null,
-      imageOn ? filePick : null,
+    }
+
+    const filterGrid = U.el('div', { class: 'search-filters', id: 'search-filters' }, [
       mkSelect('Genre', 'genre', this.GENRES, v => T(v)),
       mkSelect('Season', 'season', Object.keys(U.seasonMap), v => T(U.seasonMap[v])),
       mkSelect('Year', 'year', years),
       mkSelect('Format', 'format', this.FORMATS, v => T(U.formatMap[v] ?? v)),
-      mkSelect('Status', 'status', this.STATUSES, v => T(U.statusMap[v] ?? v)),
-      mkSelect('Sort', 'sort', this.SORTS.map(([v]) => v), v => T(this.SORTS.find(([value]) => value === v)?.[1] ?? v))
+      mkSelect('Status', 'status', this.STATUSES, v => T(U.statusMap[v] ?? v))
+    ])
+    const sortField = mkSelect('Sort', 'sort', this.SORTS.map(([v]) => v), v => T(this.SORTS.find(([value]) => value === v)?.[1] ?? v))
+    sortField.classList.add('search-sort')
+
+    // Telefonon a szűrők egy gomb mögött — a számukkal.
+    const filterToggle = U.el('button', {
+      class: 'btn btn-secondary search-filter-toggle',
+      type: 'button',
+      'aria-controls': 'search-filters',
+      'aria-expanded': 'false',
+      onclick: () => {
+        const open = filterGrid.classList.toggle('open')
+        filterToggle.setAttribute('aria-expanded', String(open))
+      }
+    })
+
+    const imageOn = featureOn('image_search')
+    const filePick = U.el('input', { type: 'file', accept: 'image/*', hidden: true, 'aria-hidden': 'true', tabindex: '-1' })
+    const imageBtn = imageOn
+      ? U.el('button', {
+        class: 'btn btn-ghost',
+        type: 'button',
+        title: T('Search by image (or paste/drop a frame)'),
+        onclick: () => filePick.click()
+      }, [U.svg(IMAGE_ICON, 16), U.el('span', { text: T('By image') })])
+      : null
+
+    pad.append(U.el('div', { class: 'search-bar surface' }, [
+      U.el('div', { class: 'search-bar-row' }, [
+        U.el('label', { class: 'sr-only', for: 'search-q', text: T('Search anime') }),
+        U.el('div', { class: 'input-wrap search-field' }, [U.svg(SEARCH_ICON, 18), input, clear]),
+        filterToggle,
+        imageBtn,
+        imageOn ? filePick : null
+      ]),
+      filterGrid,
+      U.el('div', { class: 'search-bar-foot' }, [
+        U.el('div', { class: 'chips search-active', 'aria-live': 'polite' }),
+        sortField
+      ])
     ]))
 
-    const results = U.el('div')
+    const activeRow = pad.querySelector('.search-active')
+    const summary = U.el('p', { class: 'search-summary', 'aria-live': 'polite' })
+    const results = U.el('div', { class: 'search-results' })
     const loadMoreWrap = U.el('div', { class: 'load-more-wrap' })
-    pad.append(results, loadMoreWrap)
+    pad.append(summary, results, loadMoreWrap)
 
-    let token = 0
+    const labelOf = (key, value) => ({
+      genre: () => T(value),
+      season: () => T(U.seasonMap[value] ?? value),
+      year: () => String(value),
+      format: () => T(U.formatMap[value] ?? value),
+      status: () => T(U.statusMap[value] ?? value)
+    })[key]()
+
+    const paintChrome = () => {
+      const active = this.FILTER_KEYS.filter(k => state[k])
+      filterToggle.replaceChildren(...[U.svg(FILTER_ICON, 16), U.el('span', { text: T('Filters') }),
+        active.length ? U.el('span', { class: 'tab-count', text: String(active.length) }) : null].filter(Boolean))
+      activeRow.replaceChildren(...active.map(key => U.el('button', {
+        class: 'chip chip-removable',
+        type: 'button',
+        'aria-label': I18n.f(T('Remove filter: {name}'), { name: labelOf(key, state[key]) }),
+        onclick: () => {
+          state[key] = ''
+          selects[key].value = ''
+          reset()
+        }
+      }, [document.createTextNode(labelOf(key, state[key])), U.svg(X_ICON, 14)])))
+      if (active.length > 1) {
+        activeRow.append(U.el('button', {
+          class: 'link search-clear-all',
+          type: 'button',
+          onclick: () => {
+            for (const key of this.FILTER_KEYS) { state[key] = ''; selects[key].value = '' }
+            reset()
+          }
+        }, [document.createTextNode(T('Clear all'))]))
+      }
+      // A szöveges keresésnek nincs felkapottsági sorrendje: relevancia szerint rendez.
+      const trendingOption = selects.sort.querySelector('option[value="TRENDING_DESC"]')
+      if (trendingOption) trendingOption.textContent = state.search ? T('Relevance') : T('Trending')
+    }
+
+    // ---- az állapot a címben ----
+    const syncUrl = () => {
+      const q = new URLSearchParams()
+      if (state.search) q.set('q', state.search)
+      for (const key of this.FILTER_KEYS) if (state[key]) q.set(key, state[key])
+      if (state.sort !== 'TRENDING_DESC') q.set('sort', state.sort)
+      const next = '#/search' + (q.toString() ? '?' + q.toString() : '')
+      if (window.location.hash !== next) window.history.replaceState(window.history.state, '', next)
+    }
 
     const variables = () => ({
       search: state.search || null,
@@ -193,87 +231,155 @@ export const PageSearch = {
       status: state.status ? [state.status] : null,
       sort: [state.search && state.sort === 'TRENDING_DESC' ? 'SEARCH_MATCH' : state.sort],
       page: state.page,
-      // AniList pages by page number; the catalogue pages by offset for a text
-      // search and by cursor for a browse. All three travel together because
-      // which one answers is decided inside Catalogue.search, not here.
-      offset: (state.page - 1) * 30,
+      offset: (state.page - 1) * this.PER_PAGE,
       cursor: state.cursor,
-      perPage: 30
+      perPage: this.PER_PAGE
     })
 
-    /*
-     * A TALÁLATRA KATTINTÁS — ez köti össze a keresést a megnyitással.
-     *
-     * Ez az egyetlen szám, ami megmondja, hogy a keresés MŰKÖDIK-E: nem az
-     * számít, hányan kerestek, hanem hogy hányan találták meg, amit kerestek.
-     * A keresést eddig is mértük, a megnyitást is — a KETTŐ KÖZTI kapcsolatot
-     * nem.
-     *
-     * ESEMÉNYDELEGÁLÁS, egy figyelővel a rácson: kártyánként külön figyelő
-     * harminc találatnál harminc figyelő, és minden lapozásnál újabb harminc.
-     *
-     * A POZÍCIÓ IS MEGY, mert egy első helyen talált cím és egy huszadik
-     * helyen talált cím nem ugyanaz a siker.
-     */
+    // A találatra kattintás a keresés minőségéről szól: hányadik találat volt.
     results.addEventListener('click', event => {
-      const kartya = event.target?.closest?.('a.card')
-      if (!kartya) return
-      const id = String(kartya.getAttribute('href') ?? '').split('#/anime/')[1]
+      const card = event.target?.closest?.('a.card')
+      if (!card) return
+      const id = String(card.getAttribute('href') ?? '').split('#/anime/')[1]
       if (!id) return
-      const kartyak = [...results.querySelectorAll('a.card')]
       trackEvent('search.result.open', {
         subjectType: 'anime',
         subjectId: id,
-        position: kartyak.indexOf(kartya) + 1
+        position: [...results.querySelectorAll('a.card')].indexOf(card) + 1
       })
     })
 
+    let token = 0
+    let shown = 0
     const load = async (append = false) => {
       const current = ++token
       if (!append) {
+        shown = 0
+        summary.textContent = ''
+        results.setAttribute('aria-busy', 'true')
         results.replaceChildren(U.el('div', { class: 'grid' }, Array.from({ length: 12 }, () => C.skeletonCard())))
         loadMoreWrap.replaceChildren()
       } else {
-        loadMoreWrap.replaceChildren(P.spinner())
+        loadMoreWrap.replaceChildren(P.spinner({ small: true }))
       }
-
       try {
         const page = await Catalogue.searchOrAniList(variables())
         if (current !== token) return
-
-        const grid = append ? results.querySelector('.grid') : null
+        results.removeAttribute('aria-busy')
         const media = page.media ?? []
-
         if (!append) {
           if (!media.length) {
-            results.replaceChildren(P.emptyState(T('No results found.')))
+            const anyFilter = this.FILTER_KEYS.some(k => state[k])
+            results.replaceChildren(P.emptyState(T('No results found.'), {
+              title: state.search ? I18n.f(T('Nothing matches “{q}”'), { q: state.search }) : T('Nothing matches these filters'),
+              icon: SEARCH_ICON,
+              action: anyFilter
+                ? P.button(T('Clear filters'), {
+                  variant: 'secondary',
+                  onclick: () => {
+                    for (const key of this.FILTER_KEYS) { state[key] = ''; selects[key].value = '' }
+                    reset()
+                  }
+                })
+                : null
+            }))
           } else {
             results.replaceChildren(C.grid(media))
           }
-        } else if (grid) {
-          for (const m of media) grid.append(C.card(m))
+        } else {
+          const grid = results.querySelector('.grid')
+          for (const m of media) grid?.append(C.card(m))
         }
-
-        // Carry the cursor the catalogue browse answered with, so the next
-        // page starts where this one stopped.
+        shown += media.length
+        if (shown) summary.textContent = I18n.f(T(page.pageInfo?.hasNextPage ? '{n}+ titles' : '{n} titles'), { n: shown })
         state.cursor = page.cursor ?? null
-
         loadMoreWrap.replaceChildren()
         if (page.pageInfo?.hasNextPage) {
-          loadMoreWrap.append(U.el('button', {
-            class: 'btn btn-secondary',
+          loadMoreWrap.append(P.button(T('Load more'), {
+            variant: 'secondary',
             onclick: () => { state.page++; load(true) }
-          }, [document.createTextNode(T('Load more'))]))
+          }))
         }
       } catch (e) {
         if (current !== token) return
-        results.replaceChildren(P.errorState(T('Failed to load results: ') + e.message))
+        results.removeAttribute('aria-busy')
+        results.replaceChildren(C.errorState(e, () => load(append)))
         loadMoreWrap.replaceChildren()
       }
     }
 
-    const reset = () => { state.page = 1; state.cursor = null; load(false) }
+    const reset = () => {
+      state.page = 1
+      state.cursor = null
+      paintChrome()
+      syncUrl()
+      load(false)
+    }
 
+    // ---- képkeresés (trace.moe) ----
+    //
+    // A kép egy KÜLSŐ szolgáltatáshoz megy (api.trace.moe): ezt a gomb címe
+    // és az eredmény is kimondja. Csak akkor él, ha az üzemeltető bekapcsolta.
+    if (imageOn) {
+      const imageSearch = async blob => {
+        results.setAttribute('aria-busy', 'true')
+        results.replaceChildren(P.spinner())
+        loadMoreWrap.replaceChildren()
+        summary.textContent = T('Looking the frame up at trace.moe…')
+        try {
+          const res = await fetch('https://api.trace.moe/search?anilistInfo&cutBorders', { method: 'POST', body: blob })
+          if (!res.ok) throw new Error('trace.moe ' + res.status)
+          const json = await res.json()
+          const hits = (json.result ?? []).filter(r => r.similarity >= 0.8 && r.anilist?.id)
+          const ids = [...new Set(hits.map(r => r.anilist.id))].slice(0, 10)
+          results.removeAttribute('aria-busy')
+          if (!ids.length) {
+            summary.textContent = ''
+            results.replaceChildren(P.emptyState(T('No confident match for that frame.'), { icon: IMAGE_ICON }))
+            return
+          }
+          const page = await Catalogue.searchOrAniList({ ids, perPage: 20 })
+          results.replaceChildren(C.grid(page.media ?? []))
+          summary.textContent = I18n.f(T('Best match: {pct}% · episode {ep} (via trace.moe)'), {
+            pct: Math.round(hits[0].similarity * 100),
+            ep: hits[0].episode ?? '?'
+          })
+        } catch (e) {
+          results.removeAttribute('aria-busy')
+          summary.textContent = ''
+          results.replaceChildren(C.errorState(T('Image search failed: ') + e.message))
+        }
+      }
+      filePick.addEventListener('change', () => { if (filePick.files[0]) imageSearch(filePick.files[0]) })
+      const onPaste = e => {
+        const item = [...(e.clipboardData?.items ?? [])].find(i => i.type.startsWith('image/'))
+        if (item) imageSearch(item.getAsFile())
+      }
+      const onDragOver = e => e.preventDefault()
+      const onDrop = e => {
+        e.preventDefault()
+        const file = [...(e.dataTransfer?.files ?? [])].find(f => f.type.startsWith('image/'))
+        if (file) imageSearch(file)
+      }
+      document.addEventListener('paste', onPaste)
+      document.addEventListener('dragover', onDragOver)
+      document.addEventListener('drop', onDrop)
+      // A dokumentumszintű figyelők a lappal együtt mennek.
+      const cleanup = new MutationObserver(() => {
+        if (document.body.contains(pad)) return
+        document.removeEventListener('paste', onPaste)
+        document.removeEventListener('dragover', onDragOver)
+        document.removeEventListener('drop', onDrop)
+        cleanup.disconnect()
+      })
+      cleanup.observe(document.getElementById('page'), { childList: true })
+    }
+
+    paintChrome()
     load(false)
+    // Üres keresővel a mező kapja a fókuszt — a néző gépelni jött.
+    if (!state.search && !this.FILTER_KEYS.some(k => state[k])) {
+      window.requestAnimationFrame(() => { if (window.matchMedia?.('(pointer: fine)').matches) input.focus({ preventScroll: true }) })
+    }
   }
 }

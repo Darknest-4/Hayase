@@ -106,14 +106,35 @@ export const LibrarySync = {
         const id = row.anilist_id
         const local = existing[id]
         const dbAt = new Date(row.updated_at).getTime()
-        if (local && (local.updatedAt ?? 0) >= dbAt) continue // local is newer → it wins (and will push)
-        const media = local?.media ?? {
-          id,
-          title: { userPreferred: row.canonical_title },
-          coverImage: {},
-          format: row.format,
-          episodes: row.episode_count
+        /*
+         * A BORÍTÓ IS JÖN. A kiszolgáló sora hordozza (`cover_key`), a
+         * pillanatkép viszont eddig üres `coverImage`-dzsel készült: egy új
+         * eszközön a teljes könyvtár kép nélkül jelent meg. Egy korábbi
+         * lehúzásból maradt, kép nélküli bejegyzést is pótolunk — a helyi
+         * változat ettől nem lesz „újabb" (az időbélyege marad).
+         */
+        const cover = row.cover_key ?? null
+        const missingCover = !!local && !local.media?.coverImage?.large && !!cover
+        if (local && (local.updatedAt ?? 0) >= dbAt) {
+          // local is newer → it wins (and will push); only the picture is filled in
+          if (missingCover) {
+            pending.push({
+              media: { ...local.media, coverImage: { large: cover, extraLarge: cover } },
+              patch: { updatedAt: local.updatedAt }
+            })
+          }
+          continue
         }
+        const media = local?.media
+          ? (missingCover ? { ...local.media, coverImage: { large: cover, extraLarge: cover } } : local.media)
+          : {
+              id,
+              yumeId: row.anime_id,
+              title: { userPreferred: row.canonical_title },
+              coverImage: cover ? { large: cover, extraLarge: cover } : {},
+              format: row.format,
+              episodes: row.episode_count
+            }
         pending.push({
           media,
           patch: {

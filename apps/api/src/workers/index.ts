@@ -18,9 +18,11 @@ import { handleMetadataJob } from '../modules/metadata/worker.ts'
 import { handleMonitorJob } from '../modules/system/monitor-worker.ts'
 import { handleNotifyJob } from '../modules/notifications/worker.ts'
 import { handleStatsJob } from '../modules/system/stats-worker.ts'
+import { guardUnhandledRejections } from '../infrastructure/process/crash-guard.ts'
 
 // Who hears about a job that ran out of retries. The queue reports; this
 // decides what that means. See modules/webhooks/subscriptions.ts.
+guardUnhandledRejections('worker')
 announceDeadJobs()
 
 const handlers = {

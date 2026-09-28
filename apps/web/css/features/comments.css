@@ -1,0 +1,66 @@
+/* ===========================================================================
+   Közös: features/comments/comments.js (hozzászólások).
+
+   Betölti: minden útvonal, amelyik használja — #/community.
+   A router `ROUTE_STYLES` táblája sorolja fel; a test/route-styles.test.mjs
+   veti össze azzal, amit a képernyők ténylegesen használnak.
+   =========================================================================== */
+
+/* ===== comments ===== */
+
+.comment {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-2);
+  max-width: 52rem;
+}
+.comment-head { display: flex; gap: var(--space-2); align-items: baseline; flex-wrap: wrap; margin-bottom: var(--space-1); }
+.comment-author { font-weight: var(--weight-black); font-size: var(--text-sm); color: var(--accent); }
+.comment-time { font-size: var(--text-xs); color: var(--fg-faint); margin-left: auto; }
+.comment-body { font-size: var(--text-sm); color: var(--fg); white-space: pre-wrap; overflow-wrap: anywhere; }
+.comment-spoiler {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--fg-faint);
+  background: var(--bg-sunken);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+}
+.comment-actions { display: flex; gap: var(--space-3); margin-top: var(--space-2); }
+.comment-action {
+  background: none;
+  border: none;
+  color: var(--fg-faint);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  cursor: pointer;
+  padding: 0;
+}
+.comment-action:hover { color: var(--accent); }
+
+/* A törölt hozzászólás sírköve: ott van, de nem tartalom. A szál alakját
+   tartja — a `parent_id` cascade-je miatt egy szálindító eldobása mások
+   válaszait is elvinné. */
+.comment-deleted .comment-author,
+.comment-deleted .comment-time { opacity: .6; }
+.comment-body-deleted { color: var(--fg-faint); font-style: italic; margin: 0; }
+
+/* A törlés visszavonhatatlan, és a „Válasz" mellett egy ujjnyira van. */
+.comment-action-danger { color: var(--danger); }
+.comment-action-danger:hover:not(:disabled) { color: var(--danger); text-decoration: underline; }
+.comment-action-danger:disabled { opacity: .5; cursor: default; }
+.comment-form { margin-top: var(--space-3); max-width: 52rem; }
+.comment-input { width: 100%; resize: vertical; font-family: inherit; }
+
+/* A hozzászólás spoiler-jelölője nyers checkbox volt: 13x13, a 24px-es padló
+   alatt. A natív vezérlő méretét csak így lehet emelni. */
+.comment-spoiler { width: 1.5rem; height: 1.5rem; flex-shrink: 0; accent-color: var(--accent); cursor: pointer; }
+.comment-signin { align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: var(--space-4); }
+.comment-signin p { margin: 0; }
+
+@media (max-width: 767px) {
+  .comments-section { order: 2; }
+}

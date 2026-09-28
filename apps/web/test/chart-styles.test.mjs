@@ -19,7 +19,7 @@
 // meg hónapokig.
 
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -27,8 +27,15 @@ import { fileURLToPath } from 'node:url'
 const here = dirname(fileURLToPath(import.meta.url))
 const forras = readFileSync(join(here, '../src/shared/ui/charts.js'), 'utf8')
 
-/** Minden CSS, amit a lap betölt. */
-const css = ['tokens.css', 'components.css', 'style.css', 'admin.css', 'maintenance.css', 'player2.css']
+/**
+ * Minden CSS, amit a lap betölthet — a képernyők és a közös modulok lusta
+ * lapjai is (css/pages, css/features): a diagramok szabályai 2026-09 óta a
+ * `css/features/charts.css`-ben vannak, és csak az a képernyő tölti be, amelyik
+ * diagramot rajzol.
+ */
+const css = readdirSync(join(here, '../css'), { recursive: true })
+  .map(String)
+  .filter(f => f.endsWith('.css') && f !== 'discord.css')
   .map(f => readFileSync(join(here, '../css/', f), 'utf8'))
   .join('\n')
 

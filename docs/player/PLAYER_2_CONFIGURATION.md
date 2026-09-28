@@ -92,15 +92,28 @@ másodszor is, mielőtt a másodikhoz ért volna, és a teszt fogta meg.
 
 ## CSS
 
-A lapnak be kell töltenie a `css/player2.css`-t, **a `style.css` után**:
+A `css/player2.css` **a `style.css` után** töltődik. 2026-09 óta nem az
+`index.html` kéri minden oldalon, és nem is minden lejátszóoldal: csak ahol a
+Player 2.0 ténylegesen indul (`feature.player2`). A lejátszóoldal
+(`pages/watch.js`) a render elején a `loadPlayerStyles()`-szal indítja, a lap
+felépítése előtt megvárja (különben egy pillanatra stílus nélküli, 300×150-es
+videó látszana), és a beállítások Lejátszó füle is betölti, mert a panele
+(`.yp-settings*`) ebből rajzol. A lap `<head>`-je csak ezt a hármat kéri:
 
 ```html
 <link rel="stylesheet" href="/css/tokens.css">
 <link rel="stylesheet" href="/css/components.css">
 <link rel="stylesheet" href="/css/style.css">
-<link rel="stylesheet" href="/css/player2.css">
-<link rel="stylesheet" href="/css/admin.css">
+<!-- player2.css, admin.css, maintenance.css: lustán, a saját képernyőjük -->
 ```
 
-A sorrend szerződés, és teszt őrzi (`css-order.test.mjs`). A lejátszó a
-`tokens.css` értékein kívül alig függ bármitől — de azoktól teljesen.
+A dinamikusan beillesztett lap a `<head>` végére kerül, tehát a sorrend
+(tokens → components → style → a képernyő lapjai → player2) változatlan; a
+`css-order.test.mjs` minden lapra őrzi.
+
+**A két lejátszó közül csak az egyik töltődik le.** A Player 2.0 moduljai
+(≈36) és a régi lejátszó motorja (`stream-engine.js`, `hls-handler.js`) 2026-09
+óta dinamikus import a `pages/watch.js`-ben (`_player2Module()` /
+`_legacyEngine()`): kikapcsolt kapcsolónál a 2.0-s kód, bekapcsoltnál a régi
+motor nem jön le. A beágyazott keret (`embed-frame.js`) mindkettőé. A lejátszó a `tokens.css` értékein
+kívül alig függ bármitől — de azoktól teljesen.

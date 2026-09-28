@@ -1,0 +1,57 @@
+/* ===========================================================================
+   Közös: a belépő- és a jelszó-visszaállító oldal közös váza.
+
+   Betölti: minden útvonal, amelyik használja — #/login, #/reset.
+   A router `ROUTE_STYLES` táblája sorolja fel; a test/route-styles.test.mjs
+   veti össze azzal, amit a képernyők ténylegesen használnak.
+   =========================================================================== */
+
+/* ===== sign-in, password reset ===== */
+
+/* Two columns on a desk — what the account is for, and the form — one on a
+   phone. The page brings its own frame (body.login-route drops the nav). */
+.auth-page {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 28rem);
+  align-items: center;
+  gap: var(--space-8);
+  width: 100%;
+  max-width: 72rem;
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: var(--space-7) var(--gutter);
+}
+.auth-page::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(55rem 35rem at 10% 20%, color-mix(in oklab, var(--accent) 12%, transparent), transparent 60%),
+    radial-gradient(45rem 30rem at 90% 90%, color-mix(in oklab, var(--live) 9%, transparent), transparent 60%);
+  pointer-events: none;
+}
+
+.auth-main { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-4); width: 100%; }
+.auth-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-3);
+}
+.auth-title { font: var(--weight-black) 1.75rem/1.15 var(--font-sans); letter-spacing: -.02em; margin: 0; }
+.auth-back { align-self: center; color: var(--fg-muted); font: var(--weight-bold) .875rem/1 var(--font-sans); padding: var(--space-2); }
+.auth-back:hover { color: var(--fg); }
+
+@media (max-width: 1023px) {
+  .auth-page { grid-template-columns: minmax(0, 1fr); gap: var(--space-5); align-content: start; padding-top: var(--space-6); max-width: 32rem; }
+}
+@media (max-width: 479px) {
+  .auth-card { padding: var(--space-5) var(--space-4); border-radius: var(--radius-lg); }
+}

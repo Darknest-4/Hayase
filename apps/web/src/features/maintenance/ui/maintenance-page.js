@@ -4,6 +4,7 @@ import {
   createMaintenancePlayer,
   prefersReducedMotion
 } from '../video/maintenance-player.js'
+import { loadStylesheet } from '../../../shared/lib/stylesheet.js'
 
 /*
  * A JELVÉNY SZÖVEGE MONDJA MEG A MÓDOT, nem a színe — „no color-only
@@ -46,6 +47,7 @@ export function createMaintenancePage (
   status = {},
   options = {}
 ) {
+  loadStylesheet('maintenance.css')
   const teardown = []
 
   const node = document.createElement('main')

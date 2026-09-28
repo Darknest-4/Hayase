@@ -153,7 +153,7 @@ export const PageLogin = {
     const form = createAuthForm({
       // A cím útvonalrésze választja a fület: a `#/login/register` egy
       // hivatkozható regisztrációs lap, nem egy belépőlap egy extra kattintással.
-      mode: arg === 'register' ? 'register' : 'login',
+      mode: arg === 'register' ? 'register' : params.get('forgot') ? 'forgot' : 'login',
       onAuthed: async () => {
         /*
          * ELŐBB A CÍM, UTÁNA A FRISSÍTÉS.
@@ -167,10 +167,12 @@ export const PageLogin = {
         await afterAuth()
       },
       onModeChange: mode => {
-        cim.textContent = mode === 'login' ? T('Sign in') : T('Create an account')
+        cim.textContent = mode === 'login' ? T('Sign in') : mode === 'forgot' ? T('Elfelejtett jelszó') : T('Create an account')
         alcim.textContent = mode === 'login'
           ? T('Your list, your history and your settings follow you.')
-          : T('It takes a moment, and nothing but an email address.')
+          : mode === 'forgot'
+            ? T('Új jelszót a fiókodhoz tartozó e-mail-címre küldött linkkel állíthatsz be.')
+            : T('It takes a moment, and nothing but an email address.')
         setTitle(cim.textContent)
         /*
          * A CÍMSOR IS KÖVESSE a fület — de `replaceState`-tel, nem
@@ -180,7 +182,8 @@ export const PageLogin = {
          * fülváltást beírni: a Vissza gomb így oda visz, ahonnan jöttünk.
          */
         const query = params.get('next') ? `?next=${encodeURIComponent(params.get('next'))}` : ''
-        const target = `#/login${mode === 'register' ? '/register' : ''}${query}`
+        const forgot = mode === 'forgot' ? (query ? '&forgot=1' : '?forgot=1') : ''
+        const target = `#/login${mode === 'register' ? '/register' : ''}${query}${forgot}`
         if (window.location.hash !== target) window.history?.replaceState?.(null, '', target)
       }
     })

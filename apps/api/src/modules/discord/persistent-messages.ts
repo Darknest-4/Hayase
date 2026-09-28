@@ -228,6 +228,21 @@ export interface SyncOptions {
  * Az ujjlenyomat a zár UTÁN dől el, mert két példány egyszerre ugyanazt a
  * „nem változott" döntést hozná, és a zár nélkül mindkettő írna.
  */
+/**
+ * A csatorna tényleg ennek a guildnek a csatornája?
+ *
+ * A panel a guild jogosultságát ellenőrzi, a csatorna azonosítóját viszont a
+ * felhasználó adja. Ez a küldés előtti, mérvadó ellenőrzés: ha a Discord
+ * szerint a csatorna egy másik guildé, nem küldünk. Ha nem derül ki (nincs
+ * ilyen képessége a kliensnek, vagy a Discord nem válaszol), a küldés dönt —
+ * egy idegen csatornába a bot úgysem lát bele, ha nincs ott.
+ */
+async function sameGuild (row: PersistentMessage, client: SyncOptions['client']): Promise<boolean> {
+  if (!client.guildOf) return true
+  const owner = await client.guildOf(row.channel_id)
+  return owner === null || owner === row.guild_id
+}
+
 export async function syncMessage (row: PersistentMessage, options: SyncOptions): Promise<SyncResult> {
   const now = options.now ?? new Date()
   const owner = options.owner ?? `pid-${process.pid}`
@@ -260,6 +275,11 @@ export async function syncMessage (row: PersistentMessage, options: SyncOptions)
 
     // ---- nincs még üzenet: létrehozás ----
     if (!row.message_id) {
+      if (!await sameGuild(row, options.client)) {
+        await failRecord(row, 'a csatorna nem ehhez a szerverhez tartozik', now, MAX_FAILURES)
+        await logEvent(row.id, 'failed', 'idegen guild csatornája', Date.now() - started)
+        return { outcome: 'no_permission' }
+      }
       if (!await options.client.canPost(row.channel_id)) {
         await failRecord(row, 'a botnak nincs joga írni ebbe a csatornába', now)
         await logEvent(row.id, 'failed', 'nincs jogosultság', Date.now() - started)
@@ -287,6 +307,11 @@ export async function syncMessage (row: PersistentMessage, options: SyncOptions)
        * üzenetet, és a csatorna megtelne.
        */
       if (kind === 'message_not_found') {
+        if (!await sameGuild(row, options.client)) {
+          await failRecord(row, 'a csatorna nem ehhez a szerverhez tartozik', now, MAX_FAILURES)
+          await logEvent(row.id, 'failed', 'idegen guild csatornája', Date.now() - started)
+          return { outcome: 'no_permission' }
+        }
         if (!await options.client.canPost(row.channel_id)) {
           await failRecord(row, 'az üzenetet törölték, és nincs jogunk újat küldeni', now)
           await logEvent(row.id, 'failed', 'törölve, nincs jogosultság', Date.now() - started)

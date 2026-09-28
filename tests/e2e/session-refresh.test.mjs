@@ -170,6 +170,35 @@ describe('an expired access token does not end the session', { skip: REASON }, (
     await context.close()
   })
 
+  it('tabs that load together with an expired token refresh once, and all stay signed in', async () => {
+    // Böngésző-újraindítás, visszaállított munkamenet: sok fül EGYSZERRE,
+    // közös sütivel és közös localStorage-dzsal. Amíg a frissítés fülenként
+    // futott, mindegyik ugyanazzal a sütivel frissített, és az utolsó vesztes
+    // a közös tárat ürítette — azt a tokent is, amelyet egy másik fül épp
+    // megkapott. Mérve, négy füllel: hét frissítés, üres tár, élő munkamenet
+    // (docs/security/token-tarolas.md).
+    const name = 'sess' + randomBytes(5).toString('hex')
+    const { context, page } = await signedInWithExpiredToken(name)
+    try {
+      const refreshes = []
+      context.on('response', res => { if (res.url().endsWith('/v1/auth/refresh')) refreshes.push(res.status()) })
+      await context.route('https://**', r => r.abort())
+      const tabs = [page, ...await Promise.all(Array.from({ length: 4 }, () => context.newPage()))]
+      await Promise.all(tabs.map(tab => tab.goto(`${base}/#/notifications`, { waitUntil: 'domcontentloaded' })))
+      await page.waitForTimeout(2500)
+
+      assert.deepEqual(refreshes, [200], `öt fül, ${refreshes.length} frissítés: ${refreshes.join(', ')}`)
+      const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('yume-auth') ?? 'null')?.accessToken ?? null)
+      assert.ok(stored, 'a közös tár kiürült: minden fül kijelentkezett')
+      const status = await page.evaluate(async token =>
+        (await fetch('/v1/auth/permissions', { headers: { Authorization: 'Bearer ' + token } })).status, stored)
+      assert.equal(status, 200, 'a megmaradt token nem él')
+    } finally {
+      await context.close()
+      await pool.query('DELETE FROM users WHERE username = $1', [name])
+    }
+  })
+
   it('a reload with an expired token keeps the reader signed in', async () => {
     const name = 'sess' + randomBytes(5).toString('hex')
     const { context, page } = await signedInWithExpiredToken(name)

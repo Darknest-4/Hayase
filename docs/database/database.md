@@ -73,9 +73,16 @@ in the SQL. The patterns:
 - **Trigram GIN** (`pg_trgm`) on `anime.canonical_title` and
   `anime_synonyms.synonym` for typo-tolerant fallback search;
   **tsvector GIN** on `anime.search` (weighted title A / synopsis C,
-  maintained by trigger). This is the search backend, not a fallback — see docs/search.md.
-- **FK helper indexes** on every child side used for lookups (Postgres does
-  not auto-index FKs).
+  maintained by trigger). This is the search backend, not a fallback — see [search.md](search.md).
+- **FK helper indexes.** Postgres does not index foreign keys, and deleting
+  or merging a parent row looks up its children by the key — a scan of the
+  whole child table without an index. Migration 0081 added the ones that were
+  missing on large tables (`watch_progress`, `watch_history`,
+  `anime_recommendations`, `video_sources`, the cast and staff tables). A new
+  foreign key on a table that grows needs its index in the same migration.
+- **Time windows** over library rows (`library_entries.created_at`,
+  `favorites.created_at`) are indexed for the daily rollup and the trending
+  job (0081).
 
 ## Partitioning & retention
 
@@ -95,6 +102,10 @@ Dropping a partition is O(1) — no delete storms, no vacuum pressure.
 
 ## Scaling notes (millions of users)
 
+> **A plan, not a description.** None of this is implemented: there is one
+> Postgres, no replicas, no PgBouncer and no Redis. It records where the
+> design would go if the load ever called for it.
+
 1. **Read/write split**: catalogue reads (anime, episodes, images —
    ~80% of traffic) go to replicas; per-user data reads from the primary
    to avoid replica-lag anomalies in "my list".
@@ -109,6 +120,23 @@ Dropping a partition is O(1) — no delete storms, no vacuum pressure.
    table that could someday warrant sharding is `watch_progress` /
    `library_entries` (per-profile key → clean hash-shard boundary, or
    citus if it comes to that).
+
+## The job queue and sessions (migrations 0079–0080)
+
+- **`jobs.dead_at`** marks a job that ran out of attempts. The dedupe index
+  (`queue`, `payload->>'dedupe'`) covers only live jobs (`done_at IS NULL AND
+  dead_at IS NULL`), so a dead job no longer blocks the next enqueue of the
+  same work — before this, a recurring job with a fixed key (`maintenance`,
+  `monitor`) that died stayed silent for the 30 days until pruning.
+- **`jobs.lease_id`** is minted on every claim. Heartbeats, completion and
+  failure apply only while the row still carries it, so a run whose lease was
+  reclaimed cannot mark its replacement done.
+- **`sessions.started_at`** is the sign-in time, carried over on every
+  refresh rotation (`created_at` is the time of the last rotation).
+  **`sessions.rotated_at`** marks a session retired by a refresh, which is how
+  a replayed refresh token is recognised.
+- **`ws_tickets.session_id` / `token_version`** bind a WebSocket to the
+  session that opened it.
 
 ## Local development
 

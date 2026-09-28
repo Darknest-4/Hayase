@@ -253,7 +253,7 @@ export class AnimeRepository extends Repository {
        JOIN anime a ON a.id = r.related_id
        ${COVER}
        ${MAPPING}
-       WHERE r.anime_id = $1`,
+       WHERE r.anime_id = $1 AND a.visibility = 'public'`,
       [id]
     )
   }
@@ -278,12 +278,22 @@ export class AnimeRepository extends Repository {
     relation: string | null, depth: number
   }>> {
     return this.query(
+      /*
+       * Both directions of an edge, as two index lookups rather than one join
+       * on `anime_id = w.id OR related_id = w.id`. The OR cannot use either
+       * index, so every step of the walk read the whole relations table —
+       * 421,108 sequential scans of it in production before this changed.
+       */
       `WITH RECURSIVE walk AS (
          SELECT $1::uuid AS id, 0 AS depth
          UNION
-         SELECT CASE WHEN r.anime_id = w.id THEN r.related_id ELSE r.anime_id END, w.depth + 1
+         SELECT n.id, w.depth + 1
            FROM walk w
-           JOIN anime_relations r ON r.anime_id = w.id OR r.related_id = w.id
+           CROSS JOIN LATERAL (
+             SELECT r.related_id AS id FROM anime_relations r WHERE r.anime_id = w.id
+             UNION ALL
+             SELECT r.anime_id FROM anime_relations r WHERE r.related_id = w.id
+           ) n
           WHERE w.depth < 2
        ),
        nodes AS (SELECT id, min(depth) AS depth FROM walk GROUP BY id)

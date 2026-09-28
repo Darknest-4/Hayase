@@ -10,7 +10,7 @@
 // than an accident of the schema: one household can have a Hungarian child
 // profile and an English adult profile on the same login.
 //
-// What may be stored is decided entirely by lib/preferences.ts. This file
+// What may be stored is decided entirely by modules/profiles/preferences.ts. This file
 // contains no list of keys.
 
 import { query, queryOne } from '../../infrastructure/database/index.ts'

@@ -24,11 +24,19 @@ import { queryOne } from '../infrastructure/database/index.ts'
 
 import type { FastifyReply, FastifyRequest } from 'fastify'
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 /** A fejlécben megnevezett profil, ha a hívóé. Semmi mást nem ad vissza. */
 async function owned (request: FastifyRequest): Promise<string | undefined> {
   const sub = request.user?.sub
   const header = request.headers['x-profile-id']
   if (!sub || typeof header !== 'string' || !header) return undefined
+  // The header is client-supplied. Anything that is not a uuid is not one of
+  // this account's profiles — and handed to Postgres it is not a miss but an
+  // error (22P02), which surfaced as a 500 on every route that reads it, and
+  // as an unhandled rejection that ended the process on the one that did not
+  // wait for it.
+  if (!UUID.test(header)) return undefined
   const row = await queryOne<{ id: string }>(
     'SELECT id FROM user_profiles WHERE id = $1 AND user_id = $2', [header, sub])
   return row?.id

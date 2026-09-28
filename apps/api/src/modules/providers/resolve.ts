@@ -23,7 +23,7 @@ import { ranked } from './registry.ts'
 import * as health from './health.ts'
 import { recordAttempts } from './metrics.ts'
 
-import type { EpisodeRef, ProviderResult, ProviderSource } from './types.ts'
+import type { Attempt, EpisodeRef, ProviderResult, ProviderSource } from './types.ts'
 import { scrubHeaders } from './scrub.ts'
 
 /** Ennyi idő után feladjuk egy szolgáltatónál. */
@@ -37,14 +37,9 @@ const TIMEOUT_MS = 8_000
  */
 const CACHE_MS = 5 * 60_000
 
-/** Egy lépés a láncban — ez megy a válaszba és a naplóba. */
-export interface Attempt {
-  provider: string
-  outcome: 'ok' | 'empty' | 'error' | 'skipped' | 'timeout'
-  sources: number
-  ms: number
-  detail?: string
-}
+// The attempt record lives with the other provider types, so the metrics
+// module can use it without importing the resolver (and the resolver it).
+export type { Attempt } from './types.ts'
 
 export interface Resolution extends ProviderResult {
   /** Melyik szolgáltatótól van az eredmény. `null`, ha egyiktől sem. */
@@ -58,6 +53,30 @@ const cache = new Map<string, CacheEntry>()
 
 /** Csak tesztekhez. */
 export function clearCache (): void { cache.clear() }
+
+/**
+ * A gyorsítótár mérete korlátos.
+ *
+ * Egy lejárt bejegyzést csak az olvasás dobott el, tehát amit soha többé nem
+ * kérdeztek meg — egy egyszer megnézett epizód —, az a folyamat végéig
+ * megmaradt. Epizódonként és változatonként egy sor, forrás-URL-ekkel: egy
+ * hosszan futó példányban ez lassan, de korlát nélkül nőtt.
+ */
+const CACHE_MAX = Number(process.env.PROVIDER_CACHE_MAX ?? 5_000)
+
+function remember (key: string, entry: CacheEntry): void {
+  if (cache.size >= CACHE_MAX) {
+    const now = Date.now()
+    for (const [k, v] of cache) if (v.until <= now) cache.delete(k)
+    // Still full of live entries: drop the oldest (a Map iterates in insertion order).
+    while (cache.size >= CACHE_MAX) {
+      const oldest = cache.keys().next()
+      if (oldest.done) break
+      cache.delete(oldest.value)
+    }
+  }
+  cache.set(key, entry)
+}
 
 /**
  * A gyorsítótár kulcsa.
@@ -180,7 +199,7 @@ export async function resolveEpisode (ref: EpisodeRef): Promise<Resolution> {
           fromCache: false,
           attempts
         }
-        cache.set(key, { at: now, until: expiryOf(result.sources, Date.now()), value })
+        remember(key, { at: now, until: expiryOf(result.sources, Date.now()), value })
         // A MÉRÉS A VÁLASZ ELŐTT, de nem a válasz ÁRÁN: memóriába gyűl,
         // kötegben megy ki. Lásd `metrics.ts`.
         recordAttempts(attempts)

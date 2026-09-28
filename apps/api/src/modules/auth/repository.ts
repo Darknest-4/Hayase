@@ -153,22 +153,17 @@ export class AuthRepository extends Repository {
 
       if (promoted.length) {
         /*
-         * The first account owns the instance, so it starts with the
-         * catalogue already in its library — every title finished, every
-         * episode watched, every achievement unlocked.
+         * No catalogue is written into this account.
          *
-         * Enqueued rather than done here, and on this client rather than the
-         * pool: it is 25,703 library rows and 333,021 episodes on the instance
-         * this was written for, which is seconds of set-based SQL but not
-         * seconds a registration request should spend. Writing it inside the
-         * transaction means a registration that rolls back does not leave a
-         * job pointing at an account that was never created.
+         * It used to be: the bootstrap queued the founder job, which marked
+         * every episode of every title watched, unlocked every achievement and
+         * awarded the XP that follows. That is invented history, and it went
+         * into the same tables the statistics, the leaderboard and the
+         * analytics read — in production, 364,065 of the watch-progress rows
+         * belonged to two profiles. Filling an account like that is now an
+         * explicit operator action (`npm run seed:founder`, or the `founder`
+         * compose profile), never a side effect of registering.
          */
-        await client.query(
-          `INSERT INTO jobs (queue, payload, run_at)
-           VALUES ('founder', $1::jsonb, now()) ON CONFLICT DO NOTHING`,
-          [JSON.stringify({ dedupe: 'founder:' + userId })]
-        )
 
         // Becoming an administrator is the single most consequential thing
         // that can happen to an account, and it happens here without anyone
@@ -284,11 +279,14 @@ export class AuthRepository extends Repository {
     userId: string, refreshHash: string, ip: string | null, userAgent: string | null, expiresAt: Date
     /** Melyik eszközről. Lásd `rememberDevice` — a `devices` sor azonosítója. */
     deviceId?: string | null | undefined
+    /** The sign-in this refresh chain began with; `now()` for a sign-in itself. */
+    startedAt?: Date | null | undefined
   }): Promise<{ id: string } | undefined> {
     return this.queryOne<{ id: string }>(
-      `INSERT INTO sessions (user_id, refresh_hash, ip, user_agent, expires_at, device_id)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-      [session.userId, session.refreshHash, session.ip, session.userAgent, session.expiresAt, session.deviceId ?? null]
+      `INSERT INTO sessions (user_id, refresh_hash, ip, user_agent, expires_at, device_id, started_at)
+       VALUES ($1, $2, $3, $4, $5, $6, coalesce($7, now())) RETURNING id`,
+      [session.userId, session.refreshHash, session.ip, session.userAgent, session.expiresAt,
+        session.deviceId ?? null, session.startedAt ?? null]
     )
   }
 
@@ -323,20 +321,31 @@ export class AuthRepository extends Repository {
     return row?.id
   }
 
-  /** The session behind a refresh token, if it is live and the account is active. */
-  sessionByRefreshHash (refreshHash: string): Promise<{ id: string, user_id: string, username: string } | undefined> {
+  /**
+   * Trade a refresh token for its session, once.
+   *
+   * One statement: the session is claimed and retired together, so two
+   * requests presenting the same token cannot both get a new session — which
+   * the previous look-up-then-revoke pair allowed, leaving two live sessions
+   * behind one token. Only an active account's session is claimed.
+   */
+  rotateSession (refreshHash: string): Promise<{ id: string, user_id: string, username: string, started_at: Date } | undefined> {
     return this.queryOne(
-      `SELECT s.id, s.user_id, u.username
-         FROM sessions s JOIN users u ON u.id = s.user_id
-        WHERE s.refresh_hash = $1 AND s.revoked_at IS NULL
-          AND s.expires_at > now() AND u.status = 'active'`,
+      `UPDATE sessions s SET revoked_at = now(), rotated_at = now()
+         FROM users u
+        WHERE s.refresh_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()
+          AND u.id = s.user_id AND u.status = 'active' AND u.deleted_at IS NULL
+        RETURNING s.id, s.user_id, u.username, s.started_at`,
       [refreshHash]
     )
   }
 
-  /** Rotation: the used session dies as the new one is minted. */
-  revokeSession (sessionId: string): Promise<unknown> {
-    return this.query('UPDATE sessions SET revoked_at = now() WHERE id = $1', [sessionId])
+  /** The session a refresh token WAS for, if a refresh already retired it. */
+  rotatedSession (refreshHash: string): Promise<{ user_id: string, rotated_at: Date } | undefined> {
+    return this.queryOne(
+      'SELECT user_id, rotated_at FROM sessions WHERE refresh_hash = $1 AND rotated_at IS NOT NULL',
+      [refreshHash]
+    )
   }
 
   /** Sign out of one device. Scoped to the owner so a stolen id revokes nothing. */
@@ -365,19 +374,21 @@ export class AuthRepository extends Repository {
 
   // --------------------------------------------------------------- resets
 
-  /** A second click must not leave the first token usable. */
-  supersedeResets (userId: string): Promise<unknown> {
-    return this.query(
-      'UPDATE password_resets SET used_at = now() WHERE user_id = $1 AND used_at IS NULL',
-      [userId]
-    )
-  }
-
-  openReset (reset: { userId: string, tokenHash: string, ip: string, expiresAt: Date }): Promise<unknown> {
-    return this.query(
-      'INSERT INTO password_resets (user_id, token_hash, requested_ip, expires_at) VALUES ($1, $2, $3, $4)',
-      [reset.userId, reset.tokenHash, reset.ip, reset.expiresAt]
-    )
+  /**
+   * Retire every outstanding reset for the account and open a new one — as
+   * one locked unit. A second click must not leave the first token usable,
+   * and two requests arriving together must not each retire the other's
+   * predecessor and leave two usable tokens behind.
+   */
+  replaceReset (reset: { userId: string, tokenHash: string, ip: string, expiresAt: Date }): Promise<void> {
+    return this.transaction(async (client: pg.PoolClient) => {
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`password-reset:${reset.userId}`])
+      await client.query(
+        'UPDATE password_resets SET used_at = now() WHERE user_id = $1 AND used_at IS NULL', [reset.userId])
+      await client.query(
+        'INSERT INTO password_resets (user_id, token_hash, requested_ip, expires_at) VALUES ($1, $2, $3, $4)',
+        [reset.userId, reset.tokenHash, reset.ip, reset.expiresAt])
+    })
   }
 
   /**
@@ -410,12 +421,15 @@ export class AuthRepository extends Repository {
     return rows.map(row => row.slug)
   }
 
-  openWsTicket (ticketHash: string, userId: string, expiresAt: Date): Promise<unknown> {
+  openWsTicket (ticket: {
+    hash: string, userId: string, expiresAt: Date, sessionId: string | null, tokenVersion: number | null
+  }): Promise<unknown> {
     return this.query(
-      'INSERT INTO ws_tickets (ticket, user_id, expires_at) VALUES ($1, $2, $3)',
-      [ticketHash, userId, expiresAt]
+      'INSERT INTO ws_tickets (ticket, user_id, expires_at, session_id, token_version) VALUES ($1, $2, $3, $4, $5)',
+      [ticket.hash, ticket.userId, ticket.expiresAt, ticket.sessionId, ticket.tokenVersion]
     )
   }
+
 
   /**
    * The security log.

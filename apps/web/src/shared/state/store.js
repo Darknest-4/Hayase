@@ -408,7 +408,7 @@ export const Store = {
         type: 'resume',
         icon: '⏳',
         title: entry.media && U.title(entry.media),
-        body: `You left off at episode ${entry.progress} — pick it back up?`,
+        body: I18n.f(I18n.t('You left off at episode {n} — pick it back up?'), { n: entry.progress }),
         mediaId: entry.media.id,
         href: `#/watch/${entry.media.id}:${entry.progress + 1}`,
         at: entry.updatedAt ?? now
@@ -427,8 +427,8 @@ export const Store = {
           id: `ach:${slug}`,
           type: 'achievement',
           icon: meta.icon,
-          title: 'Achievement unlocked',
-          body: `${meta.name} — ${meta.desc}`,
+          title: I18n.t('Achievement unlocked'),
+          body: `${I18n.t(meta.name)} — ${I18n.t(meta.desc)}`,
           href: '#/achievements',
           at: now,
           // brand-new unlocks (not in the previous snapshot) start unread

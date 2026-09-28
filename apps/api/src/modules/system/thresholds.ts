@@ -77,7 +77,7 @@ export const DEFAULTS = {
   'queue.pending': { warn: 100, crit: 1000, unit: 'count', rationale: 'Runnable job backlog. Sustained growth means the worker is down or under-provisioned.' },
 
   // Jobs that exhausted their retries — each one is lost work.
-  'queue.dead': { warn: 1, crit: 25, unit: 'count', rationale: 'Jobs past max_attempts. Each represents lost work and needs operator attention.' },
+  'queue.dead': { warn: 1, crit: 25, unit: 'count', rationale: 'Jobs that ran out of attempts (dead_at). Each represents lost work and needs operator attention.' },
 
   /*
    * A legutóbbi ELLENŐRZÖTT mentés kora, órában.

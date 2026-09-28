@@ -88,7 +88,8 @@ export function viewerProfile () {
  * széttartást adná, ami miatt ez a modul bővült — a belépőlap eltűnése a
  * menüből egy privát példányon azt jelentené, hogy nincs út befelé.
  */
-export const GATE_EXEMPT = ['settings', 'landing', 'login']
+// `reset` too: the link in a reset mail must open on a private instance.
+export const GATE_EXEMPT = ['settings', 'landing', 'login', 'reset']
 
 /**
  * Elérhető-e ez az oldal ANNAK, AKI ÉPP NÉZI.

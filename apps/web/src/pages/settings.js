@@ -2,66 +2,114 @@
 // Settings — categorized into sections (Account, Appearance, Content,
 // Notifications, Data, About) with a left-hand tab rail, Netflix/Discord
 // style. Each section is a builder that returns its content node.
+//
+// 2026-09: the account section gained what the server has always offered and
+// the client never exposed — changing the password, signing out on every
+// device and deleting the account (POST /v1/auth/password, POST
+// /v1/auth/logout-all, DELETE /v1/auth/me). The rail's emoji became the same
+// line icons as the navigation, and every switch is a real role="switch".
 
 import { afterAuth, applyNavCollapsed, navigate, refreshChrome, refreshNotifications } from '../shared/lib/shell.js'
 import { configure, featureOn, flagDeclared, site } from '../shared/lib/site-config.js'
-import { T } from '../shared/i18n/i18n.js'
-import { LibrarySync } from '../features/library-sync/library-sync.js'
-import { Onboarding } from '../features/onboarding/onboarding.js'
+import { I18n, T } from '../shared/i18n/i18n.js'
+import { ONBOARDING_CHOICES } from '../features/onboarding/meta.js'
 import { Prefs } from '../shared/state/preferences.js'
 import { Store } from '../shared/state/store.js'
 import { U } from '../shared/lib/dom.js'
+import { C } from '../shared/ui/components.js'
+import { P } from '../shared/ui/primitives.js'
+import { authErrorMessage, passwordField } from '../features/auth/password-field.js'
 import { YumeAPI } from '../shared/api/yume.js'
-import { ArtworkPicker } from '../features/profile-artwork/picker.js'
-import { PageThemes } from '../features/themes/themes.js'
-import { createSettingsPanel } from '../features/player2/ui/settings-panel.js'
-import { createPlayerPreferences } from '../features/player2/preferences/player-preferences.js'
+import { loadStylesheet } from '../shared/lib/stylesheet.js'
 
 export const PageSettings = {
-  SECTIONS: [
-  // Labels are stored in English and translated where they are rendered, not
-  // here: this literal is evaluated once when the script loads, so a T() call
-  // in it would freeze the label in whatever language was active at boot and
-  // never follow a language switch.
-    { key: 'account', label: 'Account', icon: '👤' },
-    { key: 'language', label: 'Language', icon: '🌐' },
-    { key: 'appearance', label: 'Appearance', icon: '🎨' },
-    { key: 'content', label: 'Content', icon: '🔞' },
-    // A lejátszó fül CSAK a Player 2.0 mellett jelenik meg: a panel a 2.0
-    // beállítássémájából épül, és a régi lejátszó egyik mezőt sem olvassa.
-    // Egy fül, amin minden kapcsoló hatástalan, rosszabb, mint egy hiányzó.
-    ...(flagDeclared('feature.player2') && featureOn('player2')
-      ? [{ key: 'player', label: 'Player', icon: '▶️' }]
-      : []),
-    { key: 'notifications', label: 'Notifications', icon: '🔔' },
-    { key: 'data', label: 'Data', icon: '💾' },
-    { key: 'about', label: 'About', icon: 'ℹ️' }
-  ],
+  /*
+   * GETTER, NEM TÖMB: a lejátszó fül a `feature.player2` kapcsolótól függ, és a
+   * router a kezdő útvonal modulját már a konfiguráció megérkezése ELŐTT
+   * betölti (párhuzamosan vele). Egy betöltéskor kiértékelt tömb így a
+   * kapcsoló nélkül állt össze, és a fül eltűnt — rajzoláskor kérdezzük.
+   */
+  get SECTIONS () {
+    return [
+      // Labels are stored in English and translated where they are rendered
+      // (the rail and the page title), so every label has one translation path.
+      { key: 'account', label: 'Account', icon: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>' },
+      { key: 'language', label: 'Language', icon: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>' },
+      { key: 'appearance', label: 'Appearance', icon: '<circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>' },
+      { key: 'content', label: 'Content', icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>' },
+      // A lejátszó fül CSAK a Player 2.0 mellett jelenik meg: a panel a 2.0
+      // beállítássémájából épül, és a régi lejátszó egyik mezőt sem olvassa.
+      // Egy fül, amin minden kapcsoló hatástalan, rosszabb, mint egy hiányzó.
+      ...(flagDeclared('feature.player2') && featureOn('player2')
+        ? [{ key: 'player', label: 'Player', icon: '<polygon points="6 3 20 12 6 21 6 3"/>' }]
+        : []),
+      { key: 'notifications', label: 'Notifications', icon: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>' },
+      { key: 'data', label: 'Data', icon: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/>' },
+      { key: 'about', label: 'About', icon: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>' }
+    ]
+  },
 
-  render (root, params) {
-    const pad = U.el('div', { class: 'page-pad' })
+  async render (root, params) {
+    const wanted = params.get('tab') ?? 'account'
+    const active = this.SECTIONS.some(s => s.key === wanted) ? wanted : 'account'
+    // Csak a megnyitott fül saját moduljai töltődnek le — a témaválasztó, a
+    // lejátszó beállításpanele és a könyvtár-szinkron nem kell minden fülhöz.
+    await this._loadTab(active)
+
+    const pad = U.el('div', { class: 'page-pad settings-page' })
     root.append(pad)
-    pad.append(U.el('h1', { class: 'page-title', text: T('Settings') }))
+    pad.append(U.el('header', { class: 'page-header' }, [
+      U.el('div', { class: 'page-header-text' }, [
+        U.el('h1', { class: 'page-title', text: T('Settings') })
+      ])
+    ]))
 
-    const active = params.get('tab') ?? 'account'
     const layout = U.el('div', { class: 'settings-layout' })
     pad.append(layout)
 
-    // ---- tab rail ----
-    const rail = U.el('nav', { class: 'settings-rail' })
+    // Hivatkozások, nem gombok: minden fülnek saját címe van, a vissza gomb
+    // működik, és egy fül megosztható.
+    const rail = U.el('nav', { class: 'settings-rail', 'aria-label': T('Settings') })
     for (const s of this.SECTIONS) {
       rail.append(U.el('a', {
         class: 'settings-tab' + (s.key === active ? ' active' : ''),
-        href: `#/settings?tab=${s.key}`
-      }, [U.el('span', { class: 'settings-tab-icon', text: s.icon }), document.createTextNode(T(s.label))]))
+        href: `#/settings?tab=${s.key}`,
+        ...(s.key === active ? { 'aria-current': 'page' } : {})
+      }, [U.svg(s.icon, 18), U.el('span', { text: T(s.label) })]))
     }
     layout.append(rail)
 
-    // ---- panel ----
     const panel = U.el('div', { class: 'settings-panel' })
     layout.append(panel)
     const builder = this['_' + active] ?? this._account
     panel.append(builder.call(this))
+    // Telefonon a fülsor vízszintesen görget: a kiválasztott fül látsszon.
+    window.requestAnimationFrame(() => rail.querySelector('.active')?.scrollIntoView?.({ block: 'nearest', inline: 'center' }))
+  },
+
+  /**
+   * Egy fül saját moduljai, a rajzolás előtt.
+   *
+   * Eddig mind statikus import volt, tehát a Fiók fül megnyitása is letöltötte
+   * a témaválasztót, a lejátszó beállításpanelét (a sémájával) és a
+   * könyvtár-szinkront. A lejátszó fül paneljét ráadásul a lejátszó saját
+   * stíluslapja rajzolja (`.yp-settings*`, player2.css), ami csak a
+   * lejátszóoldalon jött le — friss betöltés után a panel stílus nélkül állt.
+   */
+  async _loadTab (tab) {
+    if (tab === 'player') {
+      const [panel, prefs] = await Promise.all([
+        import('../features/player2/ui/settings-panel.js'),
+        import('../features/player2/preferences/player-preferences.js'),
+        loadStylesheet('player2.css')
+      ])
+      this._playerPanel = { createSettingsPanel: panel.createSettingsPanel, createPlayerPreferences: prefs.createPlayerPreferences }
+    } else if (tab === 'appearance') {
+      this._themes = (await import('../features/themes/themes.js')).PageThemes
+    } else if (tab === 'account' && YumeAPI.user()) {
+      // Belépve a router már betöltötte (a szinkron vele indul): ez nem új letöltés.
+      this._sync = (await import('../features/library-sync/library-sync.js')).LibrarySync
+    }
   },
 
   /**
@@ -72,6 +120,7 @@ export const PageSettings = {
    * különbség csendben egy beállítás, amit nem lehet átállítani.
    */
   _player () {
+    const { createSettingsPanel, createPlayerPreferences } = this._playerPanel
     const prefs = createPlayerPreferences(Prefs)
     const panel = createSettingsPanel(prefs, {
       onChange: () => {
@@ -114,14 +163,26 @@ export const PageSettings = {
       ]),
       control ? U.el('div', { class: 'setting-row-control' }, Array.isArray(control) ? control : [control]) : null
     ])
-    // A SOR NEVE A VEZÉRLŐ NEVE. Egy képernyőolvasó a fölötte álló szöveget
-    // nem kapcsolja a mezőhöz — enélkül több beállítás puszta „szerkesztőmező"
-    // néven szólalt meg. Itt alkalmazva, nem a hívási helyeken: minden sor
-    // megkapja, és egy új sor nem felejtheti el.
+    // Every control needs a name a screen reader can say. The row's own title
+    // is that name unless the control already has one.
     for (const field of card.querySelectorAll('input, select, textarea')) {
       if (!field.getAttribute('aria-label') && !field.closest('label')) field.setAttribute('aria-label', T(title))
     }
     return card
+  },
+
+  /** Egy kapcsoló (`role="switch"`), a sor címével mint névvel. */
+  _switch (checked, onchange) {
+    return U.el('label', { class: 'switch' }, [
+      U.el('input', { type: 'checkbox', role: 'switch', checked: !!checked, onchange })
+    ])
+  },
+
+  /** Egy legördülő a közös `.select` stílussal. options: [[value, label]] */
+  _select (options, value, onchange) {
+    const select = P.select(options.map(([v, label]) => [v, T(label)]), { value })
+    select.addEventListener('change', () => onchange(select.value))
+    return select
   },
 
   /**
@@ -131,10 +192,10 @@ export const PageSettings = {
    * beállításlapon a valódi címsor az oldal neve — húsz `h2` egymás alatt a
    * képernyőolvasónak is zajt jelent, nem szerkezetet.
    */
-  _group (title, rows) {
+  _group (title, rows, { danger = false } = {}) {
     const real = rows.filter(Boolean)
     if (!real.length) return null
-    return U.el('section', { class: 'settings-group' }, [
+    return U.el('section', { class: 'settings-group' + (danger ? ' settings-group-danger' : '') }, [
       title ? U.el('h2', { class: 'settings-group-head', text: T(title) }) : null,
       U.el('div', { class: 'settings-group-body' }, real)
     ])
@@ -148,71 +209,195 @@ export const PageSettings = {
   // került bele. A belépésnek saját lapja van (`#/login`), fülekkel; ez a
   // szakasz csak megmondja, hol tartunk, és odavisz.
   _account () {
-    const wrap = U.el('div')
+    const wrap = U.el('div', { class: 'settings-stack' })
     const settings = Store.settings()
     const user = YumeAPI.user()
-
-    /*
-     * Az ÁLLAPOT az első sor, mert ez az első kérdés: be vagyok-e lépve.
-     * Eddig a lap tetején egy „Profil neve" mező állt, és a fiók állapota
-     * valahol alatta — vagyis a legfontosabb információ volt a legkevésbé
-     * szem előtt.
-     */
     const here = String(window.location.hash || '').replace(/^#\/?/, '').split('?')[0]
     const next = here ? `?next=${encodeURIComponent(here)}` : ''
 
-    wrap.append(this._group('Account', [
-      user
-        ? this._row('Signed in', `${T('Signed in as ')}${user.username}.`,
-          U.el('button', {
-            class: 'btn btn-secondary btn-sm',
-            onclick: async () => { await YumeAPI.logout(); await afterAuth() }
-          }, [document.createTextNode(T('Sign out'))]))
-        : this._row('Not signed in',
-          'Sign in to sync your library across devices and join the discussion.',
-          [
-            U.el('a', { class: 'btn btn-primary btn-sm', href: `#/login${next}` },
-              [document.createTextNode(T('Sign in'))]),
-            U.el('a', { class: 'btn btn-ghost btn-sm', href: `#/login/register${next}` },
-              [document.createTextNode(T('Create account'))])
-          ]),
-
-      this._row('Profile name', 'Shown on your profile page.',
-        U.el('input', {
-          class: 'input',
-          type: 'text',
-          maxlength: '50',
-          value: settings.profileName ?? '',
-          placeholder: T('Dreamer'),
-          onchange: e => Store.saveSettings({ profileName: e.target.value.trim() || undefined })
-        })),
-
-      user ? this._syncRow() : null
-    ]))
-
-    /*
-     * A KÉPEK a fiókhoz tartoznak, nem a megjelenéshez: ez az, akinek
-     * látszol, nem az, ahogy neked látszik az oldal. Csak belépve, mert a
-     * fiókon tárolódik — és saját csoportot kap, mert a választó nem egy sor,
-     * hanem egy rács.
-     */
-    if (user) {
-      const cards = U.el('div', { class: 'settings-group-body', style: 'padding:var(--space-4);' })
-      wrap.append(U.el('section', { class: 'settings-group' }, [
-        U.el('h2', { class: 'settings-group-head', text: T('Profile artwork') }),
-        cards
+    if (!user) {
+      wrap.append(U.el('section', { class: 'settings-hero surface' }, [
+        U.el('div', {}, [
+          U.el('h2', { class: 'surface-title', text: T('Not signed in') }),
+          U.el('p', { class: 'surface-sub', text: T('Sign in to sync your library across devices and join the discussion.') })
+        ]),
+        U.el('div', { class: 'cluster' }, [
+          U.el('a', { class: 'btn btn-primary', href: `#/login${next}` }, [document.createTextNode(T('Sign in'))]),
+          site()?.registrationOpen === false
+            ? null
+            : U.el('a', { class: 'btn btn-ghost', href: `#/login/register${next}` }, [document.createTextNode(T('Create account'))])
+        ])
       ]))
-      YumeAPI.profile.get()
-        .then(profile => cards.replaceChildren(ArtworkPicker.cards(profile, updated => {
-          // The sidebar and the mobile sheet draw the same face, so they are
-          // told rather than left to refresh on the next navigation.
-          refreshChrome()
-          configure({ viewer: updated })
-        })))
-        .catch(() => { /* offline or signed out mid-render; the cards stay out */ })
+      wrap.append(this._group('Profile', [
+        this._row('Profile name', 'Shown on your profile page.', this._profileName(settings))
+      ]))
+      return wrap
     }
 
+    // ---- ki van belépve ----
+    const head = U.el('section', { class: 'settings-hero surface' }, [
+      U.el('div', { class: 'settings-who' }, [
+        C.avatar({ name: user.username }, { size: 'md' }),
+        U.el('div', { style: 'min-width:0' }, [
+          U.el('h2', { class: 'surface-title', text: user.username }),
+          U.el('p', { class: 'surface-sub', text: I18n.f(T('Signed in as {name}'), { name: '@' + user.username }) })
+        ])
+      ]),
+      U.el('button', {
+        class: 'btn btn-secondary',
+        type: 'button',
+        onclick: async () => { await YumeAPI.logout(); U.toast(T('You are signed out.')); await afterAuth() }
+      }, [document.createTextNode(T('Sign out'))])
+    ])
+    wrap.append(head)
+
+    wrap.append(this._group('Profile', [
+      this._row('Profile name', 'Shown on your profile page.', this._profileName(settings)),
+      this._syncRow()
+    ]))
+
+    const cards = U.el('div', { class: 'settings-group-body settings-group-padded' })
+    wrap.append(U.el('section', { class: 'settings-group' }, [
+      U.el('h2', { class: 'settings-group-head', text: T('Profile artwork') }),
+      cards
+    ]))
+    // A profilkép-választó a profil adataival együtt jön: csak belépve kell.
+    Promise.all([YumeAPI.profile.get(), import('../features/profile-artwork/picker.js')])
+      .then(([profile, { ArtworkPicker }]) => {
+        cards.replaceChildren(ArtworkPicker.cards(profile, updated => {
+          refreshChrome()
+          configure({ viewer: updated })
+        }))
+        const avatar = head.querySelector('.avatar')
+        if (avatar && profile) avatar.replaceWith(C.avatar(profile, { size: 'md' }))
+      })
+      .catch(() => { /* offline or signed out mid-render; the cards stay out */ })
+
+    wrap.append(this._group('Security', [
+      this._row('Password', 'Changing it signs you out everywhere else; this device stays signed in.',
+        P.button(T('Change password'), { variant: 'secondary', onclick: () => this._changePassword() })),
+      this._row('Sign out everywhere', 'Ends every session of this account — phones, other browsers, this one too. Use it if you think somebody else is signed in.',
+        P.button(T('Sign out everywhere'), { variant: 'secondary', onclick: () => this._logoutAll() }))
+    ]))
+
+    wrap.append(this._group('Danger zone', [
+      this._row('Delete account', 'Your email address, username and password are erased and every session ends. Comments you wrote stay, without your name. This cannot be undone.',
+        P.button(T('Delete account'), { variant: 'danger', onclick: () => this._deleteAccount() }))
+    ], { danger: true }))
     return wrap
+  },
+
+  _profileName (settings) {
+    return U.el('input', {
+      class: 'input',
+      type: 'text',
+      maxlength: '50',
+      value: settings.profileName ?? '',
+      placeholder: T('Dreamer'),
+      onchange: e => {
+        Store.saveSettings({ profileName: e.target.value.trim() || undefined })
+        U.toast(T('Saved'), 'success')
+      }
+    })
+  },
+
+  /** Jelszócsere: jelenlegi + új kétszer, a kiszolgáló szabályaival. */
+  _changePassword () {
+    const current = P.input({ type: 'password', name: 'current-password', autocomplete: 'current-password', required: true, minlength: 8, maxlength: 128 })
+    const fresh = P.input({ type: 'password', name: 'new-password', autocomplete: 'new-password', required: true, minlength: 8, maxlength: 128 })
+    const again = P.input({ type: 'password', name: 'confirm-password', autocomplete: 'new-password', required: true, minlength: 8, maxlength: 128 })
+    const error = U.el('p', { class: 'field-error', role: 'alert', hidden: true })
+    const submit = P.button(T('Save password'), { variant: 'primary', type: 'submit' })
+    const form = U.el('form', { class: 'dialog-form' }, [
+      P.field(T('Current password'), passwordField(current)),
+      P.field(T('New password'), passwordField(fresh), { hint: T('At least 8 characters.') }),
+      P.field(T('New password again'), passwordField(again)),
+      error
+    ])
+    const fail = message => { error.textContent = message; error.hidden = false }
+    form.addEventListener('submit', async event => {
+      event.preventDefault()
+      error.hidden = true
+      if (fresh.value !== again.value) { fail(T('A két jelszó nem egyezik.')); again.focus(); return }
+      if (fresh.value === current.value) { fail(T('The new password must differ from the current one.')); fresh.focus(); return }
+      submit.disabled = true
+      submit.dataset.loading = '1'
+      try {
+        await YumeAPI.changePassword(current.value, fresh.value)
+        dialog.close()
+        U.toast(T('Password changed. Every other device has been signed out.'), 'success')
+      } catch (e) {
+        fail(e?.status === 403 ? T('The current password is not right.') : authErrorMessage(e, 'password'))
+      } finally {
+        submit.disabled = false
+        delete submit.dataset.loading
+      }
+    })
+    const dialog = C.openDialog({
+      title: T('Change password'),
+      body: [form],
+      actions: [P.button(T('Cancel'), { variant: 'ghost', onclick: () => dialog.close() }), submit],
+      initialFocus: current
+    })
+    // A gomb a lábrészben ül, az űrlapon kívül: így küldi el.
+    submit.setAttribute('form', form.id || (form.id = 'pw-' + Math.random().toString(36).slice(2, 8)))
+  },
+
+  async _logoutAll () {
+    const ok = await C.confirm({
+      title: T('Sign out everywhere?'),
+      message: T('Every device signed in to this account will be signed out, including this one.'),
+      confirmLabel: T('Sign out everywhere')
+    })
+    if (!ok) return
+    try {
+      await YumeAPI.logoutAll()
+      U.toast(T('Signed out on every device.'), 'success')
+    } catch (e) {
+      U.toast(authErrorMessage(e, 'logout'), 'error')
+    }
+    await afterAuth()
+  },
+
+  /** Fióktörlés: a jelszó a megerősítés — egy ellopott token nem elég hozzá. */
+  _deleteAccount () {
+    const password = P.input({ type: 'password', name: 'password', autocomplete: 'current-password', required: true, maxlength: 200 })
+    const error = U.el('p', { class: 'field-error', role: 'alert', hidden: true })
+    const submit = P.button(T('Delete my account'), { variant: 'danger-solid', type: 'submit' })
+    const form = U.el('form', { class: 'dialog-form', id: 'del-' + Math.random().toString(36).slice(2, 8) }, [
+      U.el('div', { class: 'callout callout-danger' }, [
+        U.svg('<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>', 18),
+        U.el('p', { text: T('Your email address, username and password are erased and every session ends. Comments you wrote stay, without your name. This cannot be undone.') })
+      ]),
+      P.field(T('Your password'), passwordField(password), { hint: T('Type it to confirm that it is you.') }),
+      error
+    ])
+    submit.setAttribute('form', form.id)
+    form.addEventListener('submit', async event => {
+      event.preventDefault()
+      error.hidden = true
+      submit.disabled = true
+      submit.dataset.loading = '1'
+      try {
+        await YumeAPI.deleteAccount(password.value)
+        dialog.close()
+        U.toast(T('Your account has been deleted.'), 'success')
+        await afterAuth()
+        window.location.hash = '#/landing'
+      } catch (e) {
+        error.textContent = e?.status === 401 ? T('The password is not right.') : authErrorMessage(e, 'delete')
+        error.hidden = false
+      } finally {
+        submit.disabled = false
+        delete submit.dataset.loading
+      }
+    })
+    const dialog = C.openDialog({
+      title: T('Delete account'),
+      body: [form],
+      actions: [P.button(T('Cancel'), { variant: 'ghost', onclick: () => dialog.close() }), submit],
+      initialFocus: password
+    })
   },
 
   /** A könyvtár szinkronjának sora. Külön, mert állapotot mutat és cselekszik is. */
@@ -223,16 +408,25 @@ export const PageSettings = {
       synced: T('Synced to your account'),
       error: T('Sync unavailable')
     }
-    const statusEl = U.el('span', { class: 'setting-row-desc', style: 'margin:0;', text: LABEL[LibrarySync?.status ?? 'off'] })
+    const statusEl = U.el('span', { class: 'setting-row-desc', role: 'status', style: 'margin:0;', text: LABEL[this._sync?.status ?? 'off'] })
+    // A szinkron a lap megnyitásakor gyakran még fut: az állapot addig
+    // frissül, amíg a folyamat véget nem ér (legfeljebb fél percig).
+    let checks = 0
+    const follow = () => {
+      if (!statusEl.isConnected || checks++ > 30) return
+      statusEl.textContent = LABEL[this._sync?.status ?? 'off']
+      if (this._sync?.status === 'syncing') setTimeout(follow, 1000)
+    }
+    setTimeout(follow, 1000)
     const syncBtn = U.el('button', {
       class: 'btn btn-secondary btn-sm',
       onclick: async () => {
         statusEl.textContent = LABEL.syncing
-        await LibrarySync?.init()
-        statusEl.textContent = LABEL[LibrarySync?.status ?? 'off']
+        await this._sync?.init()
+        statusEl.textContent = LABEL[this._sync?.status ?? 'off']
         U.toast(
-          LibrarySync?.status === 'synced' ? T('Library synced') : T('Sync unavailable'),
-          LibrarySync?.status === 'error' ? 'error' : 'success')
+          this._sync?.status === 'synced' ? T('Library synced') : T('Sync unavailable'),
+          this._sync?.status === 'error' ? 'error' : 'success')
       }
     }, [document.createTextNode(T('Sync now'))])
     return this._row('Library sync',
@@ -262,7 +456,7 @@ export const PageSettings = {
     // The spec carries keys; these are the words for them. Enum labels come
     // from the onboarding wizard so the two screens never disagree about what
     // "sub" is called, and the rest are declared here.
-    const choices = Onboarding?.CHOICES ?? {}
+    const choices = ONBOARDING_CHOICES
     const EXTRA = {
       'language.content': [{ value: 'hu', label: 'Magyar' }, { value: 'en', label: 'English' }],
       'playback.subtitles': [{ value: 'hu', label: 'Magyar' }, { value: 'en', label: 'English' }, { value: 'off', label: 'Off' }],
@@ -309,9 +503,10 @@ export const PageSettings = {
             ...(values[item.key] === true ? { checked: '' } : {}),
             onchange: e => Prefs.set({ [item.key]: e.target.checked })
           })
-          control = U.el('label', { class: 'switch' }, [input, U.el('span', { class: 'slider' })])
+          input.setAttribute('role', 'switch')
+          control = U.el('label', { class: 'switch' }, [input])
         } else {
-          const select = U.el('select', { class: 'input' }, options.map(option =>
+          const select = U.el('select', { class: 'select' }, options.map(option =>
             U.el('option', {
               value: option.value,
               ...(values[item.key] === option.value ? { selected: '' } : {})
@@ -357,7 +552,7 @@ export const PageSettings = {
         })
       ])
     ]))
-    PageThemes.body(wrap.lastChild.lastChild)
+    this._themes.body(wrap.lastChild.lastChild)
 
     const langSelect = U.el('select', {
       class: 'select',
@@ -410,10 +605,7 @@ export const PageSettings = {
   // ---- Content ----
   _content () {
     const settings = Store.settings()
-    const toggle = (checked, onchange) => U.el('label', { class: 'switch' }, [
-      U.el('input', { type: 'checkbox', ...(checked ? { checked: '' } : {}), onchange }),
-      U.el('span', { class: 'slider' })
-    ])
+    const toggle = (checked, onchange) => this._switch(checked, onchange)
 
     const wrap = U.el('div')
     wrap.append(this._group('Catalogue', [
@@ -452,6 +644,7 @@ export const PageSettings = {
       U.el('label', { class: 'switch' }, [
         U.el('input', {
           type: 'checkbox',
+          role: 'switch',
           ...(prefs[key] !== false ? { checked: '' } : {}),
           onchange: e => {
             const next = { ...(Store.settings().notifPrefs ?? DEFAULTS), [key]: e.target.checked }
@@ -461,8 +654,7 @@ export const PageSettings = {
             if (key === 'airing') Prefs.set({ 'notifications.episodes': e.target.checked })
             refreshNotifications()
           }
-        }),
-        U.el('span', { class: 'slider' })
+        })
       ])))
 
     wrap.append(this._group('What you are told about', rows))
@@ -477,66 +669,97 @@ export const PageSettings = {
 
   // ---- Data ----
   _data () {
-    const wrap = U.el('div')
+    const wrap = U.el('div', { class: 'settings-stack' })
+    const signedIn = !!YumeAPI.user()
 
-    const exportBtn = U.el('button', {
-      class: 'btn btn-secondary btn-sm',
+    const exportBtn = P.button(T('Export data'), {
+      variant: 'secondary',
       onclick: () => {
         const data = { animelist: Store.list(), favourites: Store.favourites(), settings: Store.settings(), history: Store.history() }
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
         const a = U.el('a', { href: URL.createObjectURL(blob), download: 'yume-data.json' })
-        a.click(); URL.revokeObjectURL(a.href)
+        a.click()
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000)
       }
-    }, [document.createTextNode(T('Export data'))])
+    })
 
-    const importBtn = U.el('button', {
-      class: 'btn btn-secondary btn-sm',
+    /*
+     * A BETÖLTÖTT FÁJLT ELLENŐRIZZÜK, mielőtt bármit felülír. Eddig bármilyen
+     * JSON bekerült a böngésző tárába — egy rossz fájl egy üres könyvtárat
+     * vagy használhatatlan beállításokat hagyott maga után. És rákérdezünk:
+     * a betöltés a mostani helyi adatok helyére lép.
+     */
+    const importBtn = P.button(T('Import data'), {
+      variant: 'secondary',
       onclick: () => {
-        const input = U.el('input', { type: 'file', accept: 'application/json' })
+        const input = U.el('input', { type: 'file', accept: 'application/json,.json' })
         input.onchange = async () => {
+          let data
           try {
-            const data = JSON.parse(await input.files[0].text())
-            if (data.animelist) Store._write(Store._profileKey('animelist'), data.animelist)
-            if (data.favourites) Store._write(Store._profileKey('favourites'), data.favourites)
-            if (data.settings) Store._write(Store._profileKey('settings'), data.settings)
-            if (data.history) Store._write(Store._profileKey('history'), data.history)
-            Store.applyTheme()
-            U.toast(T('Data imported'))
-          } catch (e) { U.toast(T('Invalid file'), 'error') }
+            data = JSON.parse(await input.files[0].text())
+          } catch (e) { U.toast(T('Invalid file'), 'error'); return }
+          const isObject = v => v != null && typeof v === 'object' && !Array.isArray(v)
+          const valid = isObject(data) &&
+            (data.animelist === undefined || isObject(data.animelist)) &&
+            (data.favourites === undefined || Array.isArray(data.favourites)) &&
+            (data.settings === undefined || isObject(data.settings)) &&
+            (data.history === undefined || Array.isArray(data.history)) &&
+            [data.animelist, data.favourites, data.settings, data.history].some(v => v !== undefined)
+          if (!valid) { U.toast(T('This is not a Yume export file.'), 'error'); return }
+          const ok = await C.confirm({
+            title: T('Import data?'),
+            message: T('The file replaces the list, favourites, settings and history stored in this browser.'),
+            confirmLabel: T('Import data')
+          })
+          if (!ok) return
+          if (data.animelist) Store._write(Store._profileKey('animelist'), data.animelist)
+          if (data.favourites) Store._write(Store._profileKey('favourites'), data.favourites)
+          if (data.settings) Store._write(Store._profileKey('settings'), data.settings)
+          if (data.history) Store._write(Store._profileKey('history'), data.history)
+          Store.applyTheme()
+          U.toast(signedIn
+            ? T('Data imported into this browser. Your account copy is not overwritten; a title is sent to it the next time you change it.')
+            : T('Data imported'), 'success')
         }
         input.click()
       }
-    }, [document.createTextNode(T('Import data'))])
+    })
 
     wrap.append(this._group('Your data', [
       this._row('Export and import',
-        'Your anime list, favourites and progress live only in this browser. Export them as JSON to back them up or move devices.',
+        signedIn
+          ? 'Your library is also kept in your account. This exports what this browser holds — list, favourites, settings and history — as a JSON file.'
+          : 'Your anime list, favourites and progress live only in this browser. Export them as JSON to back them up or move devices.',
         [exportBtn, importBtn]),
       this._row('API cache',
         'Responses from AniList, Jikan and ani.zip are kept locally to keep the app fast and to stay under their rate limits.',
-        U.el('button', { class: 'btn btn-secondary btn-sm', onclick: () => Store.clearCache() },
-          [document.createTextNode(T('Clear cache'))]))
+        P.button(T('Clear cache'), { variant: 'secondary', onclick: () => { Store.clearCache(); U.toast(T('Cache cleared'), 'success') } }))
     ]))
 
     /*
      * A TÖRLÉS KÜLÖN CSOPORTBAN, a lap alján. Egy visszavonhatatlan művelet ne
-     * álljon egy sorban azzal, amit az ember naponta használ — a „Gyorsítótár
-     * ürítése" és a „Minden adat törlése" mellérendelve egy elgépelt
-     * kattintásnyira van egymástól.
+     * álljon egy sorban azzal, amit az ember naponta használ.
      */
     wrap.append(this._group('Danger zone', [
       this._row('Delete all local data',
-        'Your list, favourites, history and settings in this browser. This cannot be undone.',
-        U.el('button', {
-          class: 'btn btn-sm btn-danger',
-          onclick: () => {
-            if (window.confirm(T('Delete ALL local data (list, favourites, settings)?'))) {
-              Store.clearAll()
-              window.location.reload()
-            }
+        signedIn
+          ? 'Your list, favourites, history and settings in this browser. Your account keeps its copy. This cannot be undone.'
+          : 'Your list, favourites, history and settings in this browser. This cannot be undone.',
+        P.button(T('Delete all data'), {
+          variant: 'danger',
+          onclick: async () => {
+            const ok = await C.confirm({
+              title: T('Delete all local data?'),
+              message: T('Delete ALL local data (list, favourites, settings)?'),
+              confirmLabel: T('Delete all data'),
+              danger: true
+            })
+            if (!ok) return
+            Store.clearAll()
+            window.location.reload()
           }
-        }, [document.createTextNode(T('Delete all data'))]))
-    ]))
+        }))
+    ], { danger: true }))
     return wrap
   },
 

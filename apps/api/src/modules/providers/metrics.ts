@@ -18,7 +18,7 @@
 
 import { query } from '../../infrastructure/database/index.ts'
 
-import type { Attempt } from './resolve.ts'
+import type { Attempt } from './types.ts'
 
 /** Meddig gyűlhet, mielőtt kimegy. Amelyik előbb betelik. */
 const MAX_KEYS = Number(process.env.PROVIDER_METRICS_BUFFER ?? 200)

@@ -7,7 +7,6 @@ import { site } from '../shared/lib/site-config.js'
 import { navigate, refreshChrome } from '../shared/lib/shell.js'
 import { Charts } from '../shared/ui/charts.js'
 import { AP } from '../shared/ui/admin-ui.js'
-import { renderMaintenance } from '../features/maintenance/admin/maintenance-dashboard.js'
 import { C } from '../shared/ui/components.js'
 import { I18n } from '../shared/i18n/i18n.js'
 import { Store } from '../shared/state/store.js'
@@ -15,6 +14,11 @@ import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 import { YumeAPI } from '../shared/api/yume.js'
 import { ADMIN_GROUPS, ADMIN_SECTIONS } from '../shared/lib/admin-sections.js'
+import { AdminModals } from '../features/admin/modals.js'
+// Az admin-API (`YumeAPI.admin.*`) a saját moduljában él, és betöltéskor köti
+// be magát: csak a panel hozza le, a nézők soha. Utolsó import, szándékosan —
+// a modulgráf-teszt mintája egy mellékhatás-importot csak a sor végén lát.
+import '../shared/api/yume-admin.js'
 
 export const PageAdmin = {
   /**
@@ -2084,7 +2088,7 @@ export const PageAdmin = {
       ['3600', '1 óra'], ['86400', '1 nap'], ['604800', '1 hét'], ['', 'Végleges']
     ].map(([v, l]) => U.el('option', { value: v, text: l })))
 
-    const modal = C.modalShell('Tiltás', [
+    const modal = AdminModals.modalShell('Tiltás', [
       U.el('div', { class: 'callout' }, [
         U.el('strong', { text: 'Egy hálózat mögött emberek vannak. ' }),
         document.createTextNode(
@@ -2286,7 +2290,7 @@ export const PageAdmin = {
     const confirm = U.el('input', { class: 'input', style: 'width:100%;', placeholder: backup.filename })
     const reason = U.el('input', { class: 'input', style: 'width:100%;', placeholder: 'Miért állítasz vissza?' })
 
-    const modal = C.modalShell('Visszaállítás — ' + backup.filename, [
+    const modal = AdminModals.modalShell('Visszaállítás — ' + backup.filename, [
       U.el('div', { class: 'callout callout-warn' }, [
         U.el('strong', { text: 'Ez felülírja az éles adatbázist. ' }),
         document.createTextNode(
@@ -2338,6 +2342,8 @@ export const PageAdmin = {
    * óriásfájl lenne, amit a 36. pont tilt.
    */
   async renderMaintenanceSection (content) {
+    // Csak ebben a szakaszban kell: a panel többi része nem tölti le.
+    const { renderMaintenance } = await import('../features/maintenance/admin/maintenance-dashboard.js')
     await renderMaintenance(content, { toast: U.toast })
   },
 
@@ -3651,7 +3657,7 @@ export const PageAdmin = {
       }
     }
 
-    const backdrop = C.modalShell(`Playback — ${anime.canonical_title}, episode ${Number(ep.number)}`, [
+    const backdrop = AdminModals.modalShell(`Playback — ${anime.canonical_title}, episode ${Number(ep.number)}`, [
       list,
       U.el('h4', { class: 'src-add-title', text: 'Forrás hozzáadása' }),
       field('Típus', select('kind', this.SOURCE_KINDS)),
@@ -3710,7 +3716,7 @@ export const PageAdmin = {
     ])
     const labelled = (t, el) => U.el('label', { class: 'cat-field' }, [U.el('span', { class: 'cat-field-label', text: t }), el])
 
-    const backdrop = C.modalShell(isNew ? `Add episode — ${anime.canonical_title}` : `Edit episode ${ep.number}`, [
+    const backdrop = AdminModals.modalShell(isNew ? `Add episode — ${anime.canonical_title}` : `Edit episode ${ep.number}`, [
       labelled('Episode number', inp('number', { type: 'number', step: '0.5', min: 0, placeholder: 'e.g. 1 or 6.5' })),
       labelled('Title', inp('title', { placeholder: 'Epizódcím (nem kötelező)' })),
       labelled('Air date', inp('air_date', { type: 'date' })),
@@ -5616,7 +5622,7 @@ export const PageAdmin = {
    */
   async userPanel (id, reload) {
     const body = U.el('div', { class: 'user-panel' }, [P.spinner()])
-    C.modalPanel('Account', [body])
+    AdminModals.modalPanel('Account', [body])
 
     const load = async () => {
       try {
@@ -6286,7 +6292,7 @@ export const PageAdmin = {
 
     const field = (label, node) => U.el('div', { class: 'filter-group' }, [U.el('label', { text: label }), node])
 
-    const modal = C.modalShell(isEdit ? `${release.version} szerkesztése` : 'Új kiadás', [
+    const modal = AdminModals.modalShell(isEdit ? `${release.version} szerkesztése` : 'Új kiadás', [
       field('Verzió', version),
       field('Cím', title),
       field('Összefoglaló', summary),
@@ -6666,7 +6672,7 @@ export const PageAdmin = {
 
     const toggleAll = on => checkboxes.forEach(l => { l.querySelector('input').checked = on })
 
-    const modal = C.modalShell(isEdit ? 'Webhook szerkesztése' : 'Új webhook', [
+    const modal = AdminModals.modalShell(isEdit ? 'Webhook szerkesztése' : 'Új webhook', [
       U.el('div', { class: 'filter-group' }, [U.el('label', { text: 'Név' }), name]),
       U.el('div', { class: 'filter-group' }, [U.el('label', { text: 'Cím (URL)' }), url]),
       U.el('div', { class: 'filter-group' }, [U.el('label', { text: 'Formátum' }), format]),

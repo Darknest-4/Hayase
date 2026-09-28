@@ -1,10 +1,17 @@
-/* global document */
-// Dashboard — a personal landing overview assembled from local data. Widgets
-// can be reordered and toggled (Edit layout); the layout persists per profile
-// in settings.dashboard. Everything renders from Store snapshots, so the
-// dashboard works offline with no network calls.
+// Áttekintés — #/dashboard (?edit=1: a widgetek sorrendje és láthatósága)
+//
+// A néző saját irányítópultja: folytatás, hamarosan adásban, gyors
+// statisztika, közeli eredmények, friss értesítések, kedvenc műfajok. Minden
+// widget a helyi könyvtárból épül, hálózat nélkül; a statisztikát a
+// kiszolgáló számai (ProfileStats.hydrate) pontosítják.
+//
+// 2026-09, újratervezve: a widgetek rácsban (a „Folytatás" és a statisztika
+// teljes szélességben, a többi kártyákban kettesével), minden felirat a néző
+// nyelvén (az „In library" eddig angolul maradt), a szerkesztő kapcsolói
+// valódi `role="switch"` elemek, és a köszöntés a fiók nevét használja.
 
 import { navigate } from '../shared/lib/shell.js'
+import { viewerProfile } from '../shared/lib/site-config.js'
 import { C } from '../shared/ui/components.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
 import { ProfileStats } from '../features/watch-history/profile-stats.js'
@@ -12,18 +19,18 @@ import { Store } from '../shared/state/store.js'
 import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 import { WatchTime } from '../features/watch-history/watch-time.js'
-import { PageAchievements } from '../features/achievements/achievements.js'
+import { AchievementCatalog } from '../features/achievements/catalog.js'
+import { YumeAPI } from '../shared/api/yume.js'
+
+const LAYOUT = '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>'
+const UP = '<path d="m18 15-6-6-6 6"/>'
+const DOWN = '<path d="m6 9 6 6 6-6"/>'
 
 export const PageDashboard = {
-  // registry: order here is the default order
   WIDGETS: [
-  // Labels are stored in English and translated where they are rendered, not
-  // here: this literal is evaluated once when the script loads, so a T() call
-  // in it would freeze the label in whatever language was active at boot and
-  // never follow a language switch.
-    { key: 'continue', label: 'Continue watching' },
+    { key: 'continue', label: 'Continue watching', wide: true },
+    { key: 'stats', label: 'Quick stats', wide: true },
     { key: 'airing', label: 'Airing soon' },
-    { key: 'stats', label: 'Quick stats' },
     { key: 'achievements', label: 'Almost there' },
     { key: 'notifications', label: 'Latest notifications' },
     { key: 'genres', label: 'Top genres' }
@@ -31,20 +38,24 @@ export const PageDashboard = {
 
   render (root, params) {
     const editing = params.get('edit') === '1'
-    const profile = Store.profile()
     const layout = this._layout()
+    const account = viewerProfile()
+    const name = account?.display_name ?? YumeAPI.user()?.username ?? Store.profile()?.name ?? T('Dreamer')
 
-    root.append(C.spotlight(`${this._greeting()}, ${profile?.name ?? T('Dreamer')}`, {
-      subtitle: T('Your dashboard'),
-      actions: U.el('a', {
-        class: 'btn btn-secondary btn-sm',
-        style: 'margin-top:var(--space-3);',
-        href: editing ? '#/dashboard' : '#/dashboard?edit=1'
-      }, [document.createTextNode(editing ? T('✓ Done') : T('⚙ Edit layout'))])
-    }))
-
-    const pad = U.el('div', { class: 'page-pad' })
+    const pad = U.el('div', { class: 'page-pad dash-page' })
     root.append(pad)
+    pad.append(U.el('header', { class: 'page-header' }, [
+      U.el('div', { class: 'page-header-text' }, [
+        U.el('p', { class: 'eyebrow', text: I18n.date(new Date(), { weekday: 'long', month: 'long', day: 'numeric' }) }),
+        U.el('h1', { class: 'page-title', text: `${this._greeting()}, ${name}!` })
+      ]),
+      U.el('div', { class: 'page-header-actions' }, [
+        U.el('a', {
+          class: 'btn ' + (editing ? 'btn-primary' : 'btn-secondary'),
+          href: editing ? '#/dashboard' : '#/dashboard?edit=1'
+        }, [U.svg(LAYOUT, 16), document.createTextNode(editing ? T('Done') : T('Edit layout'))])
+      ])
+    ]))
 
     if (editing) {
       pad.append(this._editor(layout))
@@ -53,30 +64,33 @@ export const PageDashboard = {
 
     const enabled = layout.filter(w => w.enabled)
     if (!enabled.length) {
-      pad.append(P.emptyState(T('No widgets enabled. Use “Edit layout” to add some.')))
+      pad.append(P.emptyState(T('No widgets enabled. Use “Edit layout” to add some.'), { icon: LAYOUT }))
       return
     }
-
-    let rendered = 0
+    const grid = U.el('div', { class: 'dash-grid' })
+    const meta = new Map(this.WIDGETS.map(w => [w.key, w]))
     for (const w of enabled) {
       const node = (this['_widget_' + w.key] ?? (() => null)).call(this)
-      if (node) { pad.append(node); rendered++ }
+      if (!node) continue
+      if (meta.get(w.key)?.wide) node.classList.add('dash-widget-wide')
+      grid.append(node)
     }
-    if (!rendered) {
+    if (!grid.childElementCount) {
       pad.append(P.emptyState(
         T('Nothing to show yet — add anime to your library and your dashboard fills in automatically.'),
         {
-          action: U.el('a', { class: 'btn btn-primary btn-sm', href: '#/search', text: T('Browse the catalogue') })
+          icon: LAYOUT,
+          action: U.el('a', { class: 'btn btn-primary', href: '#/search', text: T('Browse the catalogue') })
         }
       ))
+      return
     }
+    pad.append(grid)
   },
 
-  // ---- layout persistence ----
   _layout () {
     const saved = Store.settings().dashboard
     if (!Array.isArray(saved)) return this.WIDGETS.map(w => ({ key: w.key, enabled: true }))
-    // reconcile with the registry so new widgets appear and stale ones drop
     const known = new Map(this.WIDGETS.map(w => [w.key, w]))
     const result = saved.filter(s => known.has(s.key)).map(s => ({ key: s.key, enabled: s.enabled !== false }))
     for (const w of this.WIDGETS) if (!result.some(r => r.key === w.key)) result.push({ key: w.key, enabled: true })
@@ -88,19 +102,42 @@ export const PageDashboard = {
   },
 
   _editor (layout) {
-    const wrap = U.el('div', { class: 'dash-editor' })
+    const wrap = U.el('ol', { class: 'dash-editor', 'aria-label': T('Edit layout') })
     const meta = new Map(this.WIDGETS.map(w => [w.key, w]))
-    const rerender = () => { this._saveLayout(layout); navigate() }
-
+    const rerender = focusKey => {
+      this._saveLayout(layout)
+      navigate()?.then?.(() => document.querySelector(`[data-widget="${focusKey}"]`)?.focus())
+    }
     layout.forEach((w, i) => {
-      wrap.append(U.el('div', { class: 'dash-editor-row' }, [
-        U.el('div', { class: 'dash-editor-name', text: meta.get(w.key) ? T(meta.get(w.key).label) : w.key }),
+      const label = meta.get(w.key) ? T(meta.get(w.key).label) : w.key
+      wrap.append(U.el('li', { class: 'dash-editor-row' }, [
+        U.el('span', { class: 'dash-editor-name', text: label }),
         U.el('div', { class: 'dash-editor-actions' }, [
-          U.el('button', { class: 'btn btn-ghost btn-sm', disabled: i === 0 ? '' : null, title: T('Move up'), onclick: () => { [layout[i - 1], layout[i]] = [layout[i], layout[i - 1]]; rerender() } }, [document.createTextNode('↑')]),
-          U.el('button', { class: 'btn btn-ghost btn-sm', disabled: i === layout.length - 1 ? '' : null, title: T('Move down'), onclick: () => { [layout[i + 1], layout[i]] = [layout[i], layout[i + 1]]; rerender() } }, [document.createTextNode('↓')]),
+          U.el('button', {
+            class: 'icon-btn icon-btn-sm',
+            type: 'button',
+            disabled: i === 0,
+            'aria-label': I18n.f(T('Move {name} up'), { name: label }),
+            dataset: { widget: w.key + ':up' },
+            onclick: () => { [layout[i - 1], layout[i]] = [layout[i], layout[i - 1]]; rerender(w.key + ':up') }
+          }, [U.svg(UP, 16)]),
+          U.el('button', {
+            class: 'icon-btn icon-btn-sm',
+            type: 'button',
+            disabled: i === layout.length - 1,
+            'aria-label': I18n.f(T('Move {name} down'), { name: label }),
+            dataset: { widget: w.key + ':down' },
+            onclick: () => { [layout[i + 1], layout[i]] = [layout[i], layout[i + 1]]; rerender(w.key + ':down') }
+          }, [U.svg(DOWN, 16)]),
           U.el('label', { class: 'switch' }, [
-            U.el('input', { type: 'checkbox', ...(w.enabled ? { checked: '' } : {}), onchange: e => { w.enabled = e.target.checked; rerender() } }),
-            U.el('span', { class: 'slider' })
+            U.el('input', {
+              type: 'checkbox',
+              role: 'switch',
+              checked: w.enabled,
+              'aria-label': I18n.f(T('Show {name}'), { name: label }),
+              dataset: { widget: w.key + ':on' },
+              onchange: e => { w.enabled = e.target.checked; rerender(w.key + ':on') }
+            })
           ])
         ])
       ]))
@@ -108,14 +145,15 @@ export const PageDashboard = {
     return wrap
   },
 
-  // ---- widgets ----
-
   _section (title, body, opts = {}) {
-    const head = U.el('div', { class: 'dash-widget-head' }, [
-      U.el('h2', { class: 'detail-section-title', style: 'margin:0;', text: T(title) }),
-      opts.link ? U.el('a', { class: 'dash-widget-link', href: opts.link, text: T(opts.linkText ?? 'See all →') }) : null
+    const id = 'dash-' + Math.random().toString(36).slice(2, 8)
+    return U.el('section', { class: 'dash-widget', 'aria-labelledby': id }, [
+      U.el('div', { class: 'section-head' }, [
+        U.el('h2', { class: 'section-title', id, text: T(title) }),
+        opts.link ? U.el('a', { class: 'section-more', href: opts.link, text: T(opts.linkText ?? 'View more') }) : null
+      ]),
+      body
     ])
-    return U.el('section', { class: 'dash-widget' }, [head, body])
   },
 
   _widget_continue () {
@@ -123,12 +161,12 @@ export const PageDashboard = {
     const list = Store.list()
     const media = ids.map(id => list[id]?.media).filter(Boolean).slice(0, 12)
     if (!media.length) return null
-    const row = U.el('div', { class: 'hscroll', style: 'padding-left:0;padding-right:0;' })
+    const row = U.el('div', { class: 'hscroll' })
     for (const m of media) {
       const entry = list[m.id]
-      row.append(C.card(m, { progress: entry ? { current: entry.progress, total: m.episodes } : null, subline: entry?.progress ? `${T('Ep')} ${entry.progress}` : null }))
+      row.append(C.card(m, { subline: entry?.progress ? I18n.f(T('Next: episode {n}'), { n: entry.progress + 1 }) : null }))
     }
-    return this._section('Continue watching', row, { link: '#/list', linkText: 'Library →' })
+    return this._section('Continue watching', row, { link: '#/list', linkText: 'Library' })
   },
 
   _widget_airing () {
@@ -139,85 +177,75 @@ export const PageDashboard = {
       .sort((a, b) => a.nextAiringEpisode.airingAt - b.nextAiringEpisode.airingAt)
       .slice(0, 6)
     if (!upcoming.length) return null
-    const rows = U.el('div', { class: 'dash-airing-list' })
+    const rows = U.el('ul', { class: 'dash-list' })
     for (const m of upcoming) {
-      rows.append(U.el('a', { class: 'list-row', href: `#/anime/${m.id}` }, [
-        U.el('img', { src: m.coverImage?.large ?? '', alt: '', loading: 'lazy' }),
-        U.el('div', { class: 'list-row-grow' }, [
-          U.el('div', { class: 'list-row-title', text: U.title(m) }),
-          U.el('div', { class: 'list-row-sub', text: `${T('Episode')} ${m.nextAiringEpisode.episode} · ${U.relTime(new Date(m.nextAiringEpisode.airingAt * 1000))}` })
+      rows.append(U.el('li', {}, [U.el('a', { class: 'dash-list-row', href: `#/anime/${m.id}` }, [
+        U.el('img', { src: U.cover(m), alt: '', loading: 'lazy', decoding: 'async' }),
+        U.el('div', { class: 'dash-list-main' }, [
+          U.el('span', { class: 'dash-list-title', text: U.title(m) }),
+          U.el('span', { class: 'dash-list-sub', text: `${I18n.f(T('Episode {n}'), { n: m.nextAiringEpisode.episode })} · ${U.relTime(new Date(m.nextAiringEpisode.airingAt * 1000))}` })
         ])
-      ]))
+      ])]))
     }
-    return this._section('Airing soon', rows, { link: '#/schedule', linkText: 'Schedule →' })
+    return this._section('Airing soon', rows, { link: '#/schedule', linkText: 'Schedule' })
   },
 
   _widget_stats () {
     const entries = Object.values(Store.list())
-    // Négy nulla nem adat. Üres könyvtárnál ez a csempesor azt üzente, hogy
-    // „itt ez van, és ennyi" — pedig csak még nincs miből számolni. A widget
-    // ilyenkor nem rajzol semmit, és az oldal saját üres állapota veszi át,
-    // ami legalább megmondja, mit kezdjen vele az ember. A könyvtár
-    // szinkronja után a router újrarajzolja az oldalt (library-synced), tehát
-    // a friss eszközön sem marad üresen.
     if (!entries.length) return null
     const episodes = entries.reduce((s, e) => s + (e.progress ?? 0), 0)
-    // Measured, not estimated. This used to be `progress * nominal runtime`,
-    // which credited a flat 24 minutes the instant an episode was marked —
-    // so the number grew by watching nothing. WatchTime.minutesFor() uses
-    // real playback seconds and only falls back to the old estimate for
-    // episodes credited before the meter existed.
     const minutes = WatchTime.minutesFor(entries).totalMinutes
-    const hours = Math.floor(minutes / 60)
-    const cards = U.el('div', { class: 'stat-cards', style: 'margin:0;' }, [
-      [entries.length, 'In library', null],
-      [entries.filter(e => e.status === 'COMPLETED').length, T('Completed'), 'completed'],
-      [episodes.toLocaleString(I18n.locale()), T('Episodes'), 'episodes'],
-      [hours >= 24 ? `${Math.floor(hours / 24)}d ${hours % 24}h` : `${hours}h`, T('Watch time'), 'watchTime']
-    ].map(([v, l, stat]) => U.el('div', { class: 'stat-card', 'data-stat': stat }, [U.el('b', { text: String(v) }), U.el('span', { text: l })])))
-    // Local numbers first, the account's own totals when they arrive.
+    const cards = U.el('div', { class: 'stats' }, [
+      [I18n.number(entries.length), T('In library'), null],
+      [I18n.number(entries.filter(e => e.status === 'COMPLETED').length), T('Completed'), 'completed'],
+      [I18n.number(episodes), T('Episodes'), 'episodes'],
+      [ProfileStats.formatMinutes(minutes), T('Watch time'), 'watchTime']
+    ].map(([v, l, stat]) => U.el('div', { class: 'stat', ...(stat ? { 'data-stat': stat } : {}) }, [
+      U.el('span', { class: 'stat-label', text: l }),
+      U.el('b', { class: 'stat-value', text: String(v) })
+    ])))
     ProfileStats?.hydrate(cards)
-    return this._section('Quick stats', cards, { link: '#/profile?tab=analytics', linkText: 'Analytics →' })
+    return this._section('Quick stats', cards, { link: '#/profile?tab=analytics', linkText: 'Analytics' })
   },
 
   _widget_achievements () {
-    if (!PageAchievements) return null
-    const ctx = PageAchievements._context()
-    const near = PageAchievements.CATALOG
+    const ctx = AchievementCatalog.context()
+    const near = AchievementCatalog.CATALOG
       .map(a => { const v = Math.max(0, Math.floor(a.value(ctx))); return { ...a, current: v, pct: Math.min(100, Math.round(v / a.target * 100)) } })
       .filter(a => a.current < a.target)
       .sort((a, b) => b.pct - a.pct)
       .slice(0, 3)
     if (!near.length) return null
-    const list = U.el('div', { class: 'dash-ach-list' })
+    const list = U.el('ul', { class: 'dash-list' })
     for (const a of near) {
-      list.append(U.el('div', { class: 'dash-ach-row' }, [
-        U.el('span', { class: 'ach-icon', style: 'width:2.2rem;height:2.2rem;font-size:var(--text-lg);', text: a.icon }),
-        U.el('div', { style: 'flex-grow:1;min-width:0;' }, [
-          U.el('div', { class: 'notif-title', text: a.name }),
-          U.el('div', { class: 'ach-progress-track', style: 'margin-top:var(--space-1);' }, [U.el('div', { class: 'ach-progress-fill', style: `width:${a.pct}%;` })])
+      list.append(U.el('li', { class: 'dash-ach' }, [
+        U.el('span', { class: 'dash-ach-icon', 'aria-hidden': 'true', text: a.icon }),
+        U.el('div', { class: 'dash-list-main' }, [
+          U.el('span', { class: 'dash-list-title', text: T(a.name) }),
+          U.el('div', { class: 'progress', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(a.target), 'aria-valuenow': String(a.current), 'aria-label': T(a.name) }, [
+            U.el('span', { style: `width:${a.pct}%` })
+          ])
         ]),
-        U.el('span', { class: 'ach-progress-text', text: `${a.current}/${a.target}` })
+        U.el('span', { class: 'dash-ach-count tabular', text: `${a.current}/${a.target}` })
       ]))
     }
-    return this._section('Almost there', list, { link: '#/profile?tab=achievements', linkText: 'Achievements →' })
+    return this._section('Almost there', list, { link: '#/profile?tab=achievements', linkText: 'Achievements' })
   },
 
   _widget_notifications () {
     const items = Store.syncNotifications().slice(0, 5)
     if (!items.length) return null
-    const list = U.el('div', { class: 'notif-list' })
+    const list = U.el('ul', { class: 'dash-list' })
     for (const n of items) {
-      list.append(U.el('a', { class: 'notif-row' + (n.read ? '' : ' unread'), href: n.href ?? '#' }, [
-        U.el('span', { class: `notif-icon notif-${n.type}`, text: n.icon }),
-        U.el('div', { class: 'notif-body' }, [
-          U.el('div', { class: 'notif-title', text: n.title }),
-          U.el('div', { class: 'notif-text', text: n.body })
+      list.append(U.el('li', {}, [U.el('a', { class: 'dash-list-row' + (n.read ? '' : ' dash-unread'), href: n.href ?? '#/notifications' }, [
+        U.el('div', { class: 'dash-list-main' }, [
+          U.el('span', { class: 'dash-list-title', text: n.title }),
+          U.el('span', { class: 'dash-list-sub', text: n.body })
         ]),
-        U.el('span', { class: 'notif-time', text: U.relTime(new Date(n.at)) })
-      ]))
+        U.el('time', { class: 'dash-list-time', datetime: new Date(n.at).toISOString(), text: U.relTime(new Date(n.at)) })
+      ])]))
     }
-    return this._section('Latest notifications', list, { link: '#/notifications', linkText: 'Inbox →' })
+    return this._section('Latest notifications', list, { link: '#/notifications', linkText: 'Notifications' })
   },
 
   _widget_genres () {
@@ -226,12 +254,12 @@ export const PageDashboard = {
     const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6)
     if (!top.length) return null
     const max = top[0][1]
-    const bars = U.el('div', { class: 'genre-bars', style: 'max-width:100%;' })
+    const bars = U.el('ul', { class: 'profile-bars' })
     for (const [name, count] of top) {
-      bars.append(U.el('a', { class: 'genre-bar', href: `#/search?genre=${encodeURIComponent(name)}`, style: 'text-decoration:none;' }, [
-        U.el('span', { class: 'genre-name', text: name }),
-        U.el('div', { class: 'genre-track' }, [U.el('div', { class: 'genre-fill', style: `width:${count / max * 100}%;` })]),
-        U.el('span', { class: 'genre-count', text: String(count) })
+      bars.append(U.el('li', { class: 'profile-bar' }, [
+        U.el('a', { class: 'profile-bar-name', href: `#/search?genre=${encodeURIComponent(name)}`, text: T(name) }),
+        U.el('div', { class: 'profile-bar-track', 'aria-hidden': 'true' }, [U.el('div', { class: 'profile-bar-fill', style: `width:${count / max * 100}%;background:var(--accent);` })]),
+        U.el('span', { class: 'profile-bar-count tabular', text: String(count) })
       ]))
     }
     return this._section('Top genres', bars)

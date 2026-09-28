@@ -33,19 +33,27 @@ const ADMIN = readFileSync(join(here, '../css/admin.css'), 'utf8')
 const PLAYER2 = readFileSync(join(here, '../css/player2.css'), 'utf8')
 const MAINTENANCE = readFileSync(join(here, '../css/maintenance.css'), 'utf8')
 
-// The two sheets the browser loads after tokens.css, in load order. The
-// undefined-token check below has to cover both: components.css is where the
-// primitives live now, and a token that resolves to nothing there drops a
-// declaration on every screen at once rather than on one.
-const SHEETS = [['style.css', CSS], ['components.css', COMPONENTS], ['admin.css', ADMIN], ['player2.css', PLAYER2], ['maintenance.css', MAINTENANCE]]
-
-/**
- * Every rule in the sheet, tagged with whether it sits inside a media query.
+/*
+ * MINDEN LAP, AMIT A KLIENS BETÖLTHET.
  *
- * Brace counting rather than a parser: the sheet has no nested at-rules beyond
- * media queries, and a real CSS parser is a dependency this repository does
- * not otherwise need.
+ * 2026-09 óta a képernyők saját lapjai a `css/pages/`, a több képernyőn
+ * használt moduloké a `css/features/` alatt vannak, és lustán töltődnek (router:
+ * ROUTE_STYLES). A token-ellenőrzés és a töréspont-szabályok mindegyikre
+ * vonatkoznak. A `discord.css` egy másik alkalmazásé (a Discord-irányítópult),
+ * az kimarad, ahogy eddig is.
  */
+const LAZY = readdirSync(join(here, '../css'), { recursive: true })
+  .map(String)
+  .filter(name => name.endsWith('.css') && name.includes('/'))
+  .sort()
+  .map(name => [name, readFileSync(join(here, '../css', name), 'utf8')])
+
+// Every sheet the browser may load after tokens.css. The undefined-token
+// check below has to cover all of them: components.css is where the
+// primitives live, and a token that resolves to nothing there drops a
+// declaration on every screen at once rather than on one.
+const SHEETS = [['style.css', CSS], ['components.css', COMPONENTS], ['admin.css', ADMIN], ['player2.css', PLAYER2], ['maintenance.css', MAINTENANCE], ...LAZY]
+
 function rules (css) {
   const found = []
   let depth = 0
@@ -99,27 +107,38 @@ function shadowedWithin (all) {
 }
 
 describe('a later stylesheet does not silently undo an earlier breakpoint', () => {
-  // A betöltési sorrend: tokens → components → style → admin.
-  const ORDER = [['components.css', COMPONENTS], ['style.css', CSS], ['admin.css', ADMIN]]
+  /*
+   * A SORREND: components.css → style.css → a lusta lapok (admin.css,
+   * player2.css, maintenance.css, css/pages/*, css/features/*). A lusta lapok
+   * EGYMÁSHOZ képesti sorrendje a látogatás sorrendjétől függ, tehát egyik sem
+   * lapíthatja el egy másik töréspontját — egyik irányban sem.
+   */
+  const EAGER = [['components.css', COMPONENTS], ['style.css', CSS]]
+  const LATER = [['admin.css', ADMIN], ['player2.css', PLAYER2], ['maintenance.css', MAINTENANCE], ...LAZY]
 
   it('no earlier sheet has a breakpoint a later sheet flattens', () => {
     const broken = []
-    for (let i = 0; i < ORDER.length - 1; i++) {
-      const [earlierName, earlier] = ORDER[i]
+    const check = (earlierName, earlier, laterName, later) => {
       const media = new Set(rules(earlier).filter(r => r.inMedia).map(r => r.selector))
-      for (const [laterName, later] of ORDER.slice(i + 1)) {
-        for (const rule of rules(later).filter(r => !r.inMedia)) {
-          if (media.has(rule.selector)) {
-            broken.push(`${earlierName} has a breakpoint for ${rule.selector}; ${laterName}:${rule.line} overrides it unconditionally`)
-          }
+      for (const rule of rules(later).filter(r => !r.inMedia)) {
+        if (media.has(rule.selector)) {
+          broken.push(`${earlierName} has a breakpoint for ${rule.selector}; ${laterName}:${rule.line} overrides it unconditionally`)
         }
       }
+    }
+    // components.css → style.css
+    check(...EAGER[0], ...EAGER[1])
+    // a keret → minden lusta lap
+    for (const [eName, e] of EAGER) for (const [lName, l] of LATER) check(eName, e, lName, l)
+    // lusta lap ↔ lusta lap, mindkét irányban
+    for (const [aName, a] of LATER) {
+      for (const [bName, b] of LATER) if (aName !== bName) check(aName, a, bName, b)
     }
     assert.deepEqual(broken, [], 'breakpoints flattened by a later sheet:\n  ' + broken.join('\n  '))
   })
 
   it('each sheet keeps its own breakpoints last', () => {
-    for (const [name, sheet] of ORDER) {
+    for (const [name, sheet] of [...EAGER, ...LATER]) {
       const all = rules(sheet)
       if (!all.some(r => r.inMedia)) continue
       const lastMedia = Math.max(...all.filter(r => r.inMedia).map(r => r.line))
@@ -181,7 +200,7 @@ describe('design tokens the stylesheet asks for', () => {
     .map(name => readFileSync(join(here, '../src', String(name)), 'utf8'))
 
   const defined = new Set(
-    [TOKENS, CSS, COMPONENTS, ADMIN, PLAYER2, MAINTENANCE, ...inlineSources]
+    [TOKENS, ...SHEETS.map(([, source]) => source), ...inlineSources]
       .flatMap(source => [...source.matchAll(/(--[a-z0-9-]+)\s*:/gi)])
       .map(m => m[1])
   )

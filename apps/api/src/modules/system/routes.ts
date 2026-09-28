@@ -257,7 +257,7 @@ export const adminMonitoring: FastifyPluginAsync = async fastify => {
    * What this platform is made of, and whether each part is working.
    *
    * Every component measures something real; a component that cannot be
-   * measured says `unknown` rather than `operational`. See lib/components.ts —
+   * measured says `unknown` rather than `operational`. See modules/system/components.ts —
    * the whole design is about not inventing a status, because a page that
    * answers "is it working" wrongly is worse than one that does not answer.
    *
@@ -270,15 +270,15 @@ export const adminMonitoring: FastifyPluginAsync = async fastify => {
   fastify.get('/queues', async () => {
     const [totals, byQueue] = await Promise.all([
       queryOne(
-        `SELECT count(*) FILTER (WHERE done_at IS NULL AND run_at <= now() AND attempts < max_attempts) AS pending,
-                count(*) FILTER (WHERE done_at IS NULL AND attempts >= max_attempts) AS dead,
+        `SELECT count(*) FILTER (WHERE done_at IS NULL AND run_at <= now() AND dead_at IS NULL) AS pending,
+                count(*) FILTER (WHERE done_at IS NULL AND dead_at IS NOT NULL) AS dead,
                 count(*) FILTER (WHERE done_at > now() - interval '1 hour') AS completed_1h
          FROM jobs`
       ),
       query(
         `SELECT queue,
-                count(*) FILTER (WHERE done_at IS NULL AND attempts < max_attempts) AS pending,
-                count(*) FILTER (WHERE done_at IS NULL AND attempts >= max_attempts) AS dead,
+                count(*) FILTER (WHERE done_at IS NULL AND dead_at IS NULL) AS pending,
+                count(*) FILTER (WHERE done_at IS NULL AND dead_at IS NOT NULL) AS dead,
                 max(last_error) FILTER (WHERE done_at IS NULL AND last_error IS NOT NULL) AS last_error
          FROM jobs GROUP BY queue ORDER BY queue`
       )

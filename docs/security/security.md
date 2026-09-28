@@ -17,6 +17,11 @@ is implemented today — see the end for what is deliberately still open.
   (`scrypt$N$r$p$salt$hash`) so the parameters can be raised later without
   invalidating existing passwords.
 * **Session records** carry IP and user agent and can be revoked (`revoked_at`).
+* **In the browser** — the access token lives in `localStorage`, the refresh token
+  in an `HttpOnly; SameSite=Strict` cookie scoped to `/v1/auth`, and refreshes are
+  serialised across tabs with a Web Lock. Why, which alternatives were rejected,
+  and the multi-tab sign-out that was measured and fixed on 2026-09-28:
+  [token-tarolas.md](token-tarolas.md).
 
 ### The secret must be real in production
 
@@ -170,7 +175,7 @@ never as code.
   error detail, hostnames, versions, paths or configuration.
 * Probe failures are redacted before they are stored: URLs, credentials and IP
   addresses are stripped and the message truncated (`safeDetail` in
-  `lib/probes.ts`, covered by tests).
+  `apps/api/src/infrastructure/observability/probes.ts`, covered by tests).
 * The Docker socket is **not** mounted. It grants root-equivalent access to the
   host, so per-container detail is deliberately traded away for that boundary.
 * The only host path exposed to a container is `/` mounted **read-only** at

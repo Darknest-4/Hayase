@@ -199,4 +199,17 @@ describe('the websocket', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
     assert.equal(socket.readyState, socket.OPEN, 'the connection died on a malformed frame')
     socket.close()
   })
+
+  test('a ticket from a session that has since ended is refused', async () => {
+    // The socket is bound to the session it was issued under. Signing out
+    // between issuing the ticket and connecting must leave nothing open.
+    const own = await account()
+    const issued = await ticket(own)
+    const out = await app.inject({
+      method: 'POST', url: '/v1/auth/logout', headers: { authorization: `Bearer ${own}` }, payload: {}
+    })
+    assert.equal(out.statusCode, 204)
+    const { closeCode } = await connect('?ticket=' + issued)
+    assert.equal(closeCode, 4401, 'a signed-out session opened a socket')
+  })
 })

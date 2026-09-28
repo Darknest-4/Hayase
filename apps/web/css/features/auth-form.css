@@ -1,0 +1,21 @@
+/* ===========================================================================
+   Közös: features/auth/auth-form.js (belépő-/jelszómezők).
+
+   Betölti: minden útvonal, amelyik használja — #/login, #/reset, #/settings.
+   A router `ROUTE_STYLES` táblája sorolja fel; a test/route-styles.test.mjs
+   veti össze azzal, amit a képernyők ténylegesen használnak.
+   =========================================================================== */
+
+.auth-sub { color: var(--fg-muted); font: var(--type-caption); margin: 0; }
+.auth-form { display: flex; flex-direction: column; gap: var(--space-4); }
+.auth-form .tabs { margin-bottom: var(--space-1); }
+.auth-fields { display: flex; flex-direction: column; gap: var(--space-4); }
+.auth-fields .input { width: 100%; }
+.auth-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.auth-actions .btn { flex: 1 1 auto; }
+.auth-link { align-self: flex-start; font-size: .875rem; }
+.auth-error { margin: 0; }
+.auth-notice { margin: 0; }
+/* The password field's "show" button sits inside the field. */
+.input-wrap-trail > .input { padding-right: 2.75rem; }
+.input-wrap-trail > .input-trail { position: absolute; right: .3rem; }

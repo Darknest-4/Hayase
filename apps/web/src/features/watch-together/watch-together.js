@@ -4,7 +4,7 @@
 // param and relays play/pause/seek between room members.
 
 import { C } from '../../shared/ui/components.js'
-import { T } from '../../shared/i18n/i18n.js'
+import { I18n, T } from '../../shared/i18n/i18n.js'
 import { P } from '../../shared/ui/primitives.js'
 import { U } from '../../shared/lib/dom.js'
 import { YumeAPI } from '../../shared/api/yume.js'
@@ -62,11 +62,16 @@ export const PageW2G = {
     root.append(pad)
 
     if (!await YumeAPI.available()) {
-      pad.append(U.el('div', { class: 'callout', html: `Watch Together needs the Yume server. None reachable at <code>${YumeAPI.base()}</code> — start the backend or set it in <a href="#/settings" style="text-decoration:underline">Settings</a>.` }))
+      pad.append(U.el('div', { class: 'callout callout-warn' }, [
+        U.el('p', { text: I18n.f(T('Watch Together needs the server, and it is not reachable right now (tried: {url}).'), { url: YumeAPI.base() }) })
+      ]))
       return
     }
     if (!YumeAPI.user()) {
-      pad.append(U.el('div', { class: 'callout', html: 'Sign in to your <a href="#/settings" style="text-decoration:underline">Yume account</a> to create or join rooms.' }))
+      pad.append(U.el('div', { class: 'callout callout-info' }, [
+        U.el('p', { text: T('Sign in to create or join a room.') }),
+        U.el('a', { class: 'btn btn-secondary btn-sm', href: '#/login?next=w2g', text: T('Sign in') })
+      ]))
       return
     }
 

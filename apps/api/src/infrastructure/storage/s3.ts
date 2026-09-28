@@ -11,6 +11,7 @@
 // környezeti változók változnak, nem ez a fájl.
 
 import { createHash, createHmac } from 'node:crypto'
+import { sha256Hex } from '../text.ts'
 
 export interface S3Config {
   endpoint: string
@@ -44,7 +45,7 @@ export function mediaStorage (): S3Config | null {
   return s3FromEnv(process.env.R2_MEDIA_BUCKET?.trim() || 'yume-media')
 }
 
-const sha256 = (value: string | Buffer): string => createHash('sha256').update(value).digest('hex')
+const sha256 = sha256Hex
 const hmac = (key: string | Buffer, value: string): Buffer => createHmac('sha256', key).update(value).digest()
 
 /**

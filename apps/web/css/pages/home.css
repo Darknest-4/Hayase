@@ -1,0 +1,113 @@
+/* ===========================================================================
+   Útvonal: #/home — csak ennek a képernyőnek a szabályai.
+
+   Betölti: a router (`ROUTE_STYLES.home`), a képernyő moduljával együtt, és
+   a képernyő csak utána rajzol. Ami több oldalon kell, az nem itt van: a
+   keret a style.css-ben, a közös modulok a css/features/ alatt.
+   =========================================================================== */
+
+/* ===== home ===== */
+
+/* The featured title: its own key art, full-bleed, with the text on a scrim.
+   An <img>, not a CSS background, so the browser can prioritise it as the
+   page's largest paint (fetchpriority="high"). */
+.home-hero {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: flex-end;
+  min-height: clamp(26rem, 62vh, 40rem);
+  padding: var(--space-8) var(--gutter) var(--space-7);
+  overflow: clip;
+}
+.home-hero-art { position: absolute; inset: 0; z-index: -2; background: var(--bg-raised); }
+.home-hero-art img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  object-position: center 25%;
+  animation: fade-in var(--dur-reveal) var(--ease);
+}
+.home-hero-scrim {
+  position: absolute; inset: 0; z-index: -1;
+  background:
+    linear-gradient(to top, var(--bg) 0%, color-mix(in oklab, var(--bg) 70%, transparent) 38%, transparent 75%),
+    linear-gradient(to right, color-mix(in oklab, var(--bg) 88%, transparent) 0%, color-mix(in oklab, var(--bg) 45%, transparent) 45%, transparent 75%);
+}
+.home-hero-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 44rem;
+}
+.home-hero-loading .home-hero-inner { gap: var(--space-4); }
+.home-hero-eyebrow { color: var(--fg-muted); }
+.home-hero-title {
+  font: var(--type-display);
+  letter-spacing: -.035em;
+  margin: 0;
+  text-wrap: balance;
+}
+.home-hero-title a { color: inherit; }
+.home-hero-title a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: .12em; }
+.home-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  color: var(--fg-muted);
+  font: var(--weight-bold) .9375rem/1.4 var(--font-sans);
+}
+.home-hero-meta > span + span::before {
+  content: '';
+  display: inline-block;
+  width: 4px; height: 4px;
+  margin-right: var(--space-3);
+  vertical-align: middle;
+  border-radius: var(--radius-full);
+  background: var(--fg-faint);
+}
+.home-hero-score { display: inline-flex; align-items: center; gap: .3rem; color: var(--fg); }
+.home-hero-score svg { width: .95rem; height: .95rem; fill: var(--accent); stroke: var(--accent); }
+.home-hero-desc { color: var(--fg-muted); max-width: 38rem; font: var(--type-body); }
+.home-hero-genres .badge { background: color-mix(in oklab, var(--fg) 10%, transparent); color: var(--fg); }
+.home-hero-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-3); }
+
+.home-body { padding-top: var(--space-2); }
+
+/* Genres as big, quiet tiles: a second way in, next to the rails. */
+.home-genre-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: var(--space-3);
+}
+.home-genre {
+  display: flex;
+  align-items: center;
+  min-height: 3.75rem;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(120% 140% at 100% 0%, color-mix(in oklab, var(--accent) 16%, transparent), transparent 55%),
+    var(--bg-raised);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  font: var(--weight-extrabold) 1rem/1.2 var(--font-sans);
+  transition: border-color var(--dur) var(--ease), background-color var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.home-genre:hover { border-color: var(--border-strong); transform: translateY(-2px); }
+
+@media (max-width: 767px) {
+  .home-hero { min-height: 30rem; padding: var(--space-7) var(--gutter) var(--space-5); align-items: flex-end; }
+  .home-hero-scrim {
+    background: linear-gradient(to top, var(--bg) 0%, color-mix(in oklab, var(--bg) 80%, transparent) 45%, color-mix(in oklab, var(--bg) 25%, transparent) 100%);
+  }
+  .home-hero-desc { -webkit-line-clamp: 2; line-clamp: 2; }
+  .home-hero-actions .btn { flex: 1 1 auto; }
+  .home-hero-actions .btn-quiet { flex: 0 0 auto; }
+  .home-genre-grid { grid-template-columns: repeat(2, 1fr); gap: var(--space-2); }
+  .home-genre { min-height: 3.25rem; font-size: .9375rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-hero-art img { animation: none; }
+}

@@ -28,8 +28,19 @@
 	#
 	# Frissítés: scripts/cloudflare/trust-proxy.sh --caddy <ez a fájl>
 	# Utoljára: 2026-09-17
+	#
+	# A LÁTOGATÓ CÍME A `CF-Connecting-IP`-BŐL.
+	#
+	# Az `X-Forwarded-For` egy lánc, amibe a kérés feladója is írhat: egy
+	# Cloudflare Workerből indított kérés Cloudflare-címről érkezik, és a
+	# láncot a feladó töltheti ki — így bármilyen látogatói címet
+	# „megbízhatóan" be lehetett mondani, és a sebességkorlát meg a tiltás
+	# kulcsa szabadon választható volt. A `CF-Connecting-IP`-t a Cloudflare
+	# maga írja, egyetlen értékként. Csak a fenti tartományokból érkező
+	# kérésnél számít; minden más kérésnél a közvetlen peer a látogató.
 	servers {
 		trusted_proxies static 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+		client_ip_headers CF-Connecting-IP
 	}
 }
 
@@ -68,23 +79,11 @@ animehub.hu, www.animehub.hu {
 		-Server
 	}
 
-	# HALOTT ÚTVONAL — a `yume-bot-1` konténer NEM LÉTEZIK.
-	#
-	# Nincs Discord bot a repóban, és ilyen konténer sem fut ezen a gépen;
-	# ellenőrizve `docker ps -a`-val. Ez az útvonal tehát 502-t ad.
-	#
-	# Szándékosan MEGMARAD, nem törlöm: eltávolítva az `/interactions` a fő
-	# kezelőre esne, és a webkliens lapját adná vissza 200-zal — egy
-	# webhook-hívónak az rosszabb válasz, mint egy őszinte 502. Amikor a bot
-	# elkészül, ez a blokk már a helyén van; ha nem lesz bot, az egész
-	# `handle` sor törölhető.
-	handle /interactions {
-		reverse_proxy yume-bot-1:4100
-	}
-
 	handle {
 		# Ugyanaz a beállítás, mint a duckdns-en: a telepítés ne legyen kiesés.
 		reverse_proxy yume-app-1:4000 {
+			# Egyetlen érték: a fenti szabály szerint megállapított látogató.
+			header_up X-Forwarded-For {client_ip}
 			health_uri /v1/health
 			health_interval 5s
 			health_timeout 3s
@@ -150,6 +149,8 @@ discord.animehub.hu {
 	@api path /v1/* /graphql* /graphiql* /ws*
 	handle @api {
 		reverse_proxy yume-app-1:4000 {
+			# Egyetlen érték: a fenti szabály szerint megállapított látogató.
+			header_up X-Forwarded-For {client_ip}
 			health_uri /v1/health
 			health_interval 5s
 			health_timeout 3s
@@ -162,6 +163,8 @@ discord.animehub.hu {
 		rewrite * /dashboard{uri}
 		# Ugyanaz a beállítás, mint a többi néven: a telepítés ne legyen kiesés.
 		reverse_proxy yume-app-1:4000 {
+			# Egyetlen érték: a fenti szabály szerint megállapított látogató.
+			header_up X-Forwarded-For {client_ip}
 			health_uri /v1/health
 			health_interval 5s
 			health_timeout 3s
@@ -172,45 +175,11 @@ discord.animehub.hu {
 }
 
 yumee.duckdns.org {
-	encode zstd gzip
-
-	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
-		-Server
-	}
-
-	# HALOTT ÚTVONAL — a `yume-bot-1` konténer NEM LÉTEZIK.
+	# A RÉGI CÍM — ÁTIRÁNYÍTÁS, NEM MÁSODIK BEJÁRAT.
 	#
-	# Nincs Discord bot a repóban, és ilyen konténer sem fut ezen a gépen;
-	# ellenőrizve `docker ps -a`-val. Ez az útvonal tehát 502-t ad.
-	#
-	# Szándékosan MEGMARAD, nem törlöm: eltávolítva az `/interactions` a fő
-	# kezelőre esne, és a webkliens lapját adná vissza 200-zal — egy
-	# webhook-hívónak az rosszabb válasz, mint egy őszinte 502. Amikor a bot
-	# elkészül, ez a blokk már a helyén van; ha nem lesz bot, az egész
-	# `handle` sor törölhető.
-	handle /interactions {
-		reverse_proxy yume-bot-1:4100
-	}
-
-	handle {
-		# A TELEPÍTÉS NE LEGYEN KIESÉS.
-		#
-		# Az `app` konténer újralétrehozásakor a Caddy egészségellenőrzője
-		# DNS-hibát kapott ("lookup yume-app-1 ... server misbehaving"),
-		# leírta az upstreamet, és a KÖVETKEZŐ ellenőrzésig 503-at adott —
-		# harminc másodpercig, pedig az app huszonnégy alatt egészséges lett.
-		# Minden `docker compose up -d --build app` fél perc kiesés volt.
-		#
-		# Két beállítás fedi le a két felét: sűrűbb ellenőrzés a gyors
-		# visszatéréshez, és `lb_try_duration`, amitől egy beérkező kérés
-		# MEGVÁRJA a felálló upstreamet ahelyett, hogy azonnal elhasalna.
-		reverse_proxy yume-app-1:4000 {
-			health_uri /v1/health
-			health_interval 5s
-			health_timeout 3s
-			lb_try_duration 20s
-			lb_try_interval 500ms
-		}
-	}
+	# Ez a név a Cloudflare NÉLKÜL szolgálta ki ugyanazt az alkalmazást: WAF,
+	# DDoS-elnyelés és gyorsítótár nélkül, miközben az animehub.hu blokkja
+	# gondosan kizárta a Cloudflare megkerülését. A kizárás így díszlet volt.
+	# A régi hivatkozások tovább működnek — csak már a Cloudflare-en át.
+	redir https://animehub.hu{uri} permanent
 }

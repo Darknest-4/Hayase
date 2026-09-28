@@ -16,17 +16,29 @@ a képek a színesek, a felület nem**. Visszafogott, filmszerű, nem játékos.
 
 ## Rétegek
 
-A megjelenés három fájlban él, és a **betöltési sorrend a szerződés**:
+A megjelenés rétegekben él, és a **betöltési sorrend a szerződés**:
 
 ```
-tokens.css      145 egyéni tulajdonság — az értékek
-components.css  171 szabály            — a primitívek
-style.css       5 002 sor              — elrendezés és képernyők
+tokens.css        az értékek (156 token)             — minden oldalon
+components.css    a tervrendszer komponensei         — minden oldalon
+style.css         csak a keret (oldalsáv, alsó sáv,   — minden oldalon
+                  gyorskereső, lábléc, kapuk)
+css/pages/*.css   egy képernyő saját szabályai (16)   — csak azon a képernyőn
+css/features/*.css több képernyő közös modulja (8)    — csak ahol a modul rajzol
+admin.css, player2.css, maintenance.css               — csak a saját felületükön
 ```
+
+2026-09 előtt a `style.css` egyetlen 149 KB-os fájl volt, amit minden oldal
+letöltött, és amiből egy oldal 2–17 KB-ot használt. A képernyők lapjait a
+router tölti be az útvonallal együtt (`ROUTE_STYLES`), a ritkán megjelenő
+részekét (ablak, panel, fül) a modul maga, közvetlenül a rajzolás előtt. Lásd
+[13 — Újratervezés, 4. fejezet](13-redesign-2026-09.md#4-teljesítmény).
 
 Azonos fajsúlyú szabályt a fájlsorrend dönt el, ezért egy képernyő felül tud
 írni egy primitívet `!important` nélkül és anélkül, hogy a komponensréteghez
-hozzányúlna.
+hozzányúlna. A lusta lapok egymáshoz képesti sorrendje a látogatás sorrendjétől
+függ, ezért két ilyen lap között nem lehet sorrendfüggő átfedés — ezt a
+szétválogatás ellenőrizte, és a `css-order.test.mjs` a töréspontokra őrzi.
 
 Kódoldalon ugyanez:
 
@@ -40,9 +52,14 @@ pages/ + features/        a képernyők
 
 Nem konvenció, hanem teszt:
 
-- **`css-order.test.mjs`** — a responsive blokk a `style.css` végén marad
+- **`css-order.test.mjs`** — a responsive blokk minden stíluslap végén marad
   (egy media query nem ad többlet-fajsúlyt, így egy előtte lévő felülírás
-  némán meghal), és minden hivatkozott token létezik, mindkét stíluslapban.
+  némán meghal), egyik lap sem lapítja el egy másik töréspontját, és minden
+  hivatkozott token létezik, minden stíluslapban.
+- **`route-styles.test.mjs`** — minden útvonal pontosan azt a CSS-t tölti be,
+  amit a moduljai használnak: se kevesebbet (stílus nélküli elem), se többet
+  (fölösleges letöltés), és a keret lapjában nincs egyetlen képernyő saját
+  szabálya sem.
 - **`layering.test.mjs`** — a modulrétegek iránya: `shared → entities →
   features → pages → app`. Egy komponenskönyvtár, amit senki nem használ,
   megbukik az „minden fájl elérhető a belépési pontból" szabályon.

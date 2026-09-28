@@ -1,7 +1,7 @@
 // Többdimenziós számlálók — a forró úton, memóriában.
 //
 // MIÉRT NEM REDIS (még):
-// Egy app-példány fut. A `docs/redis.md` leírja, mikor nem lesz ez így, és
+// Egy app-példány fut. A `docs/operations/redis.md` leírja, mikor nem lesz ez így, és
 // mit kell akkor kicserélni. Ez a modul pontosan az a hely: a hívói felület
 // (`hit`, `recent`) nem változik, csak a tároló mögötte. Redist bevezetni ma
 // azért, mert egy „edge" rendszertől ezt várja az ember, egy második

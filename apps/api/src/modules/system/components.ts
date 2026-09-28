@@ -103,7 +103,7 @@ const DEFINITIONS: Component[] = [
       if (probe.status === 'red') return { status: 'down', detail: probe.detail ?? 'no heartbeat' }
       if (probe.status === 'yellow') return { status: 'unknown', detail: probe.detail ?? 'never run' }
       const dead = await queryOne<{ n: number }>(
-        'SELECT count(*)::int AS n FROM jobs WHERE attempts >= max_attempts AND done_at IS NULL')
+        'SELECT count(*)::int AS n FROM jobs WHERE dead_at IS NOT NULL AND done_at IS NULL')
       const n = Number(dead?.n ?? 0)
       if (n > 10) return { status: 'degraded', detail: `beating, but ${n} jobs have exhausted their retries` }
       return { status: 'operational', detail: `beating; ${n} exhausted job${n === 1 ? '' : 's'}` }

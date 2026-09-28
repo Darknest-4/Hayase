@@ -1,5 +1,8 @@
 # Terhelésmérés
 
+> **Korábbi változat (2026-09-15/16).** Ugyanerről a témáról az újabb, a mai kódot leíró dokumentum: [analytics-load-testing.md](../analytics-load-testing.md). Ahol a kettő eltér, az újabb a mérvadó; ez a fájl a korábbi mérések és döntések miatt maradt meg.
+
+
 Ez a dokumentum arról szól, hogyan derül ki, hány embert bír el ez a telepítés
 — és legalább annyira arról, hogy mit **nem** mond meg egy ilyen mérés.
 

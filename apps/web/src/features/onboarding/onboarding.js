@@ -34,6 +34,8 @@ import { I18n, T } from '../../shared/i18n/i18n.js'
 import { Prefs } from '../../shared/state/preferences.js'
 import { site } from '../../shared/lib/site-config.js'
 import { U } from '../../shared/lib/dom.js'
+import { ONBOARDING_CHOICES, onboardingDue } from './meta.js'
+import { loadStylesheet } from '../../shared/lib/stylesheet.js'
 
 export const Onboarding = {
   /** Built from the preference spec, so a new onboarding question is one
@@ -59,37 +61,24 @@ export const Onboarding = {
     }
   ],
 
-  /** Human labels for enum values. The spec carries keys, not prose. */
-  CHOICES: {
-    'language.ui': [
-      { value: 'hu', label: 'Magyar', hint: 'Hungarian interface' },
-      { value: 'en', label: 'English', hint: 'English interface' }
-    ],
-    'language.titles': [
-      { value: 'romaji', label: 'Romaji', hint: 'Shingeki no Kyojin' },
-      { value: 'english', label: 'English', hint: 'Attack on Titan' },
-      { value: 'hungarian', label: 'Magyar', hint: 'Titles where a Hungarian one exists' },
-      { value: 'native', label: '日本語', hint: '進撃の巨人' }
-    ],
-    'playback.variant': [
-      { value: 'sub', label: 'Subtitled', hint: 'Original audio with subtitles' },
-      { value: 'dub', label: 'Dubbed', hint: 'Dubbed audio when there is one' },
-      { value: 'any', label: 'No preference', hint: 'Whatever plays best' }
-    ]
-  },
+  /** Human labels for enum values — a `meta.js`-ben, mert a beállítások oldal is ezeket mutatja. */
+  CHOICES: ONBOARDING_CHOICES,
 
   _open: false,
 
   // ---------------------------------------------------------------- trigger
 
-  /** Should the wizard run? Called once after boot. (Jelenleg kikapcsolva) */
+  /** Should the wizard run? A döntés a `meta.js`-ben van (a router is ott kérdezi). */
   due () {
-    return false
+    return onboardingDue()
   },
 
   /** Run it if it is due. Safe to call unconditionally. */
-  maybeOpen () {
-    if (this.due()) this.open()
+  async maybeOpen () {
+    if (!this.due()) return
+    // A varázsló saját stíluslapja: csak akkor jön le, amikor tényleg megnyílik.
+    await loadStylesheet('features/onboarding.css')
+    this.open()
   },
 
   // ---------------------------------------------------------------- render

@@ -16,7 +16,10 @@
 # így a hozzáférési kulcs nem kerül lemezre a konténerben.
 FROM postgres:16-alpine
 
-RUN apk add --no-cache rclone
+# A `git` és a GNU `tar` a KÓDMENTÉSHEZ kell (scripts/database/backup-code.sh):
+# a git-előzményt `git bundle` viszi, a lemezen álló kódot egy fájllistából
+# készülő archívum — a busybox tar ezt nem tudja megbízhatóan.
+RUN apk add --no-cache rclone git tar
 
 # A szkriptek csatolva érkeznek (lásd docker-compose.yml), nem beépítve —
 # így egy javításukhoz nem kell képet építeni.

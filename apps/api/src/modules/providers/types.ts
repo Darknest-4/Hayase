@@ -224,3 +224,12 @@ export interface AnimeProvider {
 export function noResult (): ProviderResult {
   return { sources: [], subtitles: [] }
 }
+
+/** Egy lépés a láncban — ez megy a válaszba és a naplóba. */
+export interface Attempt {
+  provider: string
+  outcome: 'ok' | 'empty' | 'error' | 'skipped' | 'timeout'
+  sources: number
+  ms: number
+  detail?: string
+}

@@ -23,6 +23,9 @@ import { fileURLToPath } from 'node:url'
 const here = dirname(fileURLToPath(import.meta.url))
 const SRC = join(here, '..', 'src')
 const api = readFileSync(join(SRC, 'shared/api/yume.js'), 'utf8')
+// Az admin-hívások 2026-09 óta külön modulban élnek (csak a panel tölti be),
+// és betöltéskor `YumeAPI.admin`-ként kötik be magukat.
+const adminApi = readFileSync(join(SRC, 'shared/api/yume-admin.js'), 'utf8')
 
 /** Every client script except the vendored third-party ones. */
 function scripts (dir = SRC, out = []) {
@@ -60,9 +63,14 @@ const namespaces = {}
 for (const m of api.matchAll(/^\s{2,6}([A-Za-z_$][\w$]*)\s*:\s*\{/gm)) {
   namespaces[m[1]] = members(objectBody(api, m.index + m[0].lastIndexOf('{')))
 }
+if (/^YumeAPI\.admin = AdminAPI$/m.test(adminApi)) {
+  top.add('admin')
+  const open = adminApi.indexOf('export const AdminAPI = {')
+  namespaces.admin = new Set([...adminApi.slice(open).matchAll(/^\s{2}(?:async\s+)?([A-Za-z_$][\w$]*)\s*(?:\(|:)/gm)].map(m => m[1]))
+}
 
 describe('the client only calls API methods that exist', () => {
-  const files = scripts().filter(f => !f.endsWith('yume-api.js'))
+  const files = scripts().filter(f => !f.endsWith('yume-api.js') && !f.endsWith('yume-admin.js'))
 
   it('reads the API surface at all', () => {
     // Without this the assertions below would pass by finding nothing: a

@@ -1,0 +1,12 @@
+/* ===========================================================================
+   Közös: features/watch-together/watch-together.js (közös nézés).
+
+   Betölti: minden útvonal, amelyik használja — #/w2g.
+   A router `ROUTE_STYLES` táblája sorolja fel; a test/route-styles.test.mjs
+   veti össze azzal, amit a képernyők ténylegesen használnak.
+   =========================================================================== */
+
+/* ===== watch together ===== */
+
+.w2g-feed { margin-top: var(--space-3); display: flex; flex-direction: column; gap: var(--space-1); }
+.w2g-event { font-size: var(--text-xs); color: var(--fg-faint); font-weight: var(--weight-medium); }

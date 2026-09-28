@@ -182,7 +182,7 @@ const DEFINITIONS: Definition[] = [
         return {
           verdict: 'fail',
           found: 'egyetlen fióknak sincs admin szerepköre — senki nem tudja üzemeltetni ezt a példányt',
-          remedy: 'Az elsőként regisztrált fiók kapja meg; lásd routes/auth.ts'
+          remedy: 'Az elsőként regisztrált fiók kapja meg; lásd modules/auth/routes.ts'
         }
       }
       if (n > 5) {
@@ -442,11 +442,11 @@ const DEFINITIONS: Definition[] = [
     id: 'dead-jobs',
     group: 'Jelzések',
     title: 'A háttérmunka nem hal el némán',
-    looksAt: 'jobs where attempts >= max_attempts',
+    looksAt: 'jobs marked dead (dead_at) and not done',
     weight: 'normal',
     run: async () => {
       const row = await queryOne<{ n: number }>(
-        'SELECT count(*)::int AS n FROM jobs WHERE attempts >= max_attempts AND done_at IS NULL')
+        'SELECT count(*)::int AS n FROM jobs WHERE dead_at IS NOT NULL AND done_at IS NULL')
       const n = Number(row?.n ?? 0)
       if (n > 10) {
         return { verdict: 'warn', found: `${n} feladat elhasználta az újrapróbálkozásait`, remedy: 'Nézd meg az Infrastruktúránál, melyik sorról van szó' }
@@ -470,7 +470,7 @@ const DEFINITIONS: Definition[] = [
       return {
         verdict: 'fail',
         found: `a kódolás ${row?.encoding ?? 'ismeretlen'} — az ékezetes szöveg rosszul tárolódik és hasonlítódik`,
-        remedy: 'Hozd létre újra az adatbázist ENCODING UTF8-cal, és állítsd vissza; lásd lib/db-encoding.ts'
+        remedy: 'Hozd létre újra az adatbázist ENCODING UTF8-cal, és állítsd vissza; lásd infrastructure/migrations/db-encoding.ts'
       }
     }
   }

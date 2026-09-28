@@ -88,7 +88,7 @@ kép van mögötte; máshol dekoráció.
 - **Nincs 12px alatti szöveg.**
 - **Nincs 24px alatti célpont**, egy dokumentált kivétellel.
 - **Nincs második görbe és nincs második interakciós időzítés.**
-- **A responsive blokk a `style.css` végén marad** — teszt őrzi.
+- **A responsive blokk minden stíluslap végén marad** (a keret, a képernyők és a közös modulok lapjain is) — teszt őrzi.
 
 ## A tervezés mögötti három elv
 

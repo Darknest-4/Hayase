@@ -22,7 +22,13 @@ export const Copy = {
     admin: 'Admin',
     settings: 'Settings',
     profile: 'Profile',
-    more: 'More'
+    more: 'More',
+    // A labelled sidebar's section headings (router.applyNavLabels).
+    group: {
+      discover: 'Discover',
+      mine: 'Yours',
+      community: 'Community'
+    }
   },
 
   // home page rails (the horizontal rows of anime)

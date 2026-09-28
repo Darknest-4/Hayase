@@ -268,8 +268,8 @@ async function workerHealth (): Promise<TestResult> {
   const METRIC_LOOKBACK = '7 days'
 
   const rows = await query<{ pending: string, dead: string, age_s: string | null }>(
-    `SELECT (SELECT count(*) FROM jobs WHERE done_at IS NULL AND attempts < max_attempts) AS pending,
-            (SELECT count(*) FROM jobs WHERE done_at IS NULL AND attempts >= max_attempts) AS dead,
+    `SELECT (SELECT count(*) FROM jobs WHERE done_at IS NULL AND dead_at IS NULL) AS pending,
+            (SELECT count(*) FROM jobs WHERE done_at IS NULL AND dead_at IS NOT NULL) AS dead,
             (SELECT EXTRACT(EPOCH FROM (now() - max(created_at))) FROM system_metrics
               WHERE created_at > now() - $1::interval) AS age_s`,
     [METRIC_LOOKBACK]

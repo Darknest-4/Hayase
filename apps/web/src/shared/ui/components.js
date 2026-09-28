@@ -2,13 +2,12 @@
 // Reusable render helpers: cards, horizontal sections, skeletons, modals.
 
 import { Copy } from '../i18n/copy.js'
-import { featureOn, pageAvailable, permissionsHeld, playbackAvailable, site } from '../lib/site-config.js'
+import { featureOn, pageAvailable, playbackAvailable, site } from '../lib/site-config.js'
 import { T } from '../i18n/i18n.js'
 import { Store } from '../state/store.js'
 import { P } from '../ui/primitives.js'
 import { titleTheme } from '../lib/title-theme.js'
 import { U } from '../lib/dom.js'
-import { YumeAPI } from '../api/yume.js'
 
 export const C = {
   HEART: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
@@ -20,8 +19,10 @@ export const C = {
 
   card (media, { progress = null, subline = null } = {}) {
     const entry = Store.entry(media.id)
+    // alt="": a cím a hivatkozás szövegében már elhangzik, a borító neve
+    // ugyanazt mondaná el másodszor.
     const cover = U.el('div', { class: 'card-cover' }, [
-      U.el('img', { src: U.cover(media), alt: U.title(media), loading: 'lazy' })
+      U.el('img', { src: U.cover(media), alt: '', loading: 'lazy', decoding: 'async' })
     ])
 
     if (entry) cover.append(U.el('div', { class: `card-status-dot dot-${entry.status}` }))
@@ -43,10 +44,11 @@ export const C = {
       ]))
     }
 
-    if (media.averageScore) {
-      cover.append(U.el('div', { class: 'card-score' }, [
+    const score = U.score(media)
+    if (score) {
+      cover.append(U.el('div', { class: 'card-score', title: T('Average score') }, [
         U.svg(this.HEART, 11),
-        U.el('span', { text: media.averageScore + '%' })
+        U.el('span', { text: score + '%' })
       ]))
     }
 
@@ -194,7 +196,7 @@ export const C = {
     ])
 
     const year = new Date().getFullYear()
-    return U.el('footer', { class: 'site-footer' }, [
+    return U.el('footer', { class: 'site-footer' }, [U.el('div', { class: 'footer-inner' }, [
       // The landmark's own heading, for screen readers only. Without it a page
       // that ends at h1 would jump straight to the columns' h3; with it the
       // sequence is h1 -> h2 -> h3 on every page, whatever the page above it
@@ -216,7 +218,12 @@ export const C = {
           // setting existed and was rendered nowhere, so the field silently did
           // nothing. An empty value falls back to the translated default rather
           // than leaving a blank line.
-          U.el('p', { class: 'footer-tagline', text: site()?.tagline?.trim() || T('footer.tagline') })
+          //
+          // Through T(): the value the 0011 migration seeds ("Track, discover
+          // and watch anime — your way.") is in the dictionary, so an instance
+          // nobody customised no longer shows English under a Hungarian UI. A
+          // tagline the operator wrote is not a key, and T() hands it back as is.
+          U.el('p', { class: 'footer-tagline', text: site()?.tagline?.trim() ? T(site().tagline.trim()) : T('footer.tagline') })
         ]),
         /*
          * A LÁBLÉC UGYANAZT KÉRDEZI, AMIT A FEJLÉC.
@@ -281,7 +288,7 @@ export const C = {
           html: `${T('Anime data from')} <a href="https://anilist.co" target="_blank" rel="noopener">AniList</a>, <a href="https://jikan.moe" target="_blank" rel="noopener">Jikan</a> &amp; <a href="https://api.ani.zip" target="_blank" rel="noopener">ani.zip</a>`
         })
       ])
-    ])
+    ])])
   },
 
   // ---- hover preview (like the original app's preview cards) ----
@@ -336,8 +343,8 @@ export const C = {
       U.el('div', { class: 'preview-media-scrim' }),
       U.el('div', { class: 'preview-media-title', text: U.title(media) })
     )
-    if (media.averageScore) {
-      head.append(U.el('div', { class: 'preview-score' }, [U.svg(this.HEART, 11), U.el('span', { text: media.averageScore + '%' })]))
+    if (U.score(media)) {
+      head.append(U.el('div', { class: 'preview-score' }, [U.svg(this.HEART, 11), U.el('span', { text: U.score(media) + '%' })]))
     }
 
     // meta chips instead of a plain dot-row
@@ -411,9 +418,11 @@ export const C = {
   },
 
   skeletonCard () {
-    return U.el('div', { class: 'card' }, [
+    // A kártya alakja: borító, két sor cím, egy sor tény — nem egy szürke doboz.
+    return U.el('div', { class: 'card card-skeleton', 'aria-hidden': 'true' }, [
       U.el('div', { class: 'card-cover skeleton' }),
-      U.el('div', { class: 'card-title skeleton', style: 'height:1em;border-radius:var(--radius-sm);' })
+      U.el('div', { class: 'skeleton skel-text', style: 'margin-top:var(--space-2)' }),
+      U.el('div', { class: 'skeleton skel-text skel-text-sm skel-line-mid' })
     ])
   },
 
@@ -446,366 +455,90 @@ export const C = {
   },
 
   /** Ugyanaz a sor, fekvő kártyákkal. */
-  bannerSection (title, mediaPromise, { moreHref = null } = {}) {
-    const row = U.el('div', { class: 'hscroll hscroll-banner' },
-      Array.from({ length: 3 }, () => U.el('div', { class: 'bcard skeleton' })))
-    const head = U.el('div', { class: 'section-head' }, [
-      U.el('h2', { class: 'section-title', text: title })
-    ])
-    if (moreHref) head.append(U.el('a', { class: 'section-more', href: moreHref, text: T('View more') }))
-    const wrap = U.el('section', { class: 'section section-banner' }, [head, row])
+  bannerSection (title, source, { moreHref = null } = {}) {
+    const row = U.el('div', { class: 'hscroll hscroll-banner', 'aria-busy': 'true' },
+      Array.from({ length: 3 }, () => U.el('div', { class: 'bcard skeleton', 'aria-hidden': 'true' })))
+    const wrap = this._sectionShell(title, row, { moreHref, className: 'section section-banner' })
 
-    Promise.resolve(mediaPromise).then(mediaList => {
+    this._whenNear(wrap, source, mediaList => {
+      row.removeAttribute('aria-busy')
       if (!mediaList?.length) { wrap.remove(); return }
       row.replaceChildren(...mediaList.slice(0, 12).map(m => this.bannerCard(m)))
-    }).catch(() => { wrap.remove() })
+    }, () => { wrap.remove() })
 
     return wrap
   },
 
   // horizontal scrolling section fed by a promise resolving to a media array
-  section (title, mediaPromise, { moreHref = null, cardOptions = () => ({}) } = {}) {
-    const row = U.el('div', { class: 'hscroll' }, Array.from({ length: 8 }, () => this.skeletonCard()))
-    const head = U.el('div', { class: 'section-head' }, [
-      U.el('h2', { class: 'section-title', text: title })
-    ])
-    if (moreHref) head.append(U.el('a', { class: 'section-more', href: moreHref, text: T('View more') }))
+  section (title, source, { moreHref = null, cardOptions = () => ({}) } = {}) {
+    const row = U.el('div', { class: 'hscroll', 'aria-busy': 'true' }, Array.from({ length: 8 }, () => this.skeletonCard()))
+    const section = this._sectionShell(title, row, { moreHref })
 
-    const section = U.el('section', { class: 'section' }, [head, row])
-
-    Promise.resolve(mediaPromise).then(mediaList => {
+    // Újrapróbálni csak egy betöltő függvényt lehet; egy elhasalt ígéret
+    // ugyanúgy hasalna el másodszor is.
+    const retry = typeof source !== 'function'
+      ? null
+      : U.el('button', {
+        class: 'btn btn-secondary btn-sm',
+        type: 'button',
+        onclick: () => {
+          row.setAttribute('aria-busy', 'true')
+          row.replaceChildren(...Array.from({ length: 8 }, () => this.skeletonCard()))
+          load()
+        }
+      }, [document.createTextNode(T('Try again'))])
+    const load = () => this._whenNear(section, source, mediaList => {
+      row.removeAttribute('aria-busy')
       row.replaceChildren()
-      if (!mediaList?.length) {
-        section.remove()
-        return
-      }
+      // Egy üres sor nem hiba, hanem hiány: a cím alatt semmi rosszabb, mint
+      // a hiányzó sor.
+      if (!mediaList?.length) { section.remove(); return }
       for (const media of mediaList) row.append(this.card(media, cardOptions(media)))
-    }).catch(() => {
-      row.replaceChildren(P.emptyState(T('Failed to load.')))
+    }, () => {
+      row.removeAttribute('aria-busy')
+      row.replaceChildren(U.el('div', { class: 'hscroll-error' }, [
+        U.el('span', { text: T('Failed to load.') }),
+        retry
+      ]))
     })
-
+    load()
     return section
+  },
+
+  /** A sor keretét adja: cím, „Továbbiak", és maga a sor. */
+  _sectionShell (title, row, { moreHref = null, className = 'section' } = {}) {
+    const id = 'sec-' + Math.random().toString(36).slice(2, 9)
+    const head = U.el('div', { class: 'section-head' }, [
+      U.el('h2', { class: 'section-title', id, text: title })
+    ])
+    if (moreHref) head.append(U.el('a', { class: 'section-more', href: moreHref, text: T('View more'), 'aria-describedby': id }))
+    return U.el('section', { class: className, 'aria-labelledby': id }, [head, row])
+  },
+
+  /**
+   * Betölt, amikor a sor a képernyő közelébe ér.
+   *
+   * `source` lehet ígéret (azonnal fut, ahogy eddig) vagy függvény: azt csak
+   * akkor hívjuk meg, amikor a sor 600 pixelen belülre ér. IntersectionObserver
+   * híján — régi böngésző, egységteszt — azonnal.
+   */
+  _whenNear (node, source, done, failed) {
+    const run = () => {
+      Promise.resolve(typeof source === 'function' ? source() : source).then(done, failed)
+    }
+    if (typeof source !== 'function' || typeof window.IntersectionObserver !== 'function') { run(); return }
+    const observer = new window.IntersectionObserver(entries => {
+      if (!entries.some(e => e.isIntersecting)) return
+      observer.disconnect()
+      run()
+    }, { rootMargin: '600px 0px' })
+    // A csomópont még nincs a dokumentumban: a megfigyelés a következő
+    // képkockában indul, amikor a lap már beillesztette.
+    window.requestAnimationFrame(() => observer.observe(node))
   },
 
   grid (mediaList, cardOptions = () => ({})) {
     return U.el('div', { class: 'grid' }, mediaList.map(media => this.card(media, cardOptions(media))))
-  },
-
-  // list-status dropdown + progress buttons used on the detail page
-  listControls (media, onChange = () => {}) {
-    const wrap = U.el('div', { class: 'detail-actions' })
-
-    const render = () => {
-      wrap.replaceChildren()
-      const entry = Store.entry(media.id)
-
-      const select = U.el('select', {
-        class: 'select',
-        onchange: e => {
-          if (e.target.value === '') {
-            Store.removeEntry(media.id)
-            U.toast(T('Removed from list'))
-          } else {
-            Store.saveEntry(media, { status: e.target.value })
-            U.toast(`Set to ${U.listStatusMap[e.target.value]}`)
-          }
-          render()
-          onChange()
-        }
-      }, [
-        U.el('option', { value: '', text: T(entry ? 'Remove from list' : 'Add to list…') }),
-        ...Object.entries(U.listStatusMap).map(([value, label]) =>
-          U.el('option', { value, text: T(label), ...(entry?.status === value ? { selected: '' } : {}) }))
-      ])
-      wrap.append(select)
-
-      if (entry && entry.status !== 'PLANNING') {
-        const total = media.episodes ? ` / ${media.episodes}` : ''
-        wrap.append(
-          U.el('button', {
-            class: 'icon-btn',
-            title: T('Decrease progress'),
-            onclick: () => { Store.setProgress(media, (Store.entry(media.id)?.progress ?? 0) - 1); render(); onChange() }
-          }, [U.svg(this.MINUS, 14)]),
-          U.el('span', { style: 'font-weight:800;font-size:var(--text-sm);', text: `${entry.progress ?? 0}${total} ep` }),
-          U.el('button', {
-            class: 'icon-btn',
-            title: T('Increase progress'),
-            onclick: () => { Store.setProgress(media, (Store.entry(media.id)?.progress ?? 0) + 1); render(); onChange() }
-          }, [U.svg(this.PLUS, 14)])
-        )
-      }
-
-      const fav = Store.isFavourite(media.id)
-      wrap.append(U.el('button', {
-        class: `btn btn-sm ${fav ? 'btn-theme' : 'btn-ghost'}`,
-        onclick: () => {
-          const nowFav = Store.toggleFavourite(media.id)
-          U.toast(T(nowFav ? 'Added to favourites' : 'Removed from favourites'))
-          render()
-        }
-      }, [U.svg(this.HEART, 14), document.createTextNode(T(fav ? 'Favourited' : 'Favourite'))]))
-    }
-
-    render()
-    return wrap
-  },
-
-  // ---- Yume account sign-in/register card ----
-  authCard (onAuthed = () => {}) {
-    const wrap = U.el('div', { class: 'setting-card' })
-
-    const render = () => {
-      wrap.replaceChildren()
-      const user = YumeAPI.user()
-
-      if (user) {
-        wrap.append(
-          U.el('h3', { text: T('Yume account') }),
-          U.el('p', { text: `Signed in as ${user.username}.` }),
-          U.el('button', {
-            class: 'btn btn-secondary btn-sm',
-            onclick: async () => { await YumeAPI.logout(); render(); onAuthed() }
-          }, [document.createTextNode(T('Sign out'))])
-        )
-        return
-      }
-
-      /*
-       * KIJELENTKEZVE: ELKÜLDÜNK, NEM ŰRLAPOT RAJZOLUNK.
-       *
-       * Itt korábban egy teljes belépő űrlap állt — a HARMADIK másolat
-       * ugyanabból a logikából, a felugró ablak és a kapu mellett. A
-       * következménye pontosan az lett, ami a másolatoké szokott: amikor az
-       * emberpróba bekerült, ebbe nem került bele, tehát a regisztráció innen
-       * 403-mal hasalt volna el — ráadásul némán, mert ez a kártya a hibát egy
-       * eltűnő toastban mutatta.
-       *
-       * Egy belépőlap van (`#/login`), és ez odavisz. A `next` viszi a
-       * szándékot: aki a közösségi lapról indul, oda tér vissza.
-       */
-      const here = String(window.location.hash || '').replace(/^#\/?/, '').split('?')[0]
-      const next = here ? `?next=${encodeURIComponent(here)}` : ''
-      wrap.append(
-        U.el('h3', { text: T('Yume account') }),
-        U.el('p', { text: T('Sign in to join the discussion and sync with the platform.') }),
-        U.el('div', { style: 'display:flex;gap:var(--space-2);margin-top:var(--space-3);flex-wrap:wrap;' }, [
-          U.el('a', { class: 'btn btn-primary btn-sm', href: `#/login${next}` },
-            [document.createTextNode(T('Sign in'))]),
-          U.el('a', { class: 'btn btn-ghost btn-sm', href: `#/login/register${next}` },
-            [document.createTextNode(T('Create account'))])
-        ])
-      )
-    }
-
-    render()
-    return wrap
-  },
-
-  // ---- comment rendering (spoiler-aware, plain text) ----
-  commentBody (comment) {
-    const body = U.el('div', { class: 'comment-body', text: comment.body })
-    if (!comment.spoiler) return body
-    const shield = U.el('div', {
-      class: 'comment-spoiler',
-      text: T('Spoiler — click to reveal'),
-      onclick: e => { e.stopPropagation(); shield.replaceWith(body) }
-    })
-    return shield
-  },
-
-  // ---- per-anime comment section (detail page) ----
-  commentsSection (media) {
-    /*
-     * OSZTÁLYNÉV, hogy az elrendezés meg tudja fogni.
-     *
-     * Osztály nélkül a szakaszt CSS-ből nem lehetett megcélozni, és emiatt
-     * telefonon nem lehetett a helyére tenni: a lejátszóoldalon az
-     * epizódlista a lejátszó FÖLÉ került, mert a hozzászólásokat nem lehetett
-     * a lista mögé rendezni. Mérve: a videó a hajtás alá csúszott.
-     */
-    const wrap = U.el('div', { class: 'comments-section' })
-    // The switch is enforced on the server too now — routes/comments.ts refuses
-    // every endpoint when the flag is off — so this says so rather than
-    // drawing a thread whose requests would 404.
-    if (!featureOn('comments')) {
-      return U.el('div', { class: 'empty-state', style: 'max-width:none;', text: T('Comments are turned off.') })
-    }
-    const list = U.el('div', {}, [P.spinner()])
-
-    const load = async () => {
-      const yumeId = await YumeAPI.yumeAnimeId(media)
-      list.replaceChildren()
-
-      if (yumeId) {
-        try {
-          const { data } = await YumeAPI.comments('anime', yumeId)
-          if (!data.length) {
-            list.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-5);', text: T('No comments yet.') }))
-          }
-          const byParent = new Map()
-          for (const c of data) {
-            const key = c.parent_id ?? 'root'
-            if (!byParent.has(key)) byParent.set(key, [])
-            byParent.get(key).push(c)
-          }
-          const viewer = YumeAPI.user()
-          const canModerate = permissionsHeld().includes('comment.moderate') ||
-            permissionsHeld().includes('community.moderate')
-
-          const renderThread = (comment, depth) => {
-            /*
-             * A SÍRKŐ a szál alakját tartja, nem tartalmat.
-             *
-             * Egy szálindító törlésekor a sor megmarad — különben a
-             * `parent_id` cascade-je MÁSOK válaszait is elvinné —, de a
-             * törzse elveszett. Ilyenkor nincs mit lájkolni, jelenteni vagy
-             * újra törölni; csak a hely marad meg, ahová a válaszok
-             * kapcsolódnak.
-             */
-            const deleted = Boolean(comment.deleted_at)
-            /*
-             * A GOMB ELREJTÉSE NEM VÉDELEM. A kiszolgáló a szerzőt és a
-             * jogosultságot maga nézi meg, és idegen kommentre 404-gyel felel.
-             * Ez csak annyi, hogy ne kínáljunk olyat, ami úgysem sikerülne.
-             */
-            const mayDelete = !deleted && Boolean(viewer) &&
-              (comment.author_id === viewer.id || canModerate)
-
-            const node = U.el('div', { class: deleted ? 'comment comment-deleted' : 'comment', style: depth ? `margin-left:${Math.min(depth, 4) * 1.5}rem;` : null }, [
-              U.el('div', { class: 'comment-head' }, [
-                C.avatar(comment),
-                U.el('span', { class: 'comment-author', text: comment.author }),
-                U.el('span', { class: 'comment-time', text: U.relTime(new Date(comment.created_at)) })
-              ]),
-              deleted
-                ? U.el('p', { class: 'comment-body comment-body-deleted', text: T('This comment was deleted.') })
-                : this.commentBody(comment),
-              deleted
-                ? null
-                : U.el('div', { class: 'comment-actions' }, [
-                  U.el('button', {
-                    class: 'comment-action',
-                    text: `♥ ${comment.like_count}`,
-                    onclick: async e => {
-                      try {
-                        const { liked } = await YumeAPI.likeComment(comment.id)
-                        comment.like_count += liked ? 1 : -1
-                        e.target.textContent = `♥ ${comment.like_count}`
-                      } catch (err) { U.toast(err.message, 'error') }
-                    }
-                  }),
-                  U.el('button', {
-                    class: 'comment-action',
-                    text: T('Reply'),
-                    onclick: () => {
-                      if (node.querySelector('.comment-form')) return
-                      node.append(form(comment.id, () => load()))
-                    }
-                  }),
-                  U.el('button', {
-                    class: 'comment-action',
-                    text: T('Report'),
-                    onclick: async () => {
-                      const reason = window.prompt('Reason (spam / harassment / nsfw / spoiler / illegal / other):', 'spam')
-                      if (!reason) return
-                      try {
-                        await YumeAPI.report('comment', comment.id, ['spam', 'harassment', 'nsfw', 'spoiler', 'illegal'].includes(reason) ? reason : 'other', reason)
-                        U.toast(T('Report submitted — thank you'))
-                      } catch (err) { U.toast(err.message, 'error') }
-                    }
-                  }),
-                  /*
-                 * A TÖRLÉS MEGERŐSÍTÉST KÉR. Visszavonhatatlan, és a
-                 * „Válasz" meg a „Jelentés" mellett egy ujjnyira van.
-                 *
-                 * Sikeres törlés után a szálat ÚJRAOLVASSUK, nem a helyi
-                 * másolatot igazgatjuk: a kiszolgáló dönti el, hogy a sor
-                 * eltűnt-e vagy sírkő lett belőle, és a szülő
-                 * válaszszámlálója is ott változott meg. Egy kézzel
-                 * összerakott helyi állapot ettől csendben eltérne.
-                 */
-                  mayDelete
-                    ? U.el('button', {
-                      class: 'comment-action comment-action-danger',
-                      text: T('Delete'),
-                      onclick: async e => {
-                        if (!window.confirm(T('Delete this comment? This cannot be undone.'))) return
-                        const button = e.target
-                        button.disabled = true
-                        try {
-                          await YumeAPI.deleteComment(comment.id)
-                          U.toast(T('Comment deleted'))
-                          await load()
-                        } catch (err) {
-                          button.disabled = false
-                          U.toast(err.message, 'error')
-                        }
-                      }
-                    })
-                    : null
-                ])
-            ].filter(Boolean))
-            list.append(node)
-            for (const child of byParent.get(comment.id) ?? []) renderThread(child, depth + 1)
-          }
-          for (const comment of byParent.get('root') ?? []) renderThread(comment, 0)
-        } catch (e) {
-          list.append(P.errorState(T('Failed to load comments: ') + e.message))
-        }
-      } else {
-        list.append(U.el('div', { class: 'empty-state', style: 'padding:var(--space-5);', text: T('No comments yet.') }))
-      }
-
-      // composer / auth prompt
-      if (YumeAPI.user()) {
-        if (!list.querySelector('.comment-form-root')) list.append(form(null, () => load(), true))
-      } else {
-        list.append(U.el('div', { class: 'callout', html: 'Sign in to your <a href="#/community" style="text-decoration:underline">Yume account</a> to join the discussion.' }))
-      }
-    }
-
-    const form = (parentId, done, root = false) => {
-      const textarea = U.el('textarea', { class: 'input comment-input', rows: '3', placeholder: parentId ? 'Write a reply…' : 'Share your thoughts… (no spoilers unmarked!)' })
-      // A raw 13x13 checkbox with no name: the word "Spoiler" sits in a
-      // sibling span outside the label, so the control announced as nothing
-      // and was under the 24px target floor.
-      const spoiler = U.el('input', { type: 'checkbox', class: 'comment-spoiler', 'aria-label': T('Spoiler') })
-      const submit = U.el('button', { class: 'btn btn-primary btn-sm', text: T('Post') })
-      submit.addEventListener('click', async () => {
-        const body = textarea.value.trim()
-        if (!body) return
-        try {
-          submit.disabled = true
-          const yumeId = await YumeAPI.yumeAnimeId(media, { create: true })
-          await YumeAPI.postComment('anime', yumeId, body, { parentId, spoiler: spoiler.checked })
-          U.toast(T('Comment posted'))
-          done()
-        } catch (e) {
-          U.toast(e.message, 'error')
-        } finally {
-          submit.disabled = false
-        }
-      })
-      return U.el('div', { class: 'comment-form' + (root ? ' comment-form-root' : '') }, [
-        textarea,
-        U.el('div', { style: 'display:flex;gap:var(--space-3);align-items:center;margin-top:var(--space-2);' }, [
-          submit,
-          U.el('label', { style: 'display:flex;gap:var(--space-2);align-items:center;font-size:var(--text-xs);color:var(--fg-faint);cursor:pointer;' }, [spoiler, document.createTextNode(T('Spoiler'))])
-        ])
-      ])
-    }
-
-    YumeAPI.available().then(ok => {
-      if (!ok) {
-        wrap.remove() // no backend → no comment section at all, no dead UI
-        return
-      }
-      wrap.append(U.el('h2', { class: 'detail-section-title', text: T('Comments') }), list)
-      load()
-    })
-
-    return wrap
   },
 
   /**
@@ -825,14 +558,16 @@ export const C = {
       'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
     )].filter(el => el.offsetParent !== null && getComputedStyle(el).visibility !== 'hidden')
 
-    const close = () => {
+    // `keepNode`: the caller animates the node out itself. `silent`: the
+    // caller is the one closing, so there is nobody to tell.
+    const close = ({ keepNode = false, silent = false } = {}) => {
       document.removeEventListener('keydown', onKey, true)
-      backdrop.remove()
+      if (!keepNode) backdrop.remove()
       // Returning focus is what makes a modal usable by keyboard at all:
       // without it focus falls back to <body> and the next Tab starts over
       // from the top of the page.
-      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus()
-      onClose()
+      if (previouslyFocused instanceof HTMLElement && document.contains(previouslyFocused)) previouslyFocused.focus({ preventScroll: true })
+      if (!silent) onClose()
     }
 
     function onKey (e) {
@@ -859,6 +594,66 @@ export const C = {
   },
 
   /**
+   * Egy párbeszédablak: cím, tartalom, gombok — fókuszcsapdával.
+   *
+   * A modálok eddig négyféleképpen készültek (keresőablak-osztállyal, inline
+   * stílusokkal, csapdával vagy anélkül). Ez az egy: `role="dialog"`, a címe
+   * `aria-labelledby`-jal kötve, Escape és a háttérre kattintás bezárja, a
+   * fókusz bezáráskor visszatér oda, ahonnan jött. Telefonon alsó lapként
+   * nyílik (components.css).
+   *
+   * `initialFocus`: amit nyitáskor fókuszálni kell (egy űrlap első mezője);
+   * alapból az első fókuszálható elem.
+   */
+  openDialog ({ title, body = [], actions = [], onClose = () => {}, size = null, initialFocus = null } = {}) {
+    const titleId = 'dlg-' + Math.random().toString(36).slice(2, 9)
+    const closeButton = U.el('button', {
+      class: 'icon-btn icon-btn-sm icon-btn-quiet dialog-close',
+      type: 'button',
+      'aria-label': T('Close'),
+      onclick: () => close()
+    }, [U.svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>', 16)])
+    const panel = U.el('div', {
+      class: 'dialog' + (size === 'lg' ? ' dialog-lg' : ''),
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-labelledby': titleId
+    }, [
+      U.el('div', { class: 'dialog-head' }, [U.el('h2', { class: 'dialog-title', id: titleId, text: title })]),
+      U.el('div', { class: 'dialog-body' }, body),
+      actions.length ? U.el('div', { class: 'dialog-foot' }, actions) : null,
+      closeButton
+    ])
+    const backdrop = U.el('div', { class: 'modal-backdrop' }, [panel])
+    backdrop.addEventListener('click', e => { if (e.target === backdrop) close() })
+    document.body.append(backdrop)
+    let open = true
+    const release = this.trapModal(backdrop, { onClose: () => { open = false; onClose() } })
+    const close = () => { if (open) release() }
+    if (initialFocus) initialFocus.focus()
+    return { close, node: panel }
+  },
+
+  /**
+   * Megerősítés egy visszafordíthatatlan lépés előtt. `true`, ha a néző
+   * megerősítette; `false`, ha mégsem.
+   */
+  confirm ({ title, message, confirmLabel, danger = false }) {
+    return new Promise(resolve => {
+      let answered = false
+      const answer = value => { if (answered) return; answered = true; dialog.close(); resolve(value) }
+      const yes = P.button(confirmLabel ?? T('OK'), { variant: danger ? 'danger-solid' : 'primary', onclick: () => answer(true) })
+      const dialog = this.openDialog({
+        title,
+        body: [U.el('p', { class: 'dialog-text', text: message })],
+        actions: [P.button(T('Cancel'), { variant: 'ghost', onclick: () => answer(false) }), yes],
+        onClose: () => { if (!answered) { answered = true; resolve(false) } },
+        initialFocus: yes
+      })
+    })
+  },
+
+  /**
    * A failure the reader can do something about.
    *
    * The message alone is not reportable and not searchable. The server has
@@ -876,7 +671,10 @@ export const C = {
     const code = typeof error === 'object' ? error?.code : null
     const requestId = typeof error === 'object' ? error?.requestId : null
 
-    const box = U.el('div', { class: 'error-state' }, [
+    const box = U.el('div', { class: 'error-state', role: 'alert' }, [
+      U.el('span', { class: 'error-state-icon', 'aria-hidden': 'true' }, [
+        U.svg('<circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>', 22)
+      ]),
       U.el('div', { class: 'error-state-msg', text: message })
     ])
 
@@ -898,108 +696,12 @@ export const C = {
     }
 
     if (onRetry) {
-      box.append(U.el('button', {
-        class: 'btn btn-secondary btn-sm',
-        style: 'margin-top:var(--space-2);',
+      box.append(U.el('div', { class: 'error-state-action' }, [U.el('button', {
+        class: 'btn btn-secondary',
+        type: 'button',
         onclick: onRetry
-      }, [document.createTextNode(T('Try again'))]))
+      }, [document.createTextNode(T('Try again'))])]))
     }
     return box
-  },
-
-  /**
-   * A modal you read rather than fill in.
-   *
-   * modalShell() below always draws a Save button, because every caller it was
-   * written for submits something. A panel that shows what is known about a
-   * thing and acts through its own buttons has nothing to save, and a Save
-   * button that does nothing is worse than no button.
-   *
-   * Wider than the form modal for the same reason: this holds tables.
-   */
-  modalPanel (title, nodes) {
-    const backdrop = U.el('div', {
-      class: 'modal-backdrop',
-      role: 'dialog',
-      'aria-modal': 'true',
-      'aria-label': title,
-      onclick: e => { if (e.target === backdrop) backdrop.close() }
-    }, [
-      U.el('div', { class: 'search-modal', style: 'padding:var(--space-4);max-width:52rem;width:min(52rem,calc(100vw - 2rem));' }, [
-        U.el('div', { style: 'display:flex;align-items:center;gap:var(--space-3);margin:0 0 var(--space-4);' }, [
-          U.el('h3', { style: 'margin:0;font-size:var(--text-lg);font-weight:800;flex-grow:1;', text: title }),
-          U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => backdrop.close() }, [document.createTextNode(T('Close'))])
-        ]),
-        U.el('div', { class: 'modal-panel-body', style: 'max-height:72vh;overflow-y:auto;' }, nodes)
-      ])
-    ])
-    document.body.append(backdrop)
-    backdrop.close = this.trapModal(backdrop)
-    return backdrop
-  },
-
-  // generic form modal (shared by developer portal and admin webhooks)
-  modalShell (title, fields, onSubmit) {
-    const submit = U.el('button', { class: 'btn btn-primary btn-sm', onclick: onSubmit }, [document.createTextNode(T('Save'))])
-    const backdrop = U.el('div', {
-      class: 'modal-backdrop',
-      role: 'dialog',
-      'aria-modal': 'true',
-      'aria-label': title,
-      onclick: e => { if (e.target === backdrop) backdrop.close() }
-    }, [
-      U.el('div', { class: 'search-modal', style: 'padding:var(--space-4);max-width:40rem;width:min(40rem,calc(100vw - 2rem));' }, [
-        U.el('h3', { style: 'margin:0 0 var(--space-4);font-size:var(--text-lg);font-weight:800;', text: title }),
-        U.el('div', {
-        /*
-         * `dvh`, nem `vh`.
-         *
-         * A `vh` a TELJES képernyőt jelenti, a böngésző címsávja alattit is —
-         * telefonon tehát nagyobb, mint a látható terület. A `dvh` a ténylegesen
-         * láthatót méri, és így a mezők doboza nem lóghat ki a képernyőről.
-         *
-         * A burkoló amúgy is görgethető (lásd `.modal-backdrop`), ez a korlát
-         * csak azt akadályozza meg, hogy a gombok EGYÁLTALÁN lecsússzanak.
-         */
-          style: 'display:flex;flex-direction:column;gap:var(--space-3);max-height:60dvh;overflow-y:auto;'
-        }, fields),
-        U.el('div', { style: 'display:flex;gap:var(--space-2);margin-top:var(--space-4);' }, [
-          submit,
-          U.el('button', { class: 'btn btn-ghost btn-sm', onclick: () => backdrop.close() }, [document.createTextNode(T('Cancel'))])
-        ])
-      ])
-    ])
-    document.body.append(backdrop)
-    // Exposed on the node because callers already hold the node and used to
-    // call .remove() on it; .close() is the version that also unbinds.
-    backdrop.close = this.trapModal(backdrop)
-    return backdrop
-  },
-
-  trailerModal (trailer) {
-    if (!trailer?.id || trailer.site !== 'youtube') {
-      U.toast(T('No trailer available'), 'error')
-      return
-    }
-    const backdrop = U.el('div', {
-      class: 'modal-backdrop',
-      onclick: e => { if (e.target === backdrop) close() }
-    }, [
-      U.el('div', { class: 'trailer-modal' }, [
-        U.el('iframe', {
-          src: `https://www.youtube-nocookie.com/embed/${trailer.id}?autoplay=1`,
-          title: T('Trailer'),
-          allow: 'autoplay; fullscreen',
-          allowfullscreen: ''
-        })
-      ])
-    ])
-    const close = () => {
-      backdrop.remove()
-      document.removeEventListener('keydown', esc)
-    }
-    const esc = e => { if (e.key === 'Escape') close() }
-    document.addEventListener('keydown', esc)
-    document.body.append(backdrop)
   }
 }

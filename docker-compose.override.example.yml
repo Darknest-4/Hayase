@@ -1,0 +1,46 @@
+# The host-specific overlay of the production host, as an example.
+#
+# docker-compose.override.yml is ignored by git on purpose: which external
+# network the app joins and which services a machine runs differ between
+# installs. But the production machine's overlay is part of how the site
+# actually runs, and without a copy in the repository a fresh install could not
+# reproduce it. This is that copy. To use it:
+#
+#   cp docker-compose.override.example.yml docker-compose.override.yml
+#
+# What it does, and why:
+#
+#   * The bundled Caddy is switched off. On this host one shared Caddy (in
+#     another project's compose file, /opt/YonagiFansub) terminates TLS for
+#     several sites; YUME's part of its configuration lives in
+#     infrastructure/reverse-proxy/yume.caddy and is installed into the shared
+#     file with scripts/reverse-proxy/install.sh.
+#   * The app joins the shared proxy's `web` network under the alias the proxy
+#     configuration names (`yume-app`; the container name `yume-app-1` works
+#     too).
+#   * The global rate limit is raised to the measured default: many visitors
+#     share one address (mobile carrier NAT, workplaces), and 300/min ran out
+#     under ordinary use. See modules/settings/site-settings.ts.
+#
+# See docs/deployment/telepites.md, "Megosztott Caddy és Cloudflare".
+
+services:
+  caddy:
+    profiles: ['disabled']
+  app:
+    environment:
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-1200}
+    networks:
+      default: {}
+      web:
+        aliases: [yume-app]
+  seed:
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+  enrich:
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+
+networks:
+  web:
+    external: true

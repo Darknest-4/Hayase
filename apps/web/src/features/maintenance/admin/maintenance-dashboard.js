@@ -18,6 +18,9 @@
 import { AP } from '../../../shared/ui/admin-ui.js'
 import { U } from '../../../shared/lib/dom.js'
 import { YumeAPI } from '../../../shared/api/yume.js'
+import { loadStylesheet } from '../../../shared/lib/stylesheet.js'
+// A `YumeAPI.admin.*` hívások modulja (lásd `shared/api/yume-admin.js`).
+import '../../../shared/api/yume-admin.js'
 
 const MODE_LABEL = {
   OFF: 'Kikapcsolva',
@@ -80,6 +83,7 @@ function fromLocalInput (value) {
  * @param {object} deps `api` (teszthez), `toast`
  */
 export async function renderMaintenance (content, deps = {}) {
+  await loadStylesheet('maintenance.css')
   const api = deps.api ?? YumeAPI.admin
   const toast = deps.toast ?? U.toast ?? (() => {})
 

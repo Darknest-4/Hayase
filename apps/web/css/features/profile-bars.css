@@ -1,0 +1,20 @@
+/* ===========================================================================
+   Közös: a profil állapotsávjai (pages/profile.js, pages/dashboard.js).
+
+   Betölti: minden útvonal, amelyik használja — #/dashboard.
+   A router `ROUTE_STYLES` táblája sorolja fel; a test/route-styles.test.mjs
+   veti össze azzal, amit a képernyők ténylegesen használnak.
+   =========================================================================== */
+
+.profile-stats { margin-bottom: var(--space-2); }
+.profile-bars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); max-width: 44rem; }
+.profile-bar { display: grid; grid-template-columns: 9rem minmax(0, 1fr) 3rem; align-items: center; gap: var(--space-3); }
+.profile-bar-name { color: var(--fg-muted); font: var(--weight-bold) .875rem/1.3 var(--font-sans); }
+.profile-bar-name:hover { color: var(--fg); }
+.profile-bar-track { height: .6rem; border-radius: var(--radius-full); background: var(--bg-hover); overflow: clip; }
+.profile-bar-fill { height: 100%; border-radius: var(--radius-full); }
+.profile-bar-count { text-align: right; color: var(--fg-faint); font: var(--weight-bold) .875rem/1 var(--font-sans); }
+
+@media (max-width: 767px) {
+  .profile-bar { grid-template-columns: 6.5rem minmax(0, 1fr) 2.25rem; }
+}

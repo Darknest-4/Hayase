@@ -38,7 +38,7 @@ A brief több pontja már megvan, részben az elmúlt napok munkájából:
 | 2. AniList ne kiegészítőként | **Kész.** Első osztályú szerver-worker, sosem volt kiegészítő | `apps/api/src/integrations/anilist/sync.ts` |
 | 3. Batch sync, queue, retry, rate limit | **Nagyrészt kész.** Soronkénti savepoint, 429-kezelés, folytathatóság | `workers/anilist.ts`, `anilist-deep.ts` |
 | 4. Relations import | **Kész**, de nincs évad-/watch-order-nézet | `workers/anilist-deep.ts` |
-| 5. Karakterek, stáb, szinkronhangok | **Kész** (import + API + kliens) | `anilist-deep.ts`, `routes/anime.ts` |
+| 5. Karakterek, stáb, szinkronhangok | **Kész** (import + API + kliens) | `integrations/anilist/deep-sync.ts`, `modules/catalogue/public-routes.ts` |
 | 17. Külső ID-k indexelve | **Kész**, AniList + MAL + AniDB + TVDB | `anime_mappings`, 0002 |
 | 19. Fordítás adatmodellje | **Kész**, `anime_translations` + `episode_translations` | 0023-as migráció |
 
@@ -110,7 +110,7 @@ külön mergelhető.
 A legfontosabb, mert ma **félrevezeti a felhasználót**.
 
 - ✅ kapu-alapértelmezés tiltóra, header-bug (`app.js`) — `681018c`
-- ✅ 404 az admin route-okon (`plugins/auth.ts`, `{ hide: true }` kapcsolóval)
+- ✅ 404 az admin route-okon (`middleware/auth.ts`, `{ hide: true }` kapcsolóval)
 - ✅ a nem működő beállítások bekötése — mind a három:
   - `registration_open`: eddig csak a regisztrációs űrlap tűnt el tőle, a
     `POST /v1/auth/register` továbbra is létrehozta a fiókot. Most a route

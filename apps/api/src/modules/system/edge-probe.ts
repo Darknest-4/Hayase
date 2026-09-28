@@ -86,7 +86,9 @@ export function classify (error: unknown): { outcome: EdgeOutcome, detail: strin
 let consecutiveFailures = 0
 
 export async function probeEdge (
-  url = process.env.EDGE_PROBE_URL ?? process.env.PUBLIC_URL ?? '',
+  // `||`, not `??`: compose passes an unset variable through as an empty
+  // string, and an empty EDGE_PROBE_URL must fall back to PUBLIC_URL.
+  url = process.env.EDGE_PROBE_URL || process.env.PUBLIC_URL || '',
   timeoutMs = Number(process.env.EDGE_PROBE_TIMEOUT_MS ?? 10_000)
 ): Promise<EdgeProbeResult | null> {
   // `trim` előbb: egy csak szóközt tartalmazó beállítás NEM cím. Enélkül a

@@ -3,60 +3,141 @@
 // build), sidebar active state and the quick-search modal (Ctrl+K / S).
 
 import { Copy } from '../shared/i18n/copy.js'
-import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
 import { GATE_EXEMPT, pageAvailable, configure as configureFeatures, featureOn, permissionsHeld } from '../shared/lib/site-config.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
-import { Announcements } from '../features/announcements/announcements.js'
-import { Landing } from '../features/landing/landing.js'
-import { LibrarySync } from '../features/library-sync/library-sync.js'
-import { Onboarding } from '../features/onboarding/onboarding.js'
-import { PageCommunity } from '../pages/community.js'
-import { PageDashboard } from '../pages/dashboard.js'
-import { PageHome } from '../pages/home.js'
-import { PageList } from '../pages/list.js'
-import { PageLogin } from '../pages/login.js'
-import { PageNotifications } from '../pages/notifications.js'
-import { PageProfile } from '../pages/profile.js'
-import { PageSchedule } from '../pages/schedule.js'
-import { PageSearch } from '../pages/search.js'
 import { Prefs } from '../shared/state/preferences.js'
-import { Store } from '../shared/state/store.js'
+import { Store, observeStore } from '../shared/state/store.js'
 import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 import { YumeAPI } from '../shared/api/yume.js'
-import { pageView } from '../shared/lib/analytics.js'
+import { pageView, pendingView } from '../shared/lib/analytics.js'
+import { loadStylesheet } from '../shared/lib/stylesheet.js'
 import { createMaintenanceService } from '../features/maintenance/core/maintenance-service.js'
-import { createMaintenancePage } from '../features/maintenance/ui/maintenance-page.js'
-import { ADMIN_SECTIONS } from '../shared/lib/admin-sections.js'
+import { ADMIN_PERMISSIONS } from '../shared/lib/admin-access.js'
+import { onboardingDue } from '../features/onboarding/meta.js'
+
+// A katalógus-azonosító alakja: ilyet fogad el a látogatottság `entityId`-ként.
+const UUID_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/*
+ * MIT TÖLT BE EGY ÚTVONAL — és csak azt.
+ *
+ * Minden képernyő a saját moduljával és a saját stíluslapjaival jön. A keret
+ * (router, közös komponensek, `tokens` / `components` / `style.css`) az
+ * egyetlen, ami minden oldalon ott van; a főoldal modulja nem töltődik le a
+ * belépőlapon, az adminé nem a főoldalon, a lejátszóé nem a keresőben.
+ *
+ * A modul és a stíluslap egyszerre indul, és a képernyő csak akkor rajzolódik,
+ * amikor mindkettő megjött — egy stílus nélkül felvillanó oldal rosszabb, mint
+ * egy tizedmásodperc várakozás (a 200 ms fölötti várakozásra a router forgót
+ * mutat). A kezdő útvonalé már az induláskor elindul (`init`), párhuzamosan a
+ * konfigurációval, így az első festés nem vár egy második körre.
+ *
+ * A stíluslapok listáját a `test/route-styles.test.mjs` veti össze azzal, amit
+ * a képernyők ténylegesen használnak.
+ */
+export const ROUTE_MODULES = {
+  landing: () => import('../features/landing/landing.js'),
+  home: () => import('../pages/home.js'),
+  search: () => import('../pages/search.js'),
+  schedule: () => import('../pages/schedule.js'),
+  list: () => import('../pages/list.js'),
+  login: () => import('../pages/login.js'),
+  reset: () => import('../pages/reset.js'),
+  profile: () => import('../pages/profile.js'),
+  notifications: () => import('../pages/notifications.js'),
+  dashboard: () => import('../pages/dashboard.js'),
+  community: () => import('../pages/community.js'),
+  changelog: () => import('../pages/changelog.js'),
+  w2g: () => import('../features/watch-together/watch-together.js'),
+  watch: () => import('../pages/watch.js'),
+  admin: () => import('../pages/admin.js'),
+  settings: () => import('../pages/settings.js'),
+  anime: () => import('../pages/anime.js')
+}
+
+/**
+ * Útvonal → a stíluslapjai a `css/` alatt, a keret hármán (tokens, components,
+ * style) felül. A `css/pages/` a képernyő saját lapja, a `css/features/` a több
+ * képernyőn használt modulok lapjai (hozzászólások, belépőűrlap, diagramok…).
+ *
+ * Nem kézzel kitalált lista: a `test/route-styles.test.mjs` minden útvonalra
+ * kiszámolja, mely osztályokat használják a moduljai, és elbukik, ha egy
+ * szükséges lap hiányzik innen, vagy egy felsorolt lapból semmi nem kell.
+ */
+export const ROUTE_STYLES = {
+  landing: ['pages/landing.css'],
+  home: ['pages/home.css'],
+  search: ['pages/search.css'],
+  schedule: ['pages/schedule.css'],
+  anime: ['pages/anime.css'],
+  watch: ['pages/watch.css'],
+  w2g: ['features/watch-together.css'],
+  list: ['features/lib-rows.css', 'pages/list.css'],
+  profile: ['pages/profile.css'],
+  notifications: ['pages/notifications.css'],
+  dashboard: ['features/profile-bars.css', 'pages/dashboard.css'],
+  community: ['features/comments.css', 'pages/community.css'],
+  changelog: ['pages/changelog.css'],
+  login: ['features/auth-form.css', 'pages/auth.css', 'pages/login.css'],
+  reset: ['features/auth-form.css', 'pages/auth.css', 'pages/reset.css'],
+  settings: ['features/auth-form.css', 'pages/settings.css'],
+  admin: ['features/charts.css', 'admin.css']
+}
 
 export const App = {
   routes: {
     // Saját útvonal, nem csak a kapu. Belépve is elérhető: aki már fiókkal
     // jön, annak is joga van megnézni, mit ígér az oldal.
-    landing: (root, params) => Landing.render(root, App.config?.site, () => { App.afterAuth() }),
-    home: (root, params) => PageHome.render(root, params),
-    search: (root, params) => PageSearch.render(root, params),
-    schedule: (root, params) => PageSchedule.render(root, params),
-    list: (root, params) => PageList.render(root, params),
+    landing: async (root, params) => (await App.routeModule('landing')).Landing.render(root, App.config?.site, () => { App.afterAuth() }),
+    home: async (root, params) => (await App.routeModule('home')).PageHome.render(root, params),
+    search: async (root, params) => (await App.routeModule('search')).PageSearch.render(root, params),
+    schedule: async (root, params) => (await App.routeModule('schedule')).PageSchedule.render(root, params),
+    list: async (root, params) => (await App.routeModule('list')).PageList.render(root, params),
     // Saját címe van, mert hivatkozni kell rá: a hozzáférési kapuból, egy
     // levélből, egy hibaüzenetből. A felugró ablak megmarad a
     // kezdőképernyőn — a kettő UGYANAZT az űrlapot használja.
-    login: (root, params, arg) => PageLogin.render(root, params, arg),
-    profile: (root, params) => PageProfile.render(root, params),
-    notifications: (root, params) => PageNotifications.render(root, params),
-    dashboard: (root, params) => PageDashboard.render(root, params),
-    community: (root, params) => PageCommunity.render(root, params),
-    changelog: async (root, params) => (await import('../pages/changelog.js')).PageChangelog.render(root, params),
-    w2g: async (root, params, arg) => (await import('../features/watch-together/watch-together.js')).PageW2G.render(root, params, arg),
-    watch: async (root, params, arg) => (await import('../pages/watch.js')).PageWatch.render(root, params, arg),
+    login: async (root, params, arg) => (await App.routeModule('login')).PageLogin.render(root, params, arg),
+    // The address a password reset mail links to: #/reset?token=…
+    reset: async (root, params) => (await App.routeModule('reset')).PageReset.render(root, params),
+    profile: async (root, params) => (await App.routeModule('profile')).PageProfile.render(root, params),
+    notifications: async (root, params) => (await App.routeModule('notifications')).PageNotifications.render(root, params),
+    dashboard: async (root, params) => (await App.routeModule('dashboard')).PageDashboard.render(root, params),
+    community: async (root, params) => (await App.routeModule('community')).PageCommunity.render(root, params),
+    changelog: async (root, params) => (await App.routeModule('changelog')).PageChangelog.render(root, params),
+    w2g: async (root, params, arg) => (await App.routeModule('w2g')).PageW2G.render(root, params, arg),
+    watch: async (root, params, arg) => (await App.routeModule('watch')).PageWatch.render(root, params, arg),
     // The section can arrive either way: `#/admin/audit` names it in the path,
     // which is the address form the panel's own sections are documented at,
     // and `?s=` is what the rail writes as you click through. The page takes
     // the path form first and falls back to the query.
-    admin: async (root, params, arg) => (await import('../pages/admin.js')).PageAdmin.render(root, params, arg),
-    settings: async (root, params) => (await import('../pages/settings.js')).PageSettings.render(root, params),
-    anime: async (root, params, arg) => (await import('../pages/anime.js')).PageAnime.render(root, params, arg)
+    // Az admin a saját stíluslapjával jön: a többi látogató soha nem tölti le.
+    admin: async (root, params, arg) => (await App.routeModule('admin')).PageAdmin.render(root, params, arg),
+    settings: async (root, params) => (await App.routeModule('settings')).PageSettings.render(root, params),
+    anime: async (root, params, arg) => (await App.routeModule('anime')).PageAnime.render(root, params, arg)
+  },
+
+  /**
+   * Egy útvonal modulja, a stíluslapjaival együtt betöltve.
+   *
+   * A modul-import eredményét a böngésző gyorsítótárazza, a stíluslapét a
+   * `loadStylesheet` — egy második hívás tehát nem tölt újra semmit, csak
+   * megvárja, ami már úton van. Egy hiányzó stíluslap nem akasztja meg a
+   * képernyőt (a `loadStylesheet` sosem dob); egy hiányzó modul igen, és azt a
+   * `navigate` hibaállapotként rajzolja ki.
+   */
+  routeModule (route) {
+    const load = ROUTE_MODULES[route]
+    if (!load) return Promise.reject(new Error(`no module for route ${route}`))
+    const styles = (ROUTE_STYLES[route] ?? []).map(name => loadStylesheet(name))
+    return Promise.all([load(), ...styles]).then(([module]) => module)
+  },
+
+  /** A kezdő útvonal előkészítése, a konfigurációval párhuzamosan. Nem dob. */
+  prefetchRoute (route) {
+    if (!ROUTE_MODULES[route]) return
+    this.routeModule(route).catch(() => {})
   },
 
   parseHash () {
@@ -116,6 +197,21 @@ export const App = {
    * courtesy for the person with fifteen tabs open, who otherwise sees the
    * same word on all of them.
    */
+  /** Egy útvonal neve a fülhöz; a főoldalé maga a márka. */
+  routeTitle (route) {
+    if (!route || route === 'home' || route === 'landing') return null
+    const own = {
+      login: T('Sign in'),
+      reset: T('Új jelszó'),
+      changelog: T('Development log'),
+      admin: T('Admin'),
+      anime: null,
+      watch: null
+    }
+    if (route in own) return own[route]
+    return Copy?.nav?.[route] ? T('nav.' + route) : null
+  },
+
   setTitle (text) {
     document.title = text ? `${text} — ${this.siteName()}` : this.siteName()
   },
@@ -159,7 +255,13 @@ export const App = {
    * csak-olvasható üzem mellett az oldal MEGY, és ott szalag a helyes válasz:
    * az elmondja, mi nem működik, és nem áll az útba.
    */
-  _maintenanceGate (route) {
+  /**
+   * A karbantartási kapu. Aszinkron, mert a karbantartási lap (és a
+   * háttérvideó lejátszója) a saját moduljában él, és csak akkor töltődik le,
+   * amikor tényleg ki kell rajzolni — a látogatók túlnyomó többsége soha nem
+   * látja.
+   */
+  async _maintenanceGate (route) {
     const service = this._maintenance
     if (!service) return null
     const status = service.status
@@ -176,6 +278,7 @@ export const App = {
       return null
     }
 
+    const { createMaintenancePage } = await import('../features/maintenance/ui/maintenance-page.js')
     this._maintenancePage?.destroy()
     this._maintenancePage = createMaintenancePage(status, {
       service,
@@ -208,6 +311,7 @@ export const App = {
         onclick: e => e.currentTarget.parentElement.remove()
       })
     ])
+    loadStylesheet('maintenance.css')
     document.getElementById('page')?.prepend(banner)
   },
 
@@ -302,16 +406,28 @@ export const App = {
     const page = document.getElementById('page')
     document.getElementById('w2g-modal')?.remove() // close the W2G popup on nav
     page.replaceChildren()
-    page.scrollTop = 0
+    /*
+     * A GÖRGETÉS HELYE A TÖRTÉNETBEN ÉL.
+     *
+     * Az oldal most a dokumentumot görgeti (lásd style.css, „shell"), és a
+     * görgetés helyét a `scroll` figyelő a history-bejegyzésbe írja. Egy új
+     * navigációnak nincs ilyen bejegyzése — az a lap tetején kezd; a vissza
+     * gomb viszont oda tér vissza, ahol a néző a listát elhagyta, nem a
+     * harmincadik találat helyett az elsőre.
+     */
+    const savedScroll = Number(window.history.state?.yumeScroll) || 0
+    window.scrollTo(0, 0)
 
     // banner only persists on home; pages set their own
     if (route !== 'home') U.setBanner(null)
 
-    // The tab title goes back to the site's own on every navigation. A page
-    // with something better to say — the anime detail page — sets it after its
-    // data arrives, and this is what un-sets it on the way out; otherwise the
-    // tab keeps naming a show the viewer left three pages ago.
-    this.setTitle(null)
+    // The tab title goes back to the route's own name on every navigation. A
+    // page with something better to say — the anime detail page — sets it
+    // after its data arrives, and this is what un-sets it on the way out;
+    // otherwise the tab keeps naming a show the viewer left three pages ago.
+    // A böngészőfül és a képernyőolvasó is az oldal nevét mondja („Keresés —
+    // Yume"), nem mindenhol ugyanazt a márkanevet.
+    this.setTitle(this.routeTitle(route))
 
     /*
      * The administration panel gets the window to itself.
@@ -347,10 +463,16 @@ export const App = {
      * OLDAL, `/anime/<uuid>` harmincezer, egyenként egy látogatóval.
      */
     const ENTITY_ROUTES = ['anime', 'watch']
-    pageView('/' + route, ENTITY_ROUTES.includes(route) ? arg : undefined)
+    const entity = String(arg ?? '').split(':')[0]
+    if (ENTITY_ROUTES.includes(route) && !UUID_ID.test(entity)) pendingView('/' + route)
+    else pageView('/' + route, ENTITY_ROUTES.includes(route) ? entity : undefined)
 
     document.querySelectorAll('.sidebar-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.route === route || ((route === 'anime' || route === 'watch') && btn.dataset.route === 'home'))
+      const here = btn.dataset.route === route
+      btn.classList.toggle('active', here || ((route === 'anime' || route === 'watch') && btn.dataset.route === 'home'))
+      // A képernyőolvasó a jelenlegi oldalt nevén nevezi, nem egy színből.
+      if (here) btn.setAttribute('aria-current', 'page')
+      else btn.removeAttribute('aria-current')
     })
     // mobile bottom bar: the "More" tab lights up for any route that isn't a
     // primary tab (or its home-mapped detail/watch pages)
@@ -372,7 +494,8 @@ export const App = {
      * nézőnek nincs üzemeltetői jogosultsága. Egy adminnak, aki épp a
      * karbantartást kapcsolja ki, a legrosszabb dolog egy karbantartási oldal.
      */
-    const maintenancePage = this._maintenanceGate(route)
+    const maintenancePage = await this._maintenanceGate(route)
+    if (gen !== this._navGen) return
     if (maintenancePage) {
       this.applyLayout(route, { reveal: true })
       page.replaceChildren(maintenancePage)
@@ -433,6 +556,22 @@ export const App = {
       if (!this.CHROMELESS.includes(route)) page.append(C.footer())
       return
     }
+    /*
+     * EGY LUSTÁN BETÖLTÖTT OLDAL NEM HAGY ÜRES KÉPERNYŐT. A képernyők saját
+     * moduljai az első megnyitáskor töltődnek le; ha ez (vagy az oldal első
+     * adata) 200 ms-nál tovább tart, egy töltésjelző áll a helyén, amíg az
+     * oldal bármit ki nem rajzol.
+     */
+    const waiting = setTimeout(() => {
+      if (gen !== this._navGen || page.childElementCount) return
+      const spinner = P.spinner()
+      spinner.classList.add('route-spinner')
+      page.append(spinner)
+      const watch = new window.MutationObserver(() => {
+        if ([...page.children].some(child => child !== spinner)) { spinner.remove(); watch.disconnect() }
+      })
+      watch.observe(page, { childList: true })
+    }, 200)
     try {
       await handler(page, params, arg) // async pages (e.g. admin) finish before the footer lands
     } catch (e) {
@@ -441,6 +580,9 @@ export const App = {
       page.replaceChildren(C.errorState(e, () => this.navigate()))
     }
 
+    clearTimeout(waiting)
+    page.querySelector(':scope > .route-spinner')?.remove()
+
     // a newer navigation superseded us while an async handler was in flight
     if (gen !== this._navGen) return
 
@@ -448,11 +590,37 @@ export const App = {
     // screens, and not under the admin panel — see CHROMELESS)
     if (!this.CHROMELESS.includes(route)) page.append(C.footer())
 
+    // Vissza-navigációnál a mentett helyre, ha a tartalom már elég hosszú.
+    if (savedScroll > 0) window.requestAnimationFrame(() => window.scrollTo(0, savedScroll))
+
+    /*
+     * A FÓKUSZ AZ ÚJ TARTALOMRA KERÜL.
+     *
+     * Egy hivatkozásra kattintás után a fókusz eddig a (most már eltűnt)
+     * hivatkozáson ragadt, vagy a lap elejére esett vissza: egy billentyűzettel
+     * vagy képernyőolvasóval navigáló néző a menü elejéről kezdte újra. A
+     * `<main>` fókuszálható (`tabindex="-1"`), és a cím már az új oldalé. Az
+     * első betöltésnél nem: ott a böngésző dolga, hová esik a fókusz.
+     */
+    // Csak VALÓDI címváltáskor: ugyanannak a lapnak az újrarajzolása (a fiók
+    // könyvtára megérkezett, nyelvváltás) nem ránthatja el a fókuszt onnan,
+    // ahol a néző épp van — például az ugrólinkről.
+    const address = window.location.pathname + window.location.hash
+    if (this._lastAddress !== undefined && this._lastAddress !== address && !page.contains(document.activeElement)) {
+      page.focus({ preventScroll: true })
+    }
+    this._lastAddress = address
+
     // News last, and deliberately not awaited. A message about the site is
     // never more urgent than the site, and a modal that beats the first paint
     // makes the app look like it is asking permission to start. It answers at
     // most once per page load and never twice for the same message.
-    if (YumeAPI.user()) Announcements.check().catch(() => {})
+    // A modul is csak belépve jön le: kijelentkezve nincs mit megkérdezni.
+    if (YumeAPI.user()) {
+      import('../features/announcements/announcements.js')
+        .then(({ Announcements }) => Announcements.check())
+        .catch(() => {})
+    }
   },
 
   /**
@@ -494,7 +662,7 @@ export const App = {
    * The immersive screens (the player, watch-together, the profile picker)
    * plus the admin panel, which brings its own frame entirely.
    */
-  CHROMELESS: ['watch', 'w2g', 'admin', 'landing', 'login'],
+  CHROMELESS: ['watch', 'w2g', 'admin', 'landing', 'login', 'reset'],
 
   // routes always reachable so users can configure the server / sign in
   /*
@@ -529,17 +697,16 @@ export const App = {
    */
   _adminSectionPermissions () {
     /*
-     * A LISTA MOSTANTÓL SAJÁT MODULBAN VAN (`shared/lib/admin-sections.js`), nem a
-     * panelben. Eddig innen `PageAdmin.SECTIONS`-t olvastunk, és emiatt a
-     * 279 kB-os adminpanel MINDEN oldalbetöltéssel megérkezett — a
-     * belépőlapra is. A lista ettől nem duplikálódott: a panel is ugyanezt az
-     * egy példányt olvassa.
+     * A LISTA A SZAKASZOKÉ, DE A ROUTER CSAK A NEVEKET KAPJA.
      *
-     * A „még nincs betöltve" eset ezzel meg is szűnt: a lista statikus
-     * import, tehát mindig megvan.
+     * Eddig `PageAdmin.SECTIONS`-ből olvastunk (a 279 kB-os panel minden
+     * oldalbetöltéssel megérkezett), aztán a `shared/lib/admin-sections.js`
+     * teljes szakaszlistájából (címkék, csoportok, ikonok — 10 KB minden
+     * látogatónak). A döntéshez csak a jogosultságnevek kellenek: azok az
+     * `admin-access.js`-ben állnak, és a `test/admin-access.test.mjs` őrzi,
+     * hogy pontosan a szakaszok jogosultságai legyenek.
      */
-    if (!Array.isArray(ADMIN_SECTIONS)) return null
-    return [...new Set(ADMIN_SECTIONS.map(section => section.perm).filter(Boolean))]
+    return [...ADMIN_PERMISSIONS]
   },
 
   _gateCheck (route) {
@@ -652,7 +819,9 @@ export const App = {
       // lekerül — különben a lebegő pill öt olyan helyre mutatna, ahová egy
       // kijelentkezett látogató nem juthat el.
       document.body.classList.add('landing-route')
-      Landing.render(page, this.config?.site, () => { this.afterAuth() })
+      this.routeModule('landing')
+        .then(({ Landing }) => { if (page.isConnected) Landing.render(page, this.config?.site, () => { this.afterAuth() }) })
+        .catch(() => page.replaceChildren(P.errorState(T('Something went wrong'))))
       return
     } else if (gate.kind === 'auth') {
       /*
@@ -747,7 +916,31 @@ export const App = {
    */
   maybeOnboard () {
     if (document.body.classList.contains('landing-route')) return
-    Onboarding?.maybeOpen()
+    // Kikapcsolt varázslóért nem töltünk le semmit (lásd features/onboarding/meta.js).
+    if (!onboardingDue()) return
+    // A varázsló a saját modulja, és csak akkor töltődik, amikor a lap már
+    // kirajzolódott — az első betöltés útjából kimarad.
+    const run = () => import('../features/onboarding/onboarding.js')
+      .then(({ Onboarding }) => Onboarding?.maybeOpen())
+      .catch(() => {})
+    if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(run, { timeout: 3000 })
+    else setTimeout(run, 1500)
+  },
+
+  /**
+   * A könyvtár-szinkron — csak ha van fiók, amivel szinkronizálni lehet.
+   *
+   * Eddig a `main.js` statikusan importálta, tehát a kijelentkezett látogató is
+   * letöltötte (15 KB), pedig nála minden hívása azonnal visszatért. Most az
+   * első belépett indulás vagy belépés tölti be, és akkor is jelentkezik be a
+   * tárnál megfigyelőként: onnantól tükrözi a változásokat a fiókba.
+   */
+  _librarySync () {
+    this._syncModule ??= import('../features/library-sync/library-sync.js').then(({ LibrarySync }) => {
+      observeStore({ sync: LibrarySync })
+      return LibrarySync
+    })
+    return this._syncModule
   },
 
   // re-load config + permissions after a login/logout, then re-render
@@ -758,10 +951,11 @@ export const App = {
     this._publishFeatureState()
     this.refreshAdminNav()
     this.applyNavVisibility()
+    this.refreshProfileAvatar()
     this.navigate()
 
-    if (YumeAPI.user()) LibrarySync?.init() // pull the account library + start mirroring
-    else LibrarySync?.reset() // signed out → stop mirroring
+    if (YumeAPI.user()) this._librarySync().then(sync => sync.init()) // pull the account library + start mirroring
+    else this._syncModule?.then(sync => sync.reset()) // signed out → stop mirroring
 
     // Belépés után már nem a kezdőképernyőn vagyunk: ha a varázsló eddig
     // kimaradt, most jön el az ideje.
@@ -878,11 +1072,17 @@ export const App = {
   openSearchModal () {
     const backdrop = document.getElementById('search-modal')
     const input = document.getElementById('search-modal-input')
+    if (!backdrop.classList.contains('hidden')) { input.focus(); return }
+    // Ahonnan jött, oda tér vissza a fókusz bezáráskor — egy billentyűzetes
+    // néző különben a lap elejéről kezdené újra.
+    this._searchReturnFocus = document.activeElement
     backdrop.classList.remove('hidden')
-    // A placeholder az index.html-ben angolul áll, és statikus markupot semmi
-    // nem fordít. Nyitáskor is beállítjuk, mert a nyelv közben változhatott.
+    // A placeholder nyitáskor is beáll, mert a nyelv közben változhatott.
     input.placeholder = T('search.placeholder')
+    input.setAttribute('aria-label', T('search.placeholder'))
     input.value = ''
+    input.setAttribute('aria-expanded', 'false')
+    input.removeAttribute('aria-activedescendant')
     document.getElementById('search-modal-results').replaceChildren(
       U.el('div', { class: 'search-modal-empty', text: T('search.prompt') })
     )
@@ -890,7 +1090,12 @@ export const App = {
   },
 
   closeSearchModal () {
-    document.getElementById('search-modal').classList.add('hidden')
+    const backdrop = document.getElementById('search-modal')
+    if (backdrop.classList.contains('hidden')) return
+    backdrop.classList.add('hidden')
+    const back = this._searchReturnFocus
+    this._searchReturnFocus = null
+    if (back && typeof back.focus === 'function' && document.contains(back)) back.focus({ preventScroll: true })
   },
 
   initSearchModal () {
@@ -899,33 +1104,63 @@ export const App = {
     const results = document.getElementById('search-modal-results')
 
     input.placeholder = T('search.placeholder')
+    document.getElementById('sidebar-search')?.addEventListener('click', () => this.openSearchModal())
 
     backdrop.addEventListener('click', e => {
       if (e.target === backdrop) this.closeSearchModal()
     })
 
+    /*
+     * COMBOBOX: a fókusz a mezőben marad, a nyilak a találatok közt lépnek
+     * (`aria-activedescendant`), az Enter megnyitja a kijelöltet — vagy, ha
+     * nincs kijelölt, a teljes keresőt ugyanezzel a szöveggel. Eddig a
+     * találatokhoz csak egérrel lehetett eljutni: a Tab a modál mögötti lapra
+     * ugrott.
+     */
+    let active = -1
+    const options = () => [...results.querySelectorAll('[role="option"]')]
+    const highlight = index => {
+      const list = options()
+      active = list.length ? Math.max(-1, Math.min(index, list.length - 1)) : -1
+      list.forEach((el, i) => {
+        el.setAttribute('aria-selected', String(i === active))
+        el.classList.toggle('selected', i === active)
+      })
+      if (active >= 0) {
+        input.setAttribute('aria-activedescendant', list[active].id)
+        list[active].scrollIntoView({ block: 'nearest' })
+      } else {
+        input.removeAttribute('aria-activedescendant')
+      }
+    }
+    const option = (index, attrs, children) => U.el('a', {
+      id: `qs-opt-${index}`,
+      role: 'option',
+      'aria-selected': 'false',
+      tabindex: '-1',
+      onclick: () => this.closeSearchModal(),
+      ...attrs
+    }, children)
+
     let token = 0
     input.addEventListener('input', U.debounce(async () => {
       const query = input.value.trim()
       const current = ++token
+      active = -1
+      input.removeAttribute('aria-activedescendant')
       if (query.length < 2) {
+        input.setAttribute('aria-expanded', 'false')
         results.replaceChildren(U.el('div', { class: 'search-modal-empty', text: T('search.prompt') }))
         return
       }
-      results.replaceChildren(P.spinner())
+      results.replaceChildren(P.spinner({ small: true }))
       try {
         // The Yume catalogue answers from Postgres with tiered ranking, which
         // matches romaji/english/native titles and synonyms. When no backend
-        // is configured (or a row has no AniList id to navigate to) the client
-        // falls back to AniList so quick search keeps working standalone.
-        // Rows without an anilist_id are dropped rather than discarding the
-        // whole catalogue answer: the detail route navigates by AniList id,
-        // so an unmapped row has nowhere to link to yet.
-        // Rows without an AniList id used to be dropped, because the detail
-        // route could only navigate by AniList id — so a title that existed
-        // only in our own catalogue was unreachable through search. The route
-        // takes a Yume uuid now, so every row can be linked.
-        const suggestions = await YumeAPI.suggest(query, 10) ?? []
+        // is configured the client falls back to AniList so quick search keeps
+        // working standalone. The detail route takes a Yume uuid, so every
+        // catalogue row can be linked — also one without an AniList id.
+        const suggestions = await YumeAPI.suggest(query, 8) ?? []
         const media = suggestions.length
           ? suggestions.map(s => ({
             id: s.anilist_id ?? s.id,
@@ -935,40 +1170,58 @@ export const App = {
             seasonYear: s.season_year,
             episodes: s.episode_count
           }))
-          : (await Catalogue.searchOrAniList({ search: query, sort: ['SEARCH_MATCH'], perPage: 10 })).media ?? []
+          : (await (await import('../entities/anime/catalogue.js')).Catalogue.searchOrAniList({ search: query, sort: ['SEARCH_MATCH'], perPage: 8 })).media ?? []
         if (current !== token) return
         results.replaceChildren()
+        input.setAttribute('aria-expanded', 'true')
         if (!media.length) {
           results.append(U.el('div', { class: 'search-modal-empty', text: T('search.empty') }))
-          return
         }
-        for (const m of media) {
-          results.append(U.el('a', {
-            class: 'search-result',
-            href: `#/anime/${m.id}`,
-            onclick: () => this.closeSearchModal()
-          }, [
-            U.el('img', { src: m.coverImage?.large ?? '', alt: '' }),
+        media.forEach((m, i) => {
+          results.append(option(i, { class: 'search-result', href: `#/anime/${m.id}` }, [
+            U.el('img', { src: m.coverImage?.large ?? '', alt: '', loading: 'lazy', decoding: 'async' }),
             U.el('div', {}, [
               U.el('div', { class: 'search-result-title', text: U.title(m) }),
-              U.el('div', { class: 'search-result-sub', text: [U.format(m), U.seasonYear(m), m.episodes ? `${m.episodes} ${T('ep')}` : null].filter(Boolean).join(' • ') })
+              U.el('div', { class: 'search-result-sub', text: [U.format(m), U.seasonYear(m), m.episodes ? `${m.episodes} ${T('ep')}` : null].filter(Boolean).join(' · ') })
             ])
           ]))
-        }
+        })
+        // A teljes kereső ugyanezzel a szöveggel — szűrőkkel, lapozással.
+        results.append(option(media.length, {
+          class: 'search-result search-result-all',
+          href: `#/search?q=${encodeURIComponent(query)}`
+        }, [document.createTextNode(T('All results in search'))]))
       } catch (e) {
         if (current !== token) return
         results.replaceChildren(U.el('div', { class: 'search-modal-empty', text: T('search.failed') + ' ' + e.message }))
       }
-    }, 300))
+    }, 250))
+
+    input.addEventListener('keydown', e => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); highlight(active + 1) } else if (e.key === 'ArrowUp') { e.preventDefault(); highlight(active - 1) } else if (e.key === 'Enter') {
+        e.preventDefault()
+        const chosen = options()[active]
+        if (chosen) { chosen.click(); return }
+        const query = input.value.trim()
+        if (query) {
+          this.closeSearchModal()
+          window.location.hash = `#/search?q=${encodeURIComponent(query)}`
+        }
+      }
+    })
 
     document.addEventListener('keydown', e => {
       const modalOpen = !backdrop.classList.contains('hidden')
-      if (e.key === 'Escape' && modalOpen) {
+      if (modalOpen && e.key === 'Escape') {
+        e.preventDefault()
         this.closeSearchModal()
         return
       }
+      // A modálban egyetlen fókuszálható elem van, a mező: a Tab ne vigye ki
+      // a fókuszt a mögötte lévő lapra.
+      if (modalOpen && e.key === 'Tab') { e.preventDefault(); input.focus(); return }
       // Ctrl/Cmd+K or "s" (outside inputs) opens quick search — same keybinds as the app
-      const inField = /^(input|textarea|select)$/i.test(document.activeElement?.tagName ?? '')
+      const inField = /^(input|textarea|select)$/i.test(document.activeElement?.tagName ?? '') || document.activeElement?.isContentEditable
       if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') || (!inField && !modalOpen && e.key.toLowerCase() === 's' && !e.ctrlKey && !e.metaKey && !e.altKey)) {
         e.preventDefault()
         this.openSearchModal()
@@ -993,13 +1246,26 @@ export const App = {
    */
   refreshProfileAvatar () {
     const el = document.getElementById('sidebar-avatar')
+    const btn = document.getElementById('profile-switcher')
     if (!el) return
     const local = Store.profile()
     const account = this.viewer
-    el.replaceChildren(C.avatar({
-      name: account?.display_name ?? local?.name,
-      avatar_key: account?.avatar_key ?? local?.avatar
-    }, { size: 'sm' }))
+    const user = YumeAPI.user()
+    // Kijelentkezve ez a gomb a belépés: egy „Profil" feliratú kezdőbetű egy
+    // nem létező fiók menüjét nyitotta.
+    el.replaceChildren(user
+      ? C.avatar({
+        name: account?.display_name ?? local?.name ?? user.username,
+        avatar_key: account?.avatar_key ?? local?.avatar
+      }, { size: 'sm' })
+      : U.svg('<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/>', 20))
+    const label = btn?.querySelector('.sidebar-profile-label')
+    if (label) label.textContent = user ? (account?.display_name || user.username || T('nav.profile')) : T('Sign in')
+    if (btn) {
+      btn.title = label?.textContent ?? ''
+      if (user) btn.setAttribute('aria-haspopup', 'menu')
+      else btn.removeAttribute('aria-haspopup')
+    }
   },
 
   /**
@@ -1037,24 +1303,64 @@ export const App = {
   initAccountMenu () {
     const btn = document.getElementById('profile-switcher')
     if (!btn) return
-    btn.addEventListener('click', () => {
+    const close = ({ restoreFocus = false } = {}) => {
       document.getElementById('profile-menu')?.remove()
-      const item = (href, icon, label) =>
-        U.el('a', { class: 'profile-menu-item', href, onclick: () => menu.remove() },
-          [U.el('span', { class: 'profile-menu-avatar', text: icon }), document.createTextNode(label)])
-      const menu = U.el('div', { class: 'profile-menu', id: 'profile-menu' }, [
-        item('#/profile', '📊', T('Profile & stats')),
-        item('#/profile?tab=analytics', '📈', T('Analytics')),
-        item('#/profile?tab=achievements', '🏆', T('Achievements')),
-        U.el('div', { class: 'profile-menu-sep' }),
-        item('#/settings?tab=account', '⚙', T('Account settings'))
+      btn.setAttribute('aria-expanded', 'false')
+      document.removeEventListener('pointerdown', this._accountMenuOutside, true)
+      if (restoreFocus) btn.focus()
+    }
+    btn.addEventListener('click', () => {
+      if (!YumeAPI.user()) { window.location.hash = '#/login'; return }
+      if (document.getElementById('profile-menu')) { close(); return }
+      const icon = paths => U.svg(paths, 18)
+      const item = (href, paths, label) => U.el('a', {
+        class: 'profile-menu-item',
+        role: 'menuitem',
+        href,
+        onclick: () => close()
+      }, [icon(paths), document.createTextNode(label)])
+      const account = this.viewer
+      const user = YumeAPI.user()
+      const menu = U.el('div', { class: 'profile-menu', id: 'profile-menu', role: 'menu', 'aria-label': T('Account') }, [
+        U.el('div', { class: 'profile-menu-head' }, [
+          C.avatar({ name: account?.display_name ?? user?.username, avatar_key: account?.avatar_key }, { size: 'md' }),
+          U.el('div', { style: 'min-width:0' }, [
+            U.el('div', { class: 'profile-menu-name', text: account?.display_name || user?.username || '' }),
+            U.el('div', { class: 'profile-menu-sub', text: user?.username ? '@' + user.username : '' })
+          ])
+        ]),
+        U.el('div', { class: 'profile-menu-sep', role: 'separator' }),
+        item('#/profile', '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>', T('Profile & stats')),
+        item('#/profile?tab=analytics', '<path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7"/><rect x="12" y="7" width="3" height="11"/><rect x="17" y="4" width="3" height="14"/>', T('Analytics')),
+        item('#/profile?tab=achievements', '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>', T('Achievements')),
+        U.el('div', { class: 'profile-menu-sep', role: 'separator' }),
+        item('#/settings?tab=account', '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>', T('Account settings')),
+        U.el('button', {
+          class: 'profile-menu-item',
+          type: 'button',
+          role: 'menuitem',
+          onclick: async () => {
+            close()
+            await YumeAPI.logout()
+            U.toast(T('You are signed out.'))
+            await this.afterAuth()
+          }
+        }, [icon('<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>'), document.createTextNode(T('Sign out'))])
       ])
       document.body.append(menu)
+      btn.setAttribute('aria-expanded', 'true')
       const rect = btn.getBoundingClientRect()
-      menu.style.left = (rect.right + 8) + 'px'
-      menu.style.bottom = (window.innerHeight - rect.bottom) + 'px'
-      const close = e => { if (!menu.contains(e.target) && e.target !== btn) { menu.remove(); document.removeEventListener('click', close) } }
-      setTimeout(() => document.addEventListener('click', close), 0)
+      menu.style.left = Math.min(rect.right + 8, window.innerWidth - menu.offsetWidth - 8) + 'px'
+      menu.style.bottom = Math.max(8, window.innerHeight - rect.bottom) + 'px'
+      const items = () => [...menu.querySelectorAll('[role="menuitem"]')]
+      items()[0]?.focus()
+      menu.addEventListener('keydown', e => {
+        const list = items()
+        const at = list.indexOf(document.activeElement)
+        if (e.key === 'Escape') { e.preventDefault(); close({ restoreFocus: true }) } else if (e.key === 'ArrowDown') { e.preventDefault(); list[(at + 1) % list.length]?.focus() } else if (e.key === 'ArrowUp') { e.preventDefault(); list[(at - 1 + list.length) % list.length]?.focus() } else if (e.key === 'Tab') { close() }
+      })
+      this._accountMenuOutside = e => { if (!menu.contains(e.target) && !btn.contains(e.target)) close() }
+      document.addEventListener('pointerdown', this._accountMenuOutside, true)
     })
   },
 
@@ -1132,7 +1438,7 @@ export const App = {
         Store.saveSettings({ navCollapsed: !Store.settings().navCollapsed })
         this.applyNavCollapsed()
       }
-    }, [U.svg('<polyline points="6 9 12 15 18 9"/>', 16)])
+    }, [U.svg('<polyline points="6 9 12 15 18 9"/>', 16), U.el('span', { text: T('Collapse') })])
 
     sidebar.append(tab)
 
@@ -1162,6 +1468,21 @@ export const App = {
    * a DOM-ot igazgassa a router helyett, mert akkor a gomb felirata és az
    * `aria` állapot előbb-utóbb széttart attól, amit a sáv mutat.
    */
+  /**
+   * A keret minden szövege újra, az aktuális nyelven.
+   *
+   * A szótár lusta (csak annak jön le, aki azon a nyelven olvas): az induló
+   * kód egy része még előtte feliratoz. Az összecsukó gomb és a gyorskereső
+   * helyőrzője futás közbeni nyelvváltáskor sem frissült eddig — a navigáció
+   * feliratai igen, ezek nem.
+   */
+  _relabelShell () {
+    this.applyNavLabels()
+    this.applyNavCollapsed()
+    const input = document.getElementById('search-modal-input')
+    if (input) input.placeholder = T('search.placeholder')
+  },
+
   applyNavCollapsed () {
     const sidebar = document.getElementById('sidebar')
     const tab = sidebar?.querySelector('.nav-collapse')
@@ -1169,30 +1490,53 @@ export const App = {
     const collapsed = Store.settings().navCollapsed === true
     sidebar.classList.toggle('nav-collapsed', collapsed)
     tab.setAttribute('aria-expanded', String(!collapsed))
-    tab.setAttribute('aria-label', collapsed ? T('Feliratok mutatása') : T('Feliratok elrejtése'))
+    // Telefonon a feliratokat rejti, asztalon az egész sávot csukja össze —
+    // a felirat mindkettőt a maga nevén mondja.
+    const narrow = window.matchMedia?.('(max-width: 767px)').matches
+    const label = narrow
+      ? (collapsed ? T('Show labels') : T('Hide labels'))
+      : (collapsed ? T('Expand sidebar') : T('Collapse sidebar'))
+    tab.setAttribute('aria-label', label)
+    tab.title = label
+    const text = tab.querySelector('span')
+    if (text) text.textContent = collapsed ? T('Expand') : T('Collapse')
   },
 
   openMoreSheet () {
     const current = this.parseHash().route
+    const trigger = document.getElementById('nav-more')
     const backdrop = U.el('div', { class: 'more-backdrop', id: 'more-backdrop', onclick: () => this.closeMoreSheet() })
-    const sheet = U.el('div', { class: 'more-sheet', id: 'more-sheet' })
+    const sheet = U.el('div', {
+      class: 'more-sheet',
+      id: 'more-sheet',
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-label': T('nav.more')
+    })
 
-    sheet.append(U.el('div', { class: 'more-grabber' }))
+    sheet.append(U.el('div', { class: 'more-grabber', 'aria-hidden': 'true' }))
 
     const p = Store.profile()
     const account = this.viewer
-    sheet.append(U.el('div', { class: 'more-profile' }, [
-      U.el('div', { class: 'more-profile-avatar' }, [
-        C.avatar({ name: account?.display_name ?? p?.name, avatar_key: account?.avatar_key ?? p?.avatar }, { size: 'md' })
-      ]),
-      U.el('div', { style: 'min-width:0;' }, [
-        U.el('div', { class: 'more-profile-name', text: account?.display_name ?? p?.name ?? T('Dreamer') }),
-        U.el('div', { class: 'more-profile-sub', text: T('Your account') })
-      ]),
-      // Where the "Switch" button used to sit. The row is the viewer's own
-      // account, so it goes to the account, not to a picker.
-      U.el('a', { class: 'btn btn-secondary btn-sm', href: '#/settings?tab=account', onclick: () => this.closeMoreSheet() }, [document.createTextNode(T('Account'))])
-    ]))
+    const user = YumeAPI.user()
+    sheet.append(U.el('div', { class: 'more-profile' }, user
+      ? [
+          U.el('div', { class: 'more-profile-avatar' }, [
+            C.avatar({ name: account?.display_name ?? p?.name ?? user.username, avatar_key: account?.avatar_key ?? p?.avatar }, { size: 'md' })
+          ]),
+          U.el('div', { style: 'min-width:0;' }, [
+            U.el('div', { class: 'more-profile-name', text: account?.display_name || user.username }),
+            U.el('div', { class: 'more-profile-sub', text: '@' + user.username })
+          ]),
+          U.el('a', { class: 'btn btn-secondary btn-sm', href: '#/settings?tab=account', onclick: () => this.closeMoreSheet() }, [document.createTextNode(T('Account'))])
+        ]
+      : [
+          U.el('div', { style: 'min-width:0;' }, [
+            U.el('div', { class: 'more-profile-name', text: T('Not signed in') }),
+            U.el('div', { class: 'more-profile-sub', text: T('Your library and history on every device.') })
+          ]),
+          U.el('a', { class: 'btn btn-primary btn-sm', href: '#/login', onclick: () => this.closeMoreSheet() }, [document.createTextNode(T('Sign in'))])
+        ]))
 
     // build the destination grid, appending Admin only when it's available
     const items = this.moreItems()
@@ -1211,21 +1555,30 @@ export const App = {
       grid.append(U.el('a', {
         class: 'more-item' + (isActive ? ' active' : ''),
         href: it.href ?? `#/${it.route}`,
+        ...(isActive ? { 'aria-current': 'page' } : {}),
         onclick: () => this.closeMoreSheet()
       }, [U.svg(it.icon, 22), U.el('span', { text: it.label })]))
     }
     sheet.append(grid)
 
     document.body.append(backdrop, sheet)
+    trigger?.setAttribute('aria-expanded', 'true')
+    this._closeMoreTrap = C.trapModal(sheet, { onClose: () => this.closeMoreSheet({ fromTrap: true }) })
     // next frame -> trigger the slide-up / fade-in transitions
     requestAnimationFrame(() => { backdrop.classList.add('open'); sheet.classList.add('open') })
   },
 
-  closeMoreSheet () {
+  closeMoreSheet ({ fromTrap = false } = {}) {
     const backdrop = document.getElementById('more-backdrop')
     const sheet = document.getElementById('more-sheet')
-    if (sheet) { sheet.classList.remove('open'); setTimeout(() => sheet.remove(), 300) }
-    if (backdrop) { backdrop.classList.remove('open'); setTimeout(() => backdrop.remove(), 300) }
+    document.getElementById('nav-more')?.setAttribute('aria-expanded', 'false')
+    // A csapda saját bezárása (Escape) már levette a figyelőt és visszaadta a
+    // fókuszt; kívülről hívva (háttér, navigáció) mi kérjük meg rá.
+    const trap = this._closeMoreTrap
+    this._closeMoreTrap = null
+    if (trap && !fromTrap) trap({ keepNode: true, silent: true })
+    if (sheet) { sheet.classList.remove('open'); sheet.id = ''; setTimeout(() => sheet.remove(), 300) }
+    if (backdrop) { backdrop.classList.remove('open'); backdrop.id = ''; setTimeout(() => backdrop.remove(), 300) }
   },
 
   /**
@@ -1241,14 +1594,22 @@ export const App = {
       // rókaemodzsi lett. A `:scope >` sem díszítés — az avatar maga is egy
       // spant tartalmaz (C.avatar rajzolja bele), ami fabejárásban előbb jön,
       // mint a felirat, tehát egy mély keresés a *képbe* írná a szöveget.
+      if (btn.id === 'profile-switcher') return // a fiók nevét írja ki, lásd refreshProfileAvatar
       const span = btn.querySelector(':scope > span:not(.sidebar-avatar):not(.notif-badge)')
-      const key = btn.id === 'nav-more'
-        ? 'more'
-        : btn.id === 'profile-switcher' ? 'profile' : btn.dataset.route
+      const key = btn.id === 'nav-more' ? 'more' : btn.dataset.route
       if (span && key && Copy?.nav?.[key]) span.textContent = T('nav.' + key)
       const label = span?.textContent
       if (label) btn.title = label
     })
+    // A csoportcímek és a gyorskereső gombja is a néző nyelvén.
+    document.querySelectorAll('.sidebar-group-label[data-label]').forEach(el => {
+      el.textContent = T(el.dataset.label)
+    })
+    const quick = document.querySelector('.sidebar-search-label')
+    if (quick) quick.textContent = T('Quick search')
+    document.getElementById('sidebar-search')?.setAttribute('aria-label', T('Quick search') + ' (Ctrl+K)')
+    document.getElementById('sidebar')?.setAttribute('aria-label', T('Main navigation'))
+    this.refreshProfileAvatar()
   },
 
   async init () {
@@ -1260,9 +1621,15 @@ export const App = {
     // Switching re-renders in place: a language change that demanded a reload
     // would throw away scroll position and any open panel.
     I18n.init(() => {
-      this.applyNavLabels()
+      // Az első festés előtt nincs mit újrarajzolni: az `init` úgyis megvárja
+      // a szótárt, mielőtt először navigál.
+      if (!this._booted) return
+      this._relabelShell()
       this.navigate()
     })
+    // A kezdő képernyő modulja és stíluslapja már most indul, a konfigurációval
+    // párhuzamosan — a navigáció addigra jellemzően a kész modult kapja.
+    this.prefetchRoute(this.parseHash().route)
     this.refreshProfileAvatar()
     this.refreshNotifBadge()
     this.initAccountMenu()
@@ -1288,12 +1655,30 @@ export const App = {
     this._maintenance.subscribe(() => { this.navigate() })
     this._maintenance.start()
 
-    window.addEventListener('hashchange', () => { this.closeMoreSheet(); this.navigate() })
+    window.addEventListener('hashchange', () => {
+      this.closeMoreSheet()
+      this.closeSearchModal()
+      document.getElementById('profile-menu')?.remove()
+      this.navigate()
+    })
+    // A görgetés helye a history-bejegyzésbe: a vissza gomb ide tér vissza
+    // (lásd `_navigateOnce`). Ritkítva, mert a `replaceState` nem ingyenes.
+    let scrollTimer = null
+    window.addEventListener('scroll', () => {
+      if (scrollTimer) return
+      scrollTimer = setTimeout(() => {
+        scrollTimer = null
+        try {
+          window.history.replaceState({ ...(window.history.state ?? {}), yumeScroll: Math.round(window.scrollY) }, '')
+        } catch { /* egy beágyazott nézet tilthatja: akkor nincs visszaállítás */ }
+      }, 150)
+    }, { passive: true })
 
     // load DB-driven site config + permissions, apply the site name, then route
     await this.loadConfig()
     this.perms = YumeAPI.user() ? await YumeAPI.myPermissions() : []
     this._publishFeatureState()
+    this.refreshProfileAvatar()
     if (this.config?.site?.name) {
       const logoText = document.querySelector('.sidebar-logo-text')
       if (logoText) logoText.textContent = this.config.site.name.toLowerCase()
@@ -1302,10 +1687,15 @@ export const App = {
     await this.applyDefaultTheme()
     this.refreshAdminNav()
     this.applyNavVisibility()
+    // A nyelv szótára (ha kell) az első festés előtt megérkezik: a lap ne
+    // villanjon angolul, hogy aztán magyarra váltson.
+    await I18n.ready()
+    this._relabelShell()
+    this._booted = true
     this.navigate()
 
     // sign-in library sync (best-effort, off the critical path)
-    if (YumeAPI.user()) LibrarySync?.init()
+    if (YumeAPI.user()) this._librarySync().then(sync => sync.init())
 
     // Preferences the viewer may have set on another device win over whatever
     // this browser happens to hold, then the wizard runs if this profile has
@@ -1317,7 +1707,9 @@ export const App = {
       this.maybeOnboard()
     }
     window.addEventListener('library-synced', () => {
-      if (['home', 'list', 'dashboard'].includes(this.parseHash().route)) this.navigate()
+      // A fiókból most megérkezett könyvtár ezeken a lapokon számokat és sorokat
+      // változtat — egy új eszközön a profil különben nulla címet mutatna.
+      if (['home', 'list', 'dashboard', 'profile'].includes(this.parseHash().route)) this.navigate()
     })
   }
 }

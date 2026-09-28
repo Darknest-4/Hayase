@@ -1,0 +1,35 @@
+/* ===========================================================================
+   Közös: a könyvtár sorformája (pages/list.js, pages/history.js).
+
+   Betölti: minden útvonal, amelyik használja — #/list.
+   A router `ROUTE_STYLES` táblája sorolja fel; a test/route-styles.test.mjs
+   veti össze azzal, amit a képernyők ténylegesen használnak.
+   =========================================================================== */
+
+.lib-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.lib-row {
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
+  border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  transition: border-color var(--dur) var(--ease);
+}
+.lib-row:hover,
+.lib-row:focus-within { border-color: var(--border-strong); }
+.lib-cover { display: block; aspect-ratio: 2 / 3; border-radius: var(--radius-md); overflow: clip; background: var(--bg-hover); }
+.lib-cover img { width: 100%; height: 100%; object-fit: cover; }
+.lib-main { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+.lib-title { font: var(--weight-extrabold) 1rem/1.3 var(--font-sans); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-title:hover { text-decoration: underline; text-underline-offset: .15em; }
+.lib-sub { color: var(--fg-faint); font: var(--type-caption); margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-controls { display: flex; align-items: center; gap: var(--space-2); }
+
+@media (max-width: 767px) {
+  .lib-row { grid-template-columns: 3.25rem minmax(0, 1fr); gap: var(--space-2) var(--space-3); padding: var(--space-2); }
+  .lib-cover { grid-row: 1 / span 2; }
+  .lib-controls { grid-column: 2; justify-content: space-between; flex-wrap: wrap; }
+}

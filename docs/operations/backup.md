@@ -4,7 +4,9 @@ Yume kept no backups at all until this existed: no dump, no schedule, no
 restore procedure. One Docker volume held every account, library and watch
 history, and a mistaken `docker compose down -v` would have ended the project.
 
-Two scripts and one container service, all in `db/`.
+A few scripts in `scripts/database/` (mounted into the container as `/db/`) and one
+container service. Since 2026-09-28 the site's **code** goes off-site too — see
+[A weboldal kódja az R2-ben](#a-weboldal-kódja-az-r2-ben).
 
 ---
 
@@ -13,8 +15,10 @@ Two scripts and one container service, all in `db/`.
 | Data | Where it lives | Covered by |
 |---|---|---|
 | Accounts, library, catalogue, comments, jobs, metrics | Postgres | `backup.sh` |
+| The site's code — full git history, every branch | the repository | `backup-code.sh` (bundle) |
+| The site as it is on disk — uncommitted changes, `docker-compose.override.yml`, the videos kept out of git | the working tree | `backup-code.sh` (archive) |
 | Uploaded images | external CDN URLs today | nothing to back up yet |
-| Secrets (`JWT_SECRET`, DB password) | your `.env` | your password manager |
+| Secrets (`JWT_SECRET`, DB password) | your `.env` | your password manager — **deliberately not** in any backup |
 
 Everything that matters is in the database. That was not always true — the
 extension packages were deliberately kept out of it, so a restore brought back
@@ -92,6 +96,10 @@ Exit codes: `0` success · `1` restore failed · `3` misconfigured · `4` cancel
 
 ## Restoring onto a new host
 
+If GitHub is unavailable, the code comes from R2 instead of `git clone <repo>` —
+see [A weboldal kódja az R2-ben](#a-weboldal-kódja-az-r2-ben); the archive there
+also brings back `docker-compose.override.yml` and the videos that git does not hold.
+
 ```bash
 git clone <repo> && cd Hayase
 cp /secure/backup/.env .                       # JWT_SECRET, POSTGRES_PASSWORD
@@ -119,6 +127,10 @@ logged out and confused at the worst moment.
 | `BACKUP_AT_HOUR` | `3` | UTC hour of the daily run |
 | `BACKUP_ON_START` | `1` | take one when the container starts |
 | `BACKUP_VERIFY_DB` | `yume_verify` | scratch database used for verification |
+| `BACKUP_CODE_DIR` | `/src` (compose) | the repository root; unset = no code backup |
+| `BACKUP_CODE_KEEP` | `5` | code versions kept per file type (count, not age) |
+| `BACKUP_CODE_FORCE` | unset | `1` = a new code copy even if nothing changed |
+| `R2_CODE_PREFIX` | `<R2_PREFIX>-code` | where the code goes in the bucket (`yume-code`) |
 | `FORCE` | unset | `restore.sh` only — skip the typed confirmation |
 
 ---
@@ -238,13 +250,79 @@ A `restore.sh` a `/backups` köteten lévő fájllal dolgozik, tehát a távoli
 másolatot előbb le kell hozni. Egy elveszett gép után, új gépen:
 
 ```
+docker compose run --rm --entrypoint sh backup -c '/db/r2.sh lsl "R2:$R2_BUCKET/$R2_PREFIX"'
 docker compose run --rm --entrypoint sh backup -c \
-  'rclone copy "R2:$R2_BUCKET/$R2_PREFIX/yume-<dátum>.dump" /backups --s3-no-check-bucket'
+  '/db/r2.sh copy "R2:$R2_BUCKET/$R2_PREFIX/yume-<dátum>.dump" /backups'
 docker compose run --rm backup /db/restore.sh yume-<dátum>.dump
 ```
 
+Az `r2.sh` az `R2:` távolit a konténer környezetéből állítja be (`r2-env.sh`,
+ugyanaz, amivel a feltöltés dolgozik). Eddig itt egy puszta `rclone copy` állt,
+ami a konténerben nem működött: az `R2:` távoli csak a feltöltés idejére élt,
+és ez pont a legrosszabb napon derült volna ki.
+
 A `restore.sh` a visszaállítás után lefuttatja a hiányzó migrációkat és lezárja
 a dumpból örökölt, félbemaradt mentéskéréseket — lásd fentebb.
+
+---
+
+## A weboldal kódja az R2-ben
+
+Az adatbázis mellé a **kód is** kimegy a gépről (`scripts/database/backup-code.sh`,
+2026-09-28 óta). Minden mentés után lefut — az ütemezett, a panelről kért és a kézi
+is —, de új példányt **csak akkor** tölt fel, ha a kód változott.
+
+| Fájl az R2 `yume-code/` útvonalán | Mi van benne | Mérve (2026-09-28) |
+|---|---|---|
+| `yume-code-<időbélyeg>.bundle` | a teljes git-előzmény: minden ág, címke és távoli ág | 252 MB |
+| `yume-code-<időbélyeg>.tar.gz` | a weboldal úgy, ahogy a lemezen áll: a nem commitolt változások, a `docker-compose.override.yml` és a gitből szándékosan kihagyott videók is | 54 MB, 893 fájl |
+
+**Mi nincs benne:** a `.git` (azt a bundle viszi), a `node_modules` (a
+`package-lock.json`-ból pontosan újraépül), a `.env` és a `.env.*` (**titkok** —
+a `.env.example` és a `.env.test` benne van), és az adatbázis-mentések. A szkript
+az elkészült archívumot utólag is átnézi, és ha mégis titokfájl került bele, nem
+tölti fel. **A `.env`-et ezért külön, jelszókezelőben őrizd** — nélküle a
+visszaállított oldal nem indul el (és egy új `JWT_SECRET` mindenkit kiléptet).
+
+**Mikor készül új példány.** Mindkét fájlnak ujjlenyomata van: a bundle-nek a git
+refjei, az archívumnak a fájlok tartalma. Ha egyik sem változott a legutóbb
+*sikeresen* feltöltött óta, a futás ennyit ír: „a kód nem változott". Egy
+elbukott feltöltést a következő futás pótol; ha csak a lemezen álló kód változott
+(commit nélkül), csak az archívum megy ki, a 252 MB-os előzmény nem.
+
+**Megőrzés darabszám szerint**, nem kor szerint: fájltípusonként a legutóbbi
+`BACKUP_CODE_KEEP` (alap 5) változat marad. A kor szerinti szabály — ami a
+dumpoknak jó — egy hónapig változatlan kódnak az egyetlen példányát is törölné.
+
+**Hogyan fér hozzá a konténer.** A repó **csak olvashatóan** van csatolva
+(`./:/src:ro`); a mentés semmit nem írhat bele. A képben ehhez `git` és GNU
+`tar` van (`infrastructure/backup/Dockerfile`). Helyben nem marad másolat: a
+forrás ugyanazon a lemezen van, egy helyi másolat a lemezhibát nem élné túl.
+
+### Visszaállítás az R2-ből, új gépen
+
+```
+# mi van kint
+docker compose run --rm --entrypoint sh backup -c '/db/r2.sh lsl "R2:$R2_BUCKET/yume-code"'
+
+# a teljes előzmény — minden ág
+/db/r2.sh copy "R2:$R2_BUCKET/yume-code/yume-code-<dátum>.bundle" /backups
+git clone yume-code-<dátum>.bundle yume
+
+# a lemezen állt állapot (override, videók, nem commitolt munka)
+/db/r2.sh copy "R2:$R2_BUCKET/yume-code/yume-code-<dátum>.tar.gz" /backups
+tar -xzf yume-code-<dátum>.tar.gz -C yume
+
+# utána: a .env a jelszókezelőből, `npm ci`, `docker compose up -d`
+```
+
+Ha a gép már nincs meg, az `r2.sh` helyett egy saját gépen futó `rclone` is
+megteszi ugyanazzal az R2-kulccsal (lásd `r2-env.sh` — ugyanazok a beállítások).
+
+**Kipróbálva (2026-09-28):** a bundle az R2-ből letöltve klónozható, a HEAD
+azonos a szerverével, minden ág megvan, a `git fsck` hibátlan; az archívumból
+kibontott fájlok bájtra egyeznek a repóval. Változatlan kódnál a második futás
+nem töltött fel semmit.
 
 ---
 

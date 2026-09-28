@@ -27,6 +27,9 @@ import * as rest from './rest-client.ts'
 import * as welcome from './welcome.ts'
 
 import type { EngineState } from './gateway.ts'
+import { guardUnhandledRejections } from '../../infrastructure/process/crash-guard.ts'
+
+guardUnhandledRejections('worker')
 
 const GATEWAY_URL = process.env.DISCORD_GATEWAY_URL ?? 'wss://gateway.discord.gg/?v=10&encoding=json'
 const FLUSH_MS = Number(process.env.DISCORD_GATEWAY_FLUSH_MS ?? 30_000)

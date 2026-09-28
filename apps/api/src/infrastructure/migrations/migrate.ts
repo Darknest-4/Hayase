@@ -31,7 +31,7 @@ async function migrate (): Promise<void> {
   // fix. `applied.size === 0` means the schema is about to be created, so
   // there is no data to migrate and recreating the database is a one-liner;
   // once rows exist, the same defect costs a dump and restore, and refusing
-  // to start would be worse than the defect itself. See lib/db-encoding.ts.
+  // to start would be worse than the defect itself. See infrastructure/migrations/db-encoding.ts.
   const encodingVerdict = await checkEncoding(
     async (sql, params) => (await pool.query(sql, params as unknown[])).rows,
     applied.size === 0

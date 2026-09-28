@@ -1,0 +1,29 @@
+/* ===========================================================================
+   Útvonal: #/login — csak ennek a képernyőnek a szabályai.
+
+   Betölti: a router (`ROUTE_STYLES.login`), a képernyő moduljával együtt, és
+   a képernyő csak utána rajzol. Ami több oldalon kell, az nem itt van: a
+   keret a style.css-ben, a közös modulok a css/features/ alatt.
+   =========================================================================== */
+
+.auth-aside { display: flex; flex-direction: column; gap: var(--space-6); max-width: 30rem; }
+.auth-pitch { font: var(--weight-black) clamp(2rem, 1.4rem + 2vw, 3rem)/1.08 var(--font-sans); letter-spacing: -.03em; margin: 0; text-wrap: balance; }
+.auth-points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-4); }
+.auth-point { display: flex; gap: var(--space-3); align-items: flex-start; }
+.auth-point-icon {
+  display: grid; place-items: center;
+  width: 2.5rem; height: 2.5rem; flex-shrink: 0;
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  color: var(--accent-text);
+}
+.auth-point-icon svg { width: 1.1rem; height: 1.1rem; }
+.auth-point-title { display: block; font: var(--weight-extrabold) .9375rem/1.3 var(--font-sans); }
+.auth-point-text { display: block; color: var(--fg-muted); font: var(--type-caption); }
+
+@media (max-width: 1023px) {
+  .auth-aside { gap: var(--space-3); }
+  .auth-pitch { display: none; }
+  .auth-points { display: none; }
+}

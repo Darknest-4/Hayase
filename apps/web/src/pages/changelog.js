@@ -32,18 +32,25 @@ const STATUS = {
 export const PageChangelog = {
   async render (root, params) {
     root.append(C.spotlight(T('Development log'), { subtitle: T('What shipped, what is being built, what is next') }))
-    const pad = U.el('div', { class: 'page-pad', style: 'max-width:52rem;' })
+    const pad = U.el('div', { class: 'page-pad page-pad-narrow' })
     root.append(pad)
 
-    const filter = params.get('status')
-    const rail = U.el('div', { class: 'tabs' })
+    // Szűrők, linkként: mindegyiknek saját címe van (megosztható, a vissza gomb
+    // ismeri). Egy ismeretlen `?status=` a „Minden" fül — addig egyik fül sem
+    // volt kijelölve, a lista pedig üres választ kapott.
+    const asked = params.get('status')
+    const filter = STATUS[asked] ? asked : null
+    const rail = U.el('nav', { class: 'tabs', 'aria-label': T('Development log') })
     for (const [key, label] of [[null, 'Everything'], ['planned', 'Planned'], ['in_progress', 'In progress'], ['released', 'Released']]) {
+      const on = filter === key
       rail.append(U.el('a', {
-        class: 'tab' + ((filter ?? null) === key ? ' active' : ''),
-        href: '#/changelog' + (key ? `?status=${key}` : '')
+        class: 'tab' + (on ? ' active' : ''),
+        href: '#/changelog' + (key ? `?status=${key}` : ''),
+        ...(on ? { 'aria-current': 'page' } : {})
       }, [U.el('span', { text: T(label) })]))
     }
     pad.append(rail)
+    U.revealActiveTab(rail)
 
     const list = U.el('div', { class: 'changelog' }, Array.from({ length: 4 }, () => P.skeletonRow()))
     pad.append(list)
@@ -97,7 +104,7 @@ export const PageChangelog = {
         ]),
         U.el('div', { class: 'release-meta' }, [
           U.el('span', { class: 'release-status', text: T(statusLabel) }),
-          date ? U.el('time', { class: 'release-date', text: date }) : null
+          date ? U.el('time', { class: 'release-date', datetime: String(release.released_on).slice(0, 10), text: date }) : null
         ])
       ]),
       groups.children.length

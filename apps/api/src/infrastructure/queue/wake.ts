@@ -20,6 +20,7 @@
 
 import pg from 'pg'
 
+import { config } from '../../config.ts'
 import { pool } from '../database/index.ts'
 
 /** A csatorna neve. Egy YUME-példány egy csatornát használ. */
@@ -192,7 +193,9 @@ function connectListener (signal?: AbortSignal): void {
   const connect = async (): Promise<void> => {
     if (stopped) return
     try {
-      const next = new pg.Client({ connectionString: process.env.DATABASE_URL })
+      // The same address as the pool — config.ts owns it, including the
+      // development default a bare `process.env` read did not have.
+      const next = new pg.Client({ connectionString: config.databaseUrl })
       // A hibafigyelő ELŐBB, mint a kapcsolódás: egy bontott kapcsolat
       // `error` eseménye figyelő nélkül kilőné a folyamatot.
       next.on('error', error => {
