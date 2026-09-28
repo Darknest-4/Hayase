@@ -6,8 +6,28 @@
    `P.table`, `P.emptyState`, `P.errorState`… A 36 jelvény-változat és a 11
    gombosztály abból lett, hogy a következő képernyő nem látta az előzőt.
 2. **Van rá token?** Szín, méret, térköz, sarok, árnyék, időzítés — mind van.
-3. **Melyik fájlba?** `components.css`, ha minden képernyőé. `style.css`, ha
-   egy képernyőé — és **a responsive blokk elé**, különben némán meghal.
+3. **Melyik fájlba?** (2026-09 óta minden oldal csak azt tölti be, ami kell neki.)
+   - `components.css` — a tervrendszer komponense, amit több képernyő használ.
+   - `style.css` — **csak a keret** (oldalsáv, alsó sáv, gyorskereső, fiókmenü,
+     lábléc, kapuk, toastok) és a valóban közös alap (`.page-pad`,
+     `.setting-card`). Ez minden oldalon letöltődik, tehát ide képernyő ne kerüljön.
+   - `css/pages/<útvonal>.css` — egy képernyő saját szabályai. A router tölti be
+     az útvonallal együtt (`ROUTE_STYLES` a `src/app/router.js`-ben).
+   - `css/features/<modul>.css` — egy modulé, amit több képernyő használ
+     (hozzászólások, belépőűrlap, diagramok…). Vagy a használó útvonalak
+     `ROUTE_STYLES`-ába kerül, vagy — ha csak egy művelet/fül nyomán jelenik meg
+     (ablak, panel, fül) — a modul maga tölti be közvetlenül a rajzolás előtt:
+     `await loadStylesheet('features/x.css')`.
+   - Minden lapon **a töréspontok a lap végén** — különben egy később jövő sima
+     szabály némán felülírja őket (a `css-order.test.mjs` minden lapra nézi).
+   - A `route-styles.test.mjs` minden útvonalra kiszámolja, mit használnak a
+     moduljai, és elbukik, ha egy szükséges lap hiányzik, egy felsorolt lapból
+     semmi nem kell, vagy a keretbe egyetlen képernyő saját szabálya került.
+4. **JS is csak ott, ahol kell.** Minden képernyő lusta modul (`ROUTE_MODULES`).
+   Ami csak egy fülön vagy egy műveletnél kell (a beállítások témaválasztója, a
+   lejátszó, egy szerkesztőablak), azt ott importáld dinamikusan. `shared/`-ből
+   és `app/`-ból ne importálj statikusan nehéz funkciót: az minden oldal első
+   betöltése lesz.
 
 ## Kemény szabályok
 
