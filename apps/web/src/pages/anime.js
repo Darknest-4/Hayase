@@ -1,13 +1,31 @@
-/* global window, document, requestAnimationFrame */
-// Anime detail page — faithful to the original Hayase layout:
-// content scrolls over the global banner; cover bottom-aligned next to a
-// huge title; chips tinted with the cover's dominant color (score chip
-// colored by rating); a wide tinted Play button with the list editor and
-// icon actions; genre + tag chips; then tabs:
-// Episodes | Relations | Comments | Recommendations.
+/* global navigator, requestAnimationFrame */
+// Anime adatlap — #/anime/:id (AniList-szám vagy katalógus-uuid).
+//
+// 2026-09, újratervezve. Ami változott, és miért:
+//
+//   * EGY PONTSZÁM. A lap kétszer mondta ki ugyanazt két alakban („★ 5.10" és
+//     egy piros „51.0%" csempe), és a csempe színe — piros, sárga, zöld — úgy
+//     ítélkezett, mintha egy szám minősítené a sorozatot. Most egyszer, százalékban.
+//
+//   * AZ EPIZÓDSOR HIVATKOZÁS. A sor eddig egy `div` volt kattintáskezelővel:
+//     billentyűzettel elérhetetlen, és a benne ülő „megnézve" gomb egy
+//     kattintható elem a kattintható elemben. Most a cím egy valódi `<a>`, ami
+//     a sort kitölti, a gomb pedig mellette külön vezérlő.
+//
+//   * A MEGOSZTÁS A SAJÁT CÍMÜNKET ADJA. A gomb eddig egy bedrótozott idegen
+//     domaint másolt ki (`hayase.watch`) — minden megosztott link egy másik
+//     oldalra vitt. Most `<origin>/anime/<id>`, amit a kiszolgáló a cím saját
+//     fejlécével (SEO, link-előnézet) szolgál ki; telefonon a rendszer
+//     megosztó lapja.
+//
+//   * A FÜL A CÍMBEN. `?tab=characters` — egy linkkel meg lehet mutatni a
+//     szereplőket, és a vissza gomb nem dobja el a választást.
+//
+//   * A LISTÁRA VÉTEL NEM RAJZOLJA ÚJRA A LAPOT. Eddig egy teljes navigáció
+//     futott, ami a görgetést és a nyitott fület is visszaállította.
 
-import { navigate, setTitle } from '../shared/lib/shell.js'
 import { featureOn } from '../shared/lib/site-config.js'
+import { setTitle } from '../shared/lib/shell.js'
 import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
@@ -16,133 +34,159 @@ import { Store } from '../shared/state/store.js'
 import { P } from '../shared/ui/primitives.js'
 import { titleTheme } from '../shared/lib/title-theme.js'
 import { U } from '../shared/lib/dom.js'
+import { viewEntity } from '../shared/lib/analytics.js'
+import { Comments } from '../features/comments/comments.js'
+import { openTrailer } from '../features/trailer/trailer.js'
+
+const ICONS = {
+  share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="10.5" x2="15.4" y2="6.5"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/>',
+  film: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M17 7.5h4"/><path d="M17 16.5h4"/>',
+  external: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'
+}
+
+const TABS = ['episodes', 'relations', 'characters', 'comments', 'recommendations']
 
 export const PageAnime = {
   async render (root, params, id) {
-    root.append(P.spinner())
+    root.append(this.skeleton())
 
-    // Catalogue first, AniList as the fallback — see js/catalogue.js. `id` is
-    // an AniList id or a Yume uuid; the resolver accepts either, which is what
-    // makes a catalogue-only title reachable at all.
+    // Catalogue first, AniList as the fallback — see entities/anime/catalogue.js.
+    // `id` is an AniList id or a Yume uuid; the resolver accepts either, which
+    // is what makes a catalogue-only title reachable at all.
     let media
     try {
       media = await Catalogue.media(id)
     } catch (e) {
-      root.replaceChildren(P.errorState(T('Failed to load anime: ') + e.message))
+      root.replaceChildren(U.el('div', { class: 'page-pad' }, [C.errorState(e, () => { window.location.reload() })]))
       return
     }
     if (!media) {
-      root.replaceChildren(P.emptyState(T('Anime not found.')))
+      root.replaceChildren(U.el('div', { class: 'page-pad' }, [
+        P.emptyState(T('Anime not found.'), {
+          action: U.el('a', { class: 'btn btn-secondary', href: '#/search' }, [document.createTextNode(T('Search'))])
+        })
+      ]))
       return
     }
 
+    viewEntity(media.yumeId)
     root.replaceChildren()
+    setTitle(U.title(media))
 
-    // the original keeps the banner behind the whole page
+    // A borító vagy a banner a lap tetején, halványan — a néző tudja, hol van.
     U.setBanner(media.bannerImage ?? U.cover(media))
 
-    // The cover's dominant colour drives this page's accent — see
-    // shared/lib/title-theme.js. No literal default here: a title without a
-    // colour gets no --custom at all, and the CSS falls back to the site
-    // accent on its own.
-    const page = U.el('div', { class: 'detail-page', style: titleTheme(media) })
+    const page = U.el('div', { class: 'page-pad anime-page', style: titleTheme(media) })
     root.append(page)
-    const wrap = U.el('div', { class: 'detail-wrap' })
-    page.append(wrap)
+    page.append(this.hero(media))
 
-    // ---- hero row: cover + titles + chips + description ----
+    const tab = TABS.includes(params?.get?.('tab')) ? params.get('tab') : 'episodes'
+    page.append(U.el('div', { class: 'anime-layout' }, [
+      this.tabs(media, tab),
+      this.sidePanel(media)
+    ]))
+  },
+
+  /** Az adatlap alakja, amíg a cím betölt. */
+  skeleton () {
+    return U.el('div', { class: 'page-pad anime-page', 'aria-busy': 'true' }, [
+      U.el('div', { class: 'anime-hero' }, [
+        U.el('div', { class: 'anime-cover skeleton' }),
+        U.el('div', { class: 'anime-head' }, [
+          U.el('div', { class: 'skeleton skel-text', style: 'width:9rem' }),
+          U.el('div', { class: 'skeleton skel-title', style: 'width:min(30rem,90%);height:2.5rem' }),
+          U.el('div', { class: 'skeleton skel-text', style: 'width:min(20rem,70%)' }),
+          U.el('div', { class: 'skeleton skel-text' }),
+          U.el('div', { class: 'skeleton skel-text skel-line-mid' })
+        ])
+      ])
+    ])
+  },
+
+  hero (media) {
+    const mainTitle = U.title(media)
     const romaji = media.title?.romaji ?? ''
     const native = media.title?.native ?? ''
-    const mainTitle = U.title(media)
-    // Name the browser tab after the show. The server already does this in the
-    // served <title> for anything that is not a browser (routes/seo.ts); the
-    // client has to repeat it because the router replaces the title on every
-    // navigation.
-    setTitle(mainTitle)
+    // A második cím: ha a fő cím maga a romaji, az eredeti írásmód jön alá.
     const secondary = romaji.toLowerCase().trim() === mainTitle.toLowerCase().trim() ? native : romaji
-
-    const entry = Store.entry(media.id)
+    const score = U.score(media)
     const count = media.episodes ?? (media.nextAiringEpisode ? media.nextAiringEpisode.episode - 1 : null)
-    const ofChip = entry?.progress != null && count
-      ? `${entry.progress} / ${count}`
-      : count ? `${count} ${T('episodes')}` : media.duration ? `${media.duration} ${T('min')}` : '—'
 
-    const chips = U.el('div', { class: 'chip-row' }, [
-      U.el('span', { class: 'chip', text: ofChip }),
-      U.el('a', { class: 'chip', href: `#/search?format=${media.format ?? ''}`, text: U.format(media) }),
-      U.el('a', { class: 'chip', href: `#/search?status=${media.status ?? ''}`, text: U.status(media) }),
-      U.seasonYear(media) ? U.el('a', { class: 'chip', href: `#/search?season=${media.season ?? ''}&year=${media.seasonYear ?? ''}`, text: String(U.seasonYear(media)) }) : null,
-      media.averageScore ? U.el('span', { class: 'chip', style: `background:${ratingColor(media.averageScore)};color:white;`, text: media.averageScore + '%' }) : null,
-      media.nextAiringEpisode?.airingAt
-        ? U.el('span', { class: 'chip chip-airing', text: `${T('Ep')} ${media.nextAiringEpisode.episode} ${U.relTime(new Date(media.nextAiringEpisode.airingAt * 1000))}` })
-        : null
-    ])
+    const facts = U.el('div', { class: 'anime-facts' })
+    const fact = (node) => facts.append(node)
+    if (score) {
+      fact(U.el('span', { class: 'anime-score', title: T('Average score') }, [
+        U.svg(C.HEART, 16), U.el('b', { text: `${score}%` })
+      ]))
+    }
+    if (media.status) {
+      fact(U.el('span', { class: 'badge badge-dot ' + (media.status === 'RELEASING' ? 'badge-live' : media.status === 'NOT_YET_RELEASED' ? 'badge-info' : ''), text: U.status(media) }))
+    }
+    if (count) fact(U.el('span', { class: 'anime-fact', text: `${count} ${T('episodes')}` }))
+    if (media.duration) fact(U.el('span', { class: 'anime-fact', text: `${media.duration} ${T('min')}` }))
+    const studio = media.studios?.nodes?.[0]?.name
+    if (studio) fact(U.el('span', { class: 'anime-fact', text: studio }))
 
-    // star rating badge (reference: "★ 9.08")
-    const starRow = media.averageScore
-      ? U.el('div', { class: 'score-badges' }, [
-        U.el('span', { class: 'score-star' }, [
-          U.svg('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="currentColor" stroke="none"/>', 13),
-          document.createTextNode((media.averageScore / 10).toFixed(2))
-        ]),
-        media.favourites ? U.el('span', { class: 'score-favs', text: `${media.favourites.toLocaleString(I18n.locale())} favourites` }) : null
-      ])
-      : null
+    const eyebrow = [
+      U.format(media),
+      U.seasonYear(media) ? String(U.seasonYear(media)) : null
+    ].filter(Boolean)
 
-    const descText = U.plainDesc(media.description)
-    const desc = U.el('div', { class: 'detail-desc', text: descText })
-
-    // Say so when the description is not in the language the viewer asked for.
-    //
-    // 25,703 synopses are English and a Hungarian one exists only once somebody
-    // writes it. An unexplained English paragraph on a Hungarian site reads as
-    // the site being broken; the same paragraph labelled as an untranslated one
-    // reads as what it is, and costs one line to say.
+    // ---- leírás: négy sor, és csak akkor „Tovább", ha tényleg van tovább ----
+    const descText = U.plainDesc(media.description).trim()
     const wantLang = Prefs?.get('language.content') ?? 'hu'
     const gotLang = media._lang?.synopsis ?? null
     const descNote = descText && gotLang && gotLang !== wantLang && gotLang !== 'unknown'
-      ? U.el('p', { class: 'detail-desc-note', text: T('This description has not been translated yet.') })
+      ? U.el('p', { class: 'anime-desc-note', text: T('This description has not been translated yet.') })
       : null
-    // The description and its toggle are one element, because the toggle sits
-    // *on* the fade rather than under the paragraph: the gradient is what says
-    // there is more, and the button is what does something about it.
-    const moreBtn = U.el('button', {
-      class: 'showmore',
+    const desc = U.el('p', { class: 'detail-desc anime-desc clamp-4', id: 'anime-desc', text: descText || T('No description yet.') })
+    const more = U.el('button', {
+      class: 'link anime-desc-toggle',
+      type: 'button',
       hidden: true,
-      onclick: e => {
-        const clamped = descWrap.classList.toggle('clamped')
-        e.currentTarget.textContent = clamped ? T('Olvass többet') : T('Mutass kevesebbet')
+      'aria-controls': 'anime-desc',
+      'aria-expanded': 'false',
+      onclick: () => {
+        const open = desc.classList.toggle('clamp-4') === false
+        more.setAttribute('aria-expanded', String(open))
+        more.textContent = open ? T('Show less') : T('Read more')
       }
-    }, [document.createTextNode(T('Olvass többet'))])
-
-    const descWrap = U.el('div', { class: 'detail-desc-wrap clamped' }, [desc, moreBtn])
-
-    // Whether there is anything to reveal is a question about the rendered
-    // box, not about the string. The old test was `length > 220`, and the clamp
-    // is five lines — so every description between about 220 and 400 characters
-    // offered a button that did nothing when pressed.
+    }, [document.createTextNode(T('Read more'))])
     requestAnimationFrame(() => {
-      if (desc.scrollHeight > desc.clientHeight + 4) moreBtn.hidden = false
-      else descWrap.classList.remove('clamped')
+      if (desc.scrollHeight > desc.clientHeight + 4) more.hidden = false
     })
 
-    const titleEl = U.el('h1', { class: 'detail-title', text: mainTitle })
+    const genres = (media.genres ?? []).length
+      ? U.el('div', { class: 'badges anime-genres' }, media.genres.map(g =>
+        U.el('a', { class: 'badge badge-outline', href: `#/search?genre=${encodeURIComponent(g)}`, text: T(g) })))
+      : null
 
-    wrap.append(U.el('div', { class: 'detail-hero-row' }, [
-      U.el('div', { class: 'detail-cover' }, [U.el('img', { src: U.cover(media), alt: mainTitle })]),
-      U.el('div', { class: 'detail-headings' }, [
-        titleEl,
-        secondary ? U.el('h2', { class: 'detail-secondary', style: 'margin-top:var(--space-1);', text: secondary }) : null,
-        starRow,
-        chips,
+    return U.el('section', { class: 'anime-hero', 'aria-labelledby': 'anime-title' }, [
+      U.el('div', { class: 'anime-cover' }, [
+        U.el('img', { src: U.cover(media), alt: '', decoding: 'async', fetchpriority: 'high' })
+      ]),
+      U.el('div', { class: 'anime-head' }, [
+        eyebrow.length ? U.el('p', { class: 'eyebrow', text: eyebrow.join(' · ') }) : null,
+        U.el('h1', { class: 'anime-title', id: 'anime-title', text: mainTitle }),
+        secondary ? U.el('p', { class: 'anime-subtitle', lang: secondary === native ? 'ja' : null, text: secondary }) : null,
+        facts,
         descNote,
-        descWrap
+        desc,
+        more,
+        genres,
+        this.actions(media)
       ])
-    ]))
+    ])
+  },
 
-    // ---- action row: Continue Watching + list editor + icon buttons ----
+  /** Lejátszás, lista, kedvenc, megosztás, előzetes, külső oldalak. */
+  actions (media) {
+    const row = U.el('div', { class: 'anime-actions' })
     const progress = Store.entry(media.id)?.progress ?? 0
-    // resume mid-episode? point at it; otherwise the next unwatched episode
+
+    // Hol folytassa: a következő rész, ha annak van mentett helye vagy a
+    // mostaninak nincs; különben a félbehagyott mostani.
     const resumeNextEp = Store.getResume(media.id, progress + 1)
     const resumeCurEp = progress > 0 ? Store.getResume(media.id, progress) : 0
     const targetEp = resumeNextEp || !resumeCurEp ? progress + 1 : progress
@@ -151,408 +195,382 @@ export const PageAnime = {
 
     const playLabel = progress || resumeAt ? T('Continue Watching') : T('Start Watching')
     const playSub = resumeAt
-      ? `${T('Episode')} ${targetEp} • ${U.fmtTime(resumeAt)} / ${U.fmtTime(estTotal)}`
-      : `${T('Episode')} ${targetEp}`
+      ? `${I18n.f(T('Episode {n}'), { n: targetEp })} · ${U.fmtTime(resumeAt)} / ${U.fmtTime(estTotal)}`
+      : I18n.f(T('Episode {n}'), { n: targetEp })
 
-    const actions = U.el('div', { class: 'detail-actions-row' })
-    const playGroup = U.el('div', { class: 'play-group' }, [
-      U.el('a', { class: 'play-btn play-btn-rich', href: `#/watch/${media.id}:${targetEp}` }, [
-        U.svg(C.PLAY, 16),
-        U.el('span', { class: 'play-btn-text' }, [
-          U.el('b', { text: playLabel }),
-          U.el('small', { text: playSub })
-        ]),
-        resumeAt ? U.el('span', { class: 'play-btn-bar' }, [U.el('span', { style: `width:${Math.min(100, resumeAt / estTotal * 100)}%;` })]) : null
+    const play = U.el('a', { class: 'btn btn-primary btn-lg anime-play', href: `#/watch/${media.id}:${targetEp}` }, [
+      U.svg(C.PLAY, 18),
+      U.el('span', { class: 'anime-play-text' }, [
+        U.el('b', { text: playLabel }),
+        U.el('small', { text: playSub })
       ]),
-      this.entrySelect(media)
+      resumeAt ? U.el('span', { class: 'anime-play-bar', 'aria-hidden': 'true' }, [U.el('span', { style: `width:${Math.min(100, resumeAt / estTotal * 100)}%` })]) : null
     ])
-    actions.append(playGroup)
+    row.append(play)
 
     /*
-     * A nagy lejátszásgomb a semmibe mutathat.
+     * A nagy gomb csak arra mutathat, ami el is indul.
      *
-     * Hogy egy részhez van-e forrás, azt csak az epizódlista tudja, és az
-     * később érkezik — a gomb addigra kirajzolódott. Amint megjött, a gomb
-     * vagy átáll az első lejátszhatóra, vagy megmondja, hogy nincs miből.
-     *
-     * A „nem tudjuk" itt sem ugyanaz, mint a „nincs": egy AniList-címnél,
-     * amit sosem importáltunk, nincs epizódsor, amire forrást lehetne
-     * akasztani, és ott a gomb marad, ahogy volt.
+     * A katalógus tudja, melyik résznek van forrása. Ha a célzott résznek
+     * nincs, de egy másiknak van, a gomb oda visz; ha egyiknek sincs, a gomb
+     * kimondja — egy lejátszóra mutató gomb, ami egy üres lejátszót nyit,
+     * rosszabb, mint egy őszinte „még nincs forrás".
      */
-    const playAnchor = playGroup.firstElementChild
     Catalogue.episodes(media).then(list => {
-      if (!playAnchor?.isConnected || !list?.length) return
+      if (!play.isConnected || !list?.length) return
       if (!list.some(e => e.sourceCount !== undefined)) return
-
       const target = list.find(e => e.episode === targetEp)
       if (target && (target.sourceCount === undefined || target.sourceCount > 0)) return
-
       const firstPlayable = list.find(e => (e.sourceCount ?? 0) > 0)
       if (firstPlayable) {
-        playAnchor.href = `#/watch/${media.id}:${firstPlayable.episode}`
-        const sub = playAnchor.querySelector('small')
-        if (sub) sub.textContent = `${T('Episode')} ${firstPlayable.episode}`
+        play.href = `#/watch/${media.id}:${firstPlayable.episode}`
+        const sub = play.querySelector('small')
+        if (sub) sub.textContent = I18n.f(T('Episode {n}'), { n: firstPlayable.episode })
         return
       }
-
-      const dead = U.el('button', {
-        class: 'play-btn play-btn-rich play-btn-empty',
+      play.replaceWith(U.el('button', {
+        class: 'btn btn-secondary btn-lg anime-play',
         type: 'button',
-        disabled: '',
+        disabled: true,
         title: T('Nothing to play this episode from yet.')
       }, [
-        U.svg(C.PLAY, 16),
-        U.el('span', { class: 'play-btn-text' }, [
+        U.svg(C.PLAY, 18),
+        U.el('span', { class: 'anime-play-text' }, [
           U.el('b', { text: T('No source yet') }),
           U.el('small', { text: T('The episode list below is complete.') })
         ])
-      ])
-      playAnchor.replaceWith(dead)
+      ]))
     }).catch(() => { /* a lekérdezés hibája nem bizonyíték a forrás hiányára */ })
 
-    // `title` shows a tooltip; `aria-label` is what a screen reader reads.
-    // These buttons have no text at all, so without the second one they are
-    // announced as "button" and nothing else.
-    const iconBtn = (content, title, onclick, active = false) => {
-      // A címke tooltipként és aria-labelként is megjelenik: egy fordítatlan
-      // szó itt kétszer látszik, egyszer szemmel, egyszer felolvasva.
-      const label = T(title)
-      const btn = U.el('button', { class: 'detail-icon-btn' + (active ? ' active' : ''), title: label, 'aria-label': label, onclick })
-      btn.append(content)
-      return btn
-    }
+    row.append(this.entrySelect(media))
 
-    // favourite (heart)
-    const heart = U.svg(C.HEART, 15)
-    if (Store.isFavourite(media.id)) heart.style.fill = 'currentColor'
-    actions.append(iconBtn(heart, 'Favourite', e => {
-      const now = Store.toggleFavourite(media.id)
-      heart.style.fill = now ? 'currentColor' : 'none'
-      e.currentTarget.classList.toggle('active', now)
-      U.toast(T(now ? 'Added to favourites' : 'Removed from favourites'))
-    }, Store.isFavourite(media.id)))
-
-    // bookmark (quick planning add)
-    const inList = !!Store.entry(media.id)
-    actions.append(iconBtn(
-      U.svg('<path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>', 15),
-      inList ? 'On your list' : 'Add to Planning',
-      e => {
-        if (Store.entry(media.id)) return U.toast(T('Already on your list'))
-        Store.saveEntry(media, { status: 'PLANNING' })
-        e.currentTarget.classList.add('active')
-        U.toast(T('Added to Planning'))
-        navigate()
-      },
-      inList
-    ))
-
-    // share
-    actions.append(iconBtn(
-      U.svg('<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="10.5" x2="15.4" y2="6.5"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/>', 15),
-      'Share',
-      () => {
-        navigator.clipboard?.writeText(`https://hayase.watch/anime/${media.id}`)
-          .then(() => U.toast(T('Link copied')))
+    // Kedvenc: kapcsoló, aria-pressed-del — a szív kitöltése csak a látható fele.
+    const fav = U.el('button', {
+      class: 'icon-btn icon-btn-lg',
+      type: 'button',
+      'aria-label': T('Favourite'),
+      title: T('Favourite'),
+      'aria-pressed': String(Store.isFavourite(media.id)),
+      onclick: () => {
+        const now = Store.toggleFavourite(media.id)
+        fav.setAttribute('aria-pressed', String(now))
+        U.toast(T(now ? 'Added to favourites' : 'Removed from favourites'), now ? 'success' : '')
       }
-    ))
+    }, [U.svg(C.HEART, 18)])
+    row.append(fav)
 
-    // trailer (clapperboard)
-    //
-    // `feature.trailers` was a flag nothing read: an operator turning trailers
-    // off — because the embeds reach a third party — kept getting them. The
-    // switch is the whole reason the row exists.
-    if (media.trailer?.id && featureOn('trailers')) {
-      actions.append(iconBtn(
-        U.svg('<path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1-.3 2.1.3 2.4 1.3Z"/><path d="m6.2 5.3 3.1 3.9"/><path d="m12.4 3.4 3.1 4"/><path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>', 15),
-        'Trailer',
-        () => C.trailerModal(media.trailer)
-      ))
+    row.append(U.el('button', {
+      class: 'icon-btn icon-btn-lg',
+      type: 'button',
+      'aria-label': T('Share'),
+      title: T('Share'),
+      onclick: () => this.share(media)
+    }, [U.svg(ICONS.share, 18)]))
+
+    if (media.trailer?.id && media.trailer.site === 'youtube' && featureOn('trailers')) {
+      row.append(U.el('button', {
+        class: 'icon-btn icon-btn-lg',
+        type: 'button',
+        'aria-label': T('Trailer'),
+        title: T('Trailer'),
+        onclick: () => openTrailer(media.trailer)
+      }, [U.svg(ICONS.film, 18)]))
     }
 
-    // AniList / MAL links
-    // Only when we actually have the mapping: media.id may be a Yume uuid for a
-    // catalogue-only title, and pointing anilist.co at that builds a dead link.
+    // A külső oldalak: nevükön, nem két rejtélyes betűvel („AL", „MAL").
     const anilistId = media.anilistId ?? (typeof media.id === 'number' ? media.id : null)
-    if (anilistId) {
-      actions.append(U.el('a', { class: 'detail-icon-btn', title: T('AniList'), href: `https://anilist.co/anime/${anilistId}`, target: '_blank', rel: 'noopener', text: T('AL') }))
+    const links = [
+      anilistId ? ['AniList', `https://anilist.co/anime/${anilistId}`] : null,
+      media.idMal ? ['MyAnimeList', `https://myanimelist.net/anime/${media.idMal}`] : null
+    ].filter(Boolean)
+    if (links.length) {
+      row.append(U.el('div', { class: 'anime-links' }, links.map(([name, href]) =>
+        U.el('a', { class: 'btn btn-quiet btn-sm', href, target: '_blank', rel: 'noopener noreferrer' }, [
+          document.createTextNode(name), U.svg(ICONS.external, 14)
+        ]))))
     }
-    if (media.idMal) {
-      actions.append(U.el('a', { class: 'detail-icon-btn', title: T('MyAnimeList'), href: `https://myanimelist.net/anime/${media.idMal}`, target: '_blank', rel: 'noopener', text: T('MAL') }))
-    }
+    return row
+  },
 
-    wrap.append(actions)
-
-    // ---- genre chips row (tags live in the sidebar card) ----
-    const chipScroll = U.el('div', { class: 'chips-scroll' })
-    for (const genre of media.genres ?? []) {
-      // A felirat fordul, a hivatkozás értéke nem: a keresés az angol nevet
-      // várja, mert a katalógus is azt tárolja.
-      chipScroll.append(U.el('a', { class: 'genre-chip', href: `#/search?genre=${encodeURIComponent(genre)}`, text: T(genre) }))
-    }
-    if (chipScroll.children.length) wrap.append(chipScroll)
-
-    // ---- underline tabs with icons ----
-    const TAB_ICONS = {
-      episodes: '<polygon points="6 3 20 12 6 21 6 3"/>',
-      relations: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="10.5" x2="15.4" y2="6.5"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/>',
-      characters: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
-      comments: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
-      recommendations: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>'
-    }
-    const tabDefs = [['episodes', T('Episodes')], ['relations', T('Relations')], ['characters', T('Characters')], ['comments', T('Comments')], ['recommendations', T('Recommendations')]]
-    const tabBar = U.el('div', { class: 'dtabs' })
-    const tabContent = U.el('div', { class: 'dtab-content' })
-    const rendered = {}
-
-    const select = name => {
-      tabBar.querySelectorAll('.dtab').forEach(t => t.classList.toggle('active', t.dataset.tab === name))
-      tabContent.replaceChildren()
-      if (!rendered[name]) {
-        rendered[name] = U.el('div')
-        // Some tab renderers are async — they draw synchronously and then fill
-        // in asynchronously. The node is appended either way, so the promise
-        // is deliberately not awaited; it is caught so a failure cannot become
-        // an unhandled rejection.
-        Promise
-          .resolve(this['renderTab' + name[0].toUpperCase() + name.slice(1)](rendered[name], media))
-          .catch(error => console.warn('[anime] tab failed:', name, error))
+  /** A lap saját címe — a kiszolgáló ezt a cím saját fejlécével adja ki. */
+  async share (media) {
+    const url = `${window.location.origin}/anime/${media.id}`
+    const title = U.title(media)
+    try {
+      if (navigator.share && window.matchMedia?.('(pointer: coarse)').matches) {
+        await navigator.share({ title, url })
+        return
       }
-      tabContent.append(rendered[name])
+      await navigator.clipboard.writeText(url)
+      U.toast(T('Link copied'), 'success')
+    } catch (e) {
+      if (e?.name === 'AbortError') return // a néző bezárta a megosztó lapot
+      U.toast(T('Could not copy'), 'error')
     }
-
-    for (const [name, label] of tabDefs) {
-      tabBar.append(U.el('button', { class: 'dtab', dataset: { tab: name }, onclick: () => select(name) }, [
-        U.svg(TAB_ICONS[name], 14),
-        document.createTextNode(label)
-      ]))
-    }
-
-    // two-column body: tabs on the left, info sidebar on the right
-    const main = U.el('div', { class: 'detail-main-col' }, [tabBar, tabContent])
-    wrap.append(U.el('div', { class: 'detail-columns' }, [main, this.sidePanel(media)]))
-    select('episodes')
   },
 
-  // ---- right-hand info sidebar: facts, airing countdown, where to watch ----
-  sidePanel (media) {
-    const side = U.el('aside', { class: 'detail-side' })
-
-    // next airing countdown card
-    const air = media.nextAiringEpisode
-    if (air?.airingAt) {
-      side.append(U.el('div', { class: 'side-card side-airing' }, [
-        U.el('div', { class: 'side-airing-label', text: T('Next episode') }),
-        U.el('div', { class: 'side-airing-ep', text: `${T('Episode')} ${air.episode}` }),
-        U.el('div', { class: 'side-airing-time', text: U.relTime(new Date(air.airingAt * 1000)) })
-      ]))
-    }
-
-    // ORIGINAL → „Eredeti". Az enum hat értéket vehet fel, tehát a fordítás
-    // egy kulcs, nem egy szótár: a T() a szépített alakot kapja, és ha nincs
-    // magyar sora, az angol marad — nem egy azonosító.
-    const prettify = v => v ? T(String(v).replaceAll('_', ' ').toLowerCase().replace(/^\w/, c => c.toUpperCase())) : null
-    const start = media.startDate?.year
-      ? [media.startDate.year, media.startDate.month, media.startDate.day].filter(Boolean).join('.')
-      : null
-
-    // Format, Episodes, Status and Season are deliberately absent: the chip row
-    // under the title already carries all four, about two hundred pixels above
-    // this panel, and each chip is a link into search while a row here is not.
-    // Showing "TV" twice on one screen is not thoroughness, it is noise — so
-    // the chips keep the facts you navigate by and this panel keeps the ones
-    // they do not mention.
-    const rows = [
-      [T('Duration'), media.duration ? `${media.duration} ${T('min')}` : null],
-      [T('Start date'), start],
-      [T('Studio'), media.studios?.nodes?.[0]?.name],
-      [T('Source'), prettify(media.source)],
-      [T('Country'), media.countryOfOrigin],
-      [T('Mean score'), media.meanScore ? media.meanScore + '%' : null],
-      [T('Popularity'), media.popularity ? media.popularity.toLocaleString(I18n.locale()) : null],
-      [T('Favourites'), media.favourites ? media.favourites.toLocaleString(I18n.locale()) : null]
-    ].filter(([, v]) => v)
-
-    side.append(U.el('div', { class: 'side-card' }, [
-      U.el('h3', { class: 'side-card-title', text: T('Information') }),
-      U.el('div', { class: 'side-rows' }, rows.map(([label, value]) =>
-        U.el('div', { class: 'side-row' }, [
-          U.el('span', { class: 'side-row-label', text: label }),
-          U.el('span', { class: 'side-row-value', text: value })
-        ])))
-    ]))
-
-    // your progress ring (only when the anime is on the list)
-    const entry = Store.entry(media.id)
-    if (entry && media.episodes) {
-      const done = entry.progress ?? 0
-      const pct = Math.min(100, Math.round(done / media.episodes * 100))
-      side.append(U.el('div', { class: 'side-card' }, [
-        U.el('h3', { class: 'side-card-title', text: T('Your Progress') }),
-        U.el('div', { class: 'side-progress' }, [
-          U.el('div', { class: 'side-ring', style: `--pct:${pct};` }, [
-            U.el('div', { class: 'side-ring-inner' }, [
-              U.el('b', { text: `${done} of ${media.episodes}` }),
-              U.el('span', { text: T('episodes') })
-            ])
-          ]),
-          U.el('div', { class: 'side-rows', style: 'flex-grow:1;' }, [
-            U.el('div', { class: 'side-row' }, [U.el('span', { class: 'side-row-label', text: T('Status') }), U.el('span', { class: 'side-row-value', text: U.listStatusMap[entry.status] ?? '—' })]),
-            entry.score ? U.el('div', { class: 'side-row' }, [U.el('span', { class: 'side-row-label', text: T('Your score') }), U.el('span', { class: 'side-row-value', text: entry.score + '/10' })]) : null,
-            Store.isFavourite(media.id) ? U.el('div', { class: 'side-row' }, [U.el('span', { class: 'side-row-label', text: T('Favourite') }), U.el('span', { class: 'side-row-value', text: '❤' })]) : null
-          ])
-        ])
-      ]))
-    }
-
-    // official streaming links
-    const streams = (media.externalLinks ?? []).filter(l => l.type === 'STREAMING')
-    if (streams.length) {
-      side.append(U.el('div', { class: 'side-card' }, [
-        U.el('h3', { class: 'side-card-title', text: T('Where to watch') }),
-        U.el('div', { class: 'side-streams' }, streams.slice(0, 8).map(link =>
-          U.el('a', { class: 'side-stream', href: link.url, target: '_blank', rel: 'noopener' }, [
-            U.el('span', { class: 'side-stream-dot', style: link.color ? `background:${link.color};` : null }),
-            document.createTextNode(link.site)
-          ])))
-      ]))
-    }
-
-    // tags card (spoilers blurred until hover)
-    const tags = (media.tags ?? []).filter(t => t?.name && !t.isAdult)
-      .sort((a, b) => (b?.rank ?? 0) - (a?.rank ?? 0)).slice(0, 14)
-    if (tags.length) {
-      side.append(U.el('div', { class: 'side-card' }, [
-        U.el('h3', { class: 'side-card-title', text: T('Tags') }),
-        U.el('div', { class: 'side-tags' }, tags.map(tag =>
-          U.el('span', {
-            class: 'tag-chip' + (tag.isMediaSpoiler || tag.isGeneralSpoiler ? ' spoiler' : ''),
-            title: tag.rank ? tag.rank + '%' : null,
-            text: tag.name
-          })))
-      ]))
-    }
-
-    // synonyms (compact)
-    if (media.synonyms?.length) {
-      side.append(U.el('div', { class: 'side-card' }, [
-        U.el('h3', { class: 'side-card-title', text: T('Also known as') }),
-        U.el('div', { class: 'side-synonyms', text: media.synonyms.slice(0, 4).join(' · ') })
-      ]))
-    }
-
-    return side
-  },
-
-  // status editor attached to the Play button, like the original EntryEditor
   entrySelect (media) {
-    const entry = Store.entry(media.id)
+    const id = 'entry-' + Math.random().toString(36).slice(2, 8)
     const select = U.el('select', {
-      class: 'entry-select',
-      title: T('List status'),
-      onchange: e => {
-        if (e.target.value === '') {
+      class: 'select entry-select',
+      id,
+      'aria-label': T('List status'),
+      onchange: () => {
+        if (select.value === '') {
           Store.removeEntry(media.id)
           U.toast(T('Removed from list'))
         } else {
-          Store.saveEntry(media, { status: e.target.value })
-          U.toast(`Set to ${U.listStatusMap[e.target.value]}`)
+          Store.saveEntry(media, { status: select.value })
+          U.toast(I18n.f(T('Saved as: {status}'), { status: T(U.listStatusMap[select.value]) }), 'success')
         }
-        navigate()
+        paint()
       }
-    }, [
-      U.el('option', { value: '', text: entry ? T('✕ Remove from list') : T('＋ Add to List') }),
-      ...Object.entries(U.listStatusMap).map(([value, label]) =>
-        U.el('option', { value, text: T(label), ...(entry?.status === value ? { selected: '' } : {}) }))
-    ])
+    })
+    const paint = () => {
+      const now = Store.entry(media.id)
+      select.replaceChildren(
+        U.el('option', { value: '', text: now ? T('Remove from list') : T('Add to list') }),
+        ...Object.entries(U.listStatusMap).map(([value, label]) =>
+          U.el('option', { value, text: T(label), selected: now?.status === value }))
+      )
+      select.value = now?.status ?? ''
+      select.classList.toggle('entry-select-on', !!now)
+    }
+    paint()
     return select
   },
 
+  // ---------------------------------------------------------------- tabs
+
+  tabs (media, initial) {
+    const labels = {
+      episodes: T('Episodes'),
+      relations: T('Relations'),
+      characters: T('Characters'),
+      comments: T('Comments'),
+      recommendations: T('Recommendations')
+    }
+    const rendered = {}
+    const bar = P.tabs(TABS.map(id => ({ id, label: labels[id] })), {
+      selected: initial,
+      label: T('About this title'),
+      onSelect: id => {
+        show(id)
+        // A választás a címben: megosztható, és a vissza gomb megtartja.
+        const url = new URL(window.location.href)
+        const hash = url.hash.split('?')
+        const q = new URLSearchParams(hash[1] ?? '')
+        if (id === 'episodes') q.delete('tab')
+        else q.set('tab', id)
+        const next = hash[0] + (q.toString() ? '?' + q.toString() : '')
+        window.history.replaceState(window.history.state, '', next)
+      }
+    })
+    const show = name => {
+      if (!rendered[name]) {
+        rendered[name] = U.el('div', { class: 'anime-tab' })
+        Promise
+          .resolve(this['renderTab' + name[0].toUpperCase() + name.slice(1)](rendered[name], media))
+          .catch(error => {
+            console.warn('[anime] tab failed:', name, error)
+            rendered[name].replaceChildren(C.errorState(error))
+          })
+      }
+      bar.panel.replaceChildren(rendered[name])
+    }
+    show(initial)
+    return U.el('div', { class: 'anime-main' }, [bar, bar.panel])
+  },
+
   renderTabEpisodes (wrap, media) {
-    // Episode rows, not a spinner: the list that is coming is a thumbnail, a
-    // title and a line of metadata, and a skeleton that says so tells the
-    // viewer what is loading and stops the page jumping when it arrives.
-    const list = U.el('div', { class: 'episodes' }, Array.from({ length: 6 }, () => P.skeletonRow()))
+    const list = U.el('div', { class: 'ep-list', 'aria-busy': 'true' }, Array.from({ length: 5 }, () => this.episodeSkeleton()))
     wrap.append(list)
     this.renderEpisodes(list, media).catch(() => {
+      list.removeAttribute('aria-busy')
       list.replaceChildren(P.emptyState(T('No episode data available.')))
     })
   },
 
-  /**
-   * Where this title sits in its franchise, and what it is attached to.
-   *
-   * Two different questions, so two blocks. The relation graph answers "what
-   * is next to this one"; it cannot answer "what do I watch first", because
-   * season three does not link to season one and the films are attached to
-   * whichever entry happened to spawn them. The watch order above comes from
-   * the franchise endpoint, which walks past the immediate neighbours and
-   * sorts by release date — a total order, which the graph is not.
-   */
+  episodeSkeleton () {
+    return U.el('div', { class: 'ep-row ep-row-skeleton', 'aria-hidden': 'true' }, [
+      U.el('div', { class: 'ep-thumb skeleton' }),
+      U.el('div', { class: 'ep-body' }, [
+        U.el('div', { class: 'skeleton skel-text skel-line-short' }),
+        U.el('div', { class: 'skeleton skel-text skel-line-mid' })
+      ])
+    ])
+  },
+
+  async renderEpisodes (wrap, media) {
+    const episodes = await Catalogue.episodes(media)
+    wrap.removeAttribute('aria-busy')
+    if (!episodes.length) {
+      wrap.replaceChildren(P.emptyState(T(media.status === 'NOT_YET_RELEASED' ? 'Not yet aired.' : 'No episode data available.')))
+      return
+    }
+
+    // Sok rész (egy hosszú sorozat ezres nagyságrend) huszonötös lapokon: az
+    // összes egyszerre több ezer csomópont volt, és telefonon akadt tőle a lap.
+    const RANGE = 25
+    const paged = episodes.length > 30
+    let rangeStart = 1
+    if (paged) {
+      const entryProg = Store.entry(media.id)?.progress ?? 0
+      rangeStart = Math.floor(Math.max(0, Math.min(entryProg, episodes.length - 1)) / RANGE) * RANGE + 1
+    }
+    const playable = ep => ep.sourceCount === undefined || ep.sourceCount > 0
+
+    const render = () => {
+      const progress = Store.entry(media.id)?.progress ?? 0
+      const head = U.el('div', { class: 'ep-head' }, [
+        U.el('h2', { class: 'section-title', text: T('Episodes') }),
+        U.el('span', {
+          class: 'ep-head-sub',
+          text: [`${episodes.length} ${T('episodes')}`, media.duration ? `${T('each')} ${media.duration} ${T('min')}` : null].filter(Boolean).join(' · ')
+        })
+      ])
+      const rows = U.el('ol', { class: 'ep-rows' })
+      wrap.replaceChildren(head)
+
+      if (paged) {
+        const ranges = U.el('div', { class: 'segmented ep-ranges', role: 'group', 'aria-label': T('Episode range') })
+        for (let s = 1; s <= episodes.length; s += RANGE) {
+          const e = Math.min(s + RANGE - 1, episodes.length)
+          ranges.append(U.el('button', {
+            type: 'button',
+            'aria-pressed': String(s === rangeStart),
+            text: `${s}–${e}`,
+            onclick: () => { rangeStart = s; render() }
+          }))
+        }
+        wrap.append(ranges)
+      }
+      wrap.append(rows)
+
+      const visible = paged
+        ? episodes.filter(ep => ep.episode >= rangeStart && ep.episode < rangeStart + RANGE)
+        : episodes
+      for (const ep of visible) {
+        const watched = progress >= ep.episode
+        const canPlay = playable(ep)
+        const epTitle = ep.title ?? I18n.f(T('Episode {n}'), { n: ep.episode })
+        const resume = Store.getResume(media.id, ep.episode)
+        const totalSec = (ep.runtime ?? media.duration ?? 24) * 60
+
+        const thumb = U.el('div', { class: 'ep-thumb' + (ep.image ? '' : ' ep-thumb-empty') }, [
+          ep.image ? U.el('img', { src: ep.image, loading: 'lazy', decoding: 'async', alt: '' }) : U.el('span', { class: 'ep-thumb-num', text: String(ep.episode) }),
+          watched ? U.el('span', { class: 'ep-thumb-watched' }, [U.svg(C.CHECK, 20)]) : null,
+          resume ? U.el('span', { class: 'ep-thumb-progress' }, [U.el('span', { style: `width:${Math.min(100, resume / totalSec * 100)}%` })]) : null
+        ])
+
+        const meta = [
+          ep.airdate ? U.airDate(ep.airdate) : null,
+          ep.runtime ? `${ep.runtime} ${T('min')}` : null,
+          ep.rating ? `★ ${ep.rating}` : null
+        ].filter(Boolean).join(' · ')
+
+        const titleNode = canPlay
+          ? U.el('a', { class: 'ep-link', href: `#/watch/${media.id}:${ep.episode}` }, [document.createTextNode(epTitle)])
+          : U.el('span', { class: 'ep-link-off', text: epTitle })
+
+        rows.append(U.el('li', { class: 'ep-row' + (canPlay ? '' : ' ep-row-off') + (watched ? ' ep-row-watched' : '') }, [
+          thumb,
+          U.el('div', { class: 'ep-body' }, [
+            U.el('div', { class: 'ep-kicker' }, [
+              U.el('span', { text: I18n.f(T('Episode {n}'), { n: ep.episode }) }),
+              ep.filler ? U.el('span', { class: 'badge badge-warn', text: T('Filler') }) : null,
+              canPlay ? null : U.el('span', { class: 'badge', text: T('No source') })
+            ]),
+            U.el('h3', { class: 'ep-title' }, [titleNode]),
+            meta ? U.el('p', { class: 'ep-meta', text: meta }) : null,
+            ep.summary ? U.el('p', { class: 'ep-summary clamp-2', text: ep.summary }) : null
+          ]),
+          U.el('button', {
+            class: 'icon-btn ep-watched',
+            type: 'button',
+            'aria-pressed': String(watched),
+            'aria-label': I18n.f(T(watched ? 'Mark episode {n} unwatched' : 'Mark episode {n} watched'), { n: ep.episode }),
+            title: T(watched ? 'Mark as unwatched' : 'Mark as watched'),
+            onclick: () => {
+              Store.setProgress(media, watched && progress === ep.episode ? ep.episode - 1 : ep.episode)
+              render()
+            }
+          }, [U.svg(C.CHECK, 16)])
+        ]))
+      }
+    }
+    render()
+  },
+
   async renderTabRelations (wrap, media) {
     if (media.yumeId) await this.renderWatchOrder(wrap, media)
-
     const relations = (media.relations?.edges ?? [])
       .filter(e => e.node?.type !== 'MANGA' && e.relationType !== 'CHARACTER' && e.node?.coverImage)
     if (!relations.length) {
       if (!wrap.childElementCount) wrap.append(P.emptyState(T('No known relations.')))
       return
     }
-    wrap.append(U.el('h3', { class: 'detail-section-title', text: T('Related') }))
-    const row = U.el('div', { class: 'hscroll', style: 'padding-left:0;padding-right:0;flex-wrap:wrap;' })
+    wrap.append(U.el('h2', { class: 'section-title anime-subhead', text: T('Related') }))
+    const grid = U.el('div', { class: 'grid' })
     for (const edge of relations) {
       const card = C.card(edge.node)
-      card.prepend(U.el('div', { class: 'relation-label', text: (edge.relationType ?? '').replaceAll('_', ' ') }))
-      row.append(card)
+      card.prepend(U.el('span', { class: 'relation-label', text: T(this.relationLabel(edge.relationType)) }))
+      grid.append(card)
     }
-    wrap.append(row)
+    wrap.append(grid)
   },
 
-  /** Release order, grouped the way a viewer thinks about a franchise. */
+  relationLabel (type) {
+    const known = {
+      SEQUEL: 'Sequel',
+      PREQUEL: 'Prequel',
+      SIDE_STORY: 'Side story',
+      PARENT: 'Parent story',
+      SPIN_OFF: 'Spin-off',
+      ALTERNATIVE: 'Alternative',
+      SUMMARY: 'Summary',
+      ADAPTATION: 'Adaptation',
+      OTHER: 'Other'
+    }
+    return known[type] ?? String(type ?? '').replaceAll('_', ' ').toLowerCase()
+  },
+
   FRANCHISE_GROUPS: [
     ['seasons', 'Seasons', ['TV', 'TV_SHORT', 'ONA']],
     ['films', 'Films', ['MOVIE']],
     ['extras', 'Specials & OVAs', ['SPECIAL', 'OVA', 'MUSIC']]
   ],
 
+  /** Nézési sorrend a katalógus kapcsolataiból, évad / film / extra bontásban. */
   async renderWatchOrder (wrap, media) {
     const result = await Catalogue.franchise(media.yumeId)
-    const entries = result.data
-    // One entry is this title on its own: a franchise of one is not a
-    // franchise, and a heading over a single card is noise.
+    const entries = result?.data ?? []
     if (entries.length < 2) return
-
     const box = U.el('div', { class: 'franchise' })
-    box.append(U.el('h3', { class: 'detail-section-title', text: T('Watch order') }))
-
+    box.append(U.el('h2', { class: 'section-title anime-subhead', text: T('Watch order') }))
     for (const [key, label, formats] of this.FRANCHISE_GROUPS) {
       const inGroup = entries.filter(e => formats.includes(e.format))
       if (!inGroup.length) continue
-      box.append(U.el('div', { class: 'franchise-group', text: T(label) }))
-      const list = U.el('div', { class: 'franchise-list', dataset: { group: key } })
-      for (const e of inGroup) {
+      box.append(U.el('h3', { class: 'franchise-group', text: T(label) }))
+      const list = U.el('ol', { class: 'franchise-list', dataset: { group: key } })
+      inGroup.forEach((e, index) => {
         const current = e.id === media.yumeId
         const year = e.start_date ? String(e.start_date).slice(0, 4) : (e.season_year ?? null)
-        list.append(U.el(current ? 'div' : 'a', {
+        list.append(U.el('li', {}, [U.el(current ? 'div' : 'a', {
           class: 'franchise-item' + (current ? ' current' : ''),
-          // Navigate by whichever id the rest of the client understands, the
-          // same rule the relation cards use.
-          ...(current ? {} : { href: `#/anime/${e.anilist_id ?? e.id}` })
+          ...(current ? { 'aria-current': 'page' } : { href: `#/anime/${e.anilist_id ?? e.id}` })
         }, [
-          U.el('span', { class: 'franchise-year', text: year ? String(year) : '—' }),
+          U.el('span', { class: 'franchise-index', text: String(index + 1) }),
           U.el('span', { class: 'franchise-title', text: e.canonical_title }),
           U.el('span', {
             class: 'franchise-meta',
-            text: [e.episode_count ? `${e.episode_count} ep` : null, current ? T('you are here') : null]
+            text: [year ? String(year) : null, e.episode_count ? `${e.episode_count} ${T('ep')}` : null, current ? T('you are here') : null]
               .filter(Boolean).join(' · ')
           })
-        ]))
-      }
+        ])]))
+      })
       box.append(list)
     }
-
-    // Only said when it is true: a franchise big enough to be cut off is one
-    // where "this is not all of it" is worth knowing.
     if (result.truncated) {
       box.append(U.el('p', { class: 'franchise-note', text: T('Only the closest entries are shown — this franchise is larger.') }))
     }
@@ -561,190 +579,151 @@ export const PageAnime = {
 
   _charCard (name, role, image) {
     return U.el('div', { class: 'char-card' }, [
-      U.el('img', { src: image ?? '', alt: name ?? '', loading: 'lazy' }),
+      U.el('div', { class: 'char-photo' }, [
+        image ? U.el('img', { src: image, alt: '', loading: 'lazy', decoding: 'async' }) : U.el('span', { text: (name ?? '?').slice(0, 1) })
+      ]),
       U.el('div', { class: 'char-name', text: name ?? '' }),
-      U.el('div', { class: 'char-role', text: role ?? '' })
+      role ? U.el('div', { class: 'char-role', text: T(this.roleLabel(role)) }) : null
     ])
+  },
+
+  roleLabel (role) {
+    return { MAIN: 'Main', SUPPORTING: 'Supporting', BACKGROUND: 'Background' }[role] ?? role
   },
 
   async renderTabCharacters (wrap, media) {
     let characters = media.characters?.edges ?? []
-
-    // A catalogue title carries no cast on the record: it is fetched when this
-    // tab is opened, because most visits never open it. Before the deep
-    // AniList pass existed these tables were empty and this tab could only
-    // ever say "No character data." for a locally-served title.
     if (!characters.length && media.yumeId) {
-      characters = await Catalogue.characters(media.yumeId)
+      characters = await Catalogue.characters(media.yumeId) ?? []
       if (characters.length) media.characters = { edges: characters }
     }
-
-    if (characters.length) {
-      const crow = U.el('div', { class: 'hscroll', style: 'padding-left:0;padding-right:0;flex-wrap:wrap;' })
-      for (const edge of characters) {
-        crow.append(this._charCard(edge.node.name?.userPreferred, edge.role, edge.node.image?.large))
-      }
-      wrap.append(crow)
-
-      // Staff sits under the cast on the same tab: it comes from the same
-      // import and nobody looks for a director on a separate screen.
-      const staff = media.staff?.edges ?? await Catalogue.staff(media.yumeId)
-      if (staff.length) {
-        wrap.append(U.el('h3', { class: 'sec-sub', text: T('Staff') }))
-        const srow = U.el('div', { class: 'hscroll', style: 'padding-left:0;padding-right:0;flex-wrap:wrap;' })
-        for (const edge of staff) {
-          srow.append(this._charCard(edge.node.name?.userPreferred, edge.role, edge.node.image?.large))
-        }
-        wrap.append(srow)
-      }
+    if (!characters.length) {
+      wrap.append(P.emptyState(T('No character data.')))
       return
     }
+    wrap.append(U.el('div', { class: 'char-grid' }, characters.map(edge =>
+      this._charCard(edge.node.name?.userPreferred, edge.role, edge.node.image?.large))))
 
-    // Nothing: either the title is not in our catalogue, or the AniList deep
-    // pass has not reached it yet. Admin → Metadata is where that is fixed,
-    // and saying "no data" is honest about which of the two it is not.
-    wrap.append(P.emptyState(T('No character data.')))
+    const staff = media.staff?.edges ?? (media.yumeId ? await Catalogue.staff(media.yumeId) : []) ?? []
+    if (staff.length) {
+      wrap.append(U.el('h2', { class: 'section-title anime-subhead', text: T('Staff') }))
+      wrap.append(U.el('div', { class: 'char-grid' }, staff.map(edge =>
+        this._charCard(edge.node.name?.userPreferred, edge.role, edge.node.image?.large))))
+    }
   },
 
   renderTabComments (wrap, media) {
-    wrap.append(C.commentsSection(media))
+    wrap.append(Comments.section(media))
   },
 
   async renderTabRecommendations (wrap, media) {
     let recs = (media.recommendations?.nodes ?? []).map(n => n.mediaRecommendation).filter(Boolean)
-
-    // Same as the cast: fetched on open, not with the record.
-    if (!recs.length && media.yumeId) recs = await Catalogue.recommendations(media.yumeId)
-
+    if (!recs.length && media.yumeId) recs = await Catalogue.recommendations(media.yumeId) ?? []
     if (recs.length) {
       wrap.append(C.grid(recs))
       return
     }
-
     wrap.append(P.emptyState(T('No recommendations yet.')))
   },
 
-  async renderEpisodes (wrap, media) {
-    const episodes = await Catalogue.episodes(media)
+  // ---------------------------------------------------------------- aside
 
-    if (!episodes.length) {
-      // T() nélkül ez a két mondat angolul jelent meg, pedig a fordítása
-      // ott volt a szótárban — a fenti ág (428. sor) fordítja, ez nem.
-      wrap.replaceChildren(P.emptyState(T(media.status === 'NOT_YET_RELEASED' ? 'Not yet aired.' : 'No episode data available.')))
-      return
-    }
+  sidePanel (media) {
+    const side = U.el('aside', { class: 'anime-side', 'aria-label': T('Information') })
 
-    // range paging for long series (reference-style "1 – 25" chips)
-    const RANGE = 25
-    let rangeStart = 1
-    if (episodes.length > 30) {
-      const entryProg = Store.entry(media.id)?.progress ?? 0
-      rangeStart = Math.floor(Math.max(0, Math.min(entryProg, episodes.length - 1)) / RANGE) * RANGE + 1
-    }
-
-    const render = () => {
-      const entry = Store.entry(media.id)
-      const progress = entry?.progress ?? 0
-      wrap.replaceChildren()
-
-      // header: count + duration + range chips
-      const head = U.el('div', { class: 'eplist-head' }, [
-        U.el('div', { class: 'eplist-title' }, [
-          U.el('b', { text: T('Episodes') }),
-          U.el('span', {
-            text: `${episodes.length} ${T('episodes')}${media.duration ? ` • ${T('each')} ${media.duration} ${T('min')}` : ''}`
-          })
-        ])
-      ])
-      if (episodes.length > 30) {
-        const ranges = U.el('div', { class: 'eplist-ranges' })
-        for (let s = 1; s <= episodes.length; s += RANGE) {
-          const e = Math.min(s + RANGE - 1, episodes.length)
-          ranges.append(U.el('button', {
-            class: 'eplist-range' + (s === rangeStart ? ' active' : ''),
-            text: `${s} – ${e}`,
-            onclick: () => { rangeStart = s; render() }
-          }))
-        }
-        head.append(ranges)
-      }
-      wrap.append(head)
-
-      const visible = episodes.length > 30
-        ? episodes.filter(ep => ep.episode >= rangeStart && ep.episode < rangeStart + RANGE)
-        : episodes
-
-      /*
-       * Can this episode be played at all?
-       *
-       * `sourceCount` is undefined when the episode list came from ani.zip —
-       * we do not hold the episode, so we do not know, and "unknown" must not
-       * gate the same way as "none". Otherwise the gate is the catalogue's own
-       * registered sources and nothing else.
-       */
-      const playable = ep => ep.sourceCount === undefined || ep.sourceCount > 0
-
-      for (const ep of visible) {
-        const watched = progress >= ep.episode
-        const canPlay = playable(ep)
-        const thumb = U.el('div', { class: 'episode-thumb' }, [
-          ep.image ? U.el('img', { src: ep.image, loading: 'lazy', alt: `Episode ${ep.episode}` }) : null,
-          U.el('div', { class: 'ep-num', text: T('Ep ') + ep.episode }),
-          ep.filler ? U.el('div', { class: 'ep-filler', text: T('FILLER') }) : null
-        ])
-        if (watched) {
-          thumb.append(U.el('div', { class: 'ep-watched-overlay' }, [U.svg(C.CHECK, 24)]))
-        }
-
-        const metaText = [ep.airdate ? U.airDate(ep.airdate) : null, ep.runtime ? `${ep.runtime} min` : null, ep.rating ? `★ ${ep.rating}` : null].filter(Boolean).join(' • ')
-
-        wrap.append(U.el('div', {
-          class: 'episode' + (canPlay ? '' : ' episode-unplayable'),
-          title: canPlay ? `Watch episode ${ep.episode}` : T('Nothing to play this episode from yet.'),
-          // No handler rather than a handler that refuses: an episode that
-          // cannot play should not look like a button at all.
-          ...(canPlay ? { onclick: () => { window.location.hash = `#/watch/${media.id}:${ep.episode}` } } : {})
-        }, [
-          thumb,
-          U.el('div', { class: 'episode-body' }, [
-            U.el('div', { style: 'display:flex;align-items:center;gap:var(--space-2);' }, [
-              U.el('div', { class: 'episode-title', style: 'flex-grow:1;', text: ep.title ?? `Episode ${ep.episode}` }),
-              canPlay ? null : U.el('span', { class: 'episode-nosource', text: T('No source') }),
-              U.el('button', {
-                class: 'icon-btn',
-                title: watched ? 'Mark as unwatched' : 'Mark as watched',
-                style: watched ? 'color:var(--accent);border-color:var(--accent);' : null,
-                onclick: e => {
-                  e.stopPropagation()
-                  Store.setProgress(media, watched && progress === ep.episode ? ep.episode - 1 : ep.episode)
-                  render()
-                }
-              }, [U.svg(C.CHECK, 13)])
-            ]),
-            metaText ? U.el('div', { class: 'episode-meta', text: metaText }) : null,
-            ep.summary ? U.el('div', { class: 'episode-summary', text: ep.summary }) : null,
-            (() => {
-              // in-episode resume position → thin progress bar (reference style)
-              const resume = Store.getResume(media.id, ep.episode)
-              if (!resume) return null
-              const totalSec = (ep.runtime ?? media.duration ?? 24) * 60
-              return U.el('div', { class: 'episode-resume' }, [
-                U.el('div', { style: `width:${Math.min(100, resume / totalSec * 100)}%;` })
-              ])
-            })()
+    const air = media.nextAiringEpisode
+    if (air?.airingAt) {
+      const when = new Date(air.airingAt * 1000)
+      side.append(U.el('section', { class: 'surface anime-airing' }, [
+        U.svg(ICONS.clock, 20),
+        U.el('div', {}, [
+          U.el('p', { class: 'eyebrow', text: T('Next episode') }),
+          U.el('p', { class: 'anime-airing-ep', text: I18n.f(T('Episode {n}'), { n: air.episode }) }),
+          U.el('p', { class: 'anime-airing-time' }, [
+            U.el('time', { datetime: when.toISOString(), text: U.relTime(when) }),
+            document.createTextNode(' · ' + I18n.date(when, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }))
           ])
-        ]))
-      }
+        ])
+      ]))
     }
 
-    render()
-  }
-}
+    const prettify = v => v ? T(String(v).replaceAll('_', ' ').toLowerCase().replace(/^\w/, c => c.toUpperCase())) : null
+    const start = media.startDate?.year
+      ? I18n.date(new Date(Date.UTC(media.startDate.year, (media.startDate.month ?? 1) - 1, media.startDate.day ?? 1)),
+        media.startDate.day ? { year: 'numeric', month: 'short', day: 'numeric' } : { year: 'numeric', month: 'short' })
+      : null
+    const rows = [
+      [T('Format'), U.format(media)],
+      [T('Episodes'), media.episodes ? String(media.episodes) : null],
+      [T('Duration'), media.duration ? `${media.duration} ${T('min')}` : null],
+      [T('Status'), U.status(media)],
+      [T('Season'), U.seasonYear(media) ? String(U.seasonYear(media)) : null],
+      [T('Start date'), start],
+      [T('Studio'), media.studios?.nodes?.[0]?.name],
+      [T('Source'), prettify(media.source)],
+      [T('Country'), media.countryOfOrigin],
+      [T('Popularity'), media.popularity ? I18n.number(media.popularity) : null],
+      [T('Favourites'), media.favourites ? I18n.number(media.favourites) : null]
+    ].filter(([, v]) => v)
+    side.append(U.el('section', { class: 'surface' }, [
+      U.el('h2', { class: 'surface-title', text: T('Information') }),
+      U.el('dl', { class: 'kv anime-kv' }, rows.flatMap(([label, value]) => [
+        U.el('dt', { text: label }),
+        U.el('dd', { text: value })
+      ]))
+    ]))
 
-// contrast text (black/white) for a hex background, like text-contrast upstream
-// score chip color, like getBGColorForRating upstream
-function ratingColor (score) {
-  if (score >= 75) return 'hsl(142 60% 38%)'
-  if (score >= 60) return 'hsl(45 85% 42%)'
-  return 'hsl(0 65% 45%)'
+    const entry = Store.entry(media.id)
+    if (entry) {
+      const total = media.episodes ?? null
+      const done = entry.progress ?? 0
+      side.append(U.el('section', { class: 'surface' }, [
+        U.el('h2', { class: 'surface-title', text: T('Your Progress') }),
+        U.el('p', { class: 'anime-progress-line' }, [
+          U.el('b', { text: total ? `${done} / ${total}` : String(done) }),
+          document.createTextNode(' ' + T('episodes') + ' · ' + T(U.listStatusMap[entry.status] ?? ''))
+        ]),
+        total
+          ? U.el('div', { class: 'progress', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(total), 'aria-valuenow': String(done), 'aria-label': T('Your Progress') }, [
+            U.el('span', { style: `width:${Math.min(100, Math.round(done / total * 100))}%` })
+          ])
+          : null,
+        entry.score ? U.el('p', { class: 'faint', text: `${T('Your score')}: ${entry.score}/10` }) : null
+      ]))
+    }
+
+    const streams = (media.externalLinks ?? []).filter(l => l.type === 'STREAMING')
+    if (streams.length) {
+      side.append(U.el('section', { class: 'surface' }, [
+        U.el('h2', { class: 'surface-title', text: T('Where to watch') }),
+        U.el('div', { class: 'chips' }, streams.slice(0, 8).map(link =>
+          U.el('a', { class: 'chip', href: link.url, target: '_blank', rel: 'noopener noreferrer' }, [
+            link.color ? U.el('span', { class: 'anime-stream-dot', style: `background:${link.color}` }) : null,
+            document.createTextNode(link.site)
+          ])))
+      ]))
+    }
+
+    const tags = (media.tags ?? []).filter(t => t?.name && !t.isAdult)
+      .sort((a, b) => (b?.rank ?? 0) - (a?.rank ?? 0)).slice(0, 14)
+    if (tags.length) {
+      side.append(U.el('section', { class: 'surface' }, [
+        U.el('h2', { class: 'surface-title', text: T('Tags') }),
+        U.el('div', { class: 'badges' }, tags.map(tag =>
+          U.el('span', {
+            class: 'badge' + (tag.isMediaSpoiler || tag.isGeneralSpoiler ? ' anime-tag-spoiler' : ''),
+            title: tag.rank ? tag.rank + '%' : null,
+            text: tag.name
+          })))
+      ]))
+    }
+
+    if (media.synonyms?.length) {
+      side.append(U.el('section', { class: 'surface' }, [
+        U.el('h2', { class: 'surface-title', text: T('Also known as') }),
+        U.el('p', { class: 'anime-synonyms', text: media.synonyms.slice(0, 6).join(' · ') })
+      ]))
+    }
+    return side
+  }
 }

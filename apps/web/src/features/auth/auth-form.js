@@ -1,79 +1,83 @@
-// A belépés és a regisztráció űrlapja — EGY példányban.
+// A belépés, a regisztráció és az elfelejtett jelszó űrlapja — egy helyen.
 //
-// Eddig három volt belőle: a landing felugró ablakában, a beállításokban és a
-// közösségi lapon lévő kártyában, meg a hozzáférési kapuban. Három másolat
-// ugyanabból a logikából, és a szokásos következménnyel: amikor az emberpróba
-// bekerült, KETTŐBE nem került bele, vagyis onnan a regisztráció 403-mal
-// hasalt volna el — némán, mert a kártya a hibát csak egy eltűnő toastban
-// mutatta.
+// Egy példányban él, mert a másolatai szétfutottak: amikor az emberpróba
+// bekerült, a fiókkártya saját űrlapjába nem került bele, és a regisztráció
+// onnan némán 403-mal hasalt el. A belépőlap (pages/login.js) ezt rajzolja.
 //
-// Ez a modul az egy hely. Aki űrlapot akar, ezt kéri; aki csak beléptetni
-// akar valakit, a `#/login` lapra küldi.
+// 2026-09, újratervezve:
 //
-// VALÓDI `<form>`, nem egymás mellé rakott mezők. Ezen múlik, hogy:
+//   * A HIBA A NÉZŐ NYELVÉN. A kiszolgáló angolul felel („Invalid
+//     credentials", „Email or username already in use", „Rate limit exceeded
+//     — retry in 5 minutes"), és ez a szöveg eddig változatlanul került egy
+//     magyar oldal űrlapja alá. A státuszkódból és a válaszból most érthető
+//     mondat lesz; amit nem ismerünk fel, az marad, ami volt.
 //
-//   * az Enter küldjön, minden mezőből, külön billentyűfigyelő nélkül;
-//   * a jelszókezelők felismerjék, mit mentsenek és mit töltsenek ki
-//     (ehhez kell a `name`, az `autocomplete` és az, hogy a felhasználónév
-//     mező a jelszó ELŐTT álljon);
-//   * a böngésző saját érvényesítése („töltsd ki ezt a mezőt") lefusson,
-//     mielőtt bármit hálózatra küldenénk.
+//   * ZÁRT REGISZTRÁCIÓNÁL NINCS REGISZTRÁCIÓS FÜL. A példány kiírja
+//     (`site.registrationOpen`), a kiszolgáló be is tartja — az űrlap viszont
+//     eddig felkínálta, és csak a beküldés után derült ki, hogy hiába.
+//
+//   * ELFELEJTETT JELSZÓ: csak ott van űrlap, ahol van kézbesítés
+//     (`site.recoveryAvailable`). Ahol nincs, a lap megmondja, kihez lehet
+//     fordulni, és nem kínál egy kérést, ami semmit nem küldene ki.
+//
+//   * A JELSZÓ MEGMUTATHATÓ. Telefonon egy elgépelt jelszó a leggyakoribb
+//     sikertelen belépés, és a mező eddig nem engedte ellenőrizni.
 
 import { P } from '../../shared/ui/primitives.js'
 import { T } from '../../shared/i18n/i18n.js'
 import { U } from '../../shared/lib/dom.js'
 import { YumeAPI } from '../../shared/api/yume.js'
 import { createTurnstile, needed as turnstileNeeded } from '../../shared/lib/turnstile.js'
+import { site } from '../../shared/lib/site-config.js'
+import { authErrorMessage, passwordField } from './password-field.js'
 
-/**
- * @param {object} options
- * @param {'login'|'register'} [options.mode]      melyik füllel induljon
- * @param {Function} [options.onAuthed]            sikeres belépés után fut le
- * @param {Function} [options.onModeChange]        fülváltáskor — a cím átírásához
- * @param {boolean}  [options.tabs]                legyen-e fülsáv (a lapon igen)
- * @returns {{node: HTMLElement, focus: Function, destroy: Function, setMode: Function}}
- */
+// A két segéd a `password-field.js`-ben él: a beállítások oldal is használja
+// őket (jelszócsere, fióktörlés), és nem kell neki az egész űrlap az
+// emberpróbával együtt. Innen tovább is adjuk, hogy a belépőlapok egy helyről
+// importálhassanak.
+export { authErrorMessage, passwordField }
+
+const INFO = '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>'
+
 export function createAuthForm ({
   mode = 'login',
   onAuthed = () => {},
   onModeChange = () => {},
   tabs = true
 } = {}) {
-  /*
-   * A HELYKITÖLTŐ NEM ISMÉTLI A CÍMKÉT.
-   *
-   * Minden mezőnek van látható címkéje. Egy „Felhasználónév" címke alatt egy
-   * „Felhasználónév" helykitöltő nem mond semmit, viszont elfoglalja azt a
-   * helyet, ahol egy PÉLDA állhatna — és pont a példa az, ami segít. Ahol
-   * nincs értelmes példa, ott a mező üres marad.
-   */
-  const email = P.input({ type: 'email', name: 'email', placeholder: 'te@pelda.hu', autocomplete: 'email', required: true })
-  const identifier = P.input({ type: 'text', name: 'identifier', autocomplete: 'username', required: true })
-  const username = P.input({ type: 'text', name: 'username', autocomplete: 'username', required: true, minlength: 3, maxlength: 32 })
-  const password = P.input({ type: 'password', name: 'password', autocomplete: 'current-password', required: true, minlength: 8 })
+  const registrationOpen = site()?.registrationOpen !== false
 
-  const fields = U.el('div', { class: 'auth-fields' })
-  /*
-   * `role="alert"`: a képernyőolvasó felolvassa, amint megjelenik. Egy
-   * elrontott jelszó visszajelzése különben csak azoknak létezik, akik
-   * látják.
-   */
-  /*
-   * Az üzenetnek AZONOSÍTÓJA van, mert a mezők `aria-describedby`-jal
-   * mutatnak rá. Egy űrlaponként egy példány él, de két űrlap egy lapon
-   * (a felugró ablak és a lap) ütköző azonosítót adna — ezért egyedi.
-   */
+  const email = P.input({ type: 'email', name: 'email', placeholder: 'te@pelda.hu', autocomplete: 'email', required: true, maxlength: 254 })
+  const identifier = P.input({ type: 'text', name: 'identifier', autocomplete: 'username', required: true, minlength: 3, maxlength: 254, autocapitalize: 'none', spellcheck: 'false' })
+  const username = P.input({
+    type: 'text',
+    name: 'username',
+    autocomplete: 'username',
+    required: true,
+    minlength: 3,
+    maxlength: 32,
+    pattern: '[A-Za-z0-9_]+',
+    autocapitalize: 'none',
+    spellcheck: 'false'
+  })
+  const password = P.input({ type: 'password', name: 'password', autocomplete: 'current-password', required: true, minlength: 8, maxlength: 128 })
+  const passwordWrap = passwordField(password)
+
+  const fields = U.el('div', { class: 'auth-fields', id: 'auth-fields-' + Math.random().toString(36).slice(2, 9) })
   const errorId = 'auth-error-' + Math.random().toString(36).slice(2, 9)
-  const error = U.el('p', { class: 'field-error', role: 'alert', hidden: true, id: errorId })
-  const submit = P.button('', { variant: 'primary', type: 'submit' })
+  const error = U.el('p', { class: 'field-error auth-error', role: 'alert', hidden: true, id: errorId })
+  const notice = U.el('p', { class: 'callout callout-ok auth-notice', role: 'status', hidden: true })
 
-  /*
-   * AZ EMBERPRÓBA, ha ez a példány kér ilyet.
-   *
-   * EGY WIDGET, NEM KETTŐ. A Cloudflare a tokent a MŰVELETHEZ köti — a
-   * kiszolgáló visszautasít egy belépésre szerzett tokent regisztrációnál —,
-   * ezért fülváltáskor a widget újraépül a másik művelettel, nem pedig két
-   * példány ül egymás mellett, amiből az egyik mindig rossz.
+  const forgotLink = U.el('button', {
+    type: 'button', class: 'link auth-link', text: T('Elfelejtetted a jelszavad?'), onclick: () => setMode('forgot')
+  })
+  const backLink = U.el('button', {
+    type: 'button', class: 'link auth-link', text: T('Vissza a belépéshez'), onclick: () => setMode('login')
+  })
+  const submit = P.button('', { variant: 'primary', type: 'submit', class: 'btn btn-primary btn-lg btn-block' })
+
+  /**
+   * Az emberpróba, ha a példány kéri az adott művelethez.
    *
    * `null`, ha a példány nem kér emberpróbát: ilyenkor az idegen eredetű
    * szkript be sem töltődik.
@@ -82,47 +86,66 @@ export function createAuthForm ({
 
   const form = U.el('form', { class: 'auth-form', novalidate: false })
 
-  const tabBar = tabs
+  // Zárt regisztrációnál a regisztrációs fül nem jelenik meg: olyan
+  // lehetőséget kínálna, amit a kiszolgáló úgyis elutasít.
+  const tabBar = tabs && registrationOpen
     ? P.tabs(
       [{ id: 'login', label: T('Sign in') }, { id: 'register', label: T('Register') }],
-      { selected: mode, onSelect: id => { setMode(id) } })
+      { selected: mode === 'register' ? 'register' : 'login', onSelect: id => { setMode(id) }, label: T('Account'), controls: fields.id })
     : null
 
   function paint () {
     error.hidden = true
+    notice.hidden = true
+    submit.hidden = false
+    submit.disabled = false
     jelol(false)
+    tabBar?.select?.(mode === 'register' ? 'register' : 'login', { silent: true })
+    if (tabBar) tabBar.hidden = mode === 'forgot'
 
     if (turnstile) { turnstile.destroy(); turnstile = null }
     if (turnstileNeeded(mode)) turnstile = createTurnstile(mode)
 
+    const recovery = site()?.recoveryAvailable !== false
+    const closed = mode === 'register' && !registrationOpen
+
     fields.replaceChildren(
-      ...(mode === 'login'
-        ? [P.field(T('Email or username'), identifier), P.field(T('Password'), password)]
-        : [
-            P.field(T('Email'), email),
-            // A hossz EGYSZER szerepel. Helykitöltőben és súgóban is kiírva
-            // ugyanaz a mondat állt kétszer egymás alatt.
-            P.field(T('Username'), username, { hint: T('3–32 characters, letters and numbers.') }),
-            P.field(T('Password'), password, { hint: T('At least 8 characters.') })
-          ]),
-      /*
-       * `.filter(Boolean)`, MERT A `null` KIÍRÓDIK.
-       *
-       * A `replaceChildren(null)` nem hagyja ki az argumentumot, hanem
-       * szöveggé alakítja: a belépőlapon ott állt egy „null" felirat a
-       * jelszómező alatt, végig, minden látogatónak — pontosan addig, amíg
-       * az emberpróba ki van kapcsolva, tehát MOST.
-       *
-       * Ugyanez a hiba `append`-tel már megvolt egyszer máshol. Ezért van
-       * rá teszt.
-       */
+      ...(mode === 'forgot'
+        ? [
+            recovery
+              ? U.el('p', { class: 'auth-sub', text: T('Add meg a fiókod e-mail-címét vagy felhasználónevét, és küldünk egy linket az új jelszóhoz.') })
+              : U.el('div', { class: 'callout callout-info' }, [
+                U.svg(INFO, 18),
+                U.el('p', { text: T('Ezen a példányon nincs automatikus jelszó-visszaállítás. Írj az oldal üzemeltetőjének.') })
+              ]),
+            ...(recovery ? [P.field(T('Email or username'), identifier)] : []),
+            backLink
+          ]
+        : closed
+          ? [U.el('div', { class: 'callout callout-info' }, [
+              U.svg(INFO, 18),
+              U.el('p', { text: T('Registration is closed on this site.') })
+            ])]
+          : mode === 'login'
+            ? [
+                P.field(T('Email or username'), identifier),
+                P.field(T('Password'), passwordWrap),
+                forgotLink
+              ]
+            : [
+                P.field(T('Email'), email),
+                P.field(T('Username'), username, { hint: T('3–32 characters, letters and numbers.') }),
+                P.field(T('Password'), passwordWrap, { hint: T('At least 8 characters.') })
+              ]),
       ...[turnstile ? turnstile.node : null].filter(Boolean)
     )
 
-    submit.textContent = mode === 'login' ? T('Sign in') : T('Create account')
-    // A jelszómező autocomplete-je a módtól függ: a böngésző különben új
-    // jelszót ajánlana belépéskor, és a mentettet nem kínálná fel.
+    submit.textContent = mode === 'login' ? T('Sign in') : mode === 'forgot' ? T('Link küldése') : T('Create account')
+    if ((mode === 'forgot' && !recovery) || closed) submit.hidden = true
     password.setAttribute('autocomplete', mode === 'login' ? 'current-password' : 'new-password')
+    // Módváltáskor a jelszó újra rejtett — egy megmutatott jelszó ne maradjon
+    // látva egy másik űrlapon.
+    password.setAttribute('type', 'password')
     onModeChange(mode)
   }
 
@@ -130,26 +153,19 @@ export function createAuthForm ({
     if (next === mode) return
     mode = next
     paint()
-    ;(mode === 'login' ? identifier : email).focus()
+    const first = mode === 'register' ? email : identifier
+    if (first.isConnected) first.focus()
   }
 
-  /** Az éppen látható mezők — a mód szerint. */
   function aktivMezok () {
+    if (mode === 'forgot') return [identifier]
     return mode === 'login' ? [identifier, password] : [email, username, password]
   }
 
-  /*
-   * A HIBA A MEZŐN IS LÁTSZIK, nem csak alatta.
-   *
-   * A `P.field` tud `aria-invalid`-ot állítani — de csak ÉPÍTÉSKOR, ha már
-   * akkor van hiba. Ez az űrlap utólag kap hibát, tehát a mezőkre soha nem
-   * került rá semmi: a `components.css` `[aria-invalid='true']` szabálya
-   * ezen a lapon holt kód volt, és egy képernyőolvasó sem tudta meg, MELYIK
-   * mező a gond.
-   *
-   * Az `aria-describedby` a másik fele: enélkül a hibaüzenet csak egyszer,
-   * megjelenéskor hangzik el (`role="alert"`), és aki utána visszalép a
-   * mezőbe, már nem hallja, mi volt a baj.
+  /**
+   * A HIBA A MEZŐN IS LÁTSZIK, nem csak alatta: `aria-invalid` és egy
+   * `aria-describedby` a hibaüzenetre, hogy a képernyőolvasó a mezőben
+   * állva is meghallja, mi volt a baj.
    */
   function jelol (hibas) {
     for (const mezo of [identifier, password, email, username]) {
@@ -158,7 +174,10 @@ export function createAuthForm ({
         mezo.setAttribute('aria-describedby', errorId)
       } else {
         mezo.removeAttribute('aria-invalid')
-        mezo.removeAttribute('aria-describedby')
+        // A mező saját súgója (pl. „legalább 8 karakter") visszakapja a helyét.
+        const hint = mezo.dataset?.hintId
+        if (hint) mezo.setAttribute('aria-describedby', hint)
+        else mezo.removeAttribute('aria-describedby')
       }
     }
   }
@@ -169,27 +188,22 @@ export function createAuthForm ({
     submit.disabled = true
     submit.dataset.loading = '1'
     try {
-      // A tokent MÉG A KÜLDÉS ELŐTT kérjük el. A widget általában azonnal ad
-      // egyet, de nem mindig — és ha nem tud, jobb itt megállni egy érthető
-      // üzenettel, mint a kiszolgálótól visszakapni egy 403-at.
       const token = turnstile ? await turnstile.token() : undefined
-
+      if (mode === 'forgot') {
+        await YumeAPI.forgotPassword(identifier.value.trim(), token)
+        notice.textContent = T('Ha van ilyen fiók, elküldtük a linket. Nézd meg a leveleidet — a link egy óráig érvényes.')
+        notice.hidden = false
+        turnstile?.reset()
+        return
+      }
       if (mode === 'login') await YumeAPI.login(identifier.value.trim(), password.value, token)
       else await YumeAPI.register(email.value.trim(), username.value.trim(), password.value, token)
-
-      U.toast(T('Signed in as ') + YumeAPI.user().username)
+      U.toast(T('Signed in as ') + YumeAPI.user().username, 'success')
       onAuthed()
     } catch (e) {
-      // A hiba a mező alatt marad, nem toastban: egy eltűnő üzenet nem az,
-      // amit valaki egy elrontott jelszó után keres.
-      error.textContent = e.message
+      error.textContent = authErrorMessage(e, mode)
       error.hidden = false
       jelol(true)
-      /*
-       * A TOKEN EGYSZER HASZNÁLATOS. Akármi miatt bukott el a küldés — rossz
-       * jelszó is —, a token elhasználódott, és a következő próbálkozás
-       * ugyanazzal biztosan elbukna. Ezért MINDEN hiba után újrarajzolunk.
-       */
       turnstile?.reset()
     } finally {
       submit.disabled = false
@@ -203,14 +217,13 @@ export function createAuthForm ({
   })
 
   paint()
-  form.append(...[tabBar, fields, error, U.el('div', { class: 'auth-actions' }, [submit])].filter(Boolean))
+  form.append(...[tabBar, fields, error, notice, U.el('div', { class: 'auth-actions' }, [submit])].filter(Boolean))
 
   return {
     node: form,
     get mode () { return mode },
     setMode,
-    focus () { (mode === 'login' ? identifier : email).focus() },
-    /** A widget iframe-et és időzítőt hagyna maga után. */
+    focus () { (mode === 'register' ? email : identifier).focus() },
     destroy () {
       turnstile?.destroy()
       turnstile = null

@@ -75,7 +75,7 @@ export const PageThemes = {
     const pad = U.el('div', { class: 'page-pad' })
     root.append(pad)
     pad.append(U.el('h1', { class: 'page-title', text: T('Theme Engine') }))
-    pad.append(U.el('p', { class: 'list-row-sub', style: 'margin-top:-var(--space-2);', text: T('Personalise Yume. Changes apply instantly and are saved for this profile.') }))
+    pad.append(U.el('p', { class: 'list-row-sub', style: 'margin-top:calc(-1 * var(--space-2));', text: T('Personalise Yume. Changes apply instantly and are saved for this profile.') }))
     this.body(pad)
   },
 

@@ -6,7 +6,7 @@
 // Together button that opens a sync-room popup. An "up next" end-card offers
 // (auto)play of the following episode.
 
-import { navigate } from '../shared/lib/shell.js'
+import { navigate, setTitle } from '../shared/lib/shell.js'
 import { featureOn, flagDeclared } from '../shared/lib/site-config.js'
 import { Catalogue } from '../entities/anime/catalogue.js'
 import { C } from '../shared/ui/components.js'
@@ -14,17 +14,23 @@ import { I18n, T } from '../shared/i18n/i18n.js'
 import { LibrarySync } from '../features/library-sync/library-sync.js'
 import { Prefs } from '../shared/state/preferences.js'
 import { Store } from '../shared/state/store.js'
-import { StreamEngine } from '../features/player/stream-engine.js'
-import { createEpisodePlayer } from '../features/player2/watch/episode-player.js'
 import { P } from '../shared/ui/primitives.js'
 import { titleTheme } from '../shared/lib/title-theme.js'
 import { U } from '../shared/lib/dom.js'
 import { WatchTime } from '../features/watch-history/watch-time.js'
 import { YumeAPI } from '../shared/api/yume.js'
 import { PageW2G } from '../features/watch-together/watch-together.js'
+import { viewEntity } from '../shared/lib/analytics.js'
+import { Comments } from '../features/comments/comments.js'
+import { loadStylesheet } from '../shared/lib/stylesheet.js'
 
 export const PageWatch = {
   async render (root, params, arg) {
+    // A ténylegesen induló lejátszó kódja (a Player 2.0-é a stíluslapjával
+    // együtt) már most indul, a katalógushívással párhuzamosan; a lap
+    // felépítése előtt meg is várjuk (lent), hogy a lejátszó ne stílus nélkül
+    // villanjon. A másik lejátszó le sem töltődik.
+    const player = this._usesPlayer2() ? this._player2Module() : this._legacyEngine()
     // route: #/watch/{animeId}:{episode}?src=<encoded-url>[&w2g=code]
     // The id is an AniList id or a Yume catalogue uuid — Number() on the latter
     // gave NaN, which read as "Invalid watch link" for every catalogue-only
@@ -70,6 +76,7 @@ export const PageWatch = {
       root.replaceChildren(P.emptyState(T('Anime not found.')))
       return
     }
+    viewEntity(media.yumeId)
 
     // Van-e egyáltalán miből lejátszani ezt a részt?
     //
@@ -88,6 +95,10 @@ export const PageWatch = {
       return
     }
 
+    // Többnyire már rég megjött (a két hívás fölötte tovább tart), de egy
+    // gyorsítótárból azonnal válaszoló katalógus mellett az első látogatáskor
+    // a lejátszó előbb állna a lapon, mint a stíluslapja — ezt mérte az E2E.
+    await player
     root.replaceChildren()
     U.setBanner(null)
 
@@ -103,12 +114,23 @@ export const PageWatch = {
     root.append(pad)
 
     // ---- header ----
+    // A cím a sorozaté és a részé együtt: a morzsamenü visz vissza az
+    // adatlapra, a h1 azt mondja, mit néz a néző — nem csak egy számot.
+    setTitle(`${U.title(media)} — ${I18n.f(T('Episode {n}'), { n: episode })}`)
     pad.append(
       U.el('div', { class: 'watch-head' }, [
-        U.el('a', { class: 'player-back', href: `#/anime/${media.id}`, text: '‹ ' + U.title(media) }),
+        U.el('nav', { class: 'breadcrumbs', 'aria-label': T('Breadcrumb') }, [
+          U.el('ol', {}, [
+            U.el('li', {}, [U.el('a', { href: `#/anime/${media.id}`, text: U.title(media) })]),
+            U.el('li', {}, [U.el('span', { 'aria-current': 'page', text: I18n.f(T('Episode {n}'), { n: episode }) })])
+          ])
+        ]),
         U.el('h1', { class: 'watch-title' }, [
-          document.createTextNode(`${episode}. rész`),
-          total ? U.el('span', { class: 'watch-total', text: ` / ${total}` }) : null
+          U.el('span', { class: 'watch-title-show', text: U.title(media) }),
+          U.el('span', { class: 'watch-title-ep' }, [
+            document.createTextNode(I18n.f(T('Episode {n}'), { n: episode })),
+            total ? U.el('span', { class: 'watch-total', text: ` / ${total}` }) : null
+          ])
         ])
       ])
     )
@@ -232,14 +254,14 @@ export const PageWatch = {
       const metaChip = (icon, text) => U.el('span', { class: 'epmeta-chip' }, [U.svg(icon, 13), document.createTextNode(text)])
       const chips = U.el('div', { class: 'epmeta-row' })
       if (ep.airdate) chips.append(metaChip('<rect width="18" height="18" x="3" y="4" rx="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>', U.airDate(ep.airdate)))
-      if (ep.runtime || media.duration) chips.append(metaChip('<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>', `${ep.runtime ?? media.duration} min`))
+      if (ep.runtime || media.duration) chips.append(metaChip('<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>', `${ep.runtime ?? media.duration} ${T('min')}`))
       if (media.format) chips.append(metaChip('<rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/>', U.format(media)))
       if (media.isAdult) chips.append(U.el('span', { class: 'epmeta-badge', text: '18+' }))
       if (ep.filler) chips.append(U.el('span', { class: 'epmeta-badge filler', text: T('Filler') }))
 
       const summary = ep.summary ? U.el('div', { class: 'watch-ep-summary clamped', text: ep.summary }) : null
       const info = U.el('div', { class: 'watch-ep-info' }, [
-        U.el('h2', { class: 'watch-ep-title', text: `${episode}. ${ep.title ?? 'Episode ' + episode}` }),
+        U.el('h2', { class: 'watch-ep-title', text: ep.title ? `${episode}. ${ep.title}` : I18n.f(T('Episode {n}'), { n: episode }) }),
         chips,
         summary,
         summary && ep.summary.length > 160
@@ -257,7 +279,7 @@ export const PageWatch = {
     }).catch(() => {})
 
     // ---- comments ----
-    col.append(C.commentsSection(media))
+    col.append(Comments.section(media))
   },
 
   // ---- episode sidebar (thumbnails + titles; falls back to plain rows) ----
@@ -326,7 +348,7 @@ export const PageWatch = {
             ])
             : U.el('div', { class: 'wep-num', text: String(n) }),
           U.el('div', { class: 'wep-body' }, [
-            U.el('div', { class: 'wep-title', text: ep?.title ? `${n}. ${ep.title}` : `Episode ${n}` }),
+            U.el('div', { class: 'wep-title', text: ep?.title ? `${n}. ${ep.title}` : I18n.f(T('Episode {n}'), { n }) }),
             U.el('div', { class: 'wep-meta', text: [ep?.airdate ? U.airDate(ep.airdate) : null, ep?.filler ? 'FILLER' : null].filter(Boolean).join(' • ') || (n <= progress ? 'Watched' : '') })
           ]),
           n <= progress ? U.svg(C.CHECK, 13) : null
@@ -382,7 +404,7 @@ export const PageWatch = {
     // One provider offering one variant is not a choice; showing a switch with
     // a single option makes the player look busier without giving the viewer
     // anything to do.
-    const subtitleCount = StreamEngine?.subtitleTracks(this._video)?.length ?? 0
+    const subtitleCount = this._engine?.subtitleTracks(this._video)?.length ?? 0
     if (variants.length < 2 && providers.length < 2 && subtitleCount === 0) {
       host.replaceChildren()
       return
@@ -430,7 +452,7 @@ export const PageWatch = {
     // that can be turned off. This is the third thing a viewer reaches for
     // mid-episode, after "wrong version" and "this source is stuttering", so
     // it belongs in the same row rather than behind a settings screen.
-    const subtitleTracks = StreamEngine?.subtitleTracks(this._video) ?? []
+    const subtitleTracks = this._engine?.subtitleTracks(this._video) ?? []
     if (subtitleTracks.length) {
       const showing = subtitleTracks.find(t => t.showing)
       const chips = [
@@ -462,7 +484,7 @@ export const PageWatch = {
               // Remember the language, not the index: the next episode is a
               // different stream whose track order is nobody's to predict.
               if (track?.language) {
-                const code = StreamEngine.languageCode(track.language)
+                const code = this._engine?.languageCode(track.language)
                 if (code) Prefs?.set({ 'playback.subtitles': code })
               }
             } else {
@@ -503,7 +525,7 @@ export const PageWatch = {
    * playback to show an error.
    */
   async switchTo (choice, media, episode) {
-    const engine = StreamEngine
+    const engine = await this._legacyEngine()
     const context = this._playContext
     if (!engine || !context || !this._candidates?.length) return
 
@@ -658,7 +680,7 @@ export const PageWatch = {
    * failure only reaches the user once nothing is left.
    */
   async startPlayback (video, media, episode, src, giveUp) {
-    const engine = StreamEngine
+    const engine = await this._legacyEngine()
     const manual = String(src ?? '')
       .split('\n').map(u => u.trim()).filter(Boolean)
       .map(url => ({ url, title: T('Manual source'), source: { slug: 'manual', name: 'Manual URL', accuracy: 'low', health: 'unknown' } }))
@@ -752,6 +774,37 @@ export const PageWatch = {
 
   // ---- the embedded player ----
 
+  /*
+   * A KÉT LEJÁTSZÓ KÖZÜL CSAK A TÉNYLEGESEN INDULÓ TÖLTŐDIK LE.
+   *
+   * A Player 2.0 (≈35 modul) és a régi lejátszó motorja (stream-engine, a
+   * beágyazott keret, a HLS-kezelő) eddig egyaránt statikus import volt, tehát
+   * minden lejátszóoldal mindkettőt letöltötte — a `feature.player2` kapcsoló
+   * szerint viszont egyszerre csak az egyik fut. Mérve: 70 modul, 739 KB.
+   */
+  _usesPlayer2 () {
+    return flagDeclared('feature.player2') && featureOn('player2')
+  },
+
+  /** A Player 2.0 modulja, a stíluslapjával együtt (a lap ezt várja meg). */
+  _player2Module () {
+    this._player2Load ??= import('../features/player2/watch/episode-player.js')
+      .then(module => module.loadPlayerStyles().then(() => module))
+    return this._player2Load
+  },
+
+  /** A régi lejátszó motorja; a HLS-kezelő a betöltésekor bejegyzi magát bele. */
+  _legacyEngine () {
+    this._engineLoad ??= Promise.all([
+      import('../features/player/stream-engine.js'),
+      import('../features/player/hls-handler.js')
+    ]).then(([{ StreamEngine }]) => {
+      this._engine = StreamEngine
+      return StreamEngine
+    })
+    return this._engineLoad
+  },
+
   /**
    * A Player 2.0 felállítása egy részhez.
    *
@@ -761,6 +814,7 @@ export const PageWatch = {
    * moduljában van, nem itt.
    */
   async mountPlayer2 (box, media, episode, total, src) {
+    const { createEpisodePlayer } = await this._player2Module()
     const video = U.el('video', { class: 'player-video', playsinline: '', preload: 'metadata' })
     this._video = video
 
@@ -821,7 +875,7 @@ export const PageWatch = {
      * Egy visszafordíthatatlan csere azt jelentené, hogy az első meglepetésnél
      * nincs hova visszalépni.
      */
-    if (flagDeclared('feature.player2') && featureOn('player2')) {
+    if (this._usesPlayer2()) {
       return this.mountPlayer2(box, media, episode, total, src)
     }
 
@@ -840,18 +894,18 @@ export const PageWatch = {
     const PLAY_ICON = '<polygon points="6 3 20 12 6 21 6 3" fill="currentColor" stroke="none"/>'
     const PAUSE_ICON = '<rect x="6" y="4" width="4" height="16" fill="currentColor" stroke="none"/><rect x="14" y="4" width="4" height="16" fill="currentColor" stroke="none"/>'
 
-    const playBtn = U.el('button', { class: 'player-btn player-play', 'aria-label': 'Play/Pause' })
+    const playBtn = U.el('button', { class: 'player-btn player-play', type: 'button', 'aria-label': T('Play/Pause') })
     const timeLabel = U.el('span', { class: 'player-time', text: '0:00 / 0:00' })
     const seekFill = U.el('div', { class: 'player-seek-fill' }, [U.el('div', { class: 'player-seek-thumb' })])
     const seekBuffer = U.el('div', { class: 'player-seek-buffer' })
     const seekBar = U.el('div', { class: 'player-seek' }, [seekBuffer, seekFill])
-    const volSlider = U.el('input', { class: 'player-volume', type: 'range', min: '0', max: '1', step: '0.05', value: '1', 'aria-label': 'Volume' })
-    const muteBtn = U.el('button', { class: 'player-btn player-mute', 'aria-label': 'Mute' })
+    const volSlider = U.el('input', { class: 'player-volume', type: 'range', min: '0', max: '1', step: '0.05', value: '1', 'aria-label': T('Volume') })
+    const muteBtn = U.el('button', { class: 'player-btn player-mute', type: 'button', 'aria-label': T('Mute') })
     muteBtn.append(U.svg('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>', 18))
-    const speedBtn = U.el('button', { class: 'player-btn player-speed', text: '1×', 'aria-label': 'Playback speed' })
-    const pipBtn = U.el('button', { class: 'player-btn player-pip', 'aria-label': 'Picture in picture', title: T('Picture in picture') })
+    const speedBtn = U.el('button', { class: 'player-btn player-speed', text: '1×', type: 'button', 'aria-label': T('Playback speed') })
+    const pipBtn = U.el('button', { class: 'player-btn player-pip', type: 'button', 'aria-label': T('Picture in picture'), title: T('Picture in picture') })
     pipBtn.append(U.svg('<rect x="2" y="4" width="20" height="16" rx="2"/><rect x="12" y="12" width="8" height="6" rx="1" fill="currentColor" stroke="none"/>', 18))
-    const fsBtn = U.el('button', { class: 'player-btn player-fs', 'aria-label': 'Fullscreen', title: T('Fullscreen') })
+    const fsBtn = U.el('button', { class: 'player-btn player-fs', type: 'button', 'aria-label': T('Fullscreen'), title: T('Fullscreen') })
     fsBtn.append(U.svg('<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>', 18))
     const skipBtn = U.el('button', { class: 'btn btn-primary btn-sm player-skip hidden', text: T('Skip intro') })
 
@@ -865,20 +919,20 @@ export const PageWatch = {
     ])
 
     // ---- Netflix-style top gradient: episode title + settings gear ----
-    const settingsBtn = U.el('button', { class: 'player-btn', 'aria-label': 'Player settings' })
+    const settingsBtn = U.el('button', { class: 'player-btn', type: 'button', 'aria-label': T('Player settings') })
     settingsBtn.append(U.svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>', 18))
     const topBar = U.el('div', { class: 'player-topbar' }, [
-      U.el('div', { class: 'player-topbar-title', text: `${U.title(media)} — Episode ${episode}` }),
+      U.el('div', { class: 'player-topbar-title', text: `${U.title(media)} — ${I18n.f(T('Episode {n}'), { n: episode })}` }),
       U.el('div', { style: 'flex-grow:1;' }),
       settingsBtn
     ])
 
     // ---- Netflix-style center controls: −10s / play / +10s ----
-    const bigPlay = U.el('button', { class: 'player-big', 'aria-label': 'Play/Pause' })
-    const back10 = U.el('button', { class: 'player-jump', 'aria-label': 'Back 10 seconds' }, [
+    const bigPlay = U.el('button', { class: 'player-big', type: 'button', 'aria-label': T('Play/Pause') })
+    const back10 = U.el('button', { class: 'player-jump', type: 'button', 'aria-label': T('Back 10 seconds') }, [
       U.svg('<path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 3v6h6"/>', 26), U.el('span', { text: '10' })
     ])
-    const fwd10 = U.el('button', { class: 'player-jump', 'aria-label': 'Forward 10 seconds' }, [
+    const fwd10 = U.el('button', { class: 'player-jump', type: 'button', 'aria-label': T('Forward 10 seconds') }, [
       U.svg('<path d="M21 12a9 9 0 1 1-9-9"/><path d="M21 3v6h-6"/>', 26), U.el('span', { text: '10' })
     ])
     const center = U.el('div', { class: 'player-center' }, [back10, bigPlay, fwd10])
@@ -1064,7 +1118,7 @@ export const PageWatch = {
       // Until this call existed, `watch_history`, `xp_events` and every
       // rollup built on them stayed empty on every deployment.
       LibrarySync?.onEpisodeCompleted(media, episode, video.currentTime, video.duration)
-      U.toast(I18n.f('Episode {n} marked as watched', { n: episode }))
+      U.toast(I18n.f(T('Episode {n} marked as watched'), { n: episode }), 'success')
     }
 
     const detachMeter = WatchTime?.attach(video, {
@@ -1287,6 +1341,9 @@ export const PageWatch = {
 
   // the popup itself
   async openW2G () {
+    // A közös nézés panelének közös részei (esemény-folyam) a saját lapjukon:
+    // csak a panel megnyitásakor töltődnek le.
+    await loadStylesheet('features/watch-together.css')
     document.getElementById('w2g-modal')?.remove()
     const backdrop = U.el('div', { class: 'modal-backdrop', id: 'w2g-modal', onclick: e => { if (e.target === backdrop) backdrop.remove() } })
     const panel = U.el('div', { class: 'w2g-panel' })
@@ -1303,11 +1360,25 @@ export const PageWatch = {
 
     // gate: server + account
     if (!await YumeAPI.available()) {
-      bodyEl.append(U.el('p', { class: 'list-row-sub', html: `Watch Together needs the Yume server. None reachable at <code>${YumeAPI.base()}</code> — start the backend or set it in <a href="#/settings" onclick="document.getElementById('w2g-modal')?.remove()" style="text-decoration:underline">Settings</a>.` }))
+      // Built from nodes, not an HTML string: the inline `onclick` it used to
+      // carry is refused by the Content-Security-Policy (script-src 'self'),
+      // so the link navigated but the modal never closed.
+      const closeModal = () => document.getElementById('w2g-modal')?.remove()
+      bodyEl.append(U.el('p', { class: 'list-row-sub' }, [
+        T('Watch Together needs the Yume server. None is reachable at') + ' ',
+        U.el('code', { text: YumeAPI.base() }),
+        ' — ',
+        U.el('a', { href: '#/settings', style: 'text-decoration:underline', onclick: closeModal, text: T('Settings') }),
+        '.'
+      ]))
       return
     }
     if (!YumeAPI.user()) {
-      bodyEl.append(U.el('p', { class: 'list-row-sub', html: 'Sign in to your <a href="#/settings" onclick="document.getElementById(\'w2g-modal\')?.remove()" style="text-decoration:underline">Yume account</a> to create or join a room.' }))
+      const closeModal = () => document.getElementById('w2g-modal')?.remove()
+      bodyEl.append(U.el('p', { class: 'list-row-sub' }, [
+        U.el('a', { href: '#/settings', style: 'text-decoration:underline', onclick: closeModal, text: T('Sign in') }),
+        ' — ' + T('you need an account to create or join a room.')
+      ]))
       return
     }
 

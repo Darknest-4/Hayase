@@ -75,11 +75,12 @@ export const ProfileStats = {
   },
 
   /** Minutes as the screens spell them: "3d 4h", "12h 30m", "45m". */
+  // A rövidítések a néző nyelvén: „3d 4h" egy magyar oldalon „3 nap 4 ó".
   formatMinutes (minutes) {
     const hours = Math.floor(minutes / 60)
-    if (hours >= 24) return `${Math.floor(hours / 24)}d ${hours % 24}h`
-    if (hours >= 1) return `${hours}h ${minutes % 60}m`
-    return `${minutes}m`
+    if (hours >= 24) return I18n.f(I18n.t('{d}d {h}h'), { d: Math.floor(hours / 24), h: hours % 24 })
+    if (hours >= 1) return I18n.f(I18n.t('{h}h {m}m'), { h: hours, m: minutes % 60 })
+    return I18n.f(I18n.t('{m}m'), { m: minutes })
   },
 
   /**

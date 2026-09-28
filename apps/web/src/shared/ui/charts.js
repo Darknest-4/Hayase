@@ -1,7 +1,13 @@
 /* global document */
-// Tiny dependency-free SVG chart helpers used by the Analytics page.
+// Tiny dependency-free SVG chart helpers: the admin overview's lines and
+// sparklines, and the donuts (admin queue, profile statistics).
 // Theme-aware (uses design tokens via currentColor/var()), accessible
 // (title + role), responsive (viewBox scales).
+//
+// 2026-09: `bars` and `ranked` are gone. Their only caller was the profile's
+// statistics tab, which now draws columns and rows in HTML — an SVG scales its
+// text with its viewBox (20px labels on a desktop, 7px on a phone), and `bars`
+// overwrote every column with its own label, so no column was ever drawn.
 
 export const Charts = {
   _svg (w, h, children, label) {
@@ -23,31 +29,6 @@ export const Charts = {
     const el = document.createElementNS('http://www.w3.org/2000/svg', tag)
     for (const [k, v] of Object.entries(attrs)) if (v != null) el.setAttribute(k, v)
     return el
-  },
-
-  // vertical bar chart: data = [{label, value}]
-  bars (data, { label = 'Bar chart', accent = 'var(--accent)' } = {}) {
-    const W = 640; const H = 220; const pad = 28; const gap = 8
-    const max = Math.max(1, ...data.map(d => d.value))
-    const bw = (W - pad * 2) / data.length
-    const children = []
-    data.forEach((d, i) => {
-      const h = (H - pad * 2) * (d.value / max)
-      const x = pad + i * bw
-      const y = H - pad - h
-      children.push(this._el('rect', { x: x + gap / 2, y, width: bw - gap, height: h, rx: 3, fill: accent }))
-      // (An earlier version pushed a second, unlabelled <text> here as well —
-      // the label element built below is the only one that should exist.)
-      const lbl = this._el('text', { x: x + bw / 2, y: H - pad + 14, 'text-anchor': 'middle' })
-      lbl.setAttribute('class', 'chart-tick'); lbl.textContent = d.label
-      children[children.length - 1] = lbl
-      if (d.value) {
-        const val = this._el('text', { x: x + bw / 2, y: y - 5, 'text-anchor': 'middle' })
-        val.setAttribute('class', 'chart-value'); val.textContent = d.display ?? d.value
-        children.push(val)
-      }
-    })
-    return this._svg(W, H, children, label)
   },
 
   // compact sparkline for a metric's recent history: data = [numbers]
@@ -210,26 +191,6 @@ export const Charts = {
       })
     }
 
-    return this._svg(W, H, children, label)
-  },
-
-  // horizontal ranked bars: data = [{label, value, display}]
-  ranked (data, { label = 'Ranking', accent = 'var(--accent)' } = {}) {
-    const rowH = 30; const W = 640; const H = data.length * rowH + 10; const labelW = 150
-    const max = Math.max(1, ...data.map(d => d.value))
-    const children = []
-    data.forEach((d, i) => {
-      const y = i * rowH + 5
-      const name = this._el('text', { x: 0, y: y + rowH / 2 + 4, class: 'chart-name' })
-      name.textContent = d.label.length > 22 ? d.label.slice(0, 21) + '…' : d.label
-      children.push(name)
-      const trackW = W - labelW - 50
-      children.push(this._el('rect', { x: labelW, y: y + 6, width: trackW, height: rowH - 14, rx: 4, fill: 'var(--bg-raised)' }))
-      children.push(this._el('rect', { x: labelW, y: y + 6, width: Math.max(2, trackW * (d.value / max)), height: rowH - 14, rx: 4, fill: accent }))
-      const val = this._el('text', { x: W - 4, y: y + rowH / 2 + 4, 'text-anchor': 'end', class: 'chart-value' })
-      val.textContent = d.display ?? d.value
-      children.push(val)
-    })
     return this._svg(W, H, children, label)
   },
 

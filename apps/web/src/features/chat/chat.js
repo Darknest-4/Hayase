@@ -12,7 +12,7 @@
 // of sitting there looking sent.
 
 import { C } from '../../shared/ui/components.js'
-import { T } from '../../shared/i18n/i18n.js'
+import { I18n, T } from '../../shared/i18n/i18n.js'
 import { viewerProfile } from '../../shared/lib/site-config.js'
 import { P } from '../../shared/ui/primitives.js'
 import { U } from '../../shared/lib/dom.js'
@@ -48,14 +48,17 @@ export const Chat = {
 
     // The room rail. On a phone it becomes a scrolling strip above the
     // messages rather than a column beside them — see the stylesheet.
-    const rail = U.el('nav', { class: 'chat-rooms' })
+    const rail = U.el('nav', { class: 'chat-rooms', 'aria-label': T('Chat rooms') })
     for (const room of rooms) {
       rail.append(U.el('a', {
         class: 'chat-room' + (room.slug === active.slug ? ' active' : ''),
-        href: `#/community?tab=chat&r=${encodeURIComponent(room.slug)}`
+        href: `#/community?tab=chat&r=${encodeURIComponent(room.slug)}`,
+        ...(room.slug === active.slug ? { 'aria-current': 'page' } : {})
       }, [
         U.el('span', { class: 'chat-room-name', text: room.name }),
-        room.today > 0 ? U.el('span', { class: 'chat-room-today', text: String(room.today) }) : null
+        room.today > 0
+          ? U.el('span', { class: 'chat-room-today', 'aria-label': I18n.f(T('{n} messages today'), { n: room.today }), text: String(room.today) })
+          : null
       ]))
     }
 
@@ -72,7 +75,16 @@ export const Chat = {
       ])
     )
 
-    const log = U.el('div', { class: 'chat-log' }, [P.spinner()])
+    // Élő régió: a felolvasó bejelenti az új üzenetet, de nem olvassa fel újra az
+    // egészet. Görgethető, ezért billentyűzettel is elérhető (tabindex).
+    const log = U.el('div', {
+      class: 'chat-log',
+      role: 'log',
+      'aria-live': 'polite',
+      'aria-relevant': 'additions',
+      'aria-label': I18n.f(T('Messages in {room}'), { room: room.name }),
+      tabindex: '0'
+    }, [P.spinner()])
     panel.append(log)
 
     let messages = []
@@ -84,17 +96,22 @@ export const Chat = {
     // The endpoint answers newest-first, because that is the page a room opens
     // on; reading order is the other way round.
     for (const message of messages.slice().reverse()) log.append(this._line(message, perms))
+    if (!messages.length) log.append(U.el('p', { class: 'chat-empty', text: T('No messages here yet. Say hello!') }))
     this._toBottom(log)
 
     const me = YumeAPI.user()
     if (!me) {
-      panel.append(U.el('div', { class: 'callout', text: T('Sign in to join the conversation.') }))
+      panel.append(U.el('div', { class: 'callout callout-info chat-signin' }, [
+        U.el('p', { text: T('Sign in to join the conversation.') }),
+        U.el('a', { class: 'btn btn-secondary btn-sm', href: '#/login?next=community', text: T('Sign in') })
+      ]))
       return
     }
 
     const input = U.el('input', {
       class: 'input chat-input',
       placeholder: T('Write a message…'),
+      'aria-label': I18n.f(T('Message to {room}'), { room: room.name }),
       maxlength: '4000',
       autocomplete: 'off'
     })
@@ -105,7 +122,9 @@ export const Chat = {
     }, [input, send]))
 
     await this._connect(room, log, perms)
-    input.focus()
+    // `preventScroll`: a lap ne ugorjon le a beviteli mezőhöz, amikor a szoba
+    // megnyílik — a néző a lap tetején kezd, a fókusz ettől még ott van.
+    input.focus({ preventScroll: true })
   },
 
   /**
@@ -189,6 +208,7 @@ export const Chat = {
       created_at: new Date().toISOString()
     }, perms)
     line.classList.add('chat-line-pending')
+    log.querySelector(':scope > .chat-empty')?.remove()
     log.append(line)
     this._toBottom(log)
     this._pending.set(body, { key, line, at: Date.now() })
@@ -226,21 +246,26 @@ export const Chat = {
       pending.line.firstChild?.replaceWith(C.avatar(payload, { size: 'xs' }))
       return
     }
+    log.querySelector(':scope > .chat-empty')?.remove()
     log.append(this._line(payload, perms))
     this._toBottom(log)
   },
 
   _line (message, perms) {
     const created = message.created_at ? new Date(message.created_at) : new Date()
-    return U.el('div', { class: 'chat-line', dataset: { id: String(message.id) } }, [
+    const own = Boolean(message.author) && message.author === YumeAPI.user()?.username
+    return U.el('div', { class: 'chat-line' + (own ? ' chat-line-own' : ''), dataset: { id: String(message.id) } }, [
       C.avatar(message, { size: 'xs' }),
       U.el('span', { class: 'chat-line-author', text: message.author }),
       U.el('span', { class: 'chat-line-body', text: message.body }),
-      U.el('time', { class: 'chat-line-when', text: created.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }),
+      // A felület nyelvén, nem a böngészőén (eddig `toLocaleTimeString([])`).
+      U.el('time', { class: 'chat-line-when', datetime: created.toISOString(), text: created.toLocaleTimeString(I18n.locale(), { hour: '2-digit', minute: '2-digit' }) }),
       perms.includes('chat.moderate') && !String(message.id).startsWith('local-')
         ? U.el('button', {
-          class: 'icon-btn chat-line-remove',
+          class: 'icon-btn icon-btn-sm icon-btn-quiet chat-line-remove',
+          type: 'button',
           title: T('Remove this message'),
+          'aria-label': I18n.f(T('Remove the message from {name}'), { name: message.author }),
           onclick: async event => {
             try {
               await YumeAPI.chat.removeMessage(message.id)

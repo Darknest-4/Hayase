@@ -386,6 +386,15 @@ export const Catalogue = {
     }
   },
 
+  /** AniList sort values -> the text search's own (`relevance` is its default). */
+  SEARCH_SORTS: {
+    SEARCH_MATCH: 'relevance',
+    POPULARITY_DESC: 'popularity',
+    SCORE_DESC: 'score',
+    START_DATE_DESC: 'newest',
+    TITLE_ROMAJI: 'title'
+  },
+
   /** AniList sort values -> the catalogue's own. Unknown ones fall through. */
   SORTS: {
     TRENDING_DESC: 'trending',
@@ -432,6 +441,10 @@ export const Catalogue = {
         year: variables.seasonYear ?? undefined,
         format: first(variables.format) ?? undefined,
         status: first(variables.status) ?? undefined,
+        // A szabad szöveges keresés is rendezhető (relevancia az alap). A
+        // rendezés eddig el sem jutott ide: a kereső lapon a „Rendezés"
+        // választó szöveg mellett semmit nem csinált.
+        sort: this.SEARCH_SORTS[first(variables.sort)] ?? undefined,
         offset: variables.offset || undefined,
         limit
       })

@@ -32,6 +32,19 @@ import { createFlagEvaluator } from '../flags/player-feature-flags.js'
 import { EV } from '../core/player-events.js'
 import { SHORTCUT_HELP } from '../ui/keyboard.js'
 import { LOADING_PHASE } from '../core/player-state.js'
+import { loadStylesheet } from '../../../shared/lib/stylesheet.js'
+
+/**
+ * A lejátszó stíluslapja. 2026-09 óta lustán jön (a lap csak a tokens /
+ * components / style hármast kéri minden képernyőn): aki a lejátszót a lapra
+ * teszi, ezt várja meg előbb — különben egy pillanatig stílus nélküli,
+ * 300×150-es videó és egymás alá omló vezérlők látszanak. A teljesülése nem
+ * garantál stílust (egy elhasalt letöltés is teljesíti), csak azt, hogy a
+ * várakozásnak vége.
+ *
+ * @returns {Promise<void>}
+ */
+export const loadPlayerStyles = () => loadStylesheet('player2.css')
 
 /**
  * Egy rész lejátszója.
@@ -44,6 +57,8 @@ import { LOADING_PHASE } from '../core/player-state.js'
  * @returns {{node: HTMLElement, player: object, destroy: function}}
  */
 export function createEpisodePlayer (options = {}) {
+  // Biztonsági háló annak, aki nem várta meg: legalább elindul a letöltés.
+  loadPlayerStyles()
   const video = options.video
   if (!video) throw new Error('createEpisodePlayer: videóelem kell')
 

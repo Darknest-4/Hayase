@@ -1,9 +1,25 @@
-// Analytics — a personal "year in review" style dashboard computed entirely
-// from the active profile's local library and watch history. Everything is
-// derived on the client from Store.list() + Store.history(); no network calls.
+// Statisztika — a profil „Statisztika" füle (#/profile?tab=analytics).
+//
+// Minden szám a helyi könyvtárból (Store.list) és az ezen az eszközön vezetett
+// előzményekből (Store.history) számolódik; a fejléc számait a kiszolgáló
+// összesítése (ProfileStats.hydrate) felülírja, amint megjön.
+//
+// 2026-09, újratervezve:
+//
+//   * Az oszlop- és sávdiagramok HTML-ből épülnek, nem SVG-ből. A régi
+//     `Charts.bars` / `Charts.ranked` a viewBox-szal együtt a feliratot is
+//     nagyította-kicsinyítette: asztalon 20, telefonon 7 képpontos számok. A
+//     `bars` ráadásul minden oszlopot a saját feliratával írt felül
+//     (`children[children.length - 1] = lbl`), így oszlop soha nem látszott,
+//     csak lebegő számok — mérve, a QA-képernyőképeken.
+//   * Minden felirat fordítva (a kártyák, a szakaszcímek és az állapotoszlopok
+//     eddig angolul, négy betűre vágva álltak a magyar felületen).
+//   * A könyvtár állapotonkénti megoszlása innen kikerült: ugyanaz a sáv az
+//     Áttekintés fülön áll, a szűrt könyvtárra mutató linkekkel.
+//   * A különálló `render()` törölve: a `#/analytics` cím a profil fülére
+//     irányít (router `REDIRECTS`), a függvényt semmi nem hívta.
 
 import { Charts } from '../shared/ui/charts.js'
-import { C } from '../shared/ui/components.js'
 import { I18n, T } from '../shared/i18n/i18n.js'
 import { ProfileStats } from '../features/watch-history/profile-stats.js'
 import { Store } from '../shared/state/store.js'
@@ -11,139 +27,189 @@ import { P } from '../shared/ui/primitives.js'
 import { U } from '../shared/lib/dom.js'
 import { WatchTime } from '../features/watch-history/watch-time.js'
 
+const CHART_ICON = '<path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7"/><rect x="12" y="7" width="3" height="11"/><rect x="17" y="4" width="3" height="14"/>'
+
 export const PageAnalytics = {
-  // a fixed, theme-neutral palette reused across the donut charts
-  // The categorical series scale, from tokens.css. These are spent as SVG
-  // fill and as style.background, both of which resolve custom properties, so
-  // naming them costs nothing and lets the charts follow a theme.
+  // A kategóriás színskála a tokens.css-ből. SVG-kitöltésként és
+  // style.background-ként is feloldódik, így a diagram követi a témát.
   PALETTE: Array.from({ length: 12 }, (_, i) => `var(--chart-${i + 1})`),
 
-  // standalone route (kept as a fallback / deep-link target)
-  render (root) {
-    const profile = Store.profile()
-    root.append(C.spotlight(T('Analytics'), { subtitle: profile ? `${profile.avatar ?? ''} ${profile.name} · your viewing at a glance` : 'Your viewing at a glance' }))
-    const pad = U.el('div', { class: 'page-pad' })
-    root.append(pad)
-    this.body(pad)
-  },
-
-  // embeddable body — rendered on its own or inside the Profile hub tab
+  /** A profil fülének tartalma. */
   body (pad) {
     const entries = Object.values(Store.list())
     const history = Store.history()
 
     if (!entries.length && !history.length) {
-      pad.append(P.emptyState(T('No data yet on this profile. Add anime to your library and watch a few episodes — your analytics build up here automatically.'), { action: U.el('a', { class: 'btn btn-primary btn-sm', href: '#/search', text: T('Browse the catalogue') }) }))
+      pad.append(P.emptyState(T('No data yet on this profile. Add anime to your library and watch a few episodes — your analytics build up here automatically.'), {
+        icon: CHART_ICON,
+        action: U.el('a', { class: 'btn btn-primary', href: '#/search', text: T('Browse the catalogue') })
+      }))
       return
     }
 
-    // ---- headline stats ----
-    const episodesWatched = entries.reduce((s, e) => s + (e.progress ?? 0), 0)
-    // Measured, not estimated. This used to be `progress * nominal runtime`,
-    // which credited a flat 24 minutes the instant an episode was marked —
-    // so the number grew by watching nothing. WatchTime.minutesFor() uses
-    // real playback seconds and only falls back to the old estimate for
-    // episodes credited before the meter existed.
+    // ---- a számok ----
+    // Ugyanaz a `.stat` komponens és ugyanazok a `data-stat` horgok, mint az
+    // Áttekintés fülön: a kiszolgáló számai mindkettőt ugyanúgy frissítik.
+    const episodesWatched = entries.reduce((sum, e) => sum + (e.progress ?? 0), 0)
+    // Mért idő, nem becslés (WatchTime: valódi lejátszott másodpercek, a mérő
+    // előtti részekre a régi becsléssel).
     const watch = WatchTime.minutesFor(entries)
-    const minutes = watch.totalMinutes
     const completed = entries.filter(e => e.status === 'COMPLETED').length
     const scored = entries.filter(e => e.score > 0)
-    const mean = scored.length ? (scored.reduce((s, e) => s + e.score, 0) / scored.length).toFixed(1) : '—'
-    const hours = Math.floor(minutes / 60)
-    const watchTime = hours >= 24 ? `${Math.floor(hours / 24)}d ${hours % 24}h` : `${hours}h ${minutes % 60}m`
+    const mean = scored.length ? (scored.reduce((sum, e) => sum + e.score, 0) / scored.length).toFixed(1) : '—'
 
-    const cards = U.el('div', { class: 'stat-cards' }, [
-      ['Watch time', watchTime, 'watchTime'],
-      ['Episodes', episodesWatched.toLocaleString(I18n.locale()), 'episodes'],
-      ['In library', String(entries.length), null],
-      ['Completed', String(completed), 'completed'],
-      ['Mean score', mean, 'meanScore'],
-      ['Days active', String(this._activeDays(history)), null]
-    ].map(([label, value, stat]) => U.el('div', { class: 'stat-card', 'data-stat': stat }, [
-      U.el('b', { text: value }),
-      U.el('span', { text: label })
+    const stats = U.el('div', { class: 'stats analytics-stats' }, [
+      [ProfileStats.formatMinutes(watch.totalMinutes), T('Watch time'), 'watchTime'],
+      [I18n.number(episodesWatched), T('Episodes watched'), 'episodes'],
+      [I18n.number(entries.length), T('In library'), null],
+      [I18n.number(completed), T('Completed'), 'completed'],
+      [mean, T('Mean score'), 'meanScore'],
+      [I18n.number(this._activeDays(history)), T('Days active'), null, T('on this device')]
+    ].map(([value, label, stat, sub]) => U.el('div', { class: 'stat', ...(stat ? { 'data-stat': stat } : {}) }, [
+      U.el('span', { class: 'stat-label', text: label }),
+      U.el('b', { class: 'stat-value', text: value }),
+      sub ? U.el('span', { class: 'stat-sub', text: sub }) : null
     ])))
-    pad.append(cards)
-    // Local numbers first, the account's own totals when they arrive.
-    ProfileStats?.hydrate(cards)
+    pad.append(stats)
+    ProfileStats?.hydrate(stats)
 
-    // ---- weekly activity (episodes watched per day, last 14 days) ----
-    this._section(pad, 'Activity', 'Episodes watched per day over the last two weeks.')
-    pad.append(this._panel(Charts.bars(this._weekly(history), { label: T('Episodes watched per day') })))
+    // ---- aktivitás: az elmúlt két hét, naponta ----
+    const weekly = this._weekly(history)
+    pad.append(this._section(
+      T('Activity'),
+      T('Episodes watched per day on this device, over the last two weeks.'),
+      weekly.some(day => day.value > 0)
+        ? this._columns(weekly, {
+          label: T('Episodes watched per day'),
+          describe: day => I18n.f(T('{date}: {n} episodes'), { date: day.long, n: I18n.number(day.value) })
+        })
+        : this._noData(T('Nothing watched on this device in the last two weeks.'))
+    ))
 
-    // ---- two-up: genre donut + format donut ----
-    const twoUp = U.el('div', { class: 'analytics-grid' })
-    pad.append(twoUp)
+    // ---- műfajok és formátumok, egymás mellett ----
+    const genres = this._genreBreakdown(entries).slice(0, 8)
+    const formats = this._countBy(entries, e => U.format(e.media) || T('Unknown'))
+    pad.append(U.el('div', { class: 'analytics-grid' }, [
+      this._card(T('Top genres'), genres.length
+        ? Charts.donut(genres.map((g, i) => ({ label: T(g.label), value: g.value, color: this.PALETTE[i % this.PALETTE.length] })), { label: T('Genre distribution') })
+        : this._noData()),
+      this._card(T('Formats'), formats.length
+        ? Charts.donut(formats.map((f, i) => ({ label: f.label, value: f.value, color: this.PALETTE[i % this.PALETTE.length] })), { label: T('Format distribution') })
+        : this._noData())
+    ]))
 
-    const genres = this._genreBreakdown(entries)
-    twoUp.append(this._card('Top genres', genres.length
-      ? Charts.donut(genres.slice(0, 8).map((g, i) => ({ label: g.label, value: g.value, color: this.PALETTE[i % this.PALETTE.length] })), { label: T('Genre distribution') })
-      : this._noData()))
-
-    const formats = this._countBy(entries, e => U.format(e.media) || 'Unknown')
-    twoUp.append(this._card('Formats', formats.length
-      ? Charts.donut(formats.map((f, i) => ({ label: f.label, value: f.value, color: this.PALETTE[i % this.PALETTE.length] })), { label: T('Format distribution') })
-      : this._noData()))
-
-    // ---- status distribution ----
-    const statuses = Object.entries(U.listStatusMap)
-      .map(([status, label]) => ({ label, value: entries.filter(e => e.status === status).length }))
-      .filter(s => s.value > 0)
-    if (statuses.length) {
-      this._section(pad, 'Library status', 'How your list breaks down across watching, completed, planning and more.')
-      pad.append(this._panel(Charts.bars(statuses.map(s => ({ label: s.label.slice(0, 4), value: s.value })), { label: T('Status distribution') })))
-    }
-
-    // ---- score histogram ----
+    // ---- pontszámok ----
     if (scored.length) {
-      this._section(pad, 'Score distribution', `Across ${scored.length} rated ${scored.length === 1 ? 'title' : 'titles'}.`)
       const buckets = Array.from({ length: 10 }, (_, i) => ({ label: String(i + 1), value: 0 }))
-      for (const e of scored) {
-        const b = Math.min(9, Math.max(0, Math.round(e.score) - 1))
-        buckets[b].value++
-      }
-      pad.append(this._panel(Charts.bars(buckets, { label: T('Score histogram') })))
+      for (const e of scored) buckets[Math.min(9, Math.max(0, Math.round(e.score) - 1))].value++
+      pad.append(this._section(
+        T('Score distribution'),
+        I18n.f(T('Across {n} rated titles.'), { n: I18n.number(scored.length) }),
+        this._columns(buckets, {
+          label: T('Score histogram'),
+          describe: bucket => I18n.f(T('Score {score}: {n} titles'), { score: bucket.label, n: I18n.number(bucket.value) })
+        })
+      ))
     }
 
-    // ---- top studios ----
-    const studios = this._studioBreakdown(entries)
+    // ---- stúdiók ----
+    const studios = this._studioBreakdown(entries).slice(0, 8)
     if (studios.length) {
-      this._section(pad, 'Top studios', 'Studios you watch the most, by number of titles in your library.')
-      pad.append(this._panel(Charts.ranked(studios.slice(0, 8), { label: T('Top studios') })))
+      pad.append(this._section(
+        T('Top studios'),
+        T('Studios you watch the most, by number of titles in your library.'),
+        this._rows(studios, { label: T('Top studios') })
+      ))
     }
   },
 
-  // ---- helpers ----
+  // ---- építőelemek ----
 
-  _section (parent, title, sub) {
-    parent.append(U.el('h2', { class: 'detail-section-title', style: 'margin-top:var(--space-6);', text: title }))
-    if (sub) parent.append(U.el('p', { class: 'list-row-sub', style: 'margin:-var(--space-1) 0 var(--space-2);', text: sub }))
-  },
-
-  _panel (child) {
-    return U.el('div', { class: 'chart-panel' }, [child])
+  _section (title, sub, body) {
+    return U.el('section', { class: 'section analytics-section' }, [
+      U.el('div', { class: 'section-head' }, [
+        U.el('div', {}, [
+          U.el('h2', { class: 'section-title', text: title }),
+          sub ? U.el('p', { class: 'section-sub', text: sub }) : null
+        ])
+      ]),
+      body
+    ])
   },
 
   _card (title, child) {
-    return U.el('div', { class: 'chart-card' }, [
-      U.el('h3', { class: 'chart-card-title', text: title }),
+    // h2, nem h3: a kártyák közvetlenül a lap szakaszai, fölöttük nincs h2.
+    return U.el('section', { class: 'chart-card' }, [
+      U.el('h2', { class: 'chart-card-title', text: title }),
       child
     ])
   },
 
-  _noData () {
-    return U.el('div', { class: 'chart-empty', text: T('Not enough data yet.') })
+  _noData (text = T('Not enough data yet.')) {
+    return U.el('p', { class: 'chart-empty', text })
   },
+
+  /**
+   * Oszlopdiagram HTML-ből: az oszlop magassága százalék, a szöveg valódi
+   * CSS-méretű, bármilyen szélességen. A képernyőolvasó oszloponként egy
+   * mondatot kap (`describe`), a látható szám és felirat el van rejtve előle.
+   *
+   * @param {Array<{label: string, value: number, current?: boolean}>} data
+   */
+  _columns (data, { label, describe }) {
+    const max = Math.max(1, ...data.map(d => d.value))
+    return U.el('ol', { class: 'viz-columns', 'aria-label': label }, data.map(d =>
+      U.el('li', { class: 'viz-column' + (d.current ? ' is-current' : '') }, [
+        U.el('span', { class: 'sr-only', text: describe(d) }),
+        U.el('span', { class: 'viz-column-value', 'aria-hidden': 'true', text: d.value ? I18n.number(d.value) : '' }),
+        U.el('span', { class: 'viz-column-track', 'aria-hidden': 'true' }, [
+          U.el('span', { class: 'viz-column-fill', style: `height:${(d.value / max * 100).toFixed(1)}%` })
+        ]),
+        U.el('span', { class: 'viz-column-label', 'aria-hidden': 'true', text: d.label })
+      ])))
+  },
+
+  /**
+   * Vízszintes rangsor: név, sáv, szám. A név hosszú lehet (stúdiónevek),
+   * ezért kipontozódik — a teljes név a `title`-ben és a felolvasásban marad.
+   *
+   * @param {Array<{label: string, value: number}>} data
+   */
+  _rows (data, { label }) {
+    const max = Math.max(1, ...data.map(d => d.value))
+    return U.el('ol', { class: 'viz-rows', 'aria-label': label }, data.map(d =>
+      U.el('li', { class: 'viz-row' }, [
+        U.el('span', { class: 'viz-row-name', title: d.label, text: d.label }),
+        U.el('span', { class: 'viz-row-track', 'aria-hidden': 'true' }, [
+          U.el('span', { class: 'viz-row-fill', style: `width:${(d.value / max * 100).toFixed(1)}%` })
+        ]),
+        U.el('span', { class: 'viz-row-value', text: I18n.number(d.value) })
+      ])))
+  },
+
+  // ---- számítások ----
 
   _activeDays (history) {
     return new Set(history.map(h => new Date(h.at).toDateString())).size
   },
 
+  /**
+   * Az elmúlt tizennégy nap, a helyi naptár szerint. Naptári lépéssel, nem
+   * `Date.now() - i * 86400000`-rel: az óraátállítás napján az utóbbi egy
+   * napot kihagy vagy kétszer számol.
+   */
   _weekly (history) {
+    const now = new Date()
     const days = []
     for (let i = 13; i >= 0; i--) {
-      const d = new Date(Date.now() - i * 86400000)
-      days.push({ key: d.toDateString(), label: d.toLocaleDateString(I18n.locale(), { day: 'numeric' }), value: 0 })
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)
+      days.push({
+        key: d.toDateString(),
+        label: String(d.getDate()),
+        long: d.toLocaleDateString(I18n.locale(), { month: 'short', day: 'numeric' }),
+        current: i === 0,
+        value: 0
+      })
     }
     const index = new Map(days.map(d => [d.key, d]))
     for (const h of history) {
@@ -154,21 +220,14 @@ export const PageAnalytics = {
   },
 
   _genreBreakdown (entries) {
-    return this._countBy(
-      entries.flatMap(e => e.media?.genres ?? []),
-      g => g
-    )
+    return this._countBy(entries.flatMap(e => e.media?.genres ?? []), g => g)
   },
 
   _studioBreakdown (entries) {
-    const counts = this._countBy(
-      entries.map(e => e.media?.studios?.nodes?.[0]?.name).filter(Boolean),
-      s => s
-    )
-    return counts.map(c => ({ label: c.label, value: c.value }))
+    return this._countBy(entries.map(e => e.media?.studios?.nodes?.[0]?.name).filter(Boolean), s => s)
   },
 
-  // counts occurrences, returns [{label, value}] sorted desc
+  /** Előfordulások száma, csökkenő sorrendben: [{label, value}]. */
   _countBy (items, keyFn) {
     const map = new Map()
     for (const item of items) {
