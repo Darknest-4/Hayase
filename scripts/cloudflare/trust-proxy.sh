@@ -80,8 +80,13 @@ if [ "${1:-}" = "--caddy" ]; then
 	#
 	# Frissítés: scripts/cloudflare/trust-proxy.sh --caddy <ez a fájl>
 	# Utoljára: $(date -u +%Y-%m-%d)
+	#
+	# A LÁTOGATÓ CÍME A \`CF-Connecting-IP\`-BŐL: azt a Cloudflare maga írja,
+	# egyetlen értékként, míg az X-Forwarded-For láncot a feladó is
+	# kitöltheti. Csak a fenti tartományokból érkező kérésnél számít.
 	servers {
 		trusted_proxies static $LIST
+		client_ip_headers CF-Connecting-IP
 	}
 }
 EOF

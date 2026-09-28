@@ -120,7 +120,10 @@ async function main () {
     // közepén minden bejelentkezett kérés 401-et kapna, és az úgy nézne ki,
     // mintha a kiszolgáló hasalna el 25 felhasználónál. (Pontosan ez történt
     // az első éles futáskor.)
-    const { accessToken, refreshToken } = await res.json()
+    // The refresh token is only ever set as the HttpOnly cookie now — the
+    // response body no longer carries it.
+    const { accessToken } = await res.json()
+    const refreshToken = /yume_refresh=([^;]+)/.exec(res.headers.get('set-cookie') ?? '')?.[1] ?? null
 
     // A könyvtár, a kedvencek és a haladás profil nevében történnek, és a
     // profilazonosító fejlécben utazik — enélkül minden ilyen kérés 400.
