@@ -17,6 +17,7 @@
 // toggle a state without knowing this file's naming. Focus is the global
 // :focus-visible ring from tokens.css and is not restated.
 
+import { I18n } from '../i18n/i18n.js'
 import { U } from '../lib/dom.js'
 
 /** Join class names, dropping the ones that did not apply. */
@@ -92,14 +93,31 @@ export const P = {
    * thing: a field with its error rendered somewhere else is a field whose
    * error can be forgotten. `error` also sets aria-invalid, so the state is
    * announced and not only coloured.
+   *
+   * A <div> with <label for>, not a wrapping <label>: the control may come
+   * with a button of its own (the password field's "show"), and a label may
+   * hold only the one control it names.
    */
   field (label, control, { hint = null, error = null } = {}) {
+    const input = /^(INPUT|SELECT|TEXTAREA)$/.test(String(control?.tagName ?? ''))
+      ? control
+      : control?.querySelector?.('input') ?? control?.querySelector?.('select') ?? control?.querySelector?.('textarea') ?? null
+    let id = input?.getAttribute?.('id') ?? null
+    if (input && !id) {
+      id = 'f-' + Math.random().toString(36).slice(2, 9)
+      input.setAttribute('id', id)
+    }
+    const hintId = hint && !error && id ? `${id}-hint` : null
+    if (hintId) {
+      input.setAttribute('aria-describedby', hintId)
+      if (input.dataset) input.dataset.hintId = hintId
+    }
     if (error) control.setAttribute('aria-invalid', 'true')
-    return U.el('label', { class: 'field' }, [
-      label ? U.el('span', { class: 'field-label', text: label }) : null,
+    return U.el('div', { class: 'field' }, [
+      label ? U.el('label', { class: 'field-label', ...(id ? { for: id } : {}), text: label }) : null,
       control,
       error ? U.el('span', { class: 'field-error', text: error }) : null,
-      !error && hint ? U.el('span', { class: 'field-hint', text: hint }) : null
+      hintId ? U.el('span', { class: 'field-hint', id: hintId, text: hint }) : null
     ])
   },
 
@@ -138,27 +156,73 @@ export const P = {
   /**
    * Tabs.
    *
-   * items: [{ id, label, icon? }]. onSelect receives the id. The selected tab
-   * is marked with aria-selected rather than a class, so the control reads
-   * correctly to assistive technology and styles itself from the same fact.
+   * items: [{ id, label, icon?, count?, disabled? }]. onSelect receives the id.
+   * The selected tab is marked with aria-selected rather than a class, so the
+   * control reads correctly to assistive technology and styles itself from
+   * the same fact.
+   *
+   * The keyboard pattern is the one a screen-reader user expects from a
+   * tablist: one Tab stop for the whole row (roving tabindex), the arrow keys
+   * move between tabs, Home and End jump to the ends. `bar.panel` is the
+   * matching tabpanel; the caller puts it where the content goes.
    */
-  tabs (items, { selected = null, onSelect = () => {} } = {}) {
-    const bar = U.el('div', { class: 'tabs', role: 'tablist' })
-    const buttons = items.map(item => {
-      const btn = U.el('button', {
-        class: 'tab',
-        type: 'button',
-        role: 'tab',
-        'aria-selected': String(item.id === selected),
-        disabled: item.disabled ?? false,
-        onclick: () => {
-          for (const b of buttons) b.setAttribute('aria-selected', String(b === btn))
-          onSelect(item.id)
+  tabs (items, { selected = null, onSelect = () => {}, label = null, controls = null } = {}) {
+    const prefix = 'tabs-' + Math.random().toString(36).slice(2, 9)
+    const bar = U.el('div', { class: 'tabs', role: 'tablist', ...(label ? { 'aria-label': label } : {}) })
+    const panel = U.el('div', { class: 'tab-panel', role: 'tabpanel', id: `${prefix}-panel`, tabindex: '0' })
+    const idOf = id => `${prefix}-${String(id).replace(/[^\w-]/g, '_')}`
+    const buttons = items.map(item => U.el('button', {
+      class: 'tab',
+      type: 'button',
+      role: 'tab',
+      id: idOf(item.id),
+      dataset: { tab: String(item.id) },
+      // A panel azonosítója — vagy a hívóé, ha a fülek egy meglévő
+      // tartalomrészt váltanak (a belépési űrlap mezőit).
+      'aria-controls': controls ?? panel.id,
+      'aria-selected': String(item.id === selected),
+      tabindex: item.id === selected ? '0' : '-1',
+      disabled: item.disabled ?? false,
+      onclick: () => choose(item.id)
+    }, [
+      item.icon ?? null,
+      U.el('span', { text: item.label }),
+      item.count != null ? U.el('span', { class: 'tab-count', text: String(item.count) }) : null
+    ]))
+    const choose = (id, { focus = false, silent = false } = {}) => {
+      for (const b of buttons) {
+        const on = b.dataset.tab === String(id)
+        b.setAttribute('aria-selected', String(on))
+        b.tabIndex = on ? 0 : -1
+        if (on) {
+          panel.setAttribute('aria-labelledby', b.id)
+          if (focus) b.focus()
         }
-      }, [item.icon ?? null, U.el('span', { text: item.label })])
-      return btn
+      }
+      // A fókusz magától görget; a cím szerinti kiválasztásnak segíteni kell.
+      if (!focus) U.revealActiveTab(bar)
+      if (!silent) onSelect(id)
+    }
+    bar.addEventListener('keydown', e => {
+      const enabled = buttons.filter(b => !b.disabled)
+      const at = enabled.indexOf(document.activeElement)
+      if (at < 0) return
+      const next = {
+        ArrowRight: enabled[(at + 1) % enabled.length],
+        ArrowLeft: enabled[(at - 1 + enabled.length) % enabled.length],
+        Home: enabled[0],
+        End: enabled[enabled.length - 1]
+      }[e.key]
+      if (!next) return
+      e.preventDefault()
+      choose(next.dataset.tab, { focus: true })
     })
     bar.append(...buttons)
+    if (selected != null) choose(selected, { silent: true })
+    bar.panel = panel
+    // Programmatic selection (a deep link, a restored state) without firing
+    // onSelect twice.
+    bar.select = (id, options) => choose(id, options)
     return bar
   },
 
@@ -222,7 +286,7 @@ export const P = {
   },
 
   spinner ({ small = false } = {}) {
-    return U.el('div', { class: cx('spinner', small && 'spinner-sm'), role: 'status', 'aria-label': 'Loading' })
+    return U.el('div', { class: cx('spinner', small && 'spinner-sm'), role: 'status', 'aria-label': I18n.t('Loading') })
   },
 
   /**
@@ -293,9 +357,19 @@ export const P = {
     ])
   },
 
-  emptyState (message, { action = null } = {}) {
+  /**
+   * EmptyState.
+   *
+   * `message` alone is the old one-line form. With a `title` the message
+   * becomes the explanation under it, and `icon` (SVG path data) sits on top:
+   * an empty list should say what is missing and what to do about it, not
+   * only that it is empty.
+   */
+  emptyState (message, { title = null, icon = null, action = null } = {}) {
     return U.el('div', { class: 'empty-state' }, [
-      U.el('span', { text: message }),
+      icon ? U.el('span', { class: 'empty-state-icon', 'aria-hidden': 'true' }, [U.svg(icon, 24)]) : null,
+      title ? U.el('p', { class: 'empty-state-title', text: title }) : null,
+      U.el(title ? 'p' : 'span', { class: title ? 'empty-state-text' : null, text: message }),
       action ? U.el('div', { class: 'empty-state-action' }, [action]) : null
     ])
   },
@@ -309,7 +383,10 @@ export const P = {
    */
   errorState (message, { detail = null, action = null } = {}) {
     return U.el('div', { class: 'error-state', role: 'alert' }, [
-      U.el('span', { text: message }),
+      U.el('span', { class: 'error-state-icon', 'aria-hidden': 'true' }, [
+        U.svg('<circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>', 22)
+      ]),
+      U.el('span', { class: 'error-state-msg', text: message }),
       detail ? U.el('div', { class: 'error-state-detail', text: detail }) : null,
       action ? U.el('div', { class: 'error-state-action' }, [action]) : null
     ])

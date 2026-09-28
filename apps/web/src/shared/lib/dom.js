@@ -161,6 +161,17 @@ export const U = {
     return media?.episodes ?? (media?.nextAiringEpisode ? `${media.nextAiringEpisode.episode - 1}+` : '?')
   },
 
+  /**
+   * Az átlagpontszám egész százalékban, vagy `null`.
+   *
+   * A katalógus `numeric` oszlopból adja, tehát szövegként ("51.0"), az AniList
+   * számként (51). Kiírva ez „51.0%" és „51%" volt ugyanazon a lapon.
+   */
+  score (media) {
+    const n = Number(media?.averageScore)
+    return Number.isFinite(n) && n > 0 ? Math.round(n) : null
+  },
+
   cover (media) {
     return media?.coverImage?.extraLarge ?? media?.coverImage?.large ?? ''
   },
@@ -231,14 +242,91 @@ export const U = {
     }
   },
 
-  toast (message, type = '') {
-    const node = U.el('div', { class: `toast ${type}`, text: message })
-    document.getElementById('toasts').append(node)
-    setTimeout(() => {
-      node.style.opacity = '0'
-      node.style.transition = 'opacity .3s'
-      setTimeout(() => node.remove(), 350)
-    }, 3500)
+  /**
+   * Egy vízszintesen görgethető fülsor (`.tabs`) aktív fülét a látómezőbe
+   * görgeti, amint a sor a lapra került.
+   *
+   * Telefonon a profil négy füle nem fér ki egy sorba. A `?tab=history` címmel
+   * nyitott lapon az aktív fül a jobb szél mögött állt, és semmi nem mutatta,
+   * melyik fülön van a néző. Kattintásra és nyílbillentyűre ez magától
+   * megtörténik (a fókusz görget); ez a cím szerinti — programozott —
+   * kiválasztásra kell.
+   *
+   * Ugyanitt kapja meg a sor a széljelzést is (`tabsEdges`): a kilógó fül
+   * addig félbevágott szövegnek látszott („Kia…"), nem görgethető sornak.
+   *
+   * @param {HTMLElement} bar
+   */
+  revealActiveTab (bar, tries = 10) {
+    const later = globalThis.requestAnimationFrame ?? (fn => setTimeout(fn, 16))
+    const run = () => {
+      if (!bar?.isConnected) { if (--tries > 0) later(run); return }
+      U.tabsEdges(bar)
+      const active = bar.querySelector('.active, [aria-selected="true"], [aria-current="page"]')
+      if (!active || !(bar.scrollWidth > bar.clientWidth)) return
+      const box = bar.getBoundingClientRect()
+      const tab = active.getBoundingClientRect()
+      if (tab.left >= box.left && tab.right <= box.right) return
+      // Középre, hogy a szomszédai is látsszanak: azokból derül ki, hogy a
+      // sor görgethető.
+      bar.scrollLeft += (tab.left - box.left) - (box.width - tab.width) / 2
+    }
+    later(run)
+  },
+
+  /**
+   * A görgethető fülsor azon széle halványul el, amerre még van fül
+   * (`tabs-more-start` / `tabs-more-end`, a components.css-ben). Görgetésre és
+   * átméretezésre frissül; ha minden fül kifér, egyik osztály sincs rajta.
+   * Soronként egyszer köt be.
+   *
+   * @param {HTMLElement} bar
+   */
+  tabsEdges (bar) {
+    if (!bar || bar.dataset.edges) return
+    bar.dataset.edges = '1'
+    const update = () => {
+      const max = bar.scrollWidth - bar.clientWidth
+      bar.classList.toggle('tabs-more-start', max > 1 && bar.scrollLeft > 1)
+      bar.classList.toggle('tabs-more-end', max > 1 && bar.scrollLeft < max - 1)
+    }
+    bar.addEventListener('scroll', update, { passive: true })
+    if (globalThis.ResizeObserver) new globalThis.ResizeObserver(update).observe(bar)
+    update()
+  },
+
+  /**
+   * Egy rövid visszajelzés a képernyő alján.
+   *
+   * A `#toasts` élő régió (index.html): a képernyőolvasó felolvassa. A hiba
+   * `role="alert"`-et kap, hogy ne várjon a sorára. Hosszabb szöveg tovább
+   * marad — senki nem olvas el két mondatot három és fél másodperc alatt.
+   */
+  toast (message, type = '', { action = null } = {}) {
+    const host = document.getElementById('toasts')
+    if (!host) return
+    const node = U.el('div', { class: `toast ${type}`.trim(), ...(type === 'error' ? { role: 'alert' } : {}) }, [
+      U.el('span', { class: 'toast-text', text: message })
+    ])
+    const leave = () => {
+      node.classList.add('leaving')
+      setTimeout(() => node.remove(), 300)
+    }
+    // Egy visszavonható művelet (egy törlés) gombja a toasban — tovább marad,
+    // hogy legyen idő megnyomni.
+    if (action?.label && typeof action.onClick === 'function') {
+      node.append(U.el('button', {
+        class: 'toast-action',
+        type: 'button',
+        text: action.label,
+        onclick: () => { action.onClick(); leave() }
+      }))
+    }
+    host.append(node)
+    // Egyszerre legfeljebb három: a negyedik a legrégebbit viszi.
+    while (host.children.length > 3) host.firstElementChild.remove()
+    const stay = Math.min(action ? 10000 : 8000, (action ? 6000 : 3000) + String(message ?? '').length * 40)
+    setTimeout(leave, stay)
   },
 
   setBanner (url) {

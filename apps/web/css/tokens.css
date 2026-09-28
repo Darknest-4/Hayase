@@ -2,22 +2,30 @@
    Yume Design Tokens — single source of truth for every client surface.
    Generated values also exist as JSON (tokens.json) for native platforms.
 
-   Identity: rooted in the original Hayase look — pure black surfaces,
+   Identity: rooted in the original Hayase look — near-black surfaces,
    near-white type, the signature rose accent (hsl 346.6 79% 51%), Nunito.
+
+   2026-09 redesign: the surfaces are no longer one flat black. Four steps of
+   near-black with a faint cool tint (page → raised → overlay → hover) are
+   what lets a card, a menu and a hovered row read as different things
+   without a border on everything. Pure black is kept (--ink-black) for what
+   really is black: the video frame and its scrims.
    =========================================================================== */
 
 :root {
   /* ---- color primitives ---- */
   --ink-black: hsl(0 0% 0%);
-  --ink-950: hsl(0 0% 2%);
-  --ink-900: hsl(0 0% 4%);
-  --ink-850: hsl(0 0% 7%);
-  --ink-800: hsl(0 0% 10%);
-  --ink-700: hsl(0 0% 15%);
-  --ink-400: hsl(0 0% 50%);
-  --ink-200: hsl(0 0% 75%);
-  --ink-50: hsl(0 0% 98%);
-
+  --ink-1000: hsl(240 7% 3%);            /* page */
+  --ink-950: hsl(240 6% 5%);             /* sunken wells, inputs */
+  --ink-900: hsl(240 5% 7.5%);           /* raised: cards, rails */
+  --ink-850: hsl(240 5% 10%);            /* overlay: menus, dialogs */
+  --ink-800: hsl(240 4% 13%);            /* hover surface, hairlines */
+  --ink-700: hsl(240 4% 19%);            /* strong borders */
+  --ink-600: hsl(240 4% 30%);
+  --ink-400: hsl(240 4% 58%);            /* faint text: 5.9:1 on the page */
+  --ink-300: hsl(240 5% 68%);
+  --ink-200: hsl(240 6% 80%);            /* muted text */
+  --ink-50: hsl(240 12% 97%);            /* text */
   --rose-500: hsl(346.6 79.1% 51.2%);  /* signature accent */
   --rose-600: hsl(346.6 79.1% 44%);
   --green-500: hsl(142 70% 45%);
@@ -41,25 +49,38 @@
   --teal-400: hsl(172 66% 56%);
 
   /* ---- semantic: dark (default) ---- */
-  --bg: var(--ink-black);
+  --bg: var(--ink-1000);
   --bg-raised: var(--ink-900);          /* cards, rails */
-  --bg-overlay: var(--ink-900);         /* modals, popovers */
-  --bg-sunken: var(--ink-black);        /* player background, wells */
+  --bg-overlay: var(--ink-850);         /* modals, popovers, menus */
+  --bg-sunken: var(--ink-950);          /* inputs, wells */
+  --bg-hover: var(--ink-800);           /* a hovered row or ghost control */
+  --bg-active: var(--ink-700);          /* the selected item in a list */
   --fg: var(--ink-50);
   --fg-muted: var(--ink-200);
   --fg-faint: var(--ink-400);
-  --border: var(--ink-800);
-  --border-strong: var(--ink-700);
+  --border: hsl(240 5% 100% / .08);     /* hairline: reads on every surface step */
+  --border-strong: hsl(240 5% 100% / .14);
   --accent: var(--rose-500);
   --accent-hover: var(--rose-600);
   --accent-fg: hsl(0 0% 100%);          /* text on accent */
   --accent-soft: hsl(346.6 79% 51% / .14);
+  --accent-text: hsl(346.6 90% 68%);    /* accent as TEXT: 5.4:1 on the page, the 500 is 4.1 */
   --primary: var(--ink-50);             /* Hayase-style light primary button */
-  --primary-fg: hsl(0 0% 10%);
+  --primary-fg: hsl(240 7% 8%);
   --ok: var(--green-500);
   --danger: var(--red-500);
   --info: var(--blue-500);
   --live: var(--violet-500);
+  --warn: var(--amber-500);
+
+  /* The scrim behind a dialog, and the fill of the floating bottom bar. */
+  --backdrop: hsl(240 7% 2% / .72);
+  --glass: hsl(240 6% 8% / .86);
+
+  /* Focus: one ring for every control. Two-tone, so it reads on the accent
+     button as well as on the page. */
+  --focus: var(--accent-text);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--focus);
 
   /* ---- severity (audit findings) ----
      Four levels, four hues. --yellow-* was added for this: high and medium
@@ -149,7 +170,15 @@
   --weight-extrabold: 780;
   --weight-black: 800;
   --leading-tight: 1.15;
+  --leading-snug: 1.3;
   --leading-normal: 1.5;
+  --tracking-tight: -0.02em;
+  --tracking-caps: 0.08em;
+
+  /* Fluid display sizes: a phone and a 27" monitor should not share one
+     heading size. Each clamps between the two ends of the static scale. */
+  --text-display: clamp(2.25rem, 1.4rem + 3.6vw, 4.25rem);
+  --text-page: clamp(1.6rem, 1.3rem + 1.2vw, 2.25rem);
 
   /* ---- typographic roles ----
      The scale above is raw material: a size, a weight and a line-height are
@@ -165,8 +194,10 @@
      Six roles, because that is how many distinct jobs the interface has.
      Nothing here is a new size: every one resolves to a step of the scale
      above. */
-  --type-heading:  var(--weight-extrabold) var(--text-3xl)/var(--leading-tight) var(--font-sans);
+  --type-display:  var(--weight-black) var(--text-display)/1.05 var(--font-sans);
+  --type-heading:  var(--weight-extrabold) var(--text-page)/var(--leading-tight) var(--font-sans);
   --type-title:    var(--weight-bold) var(--text-2xl)/var(--leading-tight) var(--font-sans);
+  --type-section:  var(--weight-extrabold) var(--text-xl)/var(--leading-snug) var(--font-sans);
   --type-subtitle: var(--weight-semibold) var(--text-lg)/var(--leading-normal) var(--font-sans);
   --type-body:     var(--weight-normal) var(--text-base)/var(--leading-normal) var(--font-sans);
   --type-caption:  var(--weight-normal) var(--text-sm)/var(--leading-normal) var(--font-sans);
@@ -190,15 +221,30 @@
      --radius-full is not a fourth size. It is a shape: the value is large
      enough that the corner is always a semicircle whatever the box measures,
      which is what a pill and a round avatar need. */
-  --radius-sm: 4px;                     /* chips, inputs, small controls */
-  --radius-md: 8px;                     /* cards, panels, buttons */
-  --radius-lg: 14px;                    /* large surfaces, empty states */
+  --radius-xs: 4px;                     /* tags inside a control, tiny marks */
+  --radius-sm: 6px;                     /* chips, small controls */
+  --radius-md: 10px;                    /* inputs, buttons, menu items */
+  --radius-lg: 16px;                    /* cards, panels */
+  --radius-xl: 24px;                    /* dialogs, heroes */
   --radius-full: 999px;                 /* pills and circles */
 
   /* ---- elevation ---- */
-  --shadow-1: 0 1px 3px hsl(0 0% 0% / .6);
-  --shadow-2: 0 6px 20px hsl(0 0% 0% / .55);
-  --shadow-3: 0 16px 48px hsl(0 0% 0% / .7);
+  --shadow-1: 0 1px 2px hsl(240 20% 1% / .5), 0 1px 1px hsl(240 20% 1% / .3);
+  --shadow-2: 0 8px 24px -6px hsl(240 20% 1% / .6), 0 2px 6px hsl(240 20% 1% / .35);
+  --shadow-3: 0 24px 64px -12px hsl(240 20% 1% / .75), 0 8px 20px hsl(240 20% 1% / .4);
+
+  /* ---- layering ----
+     One scale instead of the thirty-odd literal z-indexes the screens had
+     picked for themselves (1, 2, 5, 10, 20, 25, 30, 50, 90, 100, 200, 9999).
+     A value outside this list is a bug: it means a layer nobody decided on. */
+  --z-raised: 1;
+  --z-sticky: 20;
+  --z-nav: 30;
+  --z-dropdown: 40;
+  --z-overlay: 50;
+  --z-modal: 60;
+  --z-toast: 70;
+  --z-tooltip: 80;
 
   /* ---- motion ----
      One duration and one curve for every interface transition. There were
@@ -213,18 +259,40 @@
      150ms an image fading in looks like a flicker instead of a fade. Four
      uses, all of them opacity or width. */
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 100ms;
   --dur: 150ms;
+  --dur-slow: 240ms;
   --dur-reveal: 350ms;
 
   /* ---- layout ---- */
-  --sidebar-w: 3.5rem;
+  --sidebar-w: 4.5rem;
   /* Ugyanaz a sáv, feliratokkal. 1280px fölött van rá hely, és ott az ikon
      önmagában találgatás: a „Watch Together" és a „Community" ikonja két
      emberalak, a kettő közti különbség nem olvasható ki. */
-  --sidebar-w-expanded: 13rem;
+  --sidebar-w-expanded: 15rem;
   --content-max: 90rem;
+  --reading-max: 44rem;                 /* a paragraph: ~70 characters */
+  --gutter: clamp(1rem, 0.5rem + 2.4vw, 2.5rem);
+  --bottom-bar-h: 4.25rem;              /* the phone tab bar, safe area not included */
   --card-w: 10.5rem;
   --card-ratio: 2 / 3;
+
+  /* ---- controls ----
+     Three heights. 44px is the smallest target a thumb hits reliably, so on
+     a touch screen the small and medium sizes grow to it (components.css). */
+  --control-sm: 2rem;
+  --control-md: 2.5rem;
+  --control-lg: 3rem;
+  --touch-min: 2.75rem;
+
+  /* ---- breakpoints ----
+     Custom properties cannot be read inside @media, so these are documented
+     rather than consumed. Every media query in the sheets uses one of them:
+       sm 480px   phone landscape / large phone
+       md 768px   tablet portrait — the bottom bar gives way to the rail
+       lg 1024px  tablet landscape / small laptop
+       xl 1280px  laptop — the rail grows labels
+       2xl 1536px large desktop — wider content, more cards per row */
 
   color-scheme: dark;
 }
@@ -234,13 +302,18 @@
   --bg: hsl(0 0% 100%);
   --bg-raised: hsl(0 0% 96%);
   --bg-overlay: hsl(0 0% 100%);
-  --bg-sunken: hsl(0 0% 92%);
+  --bg-sunken: hsl(0 0% 94%);
+  --bg-hover: hsl(0 0% 92%);
+  --bg-active: hsl(0 0% 88%);
   --fg: hsl(0 0% 4%);
   --fg-muted: hsl(0 0% 25%);
   --fg-faint: hsl(0 0% 45%);
-  --border: hsl(0 0% 86%);
-  --border-strong: hsl(0 0% 74%);
+  --border: hsl(0 0% 0% / .1);
+  --border-strong: hsl(0 0% 0% / .2);
   --accent-soft: hsl(346.6 79% 51% / .12);
+  --accent-text: hsl(346.6 79% 40%);
+  --backdrop: hsl(0 0% 0% / .4);
+  --glass: hsl(0 0% 100% / .88);
   --primary: hsl(0 0% 8%);
   --primary-fg: hsl(0 0% 100%);
 
@@ -264,6 +337,8 @@
 /* ---- reduced motion ---- */
 @media (prefers-reduced-motion: reduce) {
   :root {
+    --dur-fast: 0ms;
+    --dur-slow: 0ms;
     --dur: 0ms;
     --dur-reveal: 0ms;
   }
