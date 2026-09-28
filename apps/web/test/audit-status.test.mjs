@@ -83,7 +83,8 @@ describe('the two audits are kept apart', () => {
   it('asks the server for the report on its own path', () => {
     // /v1/admin/audit is the log's. Two methods, two routes, no overlap.
     assert.equal(typeof YumeAPI.admin.auditReport, 'function')
-    const source = readFileSync(fileURLToPath(new URL('../src/shared/api/yume.js', import.meta.url)), 'utf8')
+    // Az admin-hívások modulja (2026-09 óta külön: csak a panel tölti be).
+    const source = readFileSync(fileURLToPath(new URL('../src/shared/api/yume-admin.js', import.meta.url)), 'utf8')
     assert.match(source, /auditReport: \(\) => YumeAPI\._request\('\/v1\/admin\/audit\/report'/)
   })
 })
@@ -179,7 +180,9 @@ describe('severity is never only a colour', () => {
   })
 
   it('takes its colours from tokens rather than from hex', () => {
-    const css = readFileSync(fileURLToPath(new URL('../css/style.css', import.meta.url)), 'utf8')
+    // The panel's rules live in admin.css since the 2026-09 split: only the
+    // admin page loads that sheet (shared/lib/stylesheet.js).
+    const css = readFileSync(fileURLToPath(new URL('../css/admin.css', import.meta.url)), 'utf8')
     const block = css.slice(css.indexOf('.sev-critical'), css.indexOf('.aud-showing'))
     assert.match(block, /--sev: var\(--severity-critical\)/)
     assert.match(block, /--sev: var\(--severity-high\)/)
@@ -196,7 +199,7 @@ describe('severity is never only a colour', () => {
 })
 
 describe('the list is cards on a phone, not a sideways table', () => {
-  const css = readFileSync(fileURLToPath(new URL('../css/style.css', import.meta.url)), 'utf8')
+  const css = readFileSync(fileURLToPath(new URL('../css/admin.css', import.meta.url)), 'utf8')
 
   it('never builds the list out of table elements', () => {
     const source = readFileSync(fileURLToPath(new URL('../src/pages/admin.js', import.meta.url)), 'utf8')

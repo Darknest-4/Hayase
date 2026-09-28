@@ -165,9 +165,14 @@ describe('a Discord vezérlőpult', { skip: REASON }, () => {
   })
 
   it('a webkliens API-felületén sincs Discord-hívó', async () => {
+    // Az admin-hívások 2026-09 óta a saját moduljukban élnek (csak az
+    // adminpanel tölti be, és betöltéskor `YumeAPI.admin`-ként kötik be
+    // magukat) — azt nézzük, és a közös klienst is.
     const van = await page.evaluate(async b => {
-      const m = await import(b + '/src/shared/api/yume.js')
-      return Object.prototype.hasOwnProperty.call(m.YumeAPI.admin, 'discord')
+      const { AdminAPI } = await import(b + '/src/shared/api/yume-admin.js')
+      const { YumeAPI } = await import(b + '/src/shared/api/yume.js')
+      const has = (o, k) => Object.prototype.hasOwnProperty.call(o ?? {}, k)
+      return has(AdminAPI, 'discord') || has(YumeAPI, 'discord') || has(YumeAPI.admin, 'discord')
     }, base)
     assert.equal(van, false, 'a webkliens még mindig a Discord-végpontokat hívja')
   })

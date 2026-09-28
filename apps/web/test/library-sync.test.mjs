@@ -213,3 +213,55 @@ describe('progress reporting', () => {
     assert.ok(!('durationSec' in call.body))
   })
 })
+
+// A lehúzott könyvtár borítója. A kiszolgáló sora hordozza (`cover_key`), a
+// pillanatkép viszont üres `coverImage`-dzsel készült: egy új eszközön a
+// teljes könyvtár kép nélkül jelent meg (2026-09, helyi példányon mérve).
+describe('pulling the library', () => {
+  const row = (patch = {}) => ({
+    anime_id: 'uuid-7',
+    anilist_id: 7,
+    status: 'WATCHING',
+    progress: 3,
+    updated_at: '2026-09-01T10:00:00Z',
+    canonical_title: 'Seven',
+    format: 'TV',
+    episode_count: 12,
+    cover_key: 'https://img.example/7.jpg',
+    ...patch
+  })
+  const pullWith = async (rows, list = {}) => {
+    const saved = []
+    mock.method(Store, 'list', () => list)
+    mock.method(Store, 'saveEntries', entries => { saved.push(...entries); return { applied: entries.length, stored: entries.length, trimmed: 0 } })
+    mock.method(LibrarySync, 'pullResume', async () => {})
+    mock.method(LibrarySync, 'pullFavourites', async () => {})
+    reply = path => path.startsWith('/v1/me/library') ? { data: rows, next: null } : { data: [] }
+    await LibrarySync.pull()
+    reply = null
+    return saved
+  }
+
+  it('brings the cover with a new entry', async () => {
+    const saved = await pullWith([row()])
+    assert.equal(saved.length, 1)
+    assert.equal(saved[0].media.coverImage.large, 'https://img.example/7.jpg')
+    assert.equal(saved[0].media.yumeId, 'uuid-7')
+    assert.equal(saved[0].patch.status, 'CURRENT')
+  })
+
+  it('fills in a missing cover without making the local entry look newer', async () => {
+    const local = { 7: { status: 'PAUSED', progress: 5, updatedAt: Date.parse('2026-09-10T00:00:00Z'), media: { id: 7, title: { userPreferred: 'Seven' }, coverImage: {} } } }
+    const saved = await pullWith([row()], local)
+    assert.equal(saved.length, 1, 'the cover is written')
+    assert.equal(saved[0].media.coverImage.large, 'https://img.example/7.jpg')
+    assert.deepEqual(Object.keys(saved[0].patch), ['updatedAt'], 'nothing but the picture changes')
+    assert.equal(saved[0].patch.updatedAt, local[7].updatedAt)
+  })
+
+  it('leaves a newer local entry that already has a picture alone', async () => {
+    const local = { 7: { status: 'PAUSED', progress: 5, updatedAt: Date.parse('2026-09-10T00:00:00Z'), media: { id: 7, coverImage: { large: 'mine.jpg' } } } }
+    const saved = await pullWith([row()], local)
+    assert.equal(saved.length, 0)
+  })
+})

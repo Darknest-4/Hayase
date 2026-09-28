@@ -351,8 +351,9 @@ describe('egy űrlap van, nem három', () => {
    * űrlapot rajzol, hanem a belépőlapra visz.
    */
   it('a fiókkártya kijelentkezve a belépőlapra visz', () => {
-    const s = forras('shared/ui/components.js')
-    const kartya = s.slice(s.indexOf('authCard ('), s.indexOf('authCard (') + 2500)
+    // 2026-09 óta a közösségi lapon él (egyedül az használja).
+    const s = forras('pages/community.js')
+    const kartya = s.slice(s.indexOf('function authCard ('), s.indexOf('function authCard (') + 2500)
     assert.match(kartya, /#\/login/)
     assert.doesNotMatch(kartya, /YumeAPI\.register\(/,
       'a kártya megint saját regisztrációt csinál — ez volt a néma 403 forrása')
@@ -375,5 +376,53 @@ describe('egy űrlap van, nem három', () => {
     const kapu = s.slice(kezd, veg > 0 ? veg : s.length)
     assert.match(kapu, /#\/login\?next=/)
     assert.doesNotMatch(kapu, /C\.authCard/)
+  })
+})
+
+describe('az elfelejtett jelszó', () => {
+  // A kiszolgáló régóta tudta (POST /v1/auth/forgot és /reset), a kliensből
+  // viszont nem lehetett elérni: se kérés, se beváltás.
+  //
+  // A teszt-DOM csak `.osztály`, `elem` és `[attr]` szelektort ismer, ezért a
+  // mezőket és gombokat név szerint szűrjük.
+  const byName = (root, name) => [...root.querySelectorAll('input')].find(i => i.getAttribute('name') === name) ?? null
+  const submitOf = root => [...root.querySelectorAll('button')].find(b => b.getAttribute('type') === 'submit') ?? null
+  const forgotLink = root => [...root.querySelectorAll('button')].find(b => /Elfelejtetted/.test(b.textContent)) ?? null
+
+  it('a belépőűrlapról elérhető, és kézbesítés nélküli példányon megmondja, hogy nincs', () => {
+    configure({ config: { site: { ...NINCS_EMBERPROBA.site, recoveryAvailable: false } }, permissions: [], signedIn: () => false })
+    const root = render()
+    const link = forgotLink(root)
+    assert.ok(link, 'nincs „Elfelejtetted a jelszavad?" gomb')
+    link.click()
+    assert.match(szoveg(root), /nincs automatikus jelszó-visszaállítás/)
+    assert.equal(submitOf(root).hidden, true, 'olyan kérést kínál, ami semmit nem kézbesítene')
+  })
+
+  it('beállított kézbesítésnél azonosítót kér, jelszót nem', () => {
+    configure({ config: { site: { ...NINCS_EMBERPROBA.site, recoveryAvailable: true } }, permissions: [], signedIn: () => false })
+    const root = render()
+    forgotLink(root).click()
+    assert.ok(byName(root, 'identifier'), 'nincs azonosító mező')
+    assert.equal(byName(root, 'password'), null, 'jelszót kér az elfelejtett jelszóhoz')
+    assert.equal(submitOf(root).hidden, false)
+  })
+
+  it('a visszaállító lap token nélkül nem kínál űrlapot', async () => {
+    const { PageReset } = await import('../src/pages/reset.js')
+    const root = doc.createElement('div')
+    doc.body.append(root)
+    PageReset.render(root, new URLSearchParams())
+    assert.match(szoveg(root), /hiányzik a visszaállító kód/)
+    assert.equal(byName(root, 'new-password'), null)
+  })
+
+  it('a visszaállító lap tokennel új jelszót kér, kétszer', async () => {
+    const { PageReset } = await import('../src/pages/reset.js')
+    const root = doc.createElement('div')
+    doc.body.append(root)
+    PageReset.render(root, new URLSearchParams({ token: 'x'.repeat(43) }))
+    assert.ok(byName(root, 'new-password'))
+    assert.ok(byName(root, 'confirm-password'))
   })
 })

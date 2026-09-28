@@ -45,8 +45,10 @@ const REASON = !chromium
       ? 'no DATABASE_URL'
       : false
 
+// A `nincs-ilyen-oldal` a 404-es kapu: a „Page not found" és a hozzáférés-
+// megtagadás szövegei sokáig fordítás nélkül álltak.
 const ROUTES = ['home', 'search', 'list', 'notifications', 'profile', 'settings',
-  'community', 'schedule', 'dashboard', 'changelog']
+  'community', 'schedule', 'dashboard', 'changelog', 'nincs-ilyen-oldal']
 
 // A két képernyő, aminek azonosító kell — és amin a legtöbb szöveg van. A
 // részletoldal fülsávja és infókártyája volt a legnagyobb szivárgás, a

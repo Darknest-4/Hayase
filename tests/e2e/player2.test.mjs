@@ -97,6 +97,15 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
     page.on('pageerror', e => errors.push(String(e.message)))
     await page.route('https://**', r => r.abort())
     await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' })
+    // A lejátszó stíluslapja 2026-09 óta lustán töltődik: a lap csak a
+    // tokens / components / style hármast kéri. A nézőoldal megvárja, mielőtt
+    // felépíti a lejátszót — a próbapad ugyanazt a hívást várja meg, egyszer,
+    // mielőtt bármelyik teszt mérne. Nélküle az első mérés versenyfutás volt
+    // a letöltéssel (egyszer 1440×409, egyszer a stílus nélküli 300×150).
+    await page.evaluate(async () => {
+      const { loadPlayerStyles } = await import('../../../../src/features/player2/watch/episode-player.js')
+      await loadPlayerStyles()
+    })
   })
 
   after(async () => {
