@@ -34,6 +34,7 @@ let teljes = ''
 let felnott = ''
 let keptelen = ''
 let studio = ''
+let studioMasolat = ''
 let userId = ''
 let profileId = ''
 const reszek: string[] = []
@@ -112,8 +113,13 @@ describe('az animekártya', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => 
        SELECT $1, id FROM genres WHERE slug IN ('action', 'drama')`, [teljes])
     studio = (await db.queryOne<{ id: string }>(
       "INSERT INTO companies (name, country) VALUES ($1, 'JP') RETURNING id", [`Tesztstúdió ${jel}`]))!.id
+    // UGYANAZ A STÚDIÓ MÁSODSZOR, más írásmóddal és ország nélkül — élesben
+    // így áll a cégtáblában, és a kártyán kétszer jelent meg.
+    studioMasolat = (await db.queryOne<{ id: string }>(
+      'INSERT INTO companies (name, country) VALUES ($1, NULL) RETURNING id', [`TESZTSTÚDIÓ ${jel}`]))!.id
     await db.query(
-      "INSERT INTO anime_companies (anime_id, company_id, role, is_main) VALUES ($1, $2, 'studio', true)", [teljes, studio])
+      `INSERT INTO anime_companies (anime_id, company_id, role, is_main)
+       VALUES ($1, $2, 'studio', true), ($1, $3, 'studio', false)`, [teljes, studio, studioMasolat])
     // A tárolt hivatkozás nem egységes (élesben mérve) — ez a `…&t=1s` alak.
     await db.query(
       "INSERT INTO anime_videos (anime_id, kind, provider, ref) VALUES ($1, 'trailer', 'youtube', 'PaOFxvxRj9w&t=1s')", [teljes])
@@ -148,7 +154,7 @@ describe('az animekártya', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => 
   after(async () => {
     await db?.query('DELETE FROM users WHERE id = $1', [userId || null])
     await db?.query('DELETE FROM anime WHERE id = ANY($1::uuid[])', [[teljes, felnott, keptelen].filter(Boolean)])
-    await db?.query('DELETE FROM companies WHERE id = $1', [studio || null])
+    await db?.query('DELETE FROM companies WHERE id = ANY($1::uuid[])', [[studio, studioMasolat].filter(Boolean)])
   })
 
   // ---- szöveg, képcím, azonosító: adat nélkül is mérhető ----
@@ -207,6 +213,7 @@ describe('az animekártya', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => 
     assert.match(String(k.borito), new RegExp(`^https?://.+/${TUKOR.replace(/[.]/g, '\\.')}$`))
     assert.equal(k.banner, BANNER)
     assert.deepEqual(k.mufajok, ['Action', 'Drama'])
+    // A kétszer tárolt stúdió EGYSZER, a fő stúdió írásmódjával.
     assert.deepEqual(k.studiok, [`Tesztstúdió ${jel}`])
     assert.equal(k.elozetes, 'PaOFxvxRj9w')
     assert.equal(k.elerheto, 3)

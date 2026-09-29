@@ -330,9 +330,16 @@ export async function animeCards (
               b.object_key AS banner_forras, b.mirror_key AS banner_tukor,
               ARRAY(SELECT g.name FROM anime_genres ag JOIN genres g ON g.id = ag.genre_id
                      WHERE ag.anime_id = a.id ORDER BY g.name) AS mufajok,
-              ARRAY(SELECT co.name FROM anime_companies ac JOIN companies co ON co.id = ac.company_id
-                     WHERE ac.anime_id = a.id AND ac.role = 'studio'
-                     ORDER BY ac.is_main DESC, co.name LIMIT 3) AS studiok,
+              -- NÉVENKÉNT EGYSZER (a fő stúdió írásmódjával): a cégtáblában ugyanaz
+              -- a stúdió több sorban is áll (üres országkóddal az egyediség nem
+              -- véd) — élesben 7909 címnél ismétlődött („WIT STUDIO, WIT STUDIO").
+              ARRAY(SELECT s.name FROM (
+                      SELECT (array_agg(co.name ORDER BY ac.is_main DESC, co.name))[1] AS name,
+                             bool_or(ac.is_main) AS fo
+                        FROM anime_companies ac JOIN companies co ON co.id = ac.company_id
+                       WHERE ac.anime_id = a.id AND ac.role = 'studio'
+                       GROUP BY lower(co.name)) s
+                     ORDER BY s.fo DESC, s.name LIMIT 3) AS studiok,
               (SELECT v.ref FROM anime_videos v
                 WHERE v.anime_id = a.id AND v.kind = 'trailer' AND v.provider = 'youtube'
                 ORDER BY v.created_at, v.id LIMIT 1) AS elozetes,

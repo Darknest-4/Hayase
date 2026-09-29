@@ -186,14 +186,29 @@ describe('a slash parancsok', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () =
     }
   })
 
+  /*
+   * NYUGALMI PILLANATBAN HASONLÍT. A párhuzamosan futó készletek saját
+   * próbacímeket szúrnak be és törölnek (discord-interactions,
+   * discord-anime-card): ha a parancs és az ellenőrző lekérdezés között
+   * változik a katalógus, a két szám jogosan tér el. Ezért csak akkor
+   * hasonlítunk, ha a szám a parancs előtt és után is ugyanannyi — ez nem
+   * lazítás: a parancs értékének akkor PONTOSAN ennyinek kell lennie.
+   */
   it('a /stats a katalógus VALÓDI számait adja', async () => {
-    const e = await commands.handle(interakcio({ command: 'stats' }))
-    const mezok = (e.response as { data: { embeds: Array<{ fields: Array<{ name: string, value: string }> }> } })
-      .data.embeds[0]!.fields
-    const anime = mezok.find(f => f.name === 'Animék')!
-    const valodi = await db.queryOne<{ n: number }>(
-      "SELECT count(*)::int AS n FROM anime WHERE visibility = 'public'")
-    assert.equal(anime.value, String(valodi?.n ?? 0), 'nem a katalógusból jön a szám')
+    const szamol = async (): Promise<number> => (await db.queryOne<{ n: number }>(
+      "SELECT count(*)::int AS n FROM anime WHERE visibility = 'public'"))?.n ?? 0
+    for (let kor = 1; ; kor++) {
+      const elotte = await szamol()
+      commands.resetCooldowns()
+      const e = await commands.handle(interakcio({ command: 'stats' }))
+      const utana = await szamol()
+      if (elotte !== utana && kor < 10) continue
+      const mezok = (e.response as { data: { embeds: Array<{ fields: Array<{ name: string, value: string }> }> } })
+        .data.embeds[0]!.fields
+      const anime = mezok.find(f => f.name === 'Animék')!
+      assert.equal(anime.value, String(utana), 'nem a katalógusból jön a szám')
+      return
+    }
   })
 
   it('a rövid keresést elutasítja', async () => {
