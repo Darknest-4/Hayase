@@ -1055,7 +1055,24 @@ I18n.register('hu', {
   'Copy so you can report it': 'Másold ki, hogy jelezni tudd',
   copy: 'másolás',
   'Embedded player': 'Beágyazott lejátszó',
-  'This episode plays in the provider’s own player. The site’s playback controls do not apply to it.': 'Ez a rész a szolgáltató saját lejátszójában fut. Az oldal lejátszásvezérlői itt nem hatnak.'
+  'This episode plays in the provider’s own player. The site’s playback controls do not apply to it.': 'Ez a rész a szolgáltató saját lejátszójában fut. Az oldal lejátszásvezérlői itt nem hatnak.',
+
+  // ---------------------------------------------------------------- Discord-fiók összekötése (Beállítások → Fiók)
+  'Connected accounts': 'Összekötött fiókok',
+  'The Yume bot recognises you in the Discord servers that use it.': 'A YUME-bot felismer azokon a Discord-szervereken, amelyek használják.',
+  'The Discord link could not be checked right now.': 'A Discord-összekötést most nem sikerült ellenőrizni.',
+  'Linked as {name}': 'Összekötve: {name}',
+  Unlink: 'Összekötés bontása',
+  'Discord linking is not set up on this site.': 'Ezen az oldalon nincs beállítva Discord-összekötés.',
+  'Link Discord account': 'Discord-fiók összekötése',
+  'Unlink Discord?': 'Bontod a Discord-összekötést?',
+  'The Yume bot will no longer recognise you in Discord servers. You can link again at any time.': 'A YUME-bot ezután nem ismer fel a Discord-szervereken. Bármikor újra összekötheted.',
+  'Your Discord account is unlinked.': 'A Discord-fiókod összekötése megszűnt.',
+  'Your Discord account is linked.': 'A Discord-fiókod össze van kötve.',
+  'Discord linking was cancelled.': 'A Discord-összekötést megszakítottad.',
+  'The link request expired. Try again.': 'Az összekötési kérés lejárt. Próbáld újra.',
+  'This Discord account is already linked to another Yume account.': 'Ez a Discord-fiók már egy másik YUME-fiókhoz van kötve.',
+  'Discord linking failed. Try again.': 'A Discord-összekötés nem sikerült. Próbáld újra.'
 })
 
 if (typeof window !== 'undefined' && !I18n) {
