@@ -46,6 +46,10 @@ nyitva marad), `discord-oauth` (a visszatérési cél, lemondáskor is),
 
 ## Hibák
 
+**Mind a nyolc javítva (2026-09-29, második kör)** — lásd lent a „Javítva”
+szakaszt. A táblázat az eredeti megállapítás; a javítás módja és a tesztje
+alatta.
+
 | # | Súly | Hiba | Hol | Javítás iránya |
 |---|---|---|---|---|
 | 1 | **magas** | **A szerverenkénti jog 5 perc után „lejár”, és semmi nem frissíti.** A tagságot (ki kezeli a szervert) csak az összekötés pillanatában kérjük le az OAuth-tokennel; a tokent szándékosan nem tároljuk, a kapu viszont 5 perc után `stale`-lel elutasít. Aki nem `discord.manage`-es, az az összekötés után 5 perccel kizáródik, amíg újra nem köt. Mióta a vezérlőpulthoz `discord.dashboard` kell, ez az út épp a nem-üzemeltető kezelőké. | `oauth.ts` `syncGuilds` (csak `completeLink` hívja), `guild-access.ts` `MEMBERSHIP_TTL_MS` | Lejárt tagságnál a **bot** kérdezze le a saját tokenjével: `GET /guilds/{g}/members/{u}` + a szerepkörök + a tulajdonos → a jog kiszámolható, OAuth-token tárolása nélkül. |
@@ -57,6 +61,34 @@ nyitva marad), `discord-oauth` (a visszatérési cél, lemondáskor is),
 | 7 | alacsony | A gateway folyamat a kezeletlen hibákat **`worker`-ként** naplózza (másolás maradéka). | `gateway-main.ts` `guardUnhandledRejections('worker')` | `'gateway'`. |
 | 8 | alacsony | A `manage_messages` képesség valójában a „Szerver kezelése” bitet nézi — ma helyes, de a név félrevezető, és egy jövőbeli „ez csak üzenetkezelés” feltételezés rést nyitna. | `permissions.ts` `can()` | Átnevezés (`manage_bot`), vagy a parancsoknál közvetlenül `manage_guild`. |
 
+## Javítva (2026-09-29, második kör)
+
+| # | Hogyan | Teszt |
+|---|---|---|
+| 1 | Lejárt tagságnál a **bot** kérdezi a Discordot (`rest-client.ts` `memberAccess`: a guild rangjai és tulajdonosa + a tag rangjai → `permissions.ts` `basePermissions`, ugyanaz a számítás, mint a Discordé; az időkorlátozott tag nem kezelhet). Csak meglévő sort frissít; „nem tag” (10007) → a sor törlődik; ha a bot nem tudja megmondani → `stale`, és fél percig nem kérdez újra (különben minden kattintás a 10 s-os időkorlátig várna). Egy nézet párhuzamos kérései egy frissítésre várnak. | `discord-routes` (frissít, elvett jog, kilépett tag, nem válaszoló Discord, négy párhuzamos kérés = két hívás), `discord-permissions` (jogszámítás, 10007 ≠ 403 ≠ Unknown Guild, időkorlát) |
+| 2 | Új végpont: `GET /v1/discord/guilds` — az üzemeltetőnek a bot összes szervere (összekötés nélkül is), másnak az összekötött fiók szerverei, ahol joga van **és** a bot is bent van. A vezérlőpult-kapu erre is vonatkozik (a `startsWith('/guilds/')` a perjel miatt kihagyta volna — külön tétel őrzi). | `discord-routes` (négy eset), E2E: az üzemeltető a bot szervereit látja |
+| 3 | A vezérlőpult kliense frissít, mint a főoldal: 401 → egy frissítés a sütivel (egyszerre egy, fülek között zárral, `refresh_rotated` után egy újrapróba) → a kérés megismétlése; ha a frissítés sem megy, a belépőlapra lép. A **Kilépés** eddig csak a tárolót ürítette — most a kiszolgálón is lezárja a munkamenetet és törli a harmincnapos sütit; a jogosultság nélküli belépés sem hagy élő munkamenetet. | E2E: lejárt (valódi kulccsal aláírt) token után sem léptet ki; süti nélkül a belépőlapra lép; kilépés után a süti és a régi token is halott |
+| 4 | `AllapotIro`: egyszerre egy írás, az események összevonva, legfeljebb 10 s-onként (`DISCORD_GATEWAY_STATE_MS`); az állapotváltás azonnal; elbukott írás mezői visszaolvadnak; a sorszám nem léphet vissza. Valódi folyamattal mérve: 52 esemény + 15 szívverés-nyugta 6 s alatt **5 írás** (eddig 52+). | `discord-gateway` (összevonás, ritkítás, egyszerre egy, hibatűrés, leállás elérhetetlen adatbázissal) |
+| 5 | `commands.respond`: ha a kezelő 2 s alatt (`DISCORD_DEFER_MS`) nem végez, előbb halasztott válasz (5-ös típus, csak a hívónak), utána `PATCH …/messages/@original`. | `discord-commands` (gyors, lassú, sikertelen halasztás, kezelő hibája); valódi folyamattal is |
+| 6 | Minden gateway-naplósor elején `ido` (ISO); a parancshiba naplósorában is. | valódi folyamattal: minden sorban |
+| 7 | `guardUnhandledRejections('gateway')` — és a `0085` migráció, mert az `error_logs` megszorítása a `gateway` forrást **elutasította volna**, a hibarögzítés pedig a saját hibáját elnyeli: a puszta címkecsere csendben elnyelte volna a gateway hibáit. | `error-reporting` (0085 nélkül bukik, vele átmegy) |
+| 8 | `manage_messages` → `manage_bot` (a régi név semmit nem nyit). | `discord-permissions` |
+
+Minden új tétel mutációval ellenőrizve: a javítás kivételére elbukik.
+
+### Javítás közben talált további hibák (javítva)
+
+* **A csendes szerveren halottnak látszó gateway.** Az élőség az utolsó
+  DISPATCH-esemény ideje volt; a szívverés-nyugta nem számított, pedig a
+  `STALE_MS` leírása erre épít. Egy szerveren, ahol öt percig senki nem ír, a
+  Bot állapota nézet „nem fut”-at mutatott volna, a `/status` parancs pedig
+  ugyanezt a gatewayen át érkezett kérdésre. Élesben most nem jelentkezik,
+  mert a tartós üzenetek percenkénti szerkesztése eseményt ad (mérve: két
+  esemény percenként). Most a nyugta is életjel (az `AllapotIro` ritkítja).
+* **Minden telepítés egy hamis újracsatlakozás volt.** Szabályos leálláskor a
+  lezárás-kezelő „kapcsolat bontva, újracsatlakozás” sort írt, és növelte a
+  számlálót — a napi újracsatlakozás így a telepítéseket is mérte.
+
 ## Javítandók (nem hibák, de számítanak)
 
 * **A bot állapota nézet** mutassa a szívverés-nyugta körútidejét (a Discord
@@ -66,8 +98,10 @@ nyitva marad), `discord-oauth` (a visszatérési cél, lemondáskor is),
   minden 429 ugyanúgy vár.
 * **A tartós üzenetek** hibánál ma helyben számolnak (`failure_count`); egy
   napi összesítő a vezérlőpult Napló nézetében előbb szólna, mint egy panasz.
-* **Tesztek**, ha az 1., 4. és 5. pont elkészül: a tagság frissítése a bot
-  tokenjével, az összevont állapotírás és a halasztott válasz.
+* **Tagság az összekötés után csatlakozott szerverekhez:** a bot csak a már
+  tárolt tagságot frissíti; egy később csatlakozott szerver az újra-összekötésig
+  nem jelenik meg a nem-üzemeltetőnek (szándékosan: különben bárki bármelyik
+  guild-azonosítóval Discord-hívásokat indíthatna).
 
 ## Ötletek — mit érdemes hozzáadni
 
