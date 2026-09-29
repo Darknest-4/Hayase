@@ -84,7 +84,8 @@ munkamenetet, és törli a sütit.
 | **Aktivitás** | gateway (üzenetszám) | futó gateway |
 | **Csatornák** | Discord REST | bot token |
 | **Szerepkörök** | Discord REST | bot token |
-| **Parancsok** | — | **nincs implementált parancs** |
+| **Parancsok** | Discord REST (regisztrált parancsok, kézbesítés) + `analytics_events` (30 nap) | bot token |
+| **Szerver** | `discord_guild_settings` és társai + Discord REST (csatornák, rangok) | `manage_guild` |
 | **Értesítések** | `webhook_deliveries` | — |
 | **Bot állapota** | szondák + saját DB; késleltetés és a kapcsolat naponta (`discord_gateway_daily`) | a napi adathoz futó gateway |
 | **Napló** | `audit_logs`; a tartós üzenetek napi hibái (`persistent_message_events`) | — |
@@ -136,6 +137,63 @@ Két dolgot kérünk: `identify` és `guilds`. Üzenetet nem olvasunk.
 ellenőrzés megkerülhető lenne egy második regisztrációval: ugyanaz a
 Discord-admin két néven lépne be.
 
+## 5b. A szerver-beállítások (Szerver nézet)
+
+Minden írás `manage_guild`, és minden Discord-azonosító ellenőrizve, hogy ehhez
+a szerverhez tartozik (csatorna: a Discord szerint melyik szerveré; rang: a
+szerver rangjai között van, nem az `@everyone`, és nem integráció kezeli).
+
+* **Nyelv** — a szerverre kimenő üzenetek (hírfolyam, moderálás) nyelve:
+  magyar (alap), angol, vagy „a Discord-szerver nyelve szerint". A
+  parancsválasz ettől függetlenül a hívó kliensének nyelvén megy.
+* **Hírfolyam-szűrők** — műfaj (ha egy sincs bejelölve: minden) és „csak az
+  aktuális szezon". Ami kiesik, azt nem foglaljuk le: ha a szűrő 48 órán
+  belül bővül, még kimehet.
+* **Animénként megszólítható rang** — az új rész bejelentése megemlíti, és
+  CSAK azt (`allowed_mentions.roles` pontosan az az egy rang).
+* **Moderálás** — lásd lent.
+* **Szerepkör-szinkron** — az összekötött YUME-fiókú tagok rangja, és YUME-
+  szerepkör → Discord-rang megfeleltetés. Tízpercenként, tagonként egy
+  lekérdezéssel, a legrégebben szinkronizáltakkal kezdve. **A beállított
+  rangokat a bot kezeli**: akinek nem jár, attól leveszi (kézzel adottat
+  is) — csak erre használt rangot érdemes beállítani. Ha a Discord nem
+  válaszol, semmihez nem nyúl; akinek a fiókja levált, attól a kezelt
+  rangokat leveszi. Felfüggesztett vagy kitiltott YUME-fiók semmit nem kap.
+
+## 5c. Moderálás Discordból
+
+A beállított (PRIVÁT!) moderátori csatornába az új YUME-bejelentések kerülnek
+— a tárgy rövid részlete, az oka, és a döntést segítő számok; **a bejelentő
+neve nem**. Gombok: Elrejtés (ahol a tárgy elrejthető) és Elvetés, plusz az
+adminfelület.
+
+Dönteni csak az tud, akinek a Discord-fiókja YUME-fiókhoz van kötve, és annak
+**YUME-moderátori joga** (`community.moderate`) van, aktív fiókkal — a
+Discordon lévő rang nem számít. A jogot a gombnyomáskor ÉS az indoklás
+elküldésekor is nézzük. A döntés ugyanazon az úton születik, mint az
+adminfelületen (`moderation/resolve.ts`): ugyanaz a tranzakció, ugyanaz a
+moderálási napló — és a bejelentést a tranzakción belül foglalja le, tehát
+két egyszerre döntő moderátor közül csak az egyik jár sikerrel. Ha közben az
+adminfelületen döntöttek, a Discord-üzenet a következő körben frissül.
+
+## 5d. DM-értesítés és belépés Discorddal (a főoldalon)
+
+* **DM az új részekről** — a főoldal Beállítások → Fiók → Discord-értesítés
+  kapcsolója (csak összekötött fióknál). Csak a könyvtár „nézem / tervezem /
+  újranézem" címeiről, és csak a bekapcsolás és a cím felvétele UTÁN
+  megjelent részekről; részenként egyszer (a kiválasztás és a foglalás egy
+  utasítás). Három egymás utáni sikertelen kézbesítés után a kapcsoló
+  magától kikapcsol. A Discord csak közös szerveren lévő tagnak engedi a
+  bot üzenetét. A nyelv a felhasználó YUME-beli felületi nyelve.
+* **Belépés Discorddal** — CSAK MÁR ÖSSZEKÖTÖTT fiókba (nem regisztráció).
+  Ugyanazok a kapuk, mint a jelszavas belépésnél (aktív fiók, fiókesemény);
+  kétlépcsős titokkal védett fiók ezen az úton nem jut be. Az állapot
+  egyszer használható és a kezdeményező böngésző HttpOnly sütijéhez kötött
+  (login CSRF ellen); a hozzáférési token nem kerül a címbe — a visszahívás
+  a frissítő sütit állítja be, a főoldal abból vesz fel munkamenetet. A gomb
+  csak akkor látszik, ha a `DISCORD_LOGIN_REDIRECT_URI` be van állítva ÉS a
+  fejlesztői portálon regisztrálva van.
+
 ## 6. Beállítás
 
 | Változó | Mire | Kötelező |
@@ -148,6 +206,11 @@ Discord-admin két néven lépne be.
 | `DISCORD_GATEWAY_STATE_MS` | az állapotsor írásának legsűrűbb üteme (alap: `10000`) | nem |
 | `DISCORD_DEFER_MS` | ennyi után halasztott választ küld egy parancs (alap: `2000`) | nem |
 | `DISCORD_MEMBERSHIP_RETRY_MS` | sikertelen tagság-frissítés után ennyit vár (alap: `30000`) | nem |
+| `DISCORD_LOGIN_REDIRECT_URI` | a Discord-belépés visszatérési címe (pl. `https://animehub.hu/v1/auth/discord/callback`) — a portálon is regisztrálni kell | a belépéshez |
+| `DISCORD_COMMAND_SYNC` | a parancsok automatikus szinkronja (alap: be; `false` kikapcsolja) | nem |
+| `DISCORD_ROLE_SYNC_MS` / `DISCORD_ROLE_SYNC_BATCH` | a szerepkör-szinkron üteme (alap: 10 perc) és kötege (25 tag) | nem |
+| `DISCORD_DM_BATCH` / `DISCORD_DM_MAX_AGE_HOURS` | DM-köteg körönként (20) és a részek kora (48 óra) | nem |
+| `DISCORD_MODERATION_BATCH` / `DISCORD_MODERATION_MAX_AGE_DAYS` | bejelentések körönként (10) és a hátralék kora (7 nap) | nem |
 
 A Discord fejlesztői portálon a visszairányítási címet is regisztrálni kell:
 `https://discord.animehub.hu/v1/discord/oauth/callback`.

@@ -10,10 +10,22 @@ meglévő **WebSocket-kapcsolaton**. Mivel a gateway úgyis fut, a második a
 helyes választás: nincs új nyilvános végpont, nincs aláírás-ellenőrzés, és
 nincs egy újabb támadási felület.
 
+> **A fejlesztői portálon az „Interactions Endpoint URL" legyen ÜRES.** Ha be
+> van állítva, a Discord MINDEN parancsot oda küld, és a gatewayre egy sem
+> érkezik — a felhasználó annyit lát, hogy „az alkalmazás nem válaszolt".
+> 2026-09-29-ig pontosan ez történt (a cím egy átirányító névre mutatott), és
+> egyetlen parancs sem működött. Azóta a gateway induláskor ellenőrzi, és
+> hangosan naplózza; a vezérlőpult **Parancsok** nézete pirosan kiírja, a
+> javítás helyével.
+
 **Három másodperc.** A Discord ennyit vár a válaszra, utána a felhasználónak
 azt írja ki, hogy a bot nem válaszolt — akkor is, ha a válasz később
-megérkezik. Ezért minden ág ad választ, a hibás is, és a lekérdezések napi
-összesítőkből olvasnak, nem nyers eseményből.
+megérkezik. Ha a kezelő 2 másodperc alatt nem végez, előbb **halasztott
+választ** küld („a bot gondolkodik…"), és a kész eredmény azt tölti ki.
+
+**A nyelv** a hívó Discord-kliensének nyelve: magyar kliensnek magyarul,
+minden másnak angolul. A parancsok leírása is kétnyelvű (a Discord a
+felhasználó nyelvén mutatja).
 
 ## 2. A parancsok
 
@@ -22,17 +34,30 @@ megérkezik. Ezért minden ág ad választ, a hibás is, és a lekérdezések na
 | `/help` | a parancsok listája |
 | `/status` | a rendszer és a gateway állapota |
 | `/stats` | a YUME számokban |
-| `/anime search` | keresés cím szerint |
-| `/anime info` | egy cím adatai |
+| `/anime search` | keresés cím szerint — **címkiegészítéssel** |
+| `/anime info` | egy cím adatai — **címkiegészítéssel** |
 | `/anime latest` | a legfrissebb epizódok |
-| `/anime schedule` | a következő adások |
+| `/anime schedule` | a következő adások (a néző saját időzónájában) |
 | `/anime random` | egy véletlen cím |
+| `/next` | a következő rész, amit nézni fogsz: a félbehagyott (a pozícióval), vagy a „nézem" cím következő része |
 | `/profile` | a YUME-fiókod |
 | `/link`, `/unlink` | fiók-összekötés (a főoldal Beállítások → Fiók fülére küld) |
-| `/watchlist` | a könyvtárad |
-| `/notifications` | értesítési rang |
+| `/watchlist list` | a könyvtárad |
+| `/watchlist add` | cím a könyvtáradba — **megerősítéssel** (gombok) |
+| `/notifications` | értesítési rang **be- és kikapcsolása** |
 | `/setup`, `/config`, `/logs` | állapot — **admin** |
-| `/announce` | bejelentés egy csatornába — **admin** |
+| `/announce` | bejelentés egy csatornába — **admin**, csak EZEN a szerveren |
+
+**A címkiegészítés** gépelés közben a katalógusból javasol; a kiválasztott
+javaslat értéke az anime azonosítója, tehát pontos találat, nem egy újabb
+keresés.
+
+**A `/watchlist add` nem ír azonnal**: megmutatja, melyik címet találta, és két
+gombot ad (Hozzáadom / Mégse). A gomb a gombnyomó SAJÁT könyvtárába ír, és ami
+már bent van, annak az állapotát nem írja át.
+
+**A `/announce`** csak ennek a szervernek a csatornájába küld — a bot több
+szerveren is bent van, és a kezelő nem a Discord felületének hisz.
 
 **Az adminparancsokat a kiszolgáló is ellenőrzi.** A Discord
 `default_member_permissions` mezője csak **elrejti** a parancsot — a kliens
@@ -62,14 +87,26 @@ nem jutna be.
 A használat a **meglévő eseménysémába** megy
 (`analytics_events`, `discord.command.use`), nem külön táblába: ugyanolyan
 „ki, mit, mikor" esemény, mint a többi, és a deduplikáció is kell rá, mert a
-Discord ismételhet.
+Discord ismételhet. A szerver azonosítója a metaadatba kerül: a vezérlőpult
+**Parancsok** nézete szerverenként mutatja (30 nap).
 
 ### Regisztráció
 
 **Guild szintű**, nem globális: a globális parancsok akár egy órát is
-késhetnek, a guild szintűek azonnal megjelennek. A vezérlőpulton a
-**Parancsok feltöltése** gomb tölti fel; a `PUT` a teljes listát cseréli,
-tehát ez egyben a „töröld a régieket" művelet is.
+késhetnek, a guild szintűek azonnal megjelennek. **A gateway magától
+szinkronizál**: induláskor és minden szerverhez csatlakozáskor megnézi, mi van
+fent, és csak ELTÉRÉSNÉL tölt fel (`DISCORD_COMMAND_SYNC=false` kikapcsolja).
+A vezérlőpult **Parancsok** nézetében a „Parancsok feltöltése most" gomb
+azonnal teszi; a `PUT` a teljes listát cseréli, tehát ez egyben a „töröld a
+régieket" művelet is.
+
+### Gombok és beviteli ablak
+
+A bot saját üzeneteinek gombjai (a `/watchlist add` megerősítése, a moderátori
+csatorna döntései) a gatewayen érkeznek, és a kezelő a GOMBNYOMÓ jogát nézi —
+nem az üzenet küldőjéét. A moderálási döntés indoklását egy beviteli ablak
+kéri; az elküldésekor a jogot újra ellenőrizzük (lásd `discord-dashboard.md`,
+Moderálás).
 
 ---
 

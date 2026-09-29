@@ -106,7 +106,33 @@ Nyitva:
   nem jelenik meg a nem-üzemeltetőnek (szándékosan: különben bárki bármelyik
   guild-azonosítóval Discord-hívásokat indíthatna).
 
+## A slash parancsok nem működtek — az ok (2026-09-29, negyedik kör)
+
+Egyetlen parancs sem működött, soha: az analitikában egy parancshasználat sem
+volt, a gateway naplójában egy parancssor sem. A 13 parancs regisztrálva volt;
+a Discord-alkalmazásnál viszont be volt állítva egy **interakció-végpont**
+(`https://yumee.duckdns.org/interactions`). Ilyenkor a Discord MINDEN
+parancsot oda küld, a gatewayre egy sem érkezik — a cím pedig egy korábbi
+javítás óta a Cloudflare miatt átirányít (308), amit a Discord nem követ; és ha
+követné, sincs `/interactions` kezelőnk. A tulajdonos a portálon törölte a
+címet (élesben ellenőrizve: `interactions_endpoint_url: null`).
+
+Hogy ez ne maradhasson rejtve: a gateway induláskor lekérdezi az alkalmazást,
+és ha van ilyen cím, hangosan naplózza; a vezérlőpult Parancsok nézete (ami
+eddig tévesen azt írta, hogy „nincs egyetlen parancs sem") pirosan kiírja, a
+javítás helyével, és mutatja a regisztrált parancsokat a kódhoz képest és a
+szerver 30 napos használatát. A parancsokat a gateway ezentúl magától
+szinkronizálja (eltérésnél).
+
 ## Ötletek — mit érdemes hozzáadni
+
+**Mind a hét elkészült (2026-09-29, negyedik kör)** — a leírásuk alább, a
+megvalósítás a `discord-dashboard.md` 5b–5d és a `discord-commands.md` 2.
+szakaszában; tesztek: `discord-interactions`, `discord-features`,
+`discord-login`, E2E. A meglévő részek közben: címkiegészítés, a
+`/notifications` kapcsoló lett, a `/announce` csak a saját szerver csatornájába
+küld, az időpontok a néző időzónájában (`<t:…>`), a moderálási döntés közös
+függvénybe került (és két egyidejű döntés közül csak az egyik érvényes).
 
 Mind arra épül, ami ma már megvan: az összekötött fiókra (mostantól a
 főoldalról is), a gatewayre és a tartós üzenetekre.
