@@ -546,7 +546,7 @@ export async function handle (i: Interaction): Promise<HandleResult> {
      */
     const jog = can(
       { owner: false, permissions: parsePermissions(i.permissions) },
-      'manage_messages')
+      'manage_bot')
     if (!i.guildId || !jog) {
       return { response: message('Ehhez „Szerver kezelése" jogosultság kell.'), outcome: 'forbidden' }
     }

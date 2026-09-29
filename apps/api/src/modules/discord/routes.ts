@@ -15,7 +15,7 @@
 import { audit } from '../audit/audit.ts'
 import { query, queryOne } from '../../infrastructure/database/index.ts'
 import { guildAccess } from './guild-access.ts'
-import { channelGuild, createRestClient, diagnoseChannel, fetchChannels, fetchGuild, fetchRoles, isConfigured } from './rest-client.ts'
+import { botGuilds, channelGuild, createRestClient, diagnoseChannel, fetchChannels, fetchGuild, fetchRoles, isConfigured } from './rest-client.ts'
 import { allapot as gatewayAllapot, elo as gatewayElo, intentsFromEnv, INTENTS } from './gateway.ts'
 import { findById, listForGuild, recreateMessage, syncMessage, type PersistentMessage } from './persistent-messages.ts'
 import { renderMessage, MESSAGE_TYPES } from './render.ts'
@@ -150,8 +150,9 @@ const routes: FastifyPluginAsync = async fastify => {
   // ---- a vezérlőpult kapuja ----------------------------------------------
 
   /**
-   * A VEZÉRLŐPULT NEM NYILVÁNOS: a nézetei (`/status` és minden
-   * `/guilds/:guildId/…`) YUME-jogosultságot kérnek — `discord.dashboard`-ot,
+   * A VEZÉRLŐPULT NEM NYILVÁNOS: a nézetei (`/status`, a `/guilds`
+   * szerverlista és minden `/guilds/:guildId/…`) YUME-jogosultságot kérnek —
+   * `discord.dashboard`-ot,
    * vagy az üzemeltetői `discord.manage`-et. Eddig a Discordon meglévő
    * „Szerver kezelése" jog egymagában is bejuttatott; a tulajdonos kérésére
    * (2026-09-29) már nem. A szerverenkénti kapu (`gate`) ezen FELÜL marad.
@@ -161,7 +162,10 @@ const routes: FastifyPluginAsync = async fastify => {
    */
   fastify.addHook('preHandler', async (request, reply) => {
     const url = request.routeOptions?.url ?? ''
-    if (url !== '/v1/discord/status' && !url.startsWith('/v1/discord/guilds/')) return
+    // A `/guilds` PONTOSAN is: a `startsWith('/v1/discord/guilds/')` a perjel
+    // miatt a szerverlistát kihagyná.
+    const pult = url === '/v1/discord/status' || url === '/v1/discord/guilds' || url.startsWith('/v1/discord/guilds/')
+    if (!pult) return
     if (!request.user) return // a route saját `authenticate`-je már elutasította
     if (await holds(request, 'discord.dashboard') || await holds(request, 'discord.manage')) return
     return await reply.code(403).send({
@@ -334,6 +338,53 @@ const routes: FastifyPluginAsync = async fastify => {
     const volt = await oauth.unlink(userId)
     if (volt) await audit(userId, 'discord.account.unlink', 'user', userId, null, null)
     return await reply.code(volt ? 204 : 404).send()
+  })
+
+  /**
+   * A SZERVERVÁLASZTÓ — mely szervereket nyithatja meg a hívó.
+   *
+   * Eddig a vezérlőpult az összekötött fiók szervereit mutatta, így egy
+   * `discord.manage`-es üzemeltető összekötés nélkül üres választót látott,
+   * pedig a kapu minden szerverre beengedte volna. Most:
+   *
+   *   * `discord.manage`: minden szerver, amelyben a bot benne van;
+   *   * különben: az összekötött fiók szerverei, ahol „Szerver kezelése" joga
+   *     van — és ahol a bot is bent van, mert máshol a vezérlőpult úgysem
+   *     tud mit mutatni.
+   *
+   * Ha a bot listája nem kérdezhető le (nincs token, a Discord nem válaszol),
+   * az összekötött fiók szerverei maradnak, szűrés nélkül: egy üres lista azt
+   * állítaná, hogy a bot sehol nincs bent.
+   *
+   * EZ CSAK LISTA, NEM KAPU: minden szerver minden nézete a `gate`-en megy át.
+   */
+  fastify.get('/guilds', { onRequest: fastify.authenticate }, async request => {
+    const userId = (request.user as { sub: string }).sub
+    const [uzemelteto, botListaja, link] = await Promise.all([
+      holds(request, 'discord.manage'), botGuilds(), oauth.linkOf(userId)
+    ])
+    const bot = botListaja === null ? null : new Map(botListaja.map(g => [g.id, g.name]))
+
+    let sajat: Array<{ id: string, name: string | null }> = []
+    if (link) {
+      const sorok = await query<{ guild_id: string, guild_name: string | null, owner: boolean, permissions: string }>(
+        'SELECT guild_id, guild_name, owner, permissions FROM discord_guild_members WHERE discord_user_id = $1',
+        [link.discordUserId])
+      sajat = sorok
+        .filter(g => can({ owner: g.owner, permissions: parsePermissions(g.permissions) }, 'view_stats'))
+        .map(g => ({ id: g.guild_id, name: g.guild_name }))
+    }
+
+    const lista: Array<{ id: string, name: string | null }> = uzemelteto && bot
+      ? [...bot].map(([id, name]) => ({ id, name }))
+      : bot
+        ? sajat.filter(g => bot.has(g.id)).map(g => ({ id: g.id, name: bot.get(g.id) ?? g.name }))
+        : sajat
+
+    return {
+      data: lista.sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id, 'hu')),
+      botListAvailable: bot !== null
+    }
   })
 
   // ---- a vezérlőpult nézetei ---------------------------------------------
@@ -1011,7 +1062,7 @@ const routes: FastifyPluginAsync = async fastify => {
       }
     }
   }, async (request, reply) => {
-    const guildId = await gate(request, reply, 'manage_messages')
+    const guildId = await gate(request, reply, 'manage_bot')
     if (!guildId) return
     const body = request.body as {
       channelId: string, messageType: string,
@@ -1061,7 +1112,7 @@ const routes: FastifyPluginAsync = async fastify => {
       }
     }
   }, async (request, reply) => {
-    const guildId = await gate(request, reply, 'manage_messages')
+    const guildId = await gate(request, reply, 'manage_bot')
     if (!guildId) return
     const { id } = request.params as { id: string }
     const body = request.body as { channelId?: string, configuration?: unknown, enabled?: boolean }
@@ -1101,7 +1152,7 @@ const routes: FastifyPluginAsync = async fastify => {
     onRequest: fastify.authenticate,
     schema: { params: MESSAGE_PARAMS }
   }, async (request, reply) => {
-    const guildId = await gate(request, reply, 'manage_messages')
+    const guildId = await gate(request, reply, 'manage_bot')
     if (!guildId) return
     const { id } = request.params as { id: string }
     const row = await queryOne<PersistentMessage>(
@@ -1120,7 +1171,7 @@ const routes: FastifyPluginAsync = async fastify => {
     onRequest: fastify.authenticate,
     schema: { params: MESSAGE_PARAMS }
   }, async (request, reply) => {
-    const guildId = await gate(request, reply, 'manage_messages')
+    const guildId = await gate(request, reply, 'manage_bot')
     if (!guildId) return
     if (!isConfigured()) {
       return await reply.code(503).send({
@@ -1151,7 +1202,7 @@ const routes: FastifyPluginAsync = async fastify => {
     onRequest: fastify.authenticate,
     schema: { params: MESSAGE_PARAMS }
   }, async (request, reply) => {
-    const guildId = await gate(request, reply, 'manage_messages')
+    const guildId = await gate(request, reply, 'manage_bot')
     if (!guildId) return
     if (!isConfigured()) {
       return await reply.code(503).send({
@@ -1235,7 +1286,7 @@ const routes: FastifyPluginAsync = async fastify => {
       }
     }
   }, async (request, reply) => {
-    const guildId = await gate(request, reply, 'manage_messages')
+    const guildId = await gate(request, reply, 'manage_bot')
     if (!guildId) return
     const { channelId } = request.params as { channelId: string }
     // Another server's channel is not this server's to inspect.

@@ -352,6 +352,7 @@
 
 | Method | Path |
 |---|---|
+| GET | `/v1/discord/guilds` |
 | GET | `/v1/discord/guilds/:guildId/activity` |
 | GET | `/v1/discord/guilds/:guildId/audit` |
 | GET | `/v1/discord/guilds/:guildId/channels` |

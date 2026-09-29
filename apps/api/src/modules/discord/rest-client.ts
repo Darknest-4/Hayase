@@ -17,7 +17,7 @@
  * azonosítói csak számjegyek, tehát ez olcsó és teljes védelem.
  */
 
-import { canPostEmbed, missingForEmbed, parsePermissions, PERMISSION_BITS, hasBit } from './permissions.ts'
+import { basePermissions, canPostEmbed, missingForEmbed, parsePermissions, PERMISSION_BITS, hasBit } from './permissions.ts'
 
 import type { DiscordClient, DiscordError, ErrorKind, SentMessage } from './types.ts'
 
@@ -311,6 +311,96 @@ export async function fetchRoles (guildId: string): Promise<Array<{
       managed: r.managed === true,
       permissions: String(r.permissions ?? '0')
     }))
+  } catch {
+    return null
+  }
+}
+
+export type MemberAccess =
+  | { status: 'ok', owner: boolean, permissions: bigint, guildName: string | null }
+  | { status: 'not_member' }
+  | { status: 'unknown' }
+
+/**
+ * Egy tag jogosultsága egy guildben — a BOT tokenjével, OAuth-token nélkül.
+ *
+ * MIÉRT KELL. A tagságot eddig csak az összekötés pillanatában kérdeztük le,
+ * a felhasználó OAuth-tokenjével, amit szándékosan nem tárolunk. Öt perc után
+ * a tárolt adat lejárt, és semmi nem frissítette: aki nem `discord.manage`-es,
+ * az kizáródott, amíg újra nem kötött. A bot viszont bármikor megkérdezheti a
+ * guild rangjait és tulajdonosát, meg a tag rangjait — a kettőből a jog
+ * ugyanúgy kiszámolható, ahogy a Discord számolja (`basePermissions`).
+ *
+ * PRIVILEGIZÁLT INTENT NÉLKÜL: egyetlen tag lekérése (`/members/{user}`) nem
+ * igényli a `GUILD_MEMBERS` intentet — csak a teljes taglista.
+ *
+ *   `ok`          — frissen kiszámolt jog
+ *   `not_member`  — a Discord szerint nem tagja (10007 Unknown Member)
+ *   `unknown`     — nincs token, a bot nem látja a szervert, vagy a Discord
+ *                   nem válaszolt: NEM TUDJUK, és ez nem jogosít
+ */
+export async function memberAccess (guildId: string, userId: string): Promise<MemberAccess> {
+  if (!isConfigured()) return { status: 'unknown' }
+  try {
+    // MINDKÉT AZONOSÍTÓ ELLENŐRIZVE, MIELŐTT BÁRMI KIMEGY: a tömbben az első
+    // kérés már elindulna, mire a második azonosító ellenőrzése dob.
+    const g = safeId(guildId, 'guild')
+    const u = safeId(userId, 'tag')
+    const [guild, tag] = await Promise.all([
+      request(`/guilds/${g}`),
+      request(`/guilds/${g}/members/${u}`)
+    ])
+    // CSAK A 10007 jelenti, hogy nem tag. Egy 403 vagy egy 10004 (Unknown
+    // Guild) azt, hogy a bot nem látja a szervert — abból tagságra nem
+    // következtethetünk, egyik irányba sem.
+    if (tag.status === 404 && tag.body.code === 10007) return { status: 'not_member' }
+    if (guild.status >= 400 || tag.status >= 400) return { status: 'unknown' }
+
+    const gb = guild.body as { owner_id?: unknown, name?: unknown, roles?: unknown }
+    const tb = tag.body as { roles?: unknown, communication_disabled_until?: unknown }
+    if (!Array.isArray(gb.roles)) return { status: 'unknown' }
+    const rangok = (gb.roles as Array<Record<string, unknown>>).map(r => ({ id: String(r.id ?? ''), permissions: r.permissions }))
+    const korlatozva = typeof tb.communication_disabled_until === 'string' &&
+      Date.parse(tb.communication_disabled_until) > Date.now()
+    return {
+      status: 'ok',
+      owner: typeof gb.owner_id === 'string' && gb.owner_id === userId,
+      permissions: basePermissions(guildId, rangok, Array.isArray(tb.roles) ? tb.roles.map(String) : [],
+        { timedOut: korlatozva }),
+      guildName: typeof gb.name === 'string' ? gb.name.slice(0, 100) : null
+    }
+  } catch {
+    return { status: 'unknown' }
+  }
+}
+
+/**
+ * A szerverek, amelyekben a bot benne van — a vezérlőpult szerverválasztójához.
+ *
+ * NULL, HA NEM TUDJUK (nincs token, a Discord nem válaszolt). A hívó ilyenkor
+ * nem szűr vele: egy üres lista azt állítaná, hogy a bot sehol nincs bent.
+ *
+ * LAPOZVA, mert a Discord egyszerre legfeljebb 200-at ad; tíz lapnál (2000
+ * szerver) megállunk — ekkora botnak már shardolnia kellene.
+ */
+export async function botGuilds (): Promise<Array<{ id: string, name: string }> | null> {
+  if (!isConfigured()) return null
+  try {
+    const out: Array<{ id: string, name: string }> = []
+    let utana = ''
+    for (let lap = 0; lap < 10; lap++) {
+      const { status, body } = await request(`/users/@me/guilds?limit=200${utana ? `&after=${utana}` : ''}`)
+      if (status >= 400 || !Array.isArray(body)) return null
+      const lista = body as unknown as Array<Record<string, unknown>>
+      for (const g of lista) {
+        if (typeof g.id === 'string' && /^\d{17,20}$/.test(g.id)) {
+          out.push({ id: g.id, name: typeof g.name === 'string' ? g.name.slice(0, 100) : g.id })
+        }
+      }
+      if (lista.length < 200 || !out.length) break
+      utana = out[out.length - 1]!.id
+    }
+    return out
   } catch {
     return null
   }
@@ -638,6 +728,42 @@ export async function respondToInteraction (
           method: 'POST',
           headers: { 'content-type': 'application/json', 'user-agent': 'YumeBot (https://animehub.hu, 1.0)' },
           body: JSON.stringify(payload),
+          signal: controller.signal
+        })
+      return res.status < 400
+    } finally {
+      clearTimeout(timer)
+    }
+  } catch {
+    return false
+  }
+}
+
+/**
+ * A HALASZTOTT VÁLASZ KITÖLTÉSE — `PATCH …/messages/@original`.
+ *
+ * Ha a parancs nem végez a határidőn belül, előbb halasztott választ küldünk
+ * (lásd `commands.respond`), és ez írja bele a végleges tartalmat. Ugyanaz a
+ * hitelesítés, mint a válasznál: az interakció tokenje, nem a bot tokenje.
+ *
+ * A `flags` NEM MEGY: a láthatóság a halasztáskor dőlt el, szerkesztéssel nem
+ * változtatható — a Discord a mezőt ilyenkor el is utasíthatja.
+ */
+export async function editOriginalResponse (
+  applicationId: string, token: string, data: Record<string, unknown>
+): Promise<boolean> {
+  const torzs = { ...data }
+  delete torzs.flags
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+    try {
+      const res = await fetch(
+        `${API_BASE}/webhooks/${safeId(applicationId, 'alkalmazás')}/${encodeURIComponent(token)}/messages/@original`,
+        {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json', 'user-agent': 'YumeBot (https://animehub.hu, 1.0)' },
+          body: JSON.stringify(torzs),
           signal: controller.signal
         })
       return res.status < 400

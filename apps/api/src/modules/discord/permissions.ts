@@ -36,8 +36,16 @@ export const PERMISSION_BITS = {
 export type Capability =
   /** A guild statisztikáinak megtekintése. */
   | 'view_stats'
-  /** Tartós üzenetek létrehozása, módosítása, törlése. */
-  | 'manage_messages'
+  /**
+   * A BOT KEZELÉSE a szerveren: tartós üzenetek, csatornadiagnózis és az
+   * adminparancsok. „Szerver kezelése" jog kell hozzá.
+   *
+   * Korábban `manage_messages` volt a neve, pedig soha nem a Discord „Üzenetek
+   * kezelése" jogát nézte — egy ilyen név előbb-utóbb arra csábít, hogy valaki
+   * a gyengébb jogot kösse hozzá, és a bot üzenetkezelő moderátorok kezébe
+   * kerüljön.
+   */
+  | 'manage_bot'
   /** A guild beállításainak módosítása. */
   | 'manage_guild'
   /** Csatornákhoz kötött beállítások. */
@@ -93,7 +101,7 @@ export function can (membership: GuildMembership, capability: Capability): boole
      * dashboard-konfigurációs hozzáférést alapértelmezés szerint."
      */
     case 'view_stats':
-    case 'manage_messages':
+    case 'manage_bot':
     case 'manage_guild':
       return hasBit(membership.permissions, PERMISSION_BITS.MANAGE_GUILD)
     case 'manage_channels':
@@ -104,6 +112,35 @@ export function can (membership: GuildMembership, capability: Capability): boole
       // ISMERETLEN KÉPESSÉG = NEM. Egy elgépelt név nem nyithat kaput.
       return false
   }
+}
+
+/**
+ * Egy tag GUILD-SZINTŰ jogosultsága a rangjaiból — ugyanaz az érték, amit az
+ * OAuth `/users/@me/guilds` ad (csatorna-felülbírálatok nélkül).
+ *
+ * A Discord dokumentált számítása: az `@everyone` rang (azonosítója a guildé)
+ * és a tag minden rangjának VAGY-olt bitmezője. A tulajdonost és az
+ * `ADMINISTRATOR`-t a `can` kezeli — itt a nyers összeg marad, hogy a tárolt
+ * érték ugyanaz legyen, mint az OAuth-ból jövő.
+ *
+ * AMI NINCS A LISTÁBAN, AZ NULLA BIT. Egy ismeretlen rangazonosító (a tag
+ * rangja, amit a guild listája nem tartalmaz) semmit nem ad — nem mindent.
+ *
+ * AZ IDŐKORLÁTOZOTT TAG (timeout) a Discordon a megtekintésen kívül mindent
+ * elveszít, amíg a korlátozás tart; itt is. Adminisztrátort a Discord nem
+ * korlátozhat, ezért az `ADMINISTRATOR` bit marad.
+ */
+export function basePermissions (
+  guildId: string,
+  roles: ReadonlyArray<{ id: string, permissions: unknown }>,
+  memberRoles: readonly string[],
+  { timedOut = false }: { timedOut?: boolean } = {}
+): bigint {
+  const szerint = new Map(roles.map(r => [r.id, parsePermissions(r.permissions)]))
+  let bits = szerint.get(guildId) ?? 0n
+  for (const id of memberRoles) bits |= szerint.get(id) ?? 0n
+  if (timedOut && !hasBit(bits, PERMISSION_BITS.ADMINISTRATOR)) bits &= PERMISSION_BITS.VIEW_CHANNEL
+  return bits
 }
 
 /**
