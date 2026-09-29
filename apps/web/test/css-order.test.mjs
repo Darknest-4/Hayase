@@ -65,7 +65,10 @@ function rules (css) {
     const opens = (text.match(/\{/g) ?? []).length
     const closes = (text.match(/\}/g) ?? []).length
 
-    if (/^@media[^{]*\{/.test(text)) {
+    // A `@container` ugyanolyan feltételes szabály, mint a `@media` (a
+    // lejátszó a saját szélességére kérdez, nem a nézetablakéra): a sorrendi
+    // szabály rá is áll.
+    if (/^@(media|container)[^{]*\{/.test(text)) {
       // A single-line query — `@media (…) { .x { … } }` — opens and closes on
       // this line. Skipping the brace count here left the scanner believing
       // every later rule sat inside it, which is how it reported a rule at

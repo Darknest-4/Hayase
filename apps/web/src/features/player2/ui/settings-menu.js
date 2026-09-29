@@ -45,7 +45,10 @@ export function createSettingsMenu (player, actions = {}) {
   backButton.type = 'button'
   backButton.className = 'yp-menu-back'
   backButton.innerHTML = trustedHTML(`${icon('back', 16)}<span></span>`)
-  backButton.addEventListener('click', () => show('root'))
+  // A gyökérpanelen ugyanez a gomb ZÁR: eddig ott rejtve volt, és üres sávot
+  // hagyott a menü tetején — telefonon, ahol a menü a vezérlőket takarja, a
+  // bezárásnak pedig nem maradt érinthető helye.
+  backButton.addEventListener('click', () => panel === 'root' ? closeMenu() : show('root'))
   header.append(backButton)
 
   const body = document.createElement('div')
@@ -136,16 +139,33 @@ export function createSettingsMenu (player, actions = {}) {
     render(state.get())
     // A fókusz a PANEL ELSŐ ELEMÉRE. Enélkül a billentyűzettel navigáló néző
     // fókusza a menü mögött marad, és a nyilak a lapot görgetik.
-    body.querySelector('button')?.focus()
+    //
+    // `preventScroll`: a menü a lejátszón belül nyílik, a fókusz miatt semmi
+    // ne görgessen — se a lap, se a lejátszó doboza (az utóbbit a
+    // player2.css `overflow: clip`-je amúgy is kizárja).
+    body.querySelector('button')?.focus({ preventScroll: true })
+  }
+
+  let headerPanel = null
+  function closeMenu () {
+    if (!open) return false
+    open = false
+    node.classList.add('yp-hidden')
+    panel = 'root'
+    return false
   }
 
   function render (current) {
     if (!open) return
     const build = PANELS[panel] ?? PANELS.root
     const { title, items } = build(current)
+    const root = panel === 'root'
+    if (headerPanel !== panel) {
+      headerPanel = panel
+      backButton.innerHTML = trustedHTML(`${icon(root ? 'close' : 'back', 16)}<span></span>`)
+    }
     backButton.querySelector('span').textContent = title
-    backButton.style.visibility = panel === 'root' ? 'hidden' : ''
-    backButton.setAttribute('aria-label', panel === 'root' ? title : `Vissza — ${title}`)
+    backButton.setAttribute('aria-label', root ? `${title} bezárása` : `Vissza — ${title}`)
     body.replaceChildren(...items)
   }
 
@@ -160,15 +180,11 @@ export function createSettingsMenu (player, actions = {}) {
       panel = which
       node.classList.remove('yp-hidden')
       render(state.get())
-      body.querySelector('button')?.focus()
+      body.querySelector('button')?.focus({ preventScroll: true })
       return true
     },
     close () {
-      if (!open) return false
-      open = false
-      node.classList.add('yp-hidden')
-      panel = 'root'
-      return false
+      return closeMenu()
     }
   }
 }

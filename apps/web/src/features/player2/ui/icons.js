@@ -25,6 +25,7 @@ const PATHS = {
   check: '<path d="M20 6L9 17l-5-5"/>',
   chevron: '<path d="M9 18l6-6-6-6"/>',
   back: '<path d="M15 18l-6-6 6-6"/>',
+  close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   warning: '<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>'
 }
 
