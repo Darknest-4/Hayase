@@ -245,6 +245,16 @@ export const Api = {
   resetRun: (g, token) => kerd(`/v1/discord/guilds/${g}/setup/reset`, { method: 'POST', body: { token } }),
   setupAudit: g => kerd(`/v1/discord/guilds/${g}/setup/audit?limit=100`),
   registerCommands: g => kerd(`/v1/discord/guilds/${g}/commands/register`, { method: 'POST' }),
+  commands: g => kerd(`/v1/discord/guilds/${g}/commands`),
+
+  // ---- szerver-beállítások ----
+  config: g => kerd(`/v1/discord/guilds/${g}/config`),
+  saveConfig: (g, body) => kerd(`/v1/discord/guilds/${g}/config`, { method: 'PATCH', body }),
+  saveRoleMappings: (g, mappings) => kerd(`/v1/discord/guilds/${g}/config/role-mappings`, { method: 'PUT', body: { mappings } }),
+  setAnimeMention: (g, animeId, discordRoleId) =>
+    kerd(`/v1/discord/guilds/${g}/config/anime-mentions/${animeId}`, { method: 'PUT', body: { discordRoleId } }),
+  removeAnimeMention: (g, animeId) => kerd(`/v1/discord/guilds/${g}/config/anime-mentions/${animeId}`, { method: 'DELETE' }),
+  searchAnime: q => kerd(`/v1/anime/search?${new URLSearchParams({ q })}`),
 
   // ---- köszöntő ----
   welcome: g => kerd(`/v1/discord/guilds/${g}/welcome`),

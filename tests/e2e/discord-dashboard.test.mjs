@@ -469,10 +469,57 @@ describe('a Discord vezérlőpult', { skip: REASON }, () => {
     assert.ok(!/^0$/m.test(k.szoveg), 'nullát ír egy nem mért adatra')
   })
 
-  it('a parancsstatisztika megmondja, hogy nincs parancs', async () => {
+  /*
+   * A PARANCSOK NÉZETE eddig azt írta, hogy a botnak nincs egyetlen parancsa
+   * sem — miközben tizenhárom volt. Most a kódban leírt parancsokat mutatja,
+   * és ahol nem tudja lekérdezni a Discordot (itt nincs bot token), azt mondja.
+   */
+  it('a Parancsok nézet a kódban leírt parancsokat mutatja', async () => {
     await nyit('commands')
     const k = await kepernyo()
-    assert.match(k.szoveg, /nincs/i)
+    for (const nev of ['/help', '/next', '/watchlist', '/notifications']) {
+      assert.ok(k.szoveg.includes(nev), `hiányzik: ${nev}`)
+    }
+    assert.match(k.szoveg, /nem kérdezhető le/)
+    assert.doesNotMatch(k.szoveg, /nincs egyetlen slash-parancsa sem/)
+  })
+
+  /*
+   * AMI ÉLESBEN TÖRTÉNT (2026-09-29): a Discord-alkalmazásnál interakció-
+   * végpont volt beállítva, és a Discord minden parancsot oda küldött — a
+   * botig egy sem jutott el. A nézet ezt most pirosan kimondja, a javítás
+   * helyével. A Discordot a kiszolgáló `fetch`-jénél hamisítjuk.
+   */
+  it('a Parancsok nézet kimondja, ha a Discord nem a botnak kézbesít', async () => {
+    const rest = await import('../../apps/api/src/modules/discord/rest-client.ts')
+    const eredetiFetch = globalThis.fetch
+    const elozoToken = process.env.DISCORD_BOT_TOKEN
+    process.env.DISCORD_BOT_TOKEN = 'e2e-proba-bot-token-NEM-VALODI'
+    rest.forgetApplicationInfo()
+    const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+    globalThis.fetch = async (url, init) => {
+      const cim = String(url)
+      if (cim.endsWith('/applications/@me')) {
+        return json({ id: '500000000000000003', interactions_endpoint_url: 'https://regi.example/interactions' })
+      }
+      if (cim.includes('/commands')) return json([{ id: '1', name: 'help', description: 'Mit tud ez a bot?' }])
+      if (cim.startsWith('https://discord.com/')) return json({ code: 0, message: 'e2e' }, 404)
+      return await eredetiFetch(url, init)
+    }
+    try {
+      await nyit('commands')
+      const k = await kepernyo()
+      assert.match(k.szoveg, /A parancsok nem érkeznek meg a bothoz/)
+      assert.match(k.szoveg, /https:\/\/regi\.example\/interactions/)
+      assert.match(k.szoveg, /Interactions Endpoint URL/)
+      // Egy parancs fent van, a többi hiányzik — és ezt parancsonként látni.
+      assert.match(k.szoveg, /nincs fent/)
+    } finally {
+      globalThis.fetch = eredetiFetch
+      if (elozoToken === undefined) delete process.env.DISCORD_BOT_TOKEN
+      else process.env.DISCORD_BOT_TOKEN = elozoToken
+      rest.forgetApplicationInfo()
+    }
   })
 
   it('az előnézet nem küld, és ezt ki is mondja', async () => {
@@ -674,6 +721,30 @@ describe('a Discord vezérlőpult', { skip: REASON }, () => {
     assert.match(szoveg, /Tartós üzenetek — napi hibák/)
     assert.match(szoveg, /Adásmenetrend/)
     assert.match(szoveg, /2 hiba 2 frissítésből · utolsó: forbidden: Missing Permissions/)
+  })
+
+  /*
+   * A SZERVER NÉZET. Bot token nélkül a csatornák és a rangok nem kérdezhetők
+   * le — ezt kimondja —, a nyelv és a hírfolyam viszont menthető, és a mentés
+   * a szerver saját beállításába íródik.
+   */
+  it('a Szerver nézet menti a nyelvet és a hírfolyam-szűrőt', async () => {
+    await pool.query('DELETE FROM discord_guild_settings WHERE guild_id = $1', [GUILD])
+    try {
+      await nyit('config')
+      assert.match((await kepernyo()).szoveg, /A Discord most nem kérdezhető le/)
+      await page.locator('.dc-main select').first().selectOption('en')
+      await page.locator('.dc-main button', { hasText: 'Nyelv mentése' }).click()
+      await page.waitForTimeout(1000)
+      await page.locator('.dc-main label', { hasText: 'Csak az aktuális szezon' }).locator('input').check()
+      await page.locator('.dc-main button', { hasText: 'Hírfolyam mentése' }).click()
+      await page.waitForTimeout(1000)
+      const { rows } = await pool.query(
+        'SELECT language, feed_current_season FROM discord_guild_settings WHERE guild_id = $1', [GUILD])
+      assert.deepEqual(rows[0], { language: 'en', feed_current_season: true })
+    } finally {
+      await pool.query('DELETE FROM discord_guild_settings WHERE guild_id = $1', [GUILD])
+    }
   })
 
   for (const width of [1440, 430, 390, 360]) {

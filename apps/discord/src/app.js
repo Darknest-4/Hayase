@@ -21,6 +21,7 @@ import { Api, ApiError, Auth } from './api.js'
 import { el, svg, toast } from './dom.js'
 import { messages } from './messages.js'
 import { setupView, welcomeView } from './setup.js'
+import { configView } from './config.js'
 import * as Views from './views.js'
 
 const NEZETEK = [
@@ -33,6 +34,7 @@ const NEZETEK = [
   ['channels', 'Csatornák', '<path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/>'],
   ['roles', 'Szerepkörök', '<path d="M12 2 4 7v10l8 5 8-5V7z"/>'],
   ['commands', 'Parancsok', '<path d="m4 17 6-6-6-6"/><path d="M12 19h8"/>'],
+  ['config', 'Szerver', '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>'],
   ['notifications', 'Értesítések', '<path d="m22 2-7 20-4-9-9-4z"/>'],
   ['health', 'Bot állapota', '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>'],
   ['audit', 'Napló', '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>'],
@@ -220,7 +222,8 @@ async function nezetTartalom (kulcs, ujraRajzol) {
     case 'activity': return await Views.activity(g)
     case 'channels': return await Views.channels(g)
     case 'roles': return await Views.roles(g)
-    case 'commands': return Views.commands()
+    case 'commands': return await Views.commands(g, ujraRajzol)
+    case 'config': return await configView(g, ujraRajzol)
     case 'notifications': return await Views.notifications(g)
     case 'health': return await Views.health(g)
     case 'audit': return await Views.audit(g)
@@ -238,7 +241,8 @@ const LEIRAS = {
   activity: 'Üzenetforgalom naponta és csatornánként.',
   channels: 'A szerver csatornái, ahogy a Discord látja őket.',
   roles: 'A szerepkörök rangsor szerint.',
-  commands: 'A bot parancsainak használata.',
+  commands: 'A slash parancsok: hová kézbesít a Discord, mi van fent, mit használnak.',
+  config: 'Nyelv, hírfolyam-szűrők, moderálás és rangok ezen a szerveren.',
   notifications: 'A YUME kimenő értesítései és a kézbesítésük.',
   health: 'A bot szondái és a frissítések kimenetele.',
   audit: 'Ki mit csinált ezen a felületen.',

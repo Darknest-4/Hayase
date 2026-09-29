@@ -315,12 +315,82 @@ export async function activity (guildId) {
   ])
 }
 
-export function commands () {
-  return hianyzoForras(
-    'Parancsstatisztika: nincs mit mérni',
-    'A botnak ma nincs egyetlen slash-parancsa sem. A használati statisztika nem azért üres, mert nem gyűjtjük — ' +
-    'hanem mert nincs, amit használni lehetne.',
-    ['regisztrált alkalmazásparancsok', 'interakció-kezelő végpont vagy gateway'])
+/*
+ * A SLASH PARANCSOK. Eddig ez a nézet azt írta, hogy a botnak nincs egyetlen
+ * parancsa sem — miközben tizenhárom volt regisztrálva, és egy sem működött,
+ * mert a Discord egy HTTP-végpontra küldte őket. Most megmondja, hová
+ * kézbesít a Discord, mi van fent a kódhoz képest, és mit használnak.
+ */
+export async function commands (guildId, ujra) {
+  const d = await Api.commands(guildId)
+  const kezb = d.delivery
+  const fent = d.registered
+  const hasznalat = d.usage ?? []
+  const osszes = hasznalat.reduce((n, u) => n + Number(u.uses), 0)
+  // A használat alparancsonként jön („anime latest"); a lista parancsonként összegez.
+  const parancsra = nev => hasznalat.filter(u => u.command.split(' ')[0] === nev)
+
+  const gomb = el('button', { class: 'btn btn-secondary' }, ['Parancsok feltöltése most'])
+  gomb.addEventListener('click', async () => {
+    gomb.disabled = true
+    try {
+      const r = await Api.registerCommands(guildId)
+      toast(`${r.count} parancs feltöltve.`, 'success')
+      await ujra()
+    } catch (e) {
+      gomb.disabled = false
+      toast(e.message, 'error')
+    }
+  })
+
+  return el('div', {}, [
+    el('div', { class: 'dash-cards' }, [
+      kpi('Kézbesítés', 0, {
+        tone: !kezb ? 'blue' : kezb.mode === 'gateway' ? 'green' : 'red',
+        display: !kezb ? '—' : kezb.mode === 'gateway' ? 'a botnál' : 'HTTP-végpont',
+        meta: !kezb ? 'nem kérdezhető le' : kezb.mode === 'gateway' ? 'a gatewayen érkeznek' : 'a parancsok nem érkeznek meg',
+        icon: '<path d="m22 2-7 20-4-9-9-4z"/>'
+      }),
+      kpi('Regisztrálva', 0, {
+        tone: fent === null ? 'blue' : d.inSync ? 'green' : 'amber',
+        display: fent === null ? '—' : `${fent.length} / ${d.defined.length}`,
+        meta: fent === null ? 'nem kérdezhető le' : d.inSync ? 'egyezik a kóddal' : 'eltér a kódtól',
+        icon: '<path d="m4 17 6-6-6-6"/><path d="M12 19h8"/>'
+      }),
+      kpi('Használat (30 nap)', osszes, { tone: 'blue', icon: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>' })
+    ]),
+
+    kezb?.mode === 'http'
+      ? hianyzoForras('A parancsok nem érkeznek meg a bothoz',
+        `A Discord-alkalmazásnál interakció-végpont van beállítva (${kezb.endpointUrl}), ezért a Discord minden ` +
+        'parancsot oda küld — a bot a gatewayen fogadná őket, de oda egy sem érkezik. A felhasználó annyit lát, ' +
+        'hogy „az alkalmazás nem válaszolt".',
+        ['Discord Developer Portal → Applications → az alkalmazás → General Information → Interactions Endpoint URL: ' +
+          'töröld a címet, és mentsd el'])
+      : null,
+
+    panel('Parancsok', 'a kódban leírt parancsok, a Discordon regisztrált állapotukkal és a használatukkal',
+      sorok(d.defined.map(nev => {
+        const u = parancsra(nev)
+        const db = u.reduce((n, x) => n + Number(x.uses), 0)
+        const utolso = u.map(x => x.lastUsedAt).sort().pop()
+        const kint = fent === null ? null : fent.includes(nev)
+        return {
+          label: '/' + nev,
+          tone: kint === null ? '' : kint ? 'ok' : 'bad',
+          extra: kint === false ? 'nincs fent' : null,
+          detail: db ? `${szam(db)} használat · utoljára ${ido(utolso)}` : 'az elmúlt 30 napban nem használták'
+        }
+      }), 'Nincs parancs.')),
+
+    el('div', { style: 'display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap;margin-top:var(--space-3);' }, [
+      gomb,
+      el('span', {
+        class: 'list-row-sub',
+        text: 'A bot induláskor magától is feltölti, ha eltérést lát a kódhoz képest — a gomb azonnal teszi.'
+      })
+    ])
+  ])
 }
 
 // ---------------------------------------------------------------- értesítések
