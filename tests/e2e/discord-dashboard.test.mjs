@@ -13,7 +13,7 @@
 //   3. ami gateway nélkül nem mérhető, arról AZT írja ki — nem nullát.
 
 import assert from 'node:assert/strict'
-import { randomBytes } from 'node:crypto'
+import { createHmac, randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -141,6 +141,23 @@ describe('a Discord vezérlőpult', { skip: REASON }, () => {
       await pool?.end()
     }
   })
+
+  /** A frissítő süti állapota a lap saját eredetéről: 200 = él, 401 = nincs. */
+  const frissitesAllapota = async lap => await lap.evaluate(async () =>
+    (await fetch('/v1/auth/refresh', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status)
+
+  /** Belépés az űrlappal, egy saját sütitárú lapon. */
+  const belep = async (nev, jelszo = 'Correct-Horse-Battery-9') => {
+    const lap = await browser.newPage()
+    await lap.route('https://**', r => r.abort())
+    await lap.goto(`${base}/dashboard/`, { waitUntil: 'domcontentloaded' })
+    await lap.waitForSelector('.dc-login-card', { timeout: 15000 })
+    await lap.locator('.dc-login-card input').first().fill(nev)
+    await lap.locator('.dc-login-card input[type="password"]').fill(jelszo)
+    await lap.locator('.dc-login-card button').click()
+    await lap.waitForSelector('.dc-nav', { timeout: 15000 })
+    return lap
+  }
 
   const nyit = async (nezet = 'overview', width = 1440) => {
     await page.setViewportSize({ width, height: 900 })
@@ -270,6 +287,8 @@ describe('a Discord vezérlőpult', { skip: REASON }, () => {
     assert.match(await friss.locator('.dc-login-card .form-error').innerText(), /nincs jogosultságod/)
     assert.equal(await friss.evaluate(() => localStorage.getItem('yume-discord-auth')), null,
       'a munkamenet a böngészőben maradt')
+    // …és a kiszolgálón sem: a belépés frissítő sütije sem használható.
+    assert.equal(await frissitesAllapota(friss), 401, 'a jogosultság nélküli belépés munkamenete élve maradt')
     await friss.close()
   })
 
@@ -286,6 +305,116 @@ describe('a Discord vezérlőpult', { skip: REASON }, () => {
     await friss.waitForTimeout(3000)
     assert.equal(await friss.locator('.dc-nav').count(), 1, 'felhasználónévvel nem jutott be')
     await friss.close()
+  })
+
+  // ---- a munkamenet ----
+
+  /**
+   * A token LEJÁRT változata: ugyanaz a tartalom, a lejárat a múltban,
+   * ugyanazzal a kulccsal aláírva — a kiszolgáló pontosan úgy utasítja el,
+   * mint egy negyedórája kiadottat.
+   */
+  const lejartan = token => {
+    const [fej, torzs] = token.split('.')
+    const adat = JSON.parse(Buffer.from(torzs, 'base64url').toString())
+    adat.exp = Math.floor(Date.now() / 1000) - 60
+    const alairando = `${fej}.${Buffer.from(JSON.stringify(adat)).toString('base64url')}`
+    return `${alairando}.${createHmac('sha256', process.env.JWT_SECRET).update(alairando).digest('base64url')}`
+  }
+  const tarolt = async lap => await lap.evaluate(() =>
+    JSON.parse(localStorage.getItem('yume-discord-auth') ?? 'null')?.accessToken ?? null)
+  const tarol = async (lap, token) => await lap.evaluate(t =>
+    localStorage.setItem('yume-discord-auth', JSON.stringify({ accessToken: t })), token)
+
+  /*
+   * NEM LÉPTET KI NEGYEDÓRÁNKÉNT. A hozzáférési token 15 percig él; eddig a
+   * lejárata után minden kérés 401-et kapott, és újra kellett lépni — pedig a
+   * frissítő süti ezen a néven is ott volt, csak senki nem használta.
+   */
+  it('a lejárt tokent a frissítő sütivel cseréli — nem léptet ki', async () => {
+    const lap = await belep(username)
+    const eredeti = await tarolt(lap)
+    const lejart = lejartan(eredeti)
+    await tarol(lap, lejart)
+    await lap.locator('.dc-nav-item', { hasText: 'Beállítások' }).click()
+    await lap.waitForTimeout(2500)
+    assert.equal(await lap.locator('.dc-login-card').count(), 0, 'a lejárt token után kiléptetett')
+    const uj = await tarolt(lap)
+    assert.ok(uj && uj !== lejart && uj !== eredeti, 'nem kapott új tokent')
+    assert.match(await lap.locator('.dc-main').innerText(), /probauser/, 'a nézet a frissítés után sem töltött be')
+    await lap.close()
+  })
+
+  it('ha a frissítés sem megy, a belépőlapra lép — nem nézetenként hibázik', async () => {
+    const lap = await belep(username)
+    const lejart = lejartan(await tarolt(lap))
+    await lap.context().clearCookies() // nincs frissítő süti
+    await tarol(lap, lejart)
+    await lap.locator('.dc-nav-item', { hasText: 'Csatornák' }).click()
+    await lap.waitForSelector('.dc-login-card', { timeout: 10000 })
+    assert.match(await lap.locator('.dc-login-card .form-error').innerText(), /lejárt/)
+    assert.equal(await tarolt(lap), null, 'a lejárt token a tárolóban maradt')
+    await lap.close()
+  })
+
+  /*
+   * A KILÉPÉS NEM CSAK HELYI. Eddig a gomb a tárolót ürítette, a munkamenet és
+   * a harmincnapos frissítő süti pedig élve maradt a kiszolgálón.
+   */
+  it('a kilépés a kiszolgálón is véget vet a munkamenetnek', async () => {
+    const lap = await belep(username)
+    const token = await tarolt(lap)
+    const sutik = async () => (await lap.context().cookies()).map(c => c.name)
+    assert.ok((await sutik()).includes('yume_refresh'), 'belépés után nincs frissítő süti — a próba semmit nem mérne')
+    await lap.locator('.dc-top button', { hasText: 'Kilépés' }).click()
+    await lap.waitForSelector('.dc-login-card', { timeout: 10000 })
+    assert.ok(!(await sutik()).includes('yume_refresh'), 'a frissítő süti a kilépés után is megmaradt')
+    assert.equal(await frissitesAllapota(lap), 401, 'a munkamenet a kilépés után is frissíthető')
+    const regi = await lap.evaluate(async t =>
+      (await fetch('/v1/discord/status', { headers: { authorization: `Bearer ${t}` } })).status, token)
+    assert.equal(regi, 401, 'a kilépés előtti hozzáférési token még használható')
+    await lap.close()
+  })
+
+  /*
+   * AZ ÜZEMELTETŐ ÖSSZEKÖTÉS NÉLKÜL IS VÁLASZTHAT. Eddig a szerverlista az
+   * összekötött fiókból jött, így a `discord.manage`-es üzemeltető üres
+   * választót látott. Most a bot szerverei jönnek — a Discordot a kiszolgáló
+   * `fetch`-jénél hamisítjuk (a kiszolgáló ebben a folyamatban fut).
+   */
+  it('az üzemeltető összekötés nélkül is látja a bot szervereit', async () => {
+    const uzemelteto = 'dpop' + randomBytes(4).toString('hex')
+    await fetch(`${base}/v1/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: `${uzemelteto}@example.com`, username: uzemelteto, password: 'Correct-Horse-Battery-9' })
+    })
+    await pool.query(
+      `INSERT INTO user_roles (user_id, role_id)
+       SELECT u.id, r.id FROM users u, roles r WHERE u.username = $1 AND r.slug = 'admin'`, [uzemelteto])
+    const eredetiFetch = globalThis.fetch
+    const elozoToken = process.env.DISCORD_BOT_TOKEN
+    process.env.DISCORD_BOT_TOKEN = 'e2e-proba-bot-token-NEM-VALODI'
+    const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+    globalThis.fetch = async (url, init) => {
+      const cim = String(url)
+      if (cim.startsWith('https://discord.com/api/v10/users/@me/guilds')) {
+        return json([{ id: GUILD, name: 'Próba szerver' }, { id: '100000000000000888', name: 'Második szerver' }])
+      }
+      if (cim.startsWith('https://discord.com/')) return json({ code: 0, message: 'e2e: nincs a hamis Discordban' }, 404)
+      return await eredetiFetch(url, init)
+    }
+    try {
+      const lap = await belep(uzemelteto)
+      const opciok = await lap.locator('.dc-guild select option').allInnerTexts()
+      assert.deepEqual(opciok.sort(), ['Második szerver', 'Próba szerver'])
+      await lap.close()
+    } finally {
+      globalThis.fetch = eredetiFetch
+      if (elozoToken === undefined) delete process.env.DISCORD_BOT_TOKEN
+      else process.env.DISCORD_BOT_TOKEN = elozoToken
+      await pool.query('DELETE FROM users WHERE username = $1', [uzemelteto])
+    }
   })
 
   it('rossz jelszóra magyar üzenetet ad, nem sémahibát', async () => {

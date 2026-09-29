@@ -4,9 +4,11 @@
  *
  * MIÉRT KÜLÖN FELÜLET. A Discord-rész kikerült a YUME adminfelületéről, mert
  * más a közönsége és más a jogcíme: ide az is beléphet, akinek a YUME-ban
- * NINCS admin jogosultsága, csak a Discord-szerverén van „Szerver kezelése"
- * joga. Egy ilyen embernek nem kell — és nem is szabad — látnia a katalógust,
- * a felhasználókat vagy a moderációt.
+ * NINCS admin jogosultsága — csak a vezérlőpulté (`discord.dashboard`), a
+ * Discord-szerverén pedig „Szerver kezelése" joga. Egy ilyen embernek nem
+ * kell — és nem is szabad — látnia a katalógust, a felhasználókat vagy a
+ * moderációt. (2026-09-29 óta a Discord-jog egymagában nem elég: a
+ * vezérlőpult nem nyilvános.)
  *
  * AZONOS EREDET, KÜLÖN TÁROLÓ. A kérések ugyanarra az alkalmazásra mennek
  * (a fordított proxy mindkét nevet ide irányítja), tehát nincs CORS. A
@@ -109,7 +111,7 @@ function fejlec (ujraRajzol) {
     valaszto.append(el('option', { value: g.id, selected: g.id === allapot.guildId }, [g.name ?? g.id]))
   }
   if (!allapot.guildek.length) {
-    valaszto.append(el('option', { value: '' }, ['nincs összekötött szerver']))
+    valaszto.append(el('option', { value: '' }, ['nincs elérhető szerver']))
     valaszto.disabled = true
   }
   valaszto.addEventListener('change', () => {
@@ -119,7 +121,11 @@ function fejlec (ujraRajzol) {
   })
 
   const kilep = el('button', { class: 'btn btn-ghost btn-sm' }, ['Kilépés'])
-  kilep.addEventListener('click', () => {
+  kilep.addEventListener('click', async () => {
+    kilep.disabled = true
+    // A munkamenet a kiszolgálón is véget ér (a frissítő süti is megy vele);
+    // ha az nem sikerül, a helyi kilépés akkor is megtörténik.
+    try { await Api.logout() } catch { /* hálózati hiba: a helyi kilépés marad */ }
     Auth.clear()
     belepoLap()
   })
@@ -191,7 +197,8 @@ async function rajzol () {
     const okok = {
       no_link: 'Ehhez a fiókhoz nincs Discord-fiók kötve. A Beállításoknál kötheted össze.',
       not_member: 'Ez a fiók nem tagja ennek a szervernek.',
-      stale: 'A tárolt jogosultság elavult — kösd össze újra a Discord-fiókodat.',
+      stale: 'A jogosultságodat most nem tudtuk ellenőrizni a Discordnál. Próbáld újra fél perc múlva; ' +
+        'ha nem múlik el, kösd össze újra a Discord-fiókodat.',
       insufficient: 'Ebben a szerverben nincs „Szerver kezelése" jogosultságod.'
     }
     const szoveg = (e instanceof ApiError && okok[e.detail]) ? okok[e.detail] : e.message
@@ -265,6 +272,10 @@ function osszekotesUzenet () {
   allapot.nezet = 'settings'
 }
 
+// A munkamenet végleg lejárt (a frissítés sem sikerült): vissza a belépéshez,
+// nem egy „nem tölthető be" hiba minden nézetben.
+Auth.onExpired = () => belepoLap('A munkameneted lejárt. Lépj be újra.')
+
 async function indul () {
   if (!Auth.token()) { belepoLap(); return }
 
@@ -285,6 +296,9 @@ async function indul () {
      * kimondjuk, mi hiányzik — nem egy üres pultot mutatunk hibákkal.
      */
     if (e.status === 403 && e.detail === 'no_dashboard_permission') {
+      // A belépés munkamenetet nyitott (frissítő sütivel együtt) — az se
+      // maradjon a kiszolgálón annak, aki ide nem léphet be.
+      try { await Api.logout() } catch { /* a helyi kilépés akkor is megtörténik */ }
       Auth.clear()
       belepoLap('Ehhez a vezérlőpulthoz nincs jogosultságod. A belépéshez a YUME ' +
         'üzemeltetőjétől kell kérni a „Discord-vezérlőpult" jogot. A Discord-fiókodat ' +
@@ -299,11 +313,16 @@ async function indul () {
   const horgony = (window.location.hash || '').replace(/^#\//, '').split('?')[0]
   if (NEZETEK.some(n => n[0] === horgony)) allapot.nezet = horgony
 
-  // A szerverek listája az összekötött fiókból. Ami nincs benne, ahhoz
-  // nincs is jogosultság — a kiszolgáló ugyanezt ellenőrzi.
+  /*
+   * A SZERVEREK LISTÁJA A KISZOLGÁLÓTÓL: az üzemeltetőnek (`discord.manage`)
+   * minden szerver, ahol a bot bent van — összekötött fiók nélkül is; másnak
+   * az összekötött fiók szerverei, ahol „Szerver kezelése" joga van. Eddig
+   * csak az utóbbi volt, és az üzemeltető összekötés nélkül üres választót
+   * látott. A lista kényelem: a jogot minden nézetnél a kiszolgáló dönti el.
+   */
   try {
-    const link = await Api.linkStatus()
-    allapot.guildek = link?.guilds ?? []
+    const lista = await Api.guilds()
+    allapot.guildek = lista?.data ?? []
   } catch {
     allapot.guildek = []
   }
