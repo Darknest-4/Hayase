@@ -31,11 +31,25 @@ különböző jogosultsági kört szolgál.
 
 ## 2. Ki juthat be
 
-A kapu a kiszolgálón van (`guildAccess`), **két jogcímmel**:
+**A vezérlőpult nem nyilvános (2026-09-29 óta).** Két kapun kell átjutni,
+mindkettő a kiszolgálón van:
 
-1. **YUME-jogosultság**: `discord.manage` — az üzemeltetőnek minden guildhez.
-2. **Discord-jogosultság**: a felhasználó összekötötte a fiókját, tagja a
-   guildnek, és ott `MANAGE_GUILD` joga van (vagy tulajdonos).
+1. **Belépés a vezérlőpultba** — YUME-jogosultság: `discord.dashboard`, vagy az
+   üzemeltetői `discord.manage`. Enélkül minden nézet (`/status`,
+   `/guilds/:guildId/…`) `403 no_dashboard_permission`, és a felület a
+   belépőlapon kimondja, mi hiányzik. A `0084` migráció a `discord.manage`-et
+   birtokló szerepköröknek az újat is megadta. Korábban a Discordon meglévő
+   „Szerver kezelése” jog egymagában is bejuttatott — bárki, aki bármelyik, a
+   botot használó szerveren admin volt.
+2. **Szerverenként** (`guildAccess`), két jogcímmel:
+   * **YUME-jogosultság**: `discord.manage` — az üzemeltetőnek minden guildhez.
+   * **Discord-jogosultság**: a felhasználó összekötötte a fiókját, tagja a
+     guildnek, és ott `MANAGE_GUILD` joga van (vagy tulajdonos).
+
+**A fiók-összekötés NEM a vezérlőpult része**: a főoldal Beállítások → Fiók
+füléről indul (`returnTo: 'site'`), és bárki használhatja; a bot `/link`
+parancsa is oda küld. A vezérlőpult saját Beállítások füle ugyanezt a
+folyamatot indítja, a vezérlőpultra visszatérve.
 
 A tárolt tagság **lejár** (5 perc): egy elavult jogosultság **nem** enged be.
 A felület a visszautasítás okát is kiírja — `no_link`, `not_member`, `stale`,

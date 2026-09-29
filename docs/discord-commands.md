@@ -28,7 +28,7 @@ megérkezik. Ezért minden ág ad választ, a hibás is, és a lekérdezések na
 | `/anime schedule` | a következő adások |
 | `/anime random` | egy véletlen cím |
 | `/profile` | a YUME-fiókod |
-| `/link`, `/unlink` | fiók-összekötés (a vezérlőpultra küld) |
+| `/link`, `/unlink` | fiók-összekötés (a főoldal Beállítások → Fiók fülére küld) |
 | `/watchlist` | a könyvtárad |
 | `/notifications` | értesítési rang |
 | `/setup`, `/config`, `/logs` | állapot — **admin** |
@@ -44,7 +44,10 @@ vezérlőpultra küld: egy visszafordíthatatlan törlés nem indulhat egy
 chatablakból.
 
 **A `/link` nem tesz úgy, mintha össze tudna kötni.** A folyamathoz böngésző
-kell (a Discord engedélyezési lapja) és YUME-oldali bejelentkezés is.
+kell (a Discord engedélyezési lapja) és YUME-oldali bejelentkezés is. 2026-09-29
+óta a főoldal Beállítások → Fiók fülére küld (a `/profile` és a `/watchlist`
+tanácsa is): a vezérlőpult azóta jogosultsághoz kötött, egy átlagos tag ott
+nem jutna be.
 
 ### Korlátok
 
