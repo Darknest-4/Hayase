@@ -32,8 +32,8 @@ const DASHBOARD = process.env.DISCORD_DASHBOARD_URL ?? 'https://discord.animehub
 
 /** Discord interakció-típusok, amiket kezelünk. */
 export const INTERACTION = { PING: 1, COMMAND: 2 } as const
-/** Válasz-típusok. */
-export const RESPONSE = { PONG: 1, MESSAGE: 4 } as const
+/** Válasz-típusok. A `DEFERRED` = „a bot gondolkodik…" — lásd `respond`. */
+export const RESPONSE = { PONG: 1, MESSAGE: 4, DEFERRED: 5 } as const
 /** Csak a hívó látja. */
 export const EPHEMERAL = 64
 
@@ -166,6 +166,8 @@ export function embed (mezok: Record<string, unknown>, ephemeral = true): unknow
 export interface Interaction {
   id: string
   token: string
+  /** A halasztott válasz kitöltéséhez kell (`editOriginalResponse`). */
+  applicationId: string | null
   type: number
   guildId: string | null
   channelId: string | null
@@ -204,6 +206,7 @@ export function parseInteraction (d: unknown): Interaction | null {
   return {
     id: a.id,
     token: a.token,
+    applicationId: typeof a.application_id === 'string' ? a.application_id : null,
     type: Number(a.type ?? 0),
     guildId: typeof a.guild_id === 'string' ? a.guild_id : null,
     channelId: typeof a.channel_id === 'string' ? a.channel_id : null,
@@ -599,11 +602,62 @@ export async function handle (i: Interaction): Promise<HandleResult> {
     // A HIBA IS VÁLASZ. Három másodperc után a Discord azt írja ki, hogy a
     // bot nem válaszolt — az rosszabb, mint egy őszinte hibaüzenet.
     console.warn(JSON.stringify({
+      ido: new Date().toISOString(),
       komponens: 'discord-command', uzenet: 'a parancs elhasalt',
       parancs: i.command, hiba: String((error as Error)?.message ?? error).slice(0, 200)
     }))
     return { response: message('A parancs végrehajtása nem sikerült. Próbáld újra később.'), outcome: 'error' }
   }
+}
+
+/**
+ * Meddig várunk a kezelőre, mielőtt halasztott választ küldünk. A Discord
+ * három másodpercet ad az interakciótól; a hálózatnak is kell idő.
+ */
+export const DEFER_MS = Number(process.env.DISCORD_DEFER_MS ?? 2000)
+
+export interface Transport {
+  /** Az interakció válasza (`/interactions/{id}/{token}/callback`). */
+  reply: (payload: unknown) => Promise<boolean>
+  /** A halasztott válasz kitöltése (`…/messages/@original`). */
+  edit: (data: Record<string, unknown>) => Promise<boolean>
+}
+
+/**
+ * A PARANCS VÁLASZA — HÁROM MÁSODPERCEN BELÜL, akkor is, ha a munka tovább tart.
+ *
+ * Eddig a válasz csak a kezelő végén ment el. A Discord három másodpercet ad;
+ * ha addig nem jön válasz, a felhasználó „The application did not respond"-ot
+ * lát, és a később érkező választ a Discord el sem fogadja. Egy terhelt
+ * adatbázis mellett egy keresés ezt könnyen túllépi.
+ *
+ * Most ha a kezelő `deferMs` alatt nem végez, előbb HALASZTOTT választ
+ * küldünk („a bot gondolkodik…"), és amikor a munka kész, azt töltjük ki.
+ *
+ * A HALASZTÁS MINDIG CSAK A HÍVÓNAK LÁTSZIK. A láthatóság a halasztáskor dől
+ * el, és utólag nem változtatható; ma minden válaszunk ilyen, és egy jövőbeli
+ * nyilvános válasz inkább maradjon privát, mint fordítva.
+ */
+export async function respond (
+  i: Interaction, t: Transport, deferMs = DEFER_MS,
+  // A kezelő a teszt kedvéért cserélhető: egy lassú parancs így mérhető.
+  kezelo: (i: Interaction) => Promise<HandleResult> = handle
+): Promise<{ outcome: HandleResult['outcome'], delivered: boolean, deferred: boolean }> {
+  const munka = kezelo(i).catch((): HandleResult => ({
+    response: message('A parancs végrehajtása nem sikerült. Próbáld újra később.'), outcome: 'error'
+  }))
+  let idozito: NodeJS.Timeout | undefined
+  const kesik = new Promise<null>(resolve => { idozito = setTimeout(() => resolve(null), deferMs) })
+  const gyors = await Promise.race([munka, kesik])
+  clearTimeout(idozito)
+  if (gyors) return { outcome: gyors.outcome, delivered: await t.reply(gyors.response), deferred: false }
+
+  const halasztva = await t.reply({ type: RESPONSE.DEFERRED, data: { flags: EPHEMERAL } })
+  const eredmeny = await munka
+  const adat = (eredmeny.response as { data?: Record<string, unknown> }).data ?? {}
+  // Halasztás nélkül nincs mit kitölteni — a Discord azt 404-gyel utasítaná el.
+  const kitoltve = halasztva && await t.edit(adat)
+  return { outcome: eredmeny.outcome, delivered: kitoltve, deferred: true }
 }
 
 /** A parancsok feltöltése a Discordra. A `PUT` a teljes listát cseréli. */

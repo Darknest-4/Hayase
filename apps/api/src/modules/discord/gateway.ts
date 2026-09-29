@@ -314,7 +314,7 @@ export class Gyujto {
 
 // ---------------------------------------------------------------- állapot
 
-export async function allapotIr (mezok: {
+export interface AllapotMezok {
   status?: string
   sessionId?: string | null
   resumeUrl?: string | null
@@ -322,9 +322,12 @@ export async function allapotIr (mezok: {
   lastError?: string | null
   ready?: boolean
   event?: boolean
-  reconnect?: boolean
+  /** Hány újracsatlakozást számoljon hozzá (`true` = egyet). */
+  reconnect?: boolean | number
   intents?: number
-}): Promise<void> {
+}
+
+export async function allapotIr (mezok: AllapotMezok): Promise<void> {
   await query(
     `UPDATE discord_gateway_state
         SET status        = coalesce($1, status),
@@ -334,7 +337,7 @@ export async function allapotIr (mezok: {
             last_error    = CASE WHEN $8::boolean THEN $9 ELSE last_error END,
             last_ready_at = CASE WHEN $10 THEN now() ELSE last_ready_at END,
             last_event_at = CASE WHEN $11 THEN now() ELSE last_event_at END,
-            reconnects    = reconnects + CASE WHEN $12 THEN 1 ELSE 0 END,
+            reconnects    = reconnects + $12::int,
             intents       = coalesce($13, intents),
             updated_at    = now()
       WHERE id = 1`,
@@ -346,9 +349,118 @@ export async function allapotIr (mezok: {
       mezok.lastError !== undefined, mezok.lastError ?? null,
       mezok.ready === true,
       mezok.event === true,
-      mezok.reconnect === true,
+      typeof mezok.reconnect === 'number' ? mezok.reconnect : (mezok.reconnect === true ? 1 : 0),
       mezok.intents ?? null
     ])
+}
+
+/** Két bejegyzés összevonása: ami később jött, az nyer; a számlálók összeadódnak. */
+export function osszevon (a: AllapotMezok | null, b: AllapotMezok): AllapotMezok {
+  if (!a) return { ...b }
+  const szam = (m: AllapotMezok): number =>
+    typeof m.reconnect === 'number' ? m.reconnect : (m.reconnect === true ? 1 : 0)
+  const out: AllapotMezok = { ...a }
+  for (const kulcs of ['status', 'sessionId', 'resumeUrl', 'sequence', 'lastError', 'intents'] as const) {
+    if (b[kulcs] !== undefined) (out as Record<string, unknown>)[kulcs] = b[kulcs]
+  }
+  if (b.ready === true) out.ready = true
+  if (b.event === true) out.event = true
+  const ujra = szam(a) + szam(b)
+  if (ujra > 0) out.reconnect = ujra
+  return out
+}
+
+/**
+ * AZ ÁLLAPOTSOR ÍRÓJA — összevonva, sorban.
+ *
+ * Eddig MINDEN Discord-esemény egy `UPDATE` volt ugyanarra a sorra, ritkítás
+ * nélkül: egy forgalmas szerveren ez másodpercenként több tucat írás egy
+ * olyan adatért (az utolsó esemény ideje, a sorszám), amit percekben mérünk.
+ * A `void`-dal indított írások ráadásul versenyeztek, és egy később célba érő,
+ * régebbi írás a tárolt sorszámot visszaléptethette.
+ *
+ * Most egyszerre legfeljebb EGY írás fut; ami közben jön, összeolvad
+ * (`osszevon`), és a következő írásban megy ki — mindig a legfrissebb
+ * értékkel, tehát a sorszám nem léphet vissza. Az esemény és a sorszám
+ * legfeljebb `intervallumMs`-enként ír; minden más (állapotváltás, hiba,
+ * munkamenet) azonnal, mert az ritka, és a felületnek rögtön tudnia kell.
+ *
+ * AMI NEM MENT KI, AZ NEM VÉSZ EL: egy elbukott írás mezői visszaolvadnak a
+ * függő bejegyzésbe (a frissebbek alá), és a következő körrel mennek.
+ */
+export class AllapotIro {
+  private fuggo: AllapotMezok | null = null
+  private surgos = false
+  private fut: Promise<void> | null = null
+  private idozito: NodeJS.Timeout | undefined
+  private utolso = 0
+  // Kiírt mezők, nem paraméter-mezők: a Node típustörlő módja azokat nem ismeri.
+  private readonly ir: (m: AllapotMezok) => Promise<void>
+  private readonly intervallumMs: number
+  private readonly hiba: (e: unknown) => void
+
+  constructor (
+    ir: (m: AllapotMezok) => Promise<void> = allapotIr,
+    intervallumMs = Number(process.env.DISCORD_GATEWAY_STATE_MS ?? 10_000),
+    hiba: (e: unknown) => void = () => {}
+  ) {
+    this.ir = ir
+    this.intervallumMs = intervallumMs
+    this.hiba = hiba
+  }
+
+  /** Bejegyzés: az esemény és a sorszám ritkítva, minden más azonnal. */
+  jelez (m: AllapotMezok): void {
+    this.fuggo = osszevon(this.fuggo, m)
+    if (Object.keys(m).some(k => k !== 'event' && k !== 'sequence')) this.surgos = true
+    this.utemez()
+  }
+
+  /**
+   * A függő bejegyzés kiírva — leálláskor. EGY kísérlet: ha az adatbázis nem
+   * érhető el, a leállás nem várhat rá a végtelenségig.
+   */
+  async kiurit (): Promise<void> {
+    if (this.fut) await this.fut
+    if (this.fuggo) await this.kiir()
+    clearTimeout(this.idozito)
+    this.idozito = undefined
+  }
+
+  private utemez (): void {
+    if (this.fut) return // a futó írás végén újra ütemez
+    const varas = this.surgos ? 0 : Math.max(0, this.utolso + this.intervallumMs - Date.now())
+    if (this.idozito && varas > 0) return // már van időzített írás
+    clearTimeout(this.idozito)
+    this.idozito = setTimeout(() => { void this.kiir() }, varas)
+    this.idozito.unref?.()
+  }
+
+  private kiir (): Promise<void> {
+    clearTimeout(this.idozito)
+    this.idozito = undefined
+    if (this.fut) return this.fut
+    const m = this.fuggo
+    if (!m) return Promise.resolve()
+    this.fuggo = null
+    this.surgos = false
+    this.utolso = Date.now()
+    // A lánc ELŐBB kerül a `fut`-ba, és csak utána indul: a `finally` így
+    // biztosan a már beírt ígéretet törli, és a várakozó (`kiurit`) már a
+    // rendbe tett állapotot látja.
+    this.fut = Promise.resolve()
+      .then(async () => { await this.ir(m) })
+      .catch(e => {
+        // A frissebb bejegyzés nyer: a régi alá olvad vissza.
+        this.fuggo = this.fuggo ? osszevon(m, this.fuggo) : m
+        this.hiba(e)
+      })
+      .finally(() => {
+        this.fut = null
+        if (this.fuggo) this.utemez()
+      })
+    return this.fut
+  }
 }
 
 export async function allapot (): Promise<Record<string, unknown> | undefined> {
@@ -375,6 +487,11 @@ export function elo (sor: { status?: unknown, last_event_at?: unknown } | undefi
  *
  * A Discord szívverése ~41 másodperc, és arra mindig válaszol: ha öt percig
  * SEMMI nem jött, az nem csendes szerver, hanem halott kapcsolat.
+ *
+ * EHHEZ A NYUGTA IS ESEMÉNY (`last_event_at`). Eddig csak a DISPATCH írta, és
+ * egy csendes szerveren — ahol öt percig senki nem ír, és a bot sem szerkeszt
+ * üzenetet — a felület halottnak mutatta az élő kapcsolatot, a `/status`
+ * parancs pedig ugyanezt mondta a gatewayen át érkezett kérdésre.
  */
 export const STALE_MS = Number(process.env.DISCORD_GATEWAY_STALE_MS ?? 5 * 60_000)
 

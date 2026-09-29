@@ -102,6 +102,12 @@ describe('a slash parancsok', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () =
     assert.equal(i?.sub, 'search')
     assert.equal(i?.options.cim, 'naruto')
     assert.equal(i?.permissions, MANAGE_GUILD)
+    // A halasztott válasz kitöltéséhez kell; ha hiányzik, null — nem kitalált.
+    assert.equal(i?.applicationId, null)
+    assert.equal(commands.parseInteraction({
+      id: '1'.repeat(18), token: 'tok', type: 2, application_id: '9'.repeat(18),
+      user: { id: '2'.repeat(18) }, data: { name: 'help' }
+    })?.applicationId, '9'.repeat(18))
   })
 
   it('hiányos interakciót elutasít', () => {
@@ -204,10 +210,13 @@ describe('a slash parancsok', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () =
     assert.match((e.response as { data: { content: string } }).data.content, /Nincs találat/)
   })
 
-  it('a /link a vezérlőpultra küld, nem tesz úgy, mintha összekötne', async () => {
+  // 2026-09-29 óta a főoldal Fiók fülére küld: a vezérlőpultba egy tag már
+  // nem jut be (nem nyilvános).
+  it('a /link a főoldal Fiók fülére küld, nem tesz úgy, mintha összekötne', async () => {
     const e = await commands.handle(interakcio({ command: 'link' }))
     const tartalom = (e.response as { data: { content: string } }).data.content
-    assert.match(tartalom, /discord\.animehub\.hu|settings/)
+    assert.match(tartalom, /#\/settings\?tab=account/)
+    assert.doesNotMatch(tartalom, /discord\.animehub\.hu/, 'a nem nyilvános vezérlőpultra küld')
   })
 
   it('a szerveren kívüli használatot kezeli', async () => {
@@ -245,5 +254,63 @@ describe('a slash parancsok', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () =
         WHERE event_type = 'discord.command.use' AND visitor_key = $1
         ORDER BY created_at DESC LIMIT 1`, ['discord:700000000000000001'])
     assert.equal(sor?.subject_id, 'anime latest')
+  })
+
+  // ---- a három másodperc ----
+  //
+  // A Discord három másodpercet ad a válaszra. Eddig a válasz csak a kezelő
+  // végén ment el; egy lassú kezelőnél a néző „The application did not
+  // respond"-ot látott, és a késő választ a Discord el sem fogadta.
+
+  type Eredmeny = import('../src/modules/discord/commands.ts').HandleResult
+  const lassu = (ms: number, eredmeny: Eredmeny) => async (): Promise<Eredmeny> => {
+    await new Promise(resolve => setTimeout(resolve, ms))
+    return eredmeny
+  }
+  const csatorna = (replyOk = true) => {
+    const ut: Array<{ mit: 'reply' | 'edit', adat: unknown }> = []
+    return {
+      ut,
+      t: {
+        reply: async (payload: unknown) => { ut.push({ mit: 'reply', adat: payload }); return replyOk },
+        edit: async (data: Record<string, unknown>) => { ut.push({ mit: 'edit', adat: data }); return true }
+      }
+    }
+  }
+
+  it('a gyors parancs egyetlen válasszal megy, halasztás nélkül', async () => {
+    const { ut, t } = csatorna()
+    const e = await commands.respond(interakcio({ command: 'help' }), t, 1000)
+    assert.equal(e.deferred, false)
+    assert.equal(e.delivered, true)
+    assert.equal(ut.length, 1)
+    assert.equal((ut[0]!.adat as { type: number }).type, commands.RESPONSE.MESSAGE)
+  })
+
+  it('a lassú parancs előbb halasztást küld, aztán kitölti', async () => {
+    const { ut, t } = csatorna()
+    const vegso = commands.message('kész')
+    const e = await commands.respond(interakcio(), t, 20, lassu(80, { response: vegso, outcome: 'ok' }))
+    assert.equal(e.deferred, true)
+    assert.equal(e.delivered, true)
+    assert.equal(e.outcome, 'ok')
+    assert.deepEqual(ut.map(u => u.mit), ['reply', 'edit'])
+    // A halasztás csak a hívónak látszik — ahogy minden válaszunk.
+    assert.deepEqual(ut[0]!.adat, { type: commands.RESPONSE.DEFERRED, data: { flags: commands.EPHEMERAL } })
+    assert.equal((ut[1]!.adat as { content: string }).content, 'kész')
+  })
+
+  it('ha a halasztás nem ment el, nem próbál kitölteni', async () => {
+    const { ut, t } = csatorna(false)
+    const e = await commands.respond(interakcio(), t, 10, lassu(40, { response: commands.message('x'), outcome: 'ok' }))
+    assert.deepEqual(ut.map(u => u.mit), ['reply'])
+    assert.equal(e.delivered, false)
+  })
+
+  it('a kezelő hibája is válasz', async () => {
+    const { ut, t } = csatorna()
+    const e = await commands.respond(interakcio(), t, 1000, async () => { throw new Error('elhasalt') })
+    assert.equal(e.outcome, 'error')
+    assert.match((ut[0]!.adat as { data: { content: string } }).data.content, /nem sikerült/)
   })
 })

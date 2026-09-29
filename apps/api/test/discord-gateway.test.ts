@@ -154,6 +154,99 @@ describe('a gateway protokollja', () => {
   })
 })
 
+describe('az állapotsor írója', () => {
+  before(async () => { gw = await import('../src/modules/discord/gateway.ts') })
+
+  type Mezok = import('../src/modules/discord/gateway.ts').AllapotMezok
+  const var_ = async (ms: number): Promise<void> => { await new Promise(resolve => setTimeout(resolve, ms)) }
+
+  it('az összevonásban a később jött nyer, a számláló összeadódik', () => {
+    const m = gw.osszevon(
+      gw.osszevon(null, { status: 'connecting', sequence: 4, reconnect: true }),
+      { status: 'ready', event: true, reconnect: true, lastError: null })
+    assert.deepEqual(m, { status: 'ready', sequence: 4, reconnect: 2, event: true, lastError: null })
+  })
+
+  /*
+   * EDDIG MINDEN ESEMÉNY EGY ÍRÁS VOLT. Egy forgalmas szerveren ez
+   * másodpercenként tucatnyi UPDATE ugyanarra a sorra.
+   */
+  it('sok eseményből egy írás lesz, a legutolsó sorszámmal', async () => {
+    const irasok: Mezok[] = []
+    const iro = new gw.AllapotIro(async m => { irasok.push(m) }, 60_000)
+    for (let s = 1; s <= 100; s++) iro.jelez({ event: true, sequence: s })
+    await var_(30)
+    assert.equal(irasok.length, 1, `${irasok.length} írás 100 eseményre`)
+    assert.equal(irasok[0]!.sequence, 100)
+    // Az intervallumon belül jövő esemény vár — nem ír azonnal.
+    iro.jelez({ event: true, sequence: 101 })
+    await var_(30)
+    assert.equal(irasok.length, 1, 'az intervallumon belül is írt')
+  })
+
+  it('az állapotváltás azonnal megy, a függő eseménnyel együtt', async () => {
+    const irasok: Mezok[] = []
+    const iro = new gw.AllapotIro(async m => { irasok.push(m) }, 60_000)
+    iro.jelez({ event: true, sequence: 1 })
+    await var_(20)
+    iro.jelez({ event: true, sequence: 2 })
+    iro.jelez({ status: 'disconnected', reconnect: true, lastError: 'lezárva (1006)' })
+    await var_(20)
+    assert.equal(irasok.length, 2, 'az állapotváltás az intervallum végére várt')
+    assert.deepEqual(irasok[1], { event: true, sequence: 2, status: 'disconnected', reconnect: 1, lastError: 'lezárva (1006)' })
+  })
+
+  /*
+   * A `void`-dal indított írások versenyeztek: egy később célba érő, régebbi
+   * írás a tárolt sorszámot visszaléptethette.
+   */
+  it('egyszerre egy írás fut, és a sorszám nem lép vissza', async () => {
+    const sorszamok: number[] = []
+    let fut = 0
+    let legtobb = 0
+    const iro = new gw.AllapotIro(async m => {
+      fut++
+      legtobb = Math.max(legtobb, fut)
+      await var_(8)
+      if (typeof m.sequence === 'number') sorszamok.push(m.sequence)
+      fut--
+    }, 0)
+    for (let s = 1; s <= 40; s++) {
+      iro.jelez({ event: true, sequence: s })
+      await var_(1)
+    }
+    await iro.kiurit()
+    assert.equal(legtobb, 1, 'két írás futott egyszerre')
+    assert.deepEqual(sorszamok, [...sorszamok].sort((a, b) => a - b), `a sorszám visszalépett: ${sorszamok.join(',')}`)
+    assert.equal(sorszamok.at(-1), 40)
+  })
+
+  it('az elbukott írás mezői nem vesznek el, és a frissebb nyer', async () => {
+    const irasok: Mezok[] = []
+    let hibak = 0
+    const iro = new gw.AllapotIro(async m => {
+      if (hibak++ === 0) throw new Error('az adatbázis most nem érhető el')
+      irasok.push(m)
+    }, 20)
+    iro.jelez({ status: 'disconnected', reconnect: true })
+    await var_(5)
+    iro.jelez({ status: 'connecting', reconnect: true })
+    await var_(60)
+    assert.equal(irasok.length, 1)
+    assert.deepEqual(irasok[0], { status: 'connecting', reconnect: 2 }, 'az elbukott írás újracsatlakozása elveszett')
+  })
+
+  it('leálláskor kiír — és egy elérhetetlen adatbázison sem akad el', async () => {
+    let hivas = 0
+    const iro = new gw.AllapotIro(async () => { hivas++; throw new Error('nincs adatbázis') }, 20)
+    iro.jelez({ status: 'disconnected' })
+    await iro.kiurit()
+    assert.equal(hivas, 1)
+    await var_(60)
+    assert.equal(hivas, 1, 'leállás után is újrapróbálkozott')
+  })
+})
+
 describe('a gateway gyűjtője', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
   before(async () => {
     gw = await import('../src/modules/discord/gateway.ts')
@@ -265,5 +358,19 @@ describe('a gateway gyűjtője', { skip: HAS_DB ? false : 'no DATABASE_URL' }, (
   it('az állapotsor egyetlen', async () => {
     const sorok = await db.query('SELECT id FROM discord_gateway_state')
     assert.equal(sorok.length, 1, 'egynél több gateway-állapotsor van')
+  })
+
+  // Az összevont írás több újracsatlakozást visz egyszerre — egy sem veszhet el.
+  it('az újracsatlakozások száma összeadódik, nem csak eggyel nő', async () => {
+    const elotte = await db.query<{ reconnects: number }>('SELECT reconnects FROM discord_gateway_state WHERE id = 1')
+    const alap = Number(elotte[0]!.reconnects)
+    try {
+      await gw.allapotIr({ reconnect: 3 })
+      await gw.allapotIr({ reconnect: true })
+      const utana = await db.query<{ reconnects: number }>('SELECT reconnects FROM discord_gateway_state WHERE id = 1')
+      assert.equal(Number(utana[0]!.reconnects), alap + 4)
+    } finally {
+      await db.query('UPDATE discord_gateway_state SET reconnects = $1 WHERE id = 1', [alap])
+    }
   })
 })
