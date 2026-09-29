@@ -22,6 +22,16 @@ export function el (tag, attrs = {}, children = []) {
   return node
 }
 
+/*
+ * Trusted Types. A szerver CSP-je (`require-trusted-types-for 'script'`) ezt a
+ * dokumentumot is védi: nyers `innerHTML` itt kivételt dob, és a vezérlőpult el
+ * sem indul. Az egyetlen nyelő az ikonok SAJÁT, statikus rajzútvonala — ezért
+ * ugyanaz a `yume` szabály, mint a főoldalon (apps/web/src/shared/lib/trusted.js),
+ * és felhasználói adat ide sem jöhet. A szkenner-teszt ezt a fájlt is nézi.
+ */
+const policy = globalThis.trustedTypes?.createPolicy?.('yume', { createHTML: html => html }) ?? null
+const trustedHTML = html => policy ? policy.createHTML(html) : html
+
 export function svg (path, size = 18) {
   const node = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
   node.setAttribute('viewBox', '0 0 24 24')
@@ -32,7 +42,7 @@ export function svg (path, size = 18) {
   node.setAttribute('stroke-width', '2')
   node.setAttribute('stroke-linecap', 'round')
   node.setAttribute('stroke-linejoin', 'round')
-  node.innerHTML = path
+  node.innerHTML = trustedHTML(path)
   return node
 }
 

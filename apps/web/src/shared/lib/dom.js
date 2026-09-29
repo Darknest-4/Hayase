@@ -9,6 +9,7 @@
 // definition is in place long before the first call.
 
 import { I18n } from '../i18n/i18n.js'
+import { inertHTML, trustedHTML } from './trusted.js'
 
 export const U = {
   // createElement helper: U.el('div', { class: 'foo', onclick: fn }, [children...])
@@ -18,7 +19,8 @@ export const U = {
       if (value == null) continue
       if (key === 'class') node.className = value
       else if (key === 'text') node.textContent = value
-      else if (key === 'html') node.innerHTML = value
+      // Csak SAJÁT, statikus sablon — lásd trusted.js. Külső adat ide nem jöhet.
+      else if (key === 'html') node.innerHTML = trustedHTML(value)
       else if (key === 'style') node.style.cssText = value
       else if (key.startsWith('on') && typeof value === 'function') node.addEventListener(key.slice(2), value)
       else if (key === 'dataset') Object.assign(node.dataset, value)
@@ -40,7 +42,7 @@ export const U = {
 
   svg (paths, size = 16) {
     const wrap = document.createElement('span')
-    wrap.innerHTML = `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`
+    wrap.innerHTML = trustedHTML(`<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`)
     return wrap.firstChild
   },
 
@@ -95,7 +97,9 @@ export const U = {
   plainDesc (html) {
     const source = String(html ?? '').replaceAll('<br>', '\n').replaceAll('<br/>', '\n').replaceAll('<br />', '\n')
     try {
-      const doc = new DOMParser().parseFromString(source, 'text/html')
+      // Inert elemzés: külső szöveg, de a dokumentuma nem tölt be és nem futtat
+      // semmit, és csak a textContent-jét olvassuk (trusted.js, `yume-inert`).
+      const doc = new DOMParser().parseFromString(inertHTML(source), 'text/html')
       // A script és a style *tartalma* is szöveg a textContent szemében. Nem
       // veszélyes — a dokumentum inert —, de egy leírásban a forráskódja
       // ugyanúgy nem olvasmány, mint a címkéi.

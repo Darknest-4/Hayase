@@ -9,6 +9,7 @@ import { settings as siteSettings } from './site-settings.ts'
 import { flags as featureFlags } from './feature-flags.ts'
 import { configured as passwordResetConfigured } from '../auth/reset-delivery.ts'
 import * as turnstile from '../auth/turnstile.ts'
+import { isLoginConfigured as isDiscordLoginConfigured } from '../discord/oauth.ts'
 import { invalidateThresholds } from '../system/thresholds.ts'
 import { PREFERENCES } from '../profiles/preferences.ts'
 import { emitEvent } from '../webhooks/delivery.ts'
@@ -85,6 +86,13 @@ async function buildPublicConfig (): Promise<unknown> {
        * takes the name that does not need an exception.
        */
       recoveryAvailable: passwordResetConfigured(),
+      /*
+       * Van-e BELÉPÉS DISCORDDAL ezen a példányon. Csak akkor igaz, ha az
+       * OAuth-alkalmazás ÉS a belépés visszatérési címe is be van állítva
+       * (utóbbit a Discord fejlesztői portálján regisztrálni kell) — gomb egy
+       * nem működő folyamathoz nem jár. A példányról szól, nem egy fiókról.
+       */
+      discordLogin: isDiscordLoginConfigured(),
       /*
        * Az emberpróba HELYSZÍNKULCSA — nyilvános, és ez nem elnézés.
        *

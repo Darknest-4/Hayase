@@ -16,6 +16,7 @@
 //     teszi lehetővé egy képernyőképből.
 
 import { LOADING_PHASE } from '../core/player-state.js'
+import { trustedHTML } from '../../../shared/lib/trusted.js'
 
 /** Ennyi ideig mindenképp látszik. */
 export const MIN_VISIBLE_MS = 1000
@@ -54,12 +55,12 @@ export function createLoadingOverlay (player, options = {}) {
   // egy balról jobbra mozgó maszkkal. A szín így „végigfut" rajta. Egyetlen
   // elemen ez nem megoldható — a szürkeárnyalatos szűrő az egész elemre hat,
   // részlegesen nem.
-  node.innerHTML =
+  node.innerHTML = trustedHTML(
     `<div class="yp-loader-brand">
        <div class="yp-loader-base">${art}</div>
        <div class="yp-loader-sweep">${art}</div>
      </div>
-     <p class="yp-loader-phase"></p>`
+     <p class="yp-loader-phase"></p>`)
 
   const phaseNode = node.querySelector('.yp-loader-phase')
 

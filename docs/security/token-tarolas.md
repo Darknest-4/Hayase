@@ -130,10 +130,19 @@ egyszerre betöltődő fül egyetlen frissítéssel, élő tokennel a végén.
 
 ## Ami nyitva marad
 
-* **`connect-src https:`.** Egy XSS bármely HTTPS gazdára kiviheti a 15 perces tokent. Szűkíteni
-  csak akkor lehet, ha a videóforrások gazdalistája zárt lesz. Most nem az (lásd a `frame-src`
-  listáját az `embed-hosts.ts`-ben).
-* **Trusted Types** (`require-trusted-types-for 'script'`): további XSS-védelem lenne. Előfeltétele,
-  hogy a kliens összes HTML-nyelője át legyen nézve. Ez még nem történt meg.
+* **`connect-src https:` — marad, szándékosan.** Egy XSS bármely HTTPS gazdára kiviheti a 15
+  perces tokent. Szűkíteni azonban nem lehet: a lejátszó a HLS-listákat és -szeleteket
+  `fetch`-csel tölti a szolgáltatók CDN-jeiről, és az `http-feed` adapterrel az admin tetszőleges
+  forrást vehet fel. Egy zárt lista ezeket csendben elvágná, és a néző csak annyit látna, hogy
+  „nem sikerült lejátszani". Az XSS ellen a lenti Trusted Types véd — az nem a kivitelt, hanem a
+  befecskendezést zárja.
+* **Trusted Types — 2026-09-28 óta kikényszerítve.** A CSP `require-trusted-types-for 'script'`
+  és `trusted-types yume yume-inert` irányelve mellett a Chromium-alapú böngészők megtagadnak
+  minden nyers `innerHTML`-t, `DOMParser`-elemzést és `script.src`-t. A kliens minden nyelője
+  egyetlen modulon (`apps/web/src/shared/lib/trusted.js`) megy át; ezt a
+  `apps/web/test/trusted-sinks.test.mjs` őrzi. Kipróbálva kikényszerítve: 57 nézet belépés nélkül,
+  felhasználóként és adminként, a Player 2.0 vezérlőivel és menüjével, és a Turnstile a
+  Cloudflare valódi szkriptjével (teszt-kulcsokkal) egy teljes regisztrációig — egyetlen sértés
+  nélkül. Visszalépés telepítés nélkül: `CSP_TRUSTED_TYPES=report` (vagy `off`) és újraindítás.
 * **Felülvizsgálandó**, ha a kliens külső szkriptet kap, ha a CSP-jelentések szkript-sértést
   mutatnak, vagy ha az API bármilyen okból süti alapú hitelesítést vezet be.

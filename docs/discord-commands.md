@@ -10,10 +10,22 @@ meglévő **WebSocket-kapcsolaton**. Mivel a gateway úgyis fut, a második a
 helyes választás: nincs új nyilvános végpont, nincs aláírás-ellenőrzés, és
 nincs egy újabb támadási felület.
 
+> **A fejlesztői portálon az „Interactions Endpoint URL" legyen ÜRES.** Ha be
+> van állítva, a Discord MINDEN parancsot oda küld, és a gatewayre egy sem
+> érkezik — a felhasználó annyit lát, hogy „az alkalmazás nem válaszolt".
+> 2026-09-29-ig pontosan ez történt (a cím egy átirányító névre mutatott), és
+> egyetlen parancs sem működött. Azóta a gateway induláskor ellenőrzi, és
+> hangosan naplózza; a vezérlőpult **Parancsok** nézete pirosan kiírja, a
+> javítás helyével.
+
 **Három másodperc.** A Discord ennyit vár a válaszra, utána a felhasználónak
 azt írja ki, hogy a bot nem válaszolt — akkor is, ha a válasz később
-megérkezik. Ezért minden ág ad választ, a hibás is, és a lekérdezések napi
-összesítőkből olvasnak, nem nyers eseményből.
+megérkezik. Ha a kezelő 2 másodperc alatt nem végez, előbb **halasztott
+választ** küld („a bot gondolkodik…"), és a kész eredmény azt tölti ki.
+
+**A nyelv** a hívó Discord-kliensének nyelve: magyar kliensnek magyarul,
+minden másnak angolul. A parancsok leírása is kétnyelvű (a Discord a
+felhasználó nyelvén mutatja).
 
 ## 2. A parancsok
 
@@ -22,17 +34,66 @@ megérkezik. Ezért minden ág ad választ, a hibás is, és a lekérdezések na
 | `/help` | a parancsok listája |
 | `/status` | a rendszer és a gateway állapota |
 | `/stats` | a YUME számokban |
-| `/anime search` | keresés cím szerint |
-| `/anime info` | egy cím adatai |
-| `/anime latest` | a legfrissebb epizódok |
-| `/anime schedule` | a következő adások |
-| `/anime random` | egy véletlen cím |
-| `/profile` | a YUME-fiókod |
-| `/link`, `/unlink` | fiók-összekötés (a vezérlőpultra küld) |
-| `/watchlist` | a könyvtárad |
-| `/notifications` | értesítési rang |
+| `/anime search` | keresés cím szerint — **címkiegészítéssel**; legföljebb öt kis kártya (borító, tények, rövid leírás) |
+| `/anime info` | egy cím **teljes adatlapja** (lásd lent) — **címkiegészítéssel** |
+| `/anime latest` | a legfrissebb részek, **címenként egy**, borítóval |
+| `/anime schedule` | a következő adások borítóval (a néző saját időzónájában) |
+| `/anime random` | egy véletlen cím teljes adatlapja |
+| `/next` | a következő rész, amit nézni fogsz: a félbehagyott (a pozícióval és haladásjelzővel), vagy a „nézem" cím következő része — a rész képével, címével, leírásával; ha még nincs kint, mikor várható |
+| `/profile` | a YUME-fiókod: szint és XP, nézési idő, megnézett részek, befejezett címek, átlagpontszám, kedvencek, a könyvtár állapotonként, kedvenc műfajok, legutóbb nézett cím |
+| `/link`, `/unlink` | fiók-összekötés (a főoldal Beállítások → Fiók fülére küld) |
+| `/watchlist list` | a könyvtárad legutóbb változott tíz címe: állapot, haladás, pontszám, és összesítő állapotonként |
+| `/watchlist add` | cím a könyvtáradba — **megerősítéssel** (gombok), a cím adatlapjával |
+| `/notifications` | értesítési rang **be- és kikapcsolása** |
 | `/setup`, `/config`, `/logs` | állapot — **admin** |
-| `/announce` | bejelentés egy csatornába — **admin** |
+| `/announce` | bejelentés egy csatornába — **admin**, csak EZEN a szerveren |
+
+**A címkiegészítés** gépelés közben a katalógusból javasol; a kiválasztott
+javaslat értéke az anime azonosítója, tehát pontos találat, nem egy újabb
+keresés.
+
+### Az animekártya
+
+Minden cím ugyanazzal az adatlappal jelenik meg — a parancsokban, az
+epizód-bejelentésben, a DM-ben és a tartós üzenetekben is
+(`anime-card.ts`, egyetlen lekérdezés):
+
+* **borító** (kicsiben) és **banner** / a rész saját képe (nagyban), a
+  borító uralkodó színével az embed szélén;
+* **másodlagos címek** (japán, angol, romaji — ami tényleg más), és a
+  **leírás**: HTML és entitások nélkül, az AniList-spoiler Discord-spoiler
+  (`||…||`), a szöveg jelölése kikapcsolva (egy `*` vagy `<@…>` a leírásban
+  nem formáz és nem említ);
+* **tények**: formátum és részhossz, állapot, szezon, elérhető / összes rész,
+  pontszám **egész százalékban** (ahogy az oldalon — a hírfolyam eddig
+  „82.0"-t írt), népszerűség, stúdió, forrás, vetítés, műfajok (magyarul,
+  az oldal szavaival), a következő adás;
+* **gombok**: Megnézem (az első elérhető rész), Adatlap, Előzetes (YouTube).
+
+**Ami nincs, az kimarad** — nem „—", és nem kitalált tartalom.
+
+**A képek abszolút címmel mennek ki, a saját tükrünkből** (ugyanaz a szabály,
+mint az oldalon: `MEDIA_BASE_URL`, üresen `PUBLIC_URL/media/`; csak ha nincs
+tükör, a forrás CDN-je). Ezért kapta meg a `gateway` és a `worker` is a
+`MEDIA_BASE_URL`-t. A forrásadatbázis „nincs kép" helyőrzője nem kép.
+
+**Az előzetes gombja** csak akkor jelenik meg, ha az oldalon is mindenkinek
+látszik (`feature.trailers` bekapcsolva, `public` hozzáféréssel).
+
+**Felnőtt cím (`is_adult`)**: a nyilvános kimenetekből (keresés,
+címkiegészítés, véletlen, legfrissebb, menetrend, a csatorna hírfolyama, a
+tartós üzenetek) **kimarad** — ahogy az oldal katalógusa is alapból elrejti.
+A Discord szabályai szerint szexuális tartalom csak korhatáros csatornába
+mehet, és egy borítókép egy általános csatornában épp ez volna. A saját
+könyvtárad címe (`/watchlist list`, `/next`, DM) a nevével megjelenik, **kép
+és leírás nélkül**, 🔞 jelzéssel.
+
+**A `/watchlist add` nem ír azonnal**: megmutatja, melyik címet találta, és két
+gombot ad (Hozzáadom / Mégse). A gomb a gombnyomó SAJÁT könyvtárába ír, és ami
+már bent van, annak az állapotát nem írja át.
+
+**A `/announce`** csak ennek a szervernek a csatornájába küld — a bot több
+szerveren is bent van, és a kezelő nem a Discord felületének hisz.
 
 **Az adminparancsokat a kiszolgáló is ellenőrzi.** A Discord
 `default_member_permissions` mezője csak **elrejti** a parancsot — a kliens
@@ -44,7 +105,10 @@ vezérlőpultra küld: egy visszafordíthatatlan törlés nem indulhat egy
 chatablakból.
 
 **A `/link` nem tesz úgy, mintha össze tudna kötni.** A folyamathoz böngésző
-kell (a Discord engedélyezési lapja) és YUME-oldali bejelentkezés is.
+kell (a Discord engedélyezési lapja) és YUME-oldali bejelentkezés is. 2026-09-29
+óta a főoldal Beállítások → Fiók fülére küld (a `/profile` és a `/watchlist`
+tanácsa is): a vezérlőpult azóta jogosultsághoz kötött, egy átlagos tag ott
+nem jutna be.
 
 ### Korlátok
 
@@ -59,14 +123,26 @@ kell (a Discord engedélyezési lapja) és YUME-oldali bejelentkezés is.
 A használat a **meglévő eseménysémába** megy
 (`analytics_events`, `discord.command.use`), nem külön táblába: ugyanolyan
 „ki, mit, mikor" esemény, mint a többi, és a deduplikáció is kell rá, mert a
-Discord ismételhet.
+Discord ismételhet. A szerver azonosítója a metaadatba kerül: a vezérlőpult
+**Parancsok** nézete szerverenként mutatja (30 nap).
 
 ### Regisztráció
 
 **Guild szintű**, nem globális: a globális parancsok akár egy órát is
-késhetnek, a guild szintűek azonnal megjelennek. A vezérlőpulton a
-**Parancsok feltöltése** gomb tölti fel; a `PUT` a teljes listát cseréli,
-tehát ez egyben a „töröld a régieket" művelet is.
+késhetnek, a guild szintűek azonnal megjelennek. **A gateway magától
+szinkronizál**: induláskor és minden szerverhez csatlakozáskor megnézi, mi van
+fent, és csak ELTÉRÉSNÉL tölt fel (`DISCORD_COMMAND_SYNC=false` kikapcsolja).
+A vezérlőpult **Parancsok** nézetében a „Parancsok feltöltése most" gomb
+azonnal teszi; a `PUT` a teljes listát cseréli, tehát ez egyben a „töröld a
+régieket" művelet is.
+
+### Gombok és beviteli ablak
+
+A bot saját üzeneteinek gombjai (a `/watchlist add` megerősítése, a moderátori
+csatorna döntései) a gatewayen érkeznek, és a kezelő a GOMBNYOMÓ jogát nézi —
+nem az üzenet küldőjéét. A moderálási döntés indoklását egy beviteli ablak
+kéri; az elküldésekor a jogot újra ellenőrizzük (lásd `discord-dashboard.md`,
+Moderálás).
 
 ---
 
@@ -117,7 +193,8 @@ A hívó **saját** Discord-fiókjára megy, nem egy tetszőleges azonosítóra 
 | Mi | Hol |
 |---|---|
 | Parancsok | `apps/api/src/modules/discord/commands.ts` |
+| Animekártya (adatlap, képek, feliratok) | `apps/api/src/modules/discord/anime-card.ts` |
 | Köszöntő | `apps/api/src/modules/discord/welcome.ts` |
 | Gateway-bekötés | `apps/api/src/modules/discord/gateway-main.ts` |
 | Felület | `apps/discord/src/setup.js` → Köszöntő |
-| Tesztek | `test/discord-commands.test.ts`, `test/discord-welcome.test.ts` |
+| Tesztek | `test/discord-commands.test.ts`, `test/discord-welcome.test.ts`, `test/discord-anime-card.test.ts`, `test/discord-anime-lists.exclusive.ts` (`npm run test:exclusive`) |

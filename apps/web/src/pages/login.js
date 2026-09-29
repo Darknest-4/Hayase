@@ -127,6 +127,28 @@ export const PageLogin = {
     wrap.append(fo)
 
     /*
+     * A DISCORDTÓL VISSZATÉRVE. Siker esetén a kiszolgáló a frissítő sütit
+     * állította be (a hozzáférési token szándékosan nincs a címben) — ebből
+     * veszünk fel munkamenetet, és megyünk tovább. Minden más kimenet egy
+     * üzenet az űrlap fölött. A paraméter kikerül a címből: egy frissítés ne
+     * ismételje meg.
+     */
+    const discordKimenet = params.get('discord')
+    if (discordKimenet) window.history?.replaceState?.(null, '', `#/login${params.get('next') ? `?next=${encodeURIComponent(params.get('next'))}` : ''}`)
+    if (discordKimenet === 'ok' && !YumeAPI.user()) {
+      fo.append(U.el('div', { class: 'auth-card' }, [P.spinner()]))
+      YumeAPI.resumeSession()
+        .then(async () => { go(); await afterAuth() })
+        .catch(() => {
+          fo.replaceChildren(U.el('div', { class: 'auth-card' }, [
+            U.el('p', { class: 'auth-sub', role: 'alert', text: T('The Discord sign-in did not open a session. Try again.') }),
+            P.button(T('Sign in'), { variant: 'primary', onclick: () => { window.location.hash = '#/login' } })
+          ]))
+        })
+      return
+    }
+
+    /*
      * AKI MÁR BENT VAN, annak ez a lap nem űrlap, hanem egy elágazás. A régi
      * viselkedés az volt, hogy egy belépett látogató is üres mezőket kapott —
      * amiből az következett volna, hogy nincs is bejelentkezve.
@@ -188,7 +210,45 @@ export const PageLogin = {
       }
     })
 
-    fo.append(U.el('div', { class: 'auth-card' }, [cim, alcim, form.node]))
+    const DISCORD_UZENET = {
+      not_linked: 'This Discord account is not linked to a Yume account. Sign in with your password, then link Discord under Settings → Account.',
+      blocked: 'This account cannot sign in right now.',
+      mfa: 'This account uses two-step sign-in — sign in with your password.',
+      cancelled: 'Discord sign-in was cancelled.',
+      expired: 'The Discord sign-in expired. Try again.',
+      invalid: 'Discord sign-in failed. Try again.',
+      failed: 'Discord sign-in failed. Try again.'
+    }
+    const discordHiba = discordKimenet && discordKimenet !== 'ok'
+      ? U.el('p', { class: 'field-error auth-error', role: 'alert', text: T(DISCORD_UZENET[discordKimenet] ?? DISCORD_UZENET.failed) })
+      : null
+
+    /*
+     * BELÉPÉS DISCORDDAL — csak ha ez a példány be van állítva rá (a
+     * kiszolgáló mondja meg), és csak már összekötött fiókba; a gomb alatti
+     * mondat ezt ki is mondja, hogy senki ne várjon tőle regisztrációt.
+     */
+    const discordGomb = site()?.discordLogin
+      ? U.el('div', { class: 'auth-alt' }, [
+        P.button(T('Sign in with Discord'), {
+          variant: 'secondary',
+          onclick: async e => {
+            const gomb = e.currentTarget
+            gomb.disabled = true
+            try {
+              const { url } = await YumeAPI.discordLoginStart()
+              window.location.assign(url)
+            } catch (err) {
+              gomb.disabled = false
+              U.toast(err.message, 'error')
+            }
+          }
+        }),
+        U.el('p', { class: 'auth-sub', text: T('For accounts already linked to Discord.') })
+      ])
+      : null
+
+    fo.append(U.el('div', { class: 'auth-card' }, [cim, alcim, discordHiba, form.node, discordGomb].filter(Boolean)))
 
     /*
      * A KIJÁRAT A KEZDŐKÉPERNYŐRE VISZ, nem a főoldalra.

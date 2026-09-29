@@ -22,6 +22,7 @@ are verified to apply cleanly on a fresh Postgres 16 (101 relations).
 | `0030_themes` | site palettes | `themes` (seeded with the built-ins) |
 | `0031_remove_extension_platform` | the store, the portal and the sandbox | drops everything `0006` created |
 | `0035_single_profile` | one profile per account | merges the accounts that held two, archives what collided into `profile_merge_dropped`, and makes `user_profiles (user_id)` unique |
+| `0083_drop_unused_schema` | removal | drops 16 tables no code ever read or wrote (`api_keys`, `audio_tracks`, `bookmarks`, `clubs`/`club_members`, `custom_lists`/`custom_list_items`/`collection_lists`/`list_likes`, `friendships`, `oauth_identities`, `profile_merge_dropped`, `review_votes`, `source_mirrors`, `translation_runs`, `user_badges` — all empty in production on 2026-09-28) and 319 of 369 permissions no code checks. Refuses to drop anything if one of the tables holds a row; `test/permissions-used.test.ts` keeps the catalogue honest |
 
 ## Entity relationship overview
 
@@ -30,10 +31,10 @@ users ─1:1─ user_profiles ─1:N─ library_entries ─N:1─ anime
   │              │                                       │
   │              ├─ watch_progress ─N:1─ episodes ─N:1───┤
   │              ├─ watch_history  (partitioned)         ├─ anime_titles / synonyms
-  │              ├─ custom_lists ─ items ─N:1─ anime     ├─ anime_mappings (external ids)
+  │              │                                       ├─ anime_mappings (external ids)
   │              ├─ favorites / reviews / xp_events      ├─ anime_genres / anime_tags
   │              └─ profile_stats (materialised)         ├─ anime_companies / staff / characters
-  ├─ sessions / devices / api_keys / notifications       ├─ anime_relations (graph)
+  ├─ sessions / devices / notifications                 ├─ anime_relations (graph)
   ├─ user_roles ─ roles ─ role_permissions ─ permissions └─ anime_images / videos
   ├─ comments / posts / messages / reports
   └─ themes (site palettes)

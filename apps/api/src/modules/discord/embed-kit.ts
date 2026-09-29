@@ -25,9 +25,11 @@
 /** A YUME arcszíne. */
 export const SZIN = 0xE4_1E_63
 
-const YUME_URL = process.env.PUBLIC_URL ?? 'https://animehub.hu'
-const DASHBOARD_URL = process.env.DISCORD_DASHBOARD_URL ?? 'https://discord.animehub.hu'
-const IKON = process.env.DISCORD_EMBED_ICON ?? `${YUME_URL}/assets/yume.svg`
+// `||`, nem `??`: a compose üresen (`${PUBLIC_URL:-}`) is átadja a változót,
+// és egy üres alap relatív hivatkozást adna — azt a Discord visszadobja.
+const YUME_URL = (process.env.PUBLIC_URL || 'https://animehub.hu').replace(/\/+$/, '')
+const DASHBOARD_URL = (process.env.DISCORD_DASHBOARD_URL || 'https://discord.animehub.hu').replace(/\/+$/, '')
+const IKON = process.env.DISCORD_EMBED_ICON || `${YUME_URL}/assets/yume.svg`
 
 /**
  * A FEJLÉC.

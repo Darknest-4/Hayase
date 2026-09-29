@@ -15,11 +15,13 @@
 import { audit } from '../audit/audit.ts'
 import { query, queryOne } from '../../infrastructure/database/index.ts'
 import { guildAccess } from './guild-access.ts'
-import { channelGuild, createRestClient, diagnoseChannel, fetchChannels, fetchGuild, fetchRoles, isConfigured } from './rest-client.ts'
+import { botGuilds, channelGuild, createRestClient, diagnoseChannel, fetchChannels, fetchCommands, fetchGuild, fetchRoles, isConfigured } from './rest-client.ts'
 import { allapot as gatewayAllapot, elo as gatewayElo, intentsFromEnv, INTENTS } from './gateway.ts'
 import { findById, listForGuild, recreateMessage, syncMessage, type PersistentMessage } from './persistent-messages.ts'
 import { renderMessage, MESSAGE_TYPES } from './render.ts'
 import * as oauth from './oauth.ts'
+import * as dm from './dm-notify.ts'
+import * as guildSettings from './guild-settings.ts'
 import * as registry from './registry.ts'
 import * as setup from './setup.ts'
 import * as welcome from './welcome.ts'
@@ -147,6 +149,34 @@ function publicView (row: PersistentMessage): Record<string, unknown> {
 }
 
 const routes: FastifyPluginAsync = async fastify => {
+  // ---- a vezérlőpult kapuja ----------------------------------------------
+
+  /**
+   * A VEZÉRLŐPULT NEM NYILVÁNOS: a nézetei (`/status`, a `/guilds`
+   * szerverlista és minden `/guilds/:guildId/…`) YUME-jogosultságot kérnek —
+   * `discord.dashboard`-ot,
+   * vagy az üzemeltetői `discord.manage`-et. Eddig a Discordon meglévő
+   * „Szerver kezelése" jog egymagában is bejuttatott; a tulajdonos kérésére
+   * (2026-09-29) már nem. A szerverenkénti kapu (`gate`) ezen FELÜL marad.
+   *
+   * AMI NEM A VEZÉRLŐPULTÉ, AZ NYITVA MARAD: az OAuth-összekötés (`/oauth/…`)
+   * a főoldalról is indul, bármelyik belépett felhasználónak.
+   */
+  fastify.addHook('preHandler', async (request, reply) => {
+    const url = request.routeOptions?.url ?? ''
+    // A `/guilds` PONTOSAN is: a `startsWith('/v1/discord/guilds/')` a perjel
+    // miatt a szerverlistát kihagyná.
+    const pult = url === '/v1/discord/status' || url === '/v1/discord/guilds' || url.startsWith('/v1/discord/guilds/')
+    if (!pult) return
+    if (!request.user) return // a route saját `authenticate`-je már elutasította
+    if (await holds(request, 'discord.dashboard') || await holds(request, 'discord.manage')) return
+    return await reply.code(403).send({
+      type: 'about:blank', title: 'Forbidden', status: 403,
+      // A felület ebből tudja, hogy nem a Discord-oldali jog hiányzik.
+      detail: 'no_dashboard_permission'
+    })
+  })
+
   // ---- a rendszer állapota -----------------------------------------------
 
   /**
@@ -177,8 +207,20 @@ const routes: FastifyPluginAsync = async fastify => {
         detail: 'nincs beállítva Discord OAuth'
       })
     }
+    /*
+     * HOVÁ TÉRJEN VISSZA: `dashboard` (alapból — a vezérlőpult törzs nélkül
+     * hívja) vagy `site` (a főoldal Beállítások → Fiók füle). Zárt lista, és
+     * az állapot mellé tárolódik: a visszahívás nem a címsorból dönt.
+     */
+    const kert = (request.body as { returnTo?: unknown } | null | undefined)?.returnTo
+    if (kert !== undefined && !oauth.RETURN_TARGETS.includes(kert as oauth.ReturnTarget)) {
+      return await reply.code(400).send({
+        type: 'about:blank', title: 'Bad Request', status: 400,
+        detail: 'returnTo: dashboard vagy site'
+      })
+    }
     const userId = (request.user as { sub: string }).sub
-    const state = await oauth.createState(userId)
+    const state = await oauth.createState(userId, (kert as oauth.ReturnTarget | undefined) ?? 'dashboard')
     return { url: oauth.authorizeUrl(state) }
   })
 
@@ -209,7 +251,20 @@ const routes: FastifyPluginAsync = async fastify => {
     }
   }, async (request, reply) => {
     const q = request.query as { code?: string, state?: string, error?: string }
+    /*
+     * AZ ÁLLAPOTOT ELŐSZÖR VÁLTJUK BE — a lemondásnál is. Belőle tudjuk, hová
+     * kell visszaküldeni a böngészőt; egy a főoldalról indított, a Discordnál
+     * visszautasított összekötés eddig a vezérlőpulton kötött volna ki.
+     */
+    const bevaltott = q.state ? await oauth.consumeStateTarget(q.state) : null
     const vissza = (allapot: string): void => {
+      if (bevaltott?.returnTo === 'site') {
+        // A főoldal Beállítások → Fiók füle. A PUBLIC_URL az oldal saját címe
+        // (a visszahívás a vezérlőpult nevén fut); üresen a relatív cím marad.
+        const oldal = (process.env.PUBLIC_URL ?? '').trim().replace(/\/+$/, '')
+        void reply.redirect(`${oldal}/#/settings?tab=account&discord=${encodeURIComponent(allapot)}`)
+        return
+      }
       /*
        * A CÉL A VEZÉRLŐPULT BEÁLLÍTÁSOK FÜLE — ott indult a folyamat, és ott
        * is kell végződnie.
@@ -230,7 +285,7 @@ const routes: FastifyPluginAsync = async fastify => {
     if (q.error) return vissza('cancelled')
     if (!q.code || !q.state) return vissza('invalid')
 
-    const userId = await oauth.consumeState(q.state)
+    const userId = bevaltott?.userId ?? null
     if (!userId) {
       /*
        * ISMERETLEN VAGY LEJÁRT ÁLLAPOT. Nem mondjuk meg, melyik: egy
@@ -268,6 +323,7 @@ const routes: FastifyPluginAsync = async fastify => {
       configured: oauth.isConfigured(),
       username: link.username,
       linkedAt: link.linkedAt,
+      dmNewEpisodes: link.dmNewEpisodes,
       /*
        * CSAK AZOK A GUILDEK, AMIKHEZ TÉNYLEG VAN JOGA. Egy teljes lista
        * megmondaná, mely szervereknek tagja — az a vezérlőpultnak nem kell,
@@ -279,12 +335,87 @@ const routes: FastifyPluginAsync = async fastify => {
     }
   })
 
+  /**
+   * A SAJÁT DISCORD-BEÁLLÍTÁSOK — a főoldal Beállítások → Fiók fülén.
+   *
+   * Ma egy kapcsoló: DM-értesítés az új részekről (a könyvtár címeiről). Csak
+   * összekötött fióknak van mit kapcsolnia; a bekapcsolás pillanata számít —
+   * csak az utána megjelent részekről jön értesítés (lásd `dm-notify.ts`).
+   */
+  fastify.patch('/oauth/link', {
+    config: WRITE_LIMIT,
+    onRequest: fastify.authenticate,
+    schema: {
+      body: {
+        type: 'object', additionalProperties: false, required: ['dmNewEpisodes'],
+        properties: { dmNewEpisodes: { type: 'boolean' } }
+      }
+    }
+  }, async (request, reply) => {
+    const userId = (request.user as { sub: string }).sub
+    const { dmNewEpisodes } = request.body as { dmNewEpisodes: boolean }
+    if (!await dm.setDm(userId, dmNewEpisodes)) {
+      return await reply.code(404).send({
+        type: 'about:blank', title: 'Not Found', status: 404, detail: 'nincs összekötött Discord-fiók'
+      })
+    }
+    await audit(userId, 'discord.account.dm', 'user', userId, null, { dmNewEpisodes })
+    return { dmNewEpisodes }
+  })
+
   /** Az összekötés bontása. */
   fastify.delete('/oauth/link', { onRequest: fastify.authenticate }, async (request, reply) => {
     const userId = (request.user as { sub: string }).sub
     const volt = await oauth.unlink(userId)
     if (volt) await audit(userId, 'discord.account.unlink', 'user', userId, null, null)
     return await reply.code(volt ? 204 : 404).send()
+  })
+
+  /**
+   * A SZERVERVÁLASZTÓ — mely szervereket nyithatja meg a hívó.
+   *
+   * Eddig a vezérlőpult az összekötött fiók szervereit mutatta, így egy
+   * `discord.manage`-es üzemeltető összekötés nélkül üres választót látott,
+   * pedig a kapu minden szerverre beengedte volna. Most:
+   *
+   *   * `discord.manage`: minden szerver, amelyben a bot benne van;
+   *   * különben: az összekötött fiók szerverei, ahol „Szerver kezelése" joga
+   *     van — és ahol a bot is bent van, mert máshol a vezérlőpult úgysem
+   *     tud mit mutatni.
+   *
+   * Ha a bot listája nem kérdezhető le (nincs token, a Discord nem válaszol),
+   * az összekötött fiók szerverei maradnak, szűrés nélkül: egy üres lista azt
+   * állítaná, hogy a bot sehol nincs bent.
+   *
+   * EZ CSAK LISTA, NEM KAPU: minden szerver minden nézete a `gate`-en megy át.
+   */
+  fastify.get('/guilds', { onRequest: fastify.authenticate }, async request => {
+    const userId = (request.user as { sub: string }).sub
+    const [uzemelteto, botListaja, link] = await Promise.all([
+      holds(request, 'discord.manage'), botGuilds(), oauth.linkOf(userId)
+    ])
+    const bot = botListaja === null ? null : new Map(botListaja.map(g => [g.id, g.name]))
+
+    let sajat: Array<{ id: string, name: string | null }> = []
+    if (link) {
+      const sorok = await query<{ guild_id: string, guild_name: string | null, owner: boolean, permissions: string }>(
+        'SELECT guild_id, guild_name, owner, permissions FROM discord_guild_members WHERE discord_user_id = $1',
+        [link.discordUserId])
+      sajat = sorok
+        .filter(g => can({ owner: g.owner, permissions: parsePermissions(g.permissions) }, 'view_stats'))
+        .map(g => ({ id: g.guild_id, name: g.guild_name }))
+    }
+
+    const lista: Array<{ id: string, name: string | null }> = uzemelteto && bot
+      ? [...bot].map(([id, name]) => ({ id, name }))
+      : bot
+        ? sajat.filter(g => bot.has(g.id)).map(g => ({ id: g.id, name: bot.get(g.id) ?? g.name }))
+        : sajat
+
+    return {
+      data: lista.sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id, 'hu')),
+      botListAvailable: bot !== null
+    }
   })
 
   // ---- a vezérlőpult nézetei ---------------------------------------------
@@ -385,7 +516,7 @@ const routes: FastifyPluginAsync = async fastify => {
     const guildId = await gate(request, reply, 'view_stats')
     if (!guildId) return
 
-    const [szondak, esemenyek, hibasak, gw] = await Promise.all([
+    const [szondak, esemenyek, hibasak, gw, napok] = await Promise.all([
       query<{ service: string, status: string, latency_ms: string | null, detail: string | null, checked_at: Date }>(
         `SELECT service, status, latency_ms, left(detail, 200) AS detail, checked_at
            FROM service_status WHERE service LIKE 'discord%' ORDER BY service`),
@@ -399,7 +530,16 @@ const routes: FastifyPluginAsync = async fastify => {
         `SELECT message_type, failure_count, left(last_error, 200) AS last_error
            FROM persistent_messages WHERE guild_id = $1 AND failure_count > 0
           ORDER BY failure_count DESC`, [guildId]),
-      gatewayAllapot()
+      gatewayAllapot(),
+      // A kapcsolat naponta: szakadás, folytatás, új munkamenet, körútidő.
+      // A gateway EGY kapcsolat a bot összes szerveréhez — nem guildenkénti adat.
+      query<{ day: string, reconnects: number, resumed: number, identified: number, rtt_avg_ms: number | null, rtt_max_ms: number | null }>(
+        `SELECT day::text, reconnects, resumed, identified,
+                CASE WHEN rtt_count > 0 THEN round(rtt_sum_ms::numeric / rtt_count)::int END AS rtt_avg_ms,
+                rtt_max_ms
+           FROM discord_gateway_daily
+          WHERE day > current_date - 14
+          ORDER BY day DESC`)
     ])
 
     /*
@@ -429,7 +569,20 @@ const routes: FastifyPluginAsync = async fastify => {
             reconnects: Number(gw.reconnects ?? 0),
             lastError: gw.last_error ?? null,
             memberIntent: tagIntent,
-            wantedIntents: intentsFromEnv()
+            wantedIntents: intentsFromEnv(),
+            // A Discord felé mért késleltetés: a legutóbbi szívverés körútideje.
+            // `null` = még nem mértük (nem „nulla ezredmásodperc").
+            heartbeatRttMs: gw.heartbeat_rtt_ms === null || gw.heartbeat_rtt_ms === undefined
+              ? null
+              : Number(gw.heartbeat_rtt_ms),
+            daily: napok.map(n => ({
+              day: n.day,
+              reconnects: Number(n.reconnects),
+              resumed: Number(n.resumed),
+              identified: Number(n.identified),
+              rttAvgMs: n.rtt_avg_ms === null ? null : Number(n.rtt_avg_ms),
+              rttMaxMs: n.rtt_max_ms === null ? null : Number(n.rtt_max_ms)
+            }))
           },
       capabilities: {
         rest: isConfigured(),
@@ -538,6 +691,100 @@ const routes: FastifyPluginAsync = async fastify => {
         ORDER BY a.created_at DESC LIMIT $2`,
       [`discord:${guildId}:%`, limit ?? 50])
     return { data: sorok }
+  })
+
+  /**
+   * A SLASH PARANCSOK — a vezérlőpult Parancsok nézetéhez.
+   *
+   * Eddig ez a nézet azt írta ki, hogy „a botnak nincs egyetlen parancsa
+   * sem" — miközben tizenhárom volt regisztrálva, és egy sem működött, mert
+   * a Discord egy HTTP-végpontra küldte őket. Most megmondja: hová kézbesít
+   * a Discord, mi van fent a kódhoz képest, és mit használnak (30 nap, a
+   * `discord.command.use` eseményekből, szerverre szűrve).
+   */
+  fastify.get('/guilds/:guildId/commands', {
+    onRequest: fastify.authenticate,
+    schema: { params: GUILD_PARAMS }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'view_stats')
+    if (!guildId) return
+
+    const [kezbesites, fent, hasznalat] = await Promise.all([
+      commands.deliveryStatus(),
+      fetchCommands(guildId),
+      query<{ command: string, uses: number, last_used_at: Date }>(
+        `SELECT subject_id AS command, count(*)::int AS uses, max(created_at) AS last_used_at
+           FROM analytics_events
+          WHERE event_type = 'discord.command.use' AND created_at > now() - interval '30 days'
+            AND metadata->>'guildId' = $1
+          GROUP BY 1 ORDER BY 2 DESC`, [guildId])
+    ])
+
+    return {
+      configured: isConfigured(),
+      delivery: kezbesites,
+      defined: commands.DEFINITIONS.map(d => d.name),
+      // `null` = nem kérdezhető le; az üres lista azt jelentené, nincs fent semmi.
+      registered: fent === null ? null : fent.map(c => String(c.name ?? '')),
+      inSync: fent === null ? null : commands.azonos(fent),
+      usage: hasznalat.map(h => ({ command: h.command, uses: h.uses, lastUsedAt: h.last_used_at }))
+    }
+  })
+
+  /**
+   * A TARTÓS ÜZENETEK NAPI HIBAÖSSZESÍTŐJE — a Napló nézethez.
+   *
+   * A hibát eddig csak az üzenet saját számlálója (`failure_count`) mutatta,
+   * és az egy sikeres frissítéskor nullázódik: egy naponta órákra elromló
+   * üzenet este már hibátlannak látszott, és csak egy panaszból derült ki.
+   * Ez a frissítési előzményből számol, napra és üzenettípusra bontva: hány
+   * kísérletből hány hibázott, és mi volt az utolsó hiba.
+   *
+   * CSAK AZ A NAP JELENIK MEG, AMELYEN HIBA VOLT. Az előzmény megőrzése a
+   * workeré (alapból 30 nap) — ennél régebbre az ablak sem nyúlhat.
+   */
+  fastify.get('/guilds/:guildId/message-failures', {
+    onRequest: fastify.authenticate,
+    schema: {
+      params: GUILD_PARAMS,
+      querystring: {
+        type: 'object', additionalProperties: false,
+        properties: { days: { type: 'integer', minimum: 1, maximum: 30 } }
+      }
+    }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'view_stats')
+    if (!guildId) return
+    const { days } = request.query as { days?: number }
+    const ablak = days ?? 14
+
+    const sorok = await query<{
+      day: string, message_type: string, failures: number, attempts: number,
+      last_error: string | null, last_failed_at: Date | null
+    }>(
+      `SELECT (e.at AT TIME ZONE 'UTC')::date::text AS day, m.message_type,
+              count(*) FILTER (WHERE e.event = 'failed')::int AS failures,
+              count(*) FILTER (WHERE e.event IN ('created', 'edited', 'skipped', 'recreated', 'failed'))::int AS attempts,
+              (array_agg(left(e.detail, 200) ORDER BY e.at DESC) FILTER (WHERE e.event = 'failed'))[1] AS last_error,
+              max(e.at) FILTER (WHERE e.event = 'failed') AS last_failed_at
+         FROM persistent_message_events e
+         JOIN persistent_messages m ON m.id = e.message_id
+        WHERE m.guild_id = $1 AND e.at >= now() - ($2::int || ' days')::interval
+        GROUP BY 1, 2
+       HAVING count(*) FILTER (WHERE e.event = 'failed') > 0
+        ORDER BY 1 DESC, 3 DESC`, [guildId, ablak])
+
+    return {
+      window: { days: ablak },
+      data: sorok.map(s => ({
+        day: s.day,
+        messageType: s.message_type,
+        failures: s.failures,
+        attempts: s.attempts,
+        lastError: s.last_error,
+        lastFailedAt: s.last_failed_at
+      }))
+    }
   })
 
   /**
@@ -934,6 +1181,170 @@ const routes: FastifyPluginAsync = async fastify => {
     return { data: await welcome.log(guildId, 50) }
   })
 
+  // ---- szerver-beállítások ------------------------------------------------
+  //
+  // Nyelv, hírfolyam-szűrők, moderátori csatorna, rangok. Minden írás
+  // `manage_guild`, és minden Discord-azonosító ELLENŐRIZVE, hogy ehhez a
+  // szerverhez tartozik: egy idegen szerver csatornájába vagy rangjára mutató
+  // beállítás a botot egy másik közösségben dolgoztatná.
+
+  /** Egy rang ehhez a szerverhez tartozik-e — és kezelhető-e (nem @everyone, nem integrációé). */
+  const rangHiba = async (guildId: string, rangId: string): Promise<string | null> => {
+    const rangok = await fetchRoles(guildId)
+    if (rangok === null) return isConfigured() ? 'a szerver rangjai most nem kérdezhetők le' : 'nincs bot token'
+    const r = rangok.find(x => x.id === rangId)
+    if (!r) return 'nincs ilyen rang ezen a szerveren'
+    if (r.id === guildId) return 'az @everyone nem kezelhető rang'
+    if (r.managed) return 'ezt a rangot egy integráció kezeli, a bot nem adhatja'
+    return null
+  }
+
+  fastify.get('/guilds/:guildId/config', {
+    onRequest: fastify.authenticate,
+    schema: { params: GUILD_PARAMS }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'manage_guild')
+    if (!guildId) return
+    const [beall, rangok, animek, yumeRangok, mufajok] = await Promise.all([
+      guildSettings.settingsOf(guildId),
+      guildSettings.roleMappings(guildId),
+      guildSettings.animeMentions(guildId),
+      query<{ slug: string, name: string }>('SELECT slug, name FROM roles ORDER BY name'),
+      query<{ slug: string, name: string }>('SELECT slug, name FROM genres ORDER BY name')
+    ])
+    return {
+      settings: beall,
+      roleMappings: rangok,
+      animeMentions: animek,
+      // A választható értékek — a felület ebből épít listát, nem kitalált elemekből.
+      options: { languages: guildSettings.LANGUAGES, yumeRoles: yumeRangok, genres: mufajok }
+    }
+  })
+
+  fastify.patch('/guilds/:guildId/config', {
+    config: WRITE_LIMIT,
+    onRequest: fastify.authenticate,
+    schema: {
+      params: GUILD_PARAMS,
+      body: {
+        type: 'object', additionalProperties: false, minProperties: 1,
+        properties: {
+          language: { enum: [...guildSettings.LANGUAGES] },
+          feedGenres: { type: 'array', maxItems: 30, uniqueItems: true, items: { type: 'string', pattern: '^[a-z0-9-]{1,40}$' } },
+          feedCurrentSeason: { type: 'boolean' },
+          moderationChannelId: { anyOf: [SNOWFLAKE, { type: 'null' }] },
+          linkedRoleId: { anyOf: [SNOWFLAKE, { type: 'null' }] }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'manage_guild')
+    if (!guildId) return
+    const body = request.body as guildSettings.SettingsChange
+
+    if (body.feedGenres?.length) {
+      const letezo = await query<{ slug: string }>('SELECT slug FROM genres WHERE slug = ANY($1::text[])', [body.feedGenres])
+      const ismeretlen = body.feedGenres.filter(s => !letezo.some(l => l.slug === s))
+      if (ismeretlen.length) {
+        return await refuse(reply, { status: 400, detail: `Ismeretlen műfaj: ${ismeretlen.join(', ')}` })
+      }
+    }
+    if (body.moderationChannelId) {
+      const baj = await channelRefusal(guildId, body.moderationChannelId)
+      if (baj) return await refuse(reply, baj)
+      if (!isConfigured()) return await refuse(reply, { status: 400, detail: 'A moderátori csatornához bot token kell.' })
+    }
+    if (body.linkedRoleId) {
+      const baj = await rangHiba(guildId, body.linkedRoleId)
+      if (baj) return await refuse(reply, { status: 400, detail: baj })
+    }
+
+    const uj = await guildSettings.saveSettings(guildId, body)
+    await audit((request.user as { sub: string }).sub, 'discord.config.update', 'config', `discord:${guildId}`, null, body)
+    return { settings: uj }
+  })
+
+  fastify.put('/guilds/:guildId/config/role-mappings', {
+    config: WRITE_LIMIT,
+    onRequest: fastify.authenticate,
+    schema: {
+      params: GUILD_PARAMS,
+      body: {
+        type: 'object', additionalProperties: false, required: ['mappings'],
+        properties: {
+          mappings: {
+            type: 'array', maxItems: 20,
+            items: {
+              type: 'object', additionalProperties: false, required: ['yumeRole', 'discordRoleId'],
+              properties: { yumeRole: { type: 'string', maxLength: 64 }, discordRoleId: SNOWFLAKE }
+            }
+          }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'manage_guild')
+    if (!guildId) return
+    const { mappings } = request.body as { mappings: guildSettings.RoleMapping[] }
+
+    // Egy YUME-szerepkör egyszer: két rang ugyanahhoz ellentmondana.
+    if (new Set(mappings.map(m => m.yumeRole)).size !== mappings.length) {
+      return await refuse(reply, { status: 400, detail: 'Egy YUME-szerepkör csak egyszer szerepelhet.' })
+    }
+    const letezo = await query<{ slug: string }>('SELECT slug FROM roles WHERE slug = ANY($1::text[])', [mappings.map(m => m.yumeRole)])
+    const ismeretlen = mappings.filter(m => !letezo.some(l => l.slug === m.yumeRole)).map(m => m.yumeRole)
+    if (ismeretlen.length) return await refuse(reply, { status: 400, detail: `Ismeretlen YUME-szerepkör: ${ismeretlen.join(', ')}` })
+    for (const m of mappings) {
+      const baj = await rangHiba(guildId, m.discordRoleId)
+      if (baj) return await refuse(reply, { status: 400, detail: `${m.yumeRole}: ${baj}` })
+    }
+
+    await guildSettings.saveRoleMappings(guildId, mappings)
+    await audit((request.user as { sub: string }).sub, 'discord.config.role_mappings', 'config', `discord:${guildId}`, null, { mappings })
+    return { roleMappings: await guildSettings.roleMappings(guildId) }
+  })
+
+  const ANIME_PARAMS = {
+    type: 'object', required: ['guildId', 'animeId'], additionalProperties: false,
+    properties: { guildId: SNOWFLAKE, animeId: { type: 'string', format: 'uuid' } }
+  } as const
+
+  fastify.put('/guilds/:guildId/config/anime-mentions/:animeId', {
+    config: WRITE_LIMIT,
+    onRequest: fastify.authenticate,
+    schema: {
+      params: ANIME_PARAMS,
+      body: { type: 'object', additionalProperties: false, required: ['discordRoleId'], properties: { discordRoleId: SNOWFLAKE } }
+    }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'manage_guild')
+    if (!guildId) return
+    const { animeId } = request.params as { animeId: string }
+    const { discordRoleId } = request.body as { discordRoleId: string }
+    const baj = await rangHiba(guildId, discordRoleId)
+    if (baj) return await refuse(reply, { status: 400, detail: baj })
+    if (!await guildSettings.saveAnimeMention(guildId, animeId, discordRoleId)) {
+      return await reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404, detail: 'nincs ilyen cím' })
+    }
+    await audit((request.user as { sub: string }).sub, 'discord.config.anime_mention', 'config', `discord:${guildId}`, null, { animeId, discordRoleId })
+    return { animeMentions: await guildSettings.animeMentions(guildId) }
+  })
+
+  fastify.delete('/guilds/:guildId/config/anime-mentions/:animeId', {
+    config: WRITE_LIMIT,
+    onRequest: fastify.authenticate,
+    schema: { params: ANIME_PARAMS }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'manage_guild')
+    if (!guildId) return
+    const { animeId } = request.params as { animeId: string }
+    if (!await guildSettings.removeAnimeMention(guildId, animeId)) {
+      return await reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
+    }
+    await audit((request.user as { sub: string }).sub, 'discord.config.anime_mention_remove', 'config', `discord:${guildId}`, null, { animeId })
+    return { animeMentions: await guildSettings.animeMentions(guildId) }
+  })
+
   // ---- tartós üzenetek ----------------------------------------------------
 
   fastify.get('/guilds/:guildId/persistent-messages', {
@@ -962,7 +1373,7 @@ const routes: FastifyPluginAsync = async fastify => {
       }
     }
   }, async (request, reply) => {
-    const guildId = await gate(request, reply, 'manage_messages')
+    const guildId = await gate(request, reply, 'manage_bot')
     if (!guildId) return
     const body = request.body as {
       channelId: string, messageType: string,
@@ -1012,7 +1423,7 @@ const routes: FastifyPluginAsync = async fastify => {
       }
     }
   }, async (request, reply) => {
-    const guildId = await gate(request, reply, 'manage_messages')
+    const guildId = await gate(request, reply, 'manage_bot')
     if (!guildId) return
     const { id } = request.params as { id: string }
     const body = request.body as { channelId?: string, configuration?: unknown, enabled?: boolean }
@@ -1052,7 +1463,7 @@ const routes: FastifyPluginAsync = async fastify => {
     onRequest: fastify.authenticate,
     schema: { params: MESSAGE_PARAMS }
   }, async (request, reply) => {
-    const guildId = await gate(request, reply, 'manage_messages')
+    const guildId = await gate(request, reply, 'manage_bot')
     if (!guildId) return
     const { id } = request.params as { id: string }
     const row = await queryOne<PersistentMessage>(
@@ -1071,7 +1482,7 @@ const routes: FastifyPluginAsync = async fastify => {
     onRequest: fastify.authenticate,
     schema: { params: MESSAGE_PARAMS }
   }, async (request, reply) => {
-    const guildId = await gate(request, reply, 'manage_messages')
+    const guildId = await gate(request, reply, 'manage_bot')
     if (!guildId) return
     if (!isConfigured()) {
       return await reply.code(503).send({
@@ -1102,7 +1513,7 @@ const routes: FastifyPluginAsync = async fastify => {
     onRequest: fastify.authenticate,
     schema: { params: MESSAGE_PARAMS }
   }, async (request, reply) => {
-    const guildId = await gate(request, reply, 'manage_messages')
+    const guildId = await gate(request, reply, 'manage_bot')
     if (!guildId) return
     if (!isConfigured()) {
       return await reply.code(503).send({
@@ -1186,7 +1597,7 @@ const routes: FastifyPluginAsync = async fastify => {
       }
     }
   }, async (request, reply) => {
-    const guildId = await gate(request, reply, 'manage_messages')
+    const guildId = await gate(request, reply, 'manage_bot')
     if (!guildId) return
     const { channelId } = request.params as { channelId: string }
     // Another server's channel is not this server's to inspect.

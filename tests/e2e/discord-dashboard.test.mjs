@@ -13,7 +13,7 @@
 //   3. ami gateway nélkül nem mérhető, arról AZT írja ki — nem nullát.
 
 import assert from 'node:assert/strict'
-import { randomBytes } from 'node:crypto'
+import { createHmac, randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -41,6 +41,9 @@ const DISCORD_USER = '300000000000000777'
 describe('a Discord vezérlőpult', { skip: REASON }, () => {
   let server, browser, pool, page, base, account
   const username = 'dpanel' + randomBytes(4).toString('hex')
+  // Egy második fiók, vezérlőpult-jogosultság NÉLKÜL — lásd a lenti tételt.
+  const kulso = 'dpnoperm' + randomBytes(4).toString('hex')
+  const szerep = 'dpdash' + randomBytes(4).toString('hex')
 
   before(async () => {
     process.env.WEB_ROOT = WEB_ROOT
@@ -67,11 +70,25 @@ describe('a Discord vezérlőpult', { skip: REASON }, () => {
     account = await res.json()
 
     /*
-     * A JOGCÍM NEM YUME-ADMIN, HANEM A DISCORD-JOG. Ez a készlet szándékosan
-     * NEM ad admin szerepkört: pontosan azt méri, hogy egy közönséges
-     * YUME-fiók, aminek a Discord-szerverén „Szerver kezelése" joga van,
-     * bejut a vezérlőpultra. Ez a szétválasztás oka.
+     * A JOGCÍM NEM YUME-ADMIN. Ez a készlet szándékosan NEM ad admin
+     * szerepkört: azt méri, hogy egy fiók, aminek a vezérlőpulthoz van
+     * jogosultsága (`discord.dashboard`, egy próbaszerepkörön át), a
+     * Discord-szerverén pedig „Szerver kezelése" joga, bejut — és csak a
+     * saját szerverét látja. 2026-09-29 óta a Discord-jog egymagában nem elég
+     * (a vezérlőpult nem nyilvános); ezt a „jogosultság nélkül" tétel méri.
      */
+    await pool.query('INSERT INTO roles (slug, name) VALUES ($1, $1)', [szerep])
+    await pool.query(
+      `INSERT INTO role_permissions (role_id, permission_id)
+       SELECT r.id, p.id FROM roles r, permissions p WHERE r.slug = $1 AND p.slug = 'discord.dashboard'`, [szerep])
+    await pool.query(
+      `INSERT INTO user_roles (user_id, role_id)
+       SELECT u.id, r.id FROM users u, roles r WHERE u.username = $1 AND r.slug = $2`, [username, szerep])
+    await fetch(`${base}/v1/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: `${kulso}@example.com`, username: kulso, password: 'Correct-Horse-Battery-9' })
+    })
     await pool.query('DELETE FROM discord_links WHERE discord_user_id = $1', [DISCORD_USER])
     await pool.query(
       'INSERT INTO discord_links (user_id, discord_user_id, discord_username) SELECT id, $2, $3 FROM users WHERE username = $1',
@@ -116,13 +133,31 @@ describe('a Discord vezérlőpult', { skip: REASON }, () => {
       await pool?.query('DELETE FROM discord_registry WHERE guild_id = $1', [GUILD])
       await pool?.query('DELETE FROM discord_guild_members WHERE discord_user_id = $1', [DISCORD_USER])
       await pool?.query('DELETE FROM discord_links WHERE discord_user_id = $1', [DISCORD_USER])
-      await pool?.query('DELETE FROM users WHERE username = $1', [username])
+      await pool?.query('DELETE FROM users WHERE username IN ($1, $2)', [username, kulso])
+      await pool?.query('DELETE FROM roles WHERE slug = $1', [szerep])
     } finally {
       await browser?.close()
       await server?.close()
       await pool?.end()
     }
   })
+
+  /** A frissítő süti állapota a lap saját eredetéről: 200 = él, 401 = nincs. */
+  const frissitesAllapota = async lap => await lap.evaluate(async () =>
+    (await fetch('/v1/auth/refresh', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status)
+
+  /** Belépés az űrlappal, egy saját sütitárú lapon. */
+  const belep = async (nev, jelszo = 'Correct-Horse-Battery-9') => {
+    const lap = await browser.newPage()
+    await lap.route('https://**', r => r.abort())
+    await lap.goto(`${base}/dashboard/`, { waitUntil: 'domcontentloaded' })
+    await lap.waitForSelector('.dc-login-card', { timeout: 15000 })
+    await lap.locator('.dc-login-card input').first().fill(nev)
+    await lap.locator('.dc-login-card input[type="password"]').fill(jelszo)
+    await lap.locator('.dc-login-card button').click()
+    await lap.waitForSelector('.dc-nav', { timeout: 15000 })
+    return lap
+  }
 
   const nyit = async (nezet = 'overview', width = 1440) => {
     await page.setViewportSize({ width, height: 900 })
@@ -234,6 +269,29 @@ describe('a Discord vezérlőpult', { skip: REASON }, () => {
     await friss.close()
   })
 
+  /*
+   * A VEZÉRLŐPULT NEM NYILVÁNOS. Egy érvényes YUME-fiók jogosultság nélkül
+   * nem jut be: a belépőlap marad, és megmondja, mi hiányzik — a munkamenet
+   * pedig nem marad a böngészőben.
+   */
+  it('vezérlőpult-jogosultság nélkül nem enged be, és megmondja, mi hiányzik', async () => {
+    const friss = await browser.newPage()
+    await friss.route('https://**', r => r.abort())
+    await friss.goto(`${base}/dashboard/`, { waitUntil: 'domcontentloaded' })
+    await friss.waitForSelector('.dc-login-card', { timeout: 15000 })
+    await friss.locator('.dc-login-card input').first().fill(kulso)
+    await friss.locator('.dc-login-card input[type="password"]').fill('Correct-Horse-Battery-9')
+    await friss.locator('.dc-login-card button').click()
+    await friss.waitForTimeout(3000)
+    assert.equal(await friss.locator('.dc-nav').count(), 0, 'jogosultság nélkül is bejutott')
+    assert.match(await friss.locator('.dc-login-card .form-error').innerText(), /nincs jogosultságod/)
+    assert.equal(await friss.evaluate(() => localStorage.getItem('yume-discord-auth')), null,
+      'a munkamenet a böngészőben maradt')
+    // …és a kiszolgálón sem: a belépés frissítő sütije sem használható.
+    assert.equal(await frissitesAllapota(friss), 401, 'a jogosultság nélküli belépés munkamenete élve maradt')
+    await friss.close()
+  })
+
   /* Felhasználónévvel is — a kiszolgáló ugyanazon a mezőn fogadja. */
   it('felhasználónévvel is be lehet lépni', async () => {
     const friss = await browser.newPage()
@@ -247,6 +305,116 @@ describe('a Discord vezérlőpult', { skip: REASON }, () => {
     await friss.waitForTimeout(3000)
     assert.equal(await friss.locator('.dc-nav').count(), 1, 'felhasználónévvel nem jutott be')
     await friss.close()
+  })
+
+  // ---- a munkamenet ----
+
+  /**
+   * A token LEJÁRT változata: ugyanaz a tartalom, a lejárat a múltban,
+   * ugyanazzal a kulccsal aláírva — a kiszolgáló pontosan úgy utasítja el,
+   * mint egy negyedórája kiadottat.
+   */
+  const lejartan = token => {
+    const [fej, torzs] = token.split('.')
+    const adat = JSON.parse(Buffer.from(torzs, 'base64url').toString())
+    adat.exp = Math.floor(Date.now() / 1000) - 60
+    const alairando = `${fej}.${Buffer.from(JSON.stringify(adat)).toString('base64url')}`
+    return `${alairando}.${createHmac('sha256', process.env.JWT_SECRET).update(alairando).digest('base64url')}`
+  }
+  const tarolt = async lap => await lap.evaluate(() =>
+    JSON.parse(localStorage.getItem('yume-discord-auth') ?? 'null')?.accessToken ?? null)
+  const tarol = async (lap, token) => await lap.evaluate(t =>
+    localStorage.setItem('yume-discord-auth', JSON.stringify({ accessToken: t })), token)
+
+  /*
+   * NEM LÉPTET KI NEGYEDÓRÁNKÉNT. A hozzáférési token 15 percig él; eddig a
+   * lejárata után minden kérés 401-et kapott, és újra kellett lépni — pedig a
+   * frissítő süti ezen a néven is ott volt, csak senki nem használta.
+   */
+  it('a lejárt tokent a frissítő sütivel cseréli — nem léptet ki', async () => {
+    const lap = await belep(username)
+    const eredeti = await tarolt(lap)
+    const lejart = lejartan(eredeti)
+    await tarol(lap, lejart)
+    await lap.locator('.dc-nav-item', { hasText: 'Beállítások' }).click()
+    await lap.waitForTimeout(2500)
+    assert.equal(await lap.locator('.dc-login-card').count(), 0, 'a lejárt token után kiléptetett')
+    const uj = await tarolt(lap)
+    assert.ok(uj && uj !== lejart && uj !== eredeti, 'nem kapott új tokent')
+    assert.match(await lap.locator('.dc-main').innerText(), /probauser/, 'a nézet a frissítés után sem töltött be')
+    await lap.close()
+  })
+
+  it('ha a frissítés sem megy, a belépőlapra lép — nem nézetenként hibázik', async () => {
+    const lap = await belep(username)
+    const lejart = lejartan(await tarolt(lap))
+    await lap.context().clearCookies() // nincs frissítő süti
+    await tarol(lap, lejart)
+    await lap.locator('.dc-nav-item', { hasText: 'Csatornák' }).click()
+    await lap.waitForSelector('.dc-login-card', { timeout: 10000 })
+    assert.match(await lap.locator('.dc-login-card .form-error').innerText(), /lejárt/)
+    assert.equal(await tarolt(lap), null, 'a lejárt token a tárolóban maradt')
+    await lap.close()
+  })
+
+  /*
+   * A KILÉPÉS NEM CSAK HELYI. Eddig a gomb a tárolót ürítette, a munkamenet és
+   * a harmincnapos frissítő süti pedig élve maradt a kiszolgálón.
+   */
+  it('a kilépés a kiszolgálón is véget vet a munkamenetnek', async () => {
+    const lap = await belep(username)
+    const token = await tarolt(lap)
+    const sutik = async () => (await lap.context().cookies()).map(c => c.name)
+    assert.ok((await sutik()).includes('yume_refresh'), 'belépés után nincs frissítő süti — a próba semmit nem mérne')
+    await lap.locator('.dc-top button', { hasText: 'Kilépés' }).click()
+    await lap.waitForSelector('.dc-login-card', { timeout: 10000 })
+    assert.ok(!(await sutik()).includes('yume_refresh'), 'a frissítő süti a kilépés után is megmaradt')
+    assert.equal(await frissitesAllapota(lap), 401, 'a munkamenet a kilépés után is frissíthető')
+    const regi = await lap.evaluate(async t =>
+      (await fetch('/v1/discord/status', { headers: { authorization: `Bearer ${t}` } })).status, token)
+    assert.equal(regi, 401, 'a kilépés előtti hozzáférési token még használható')
+    await lap.close()
+  })
+
+  /*
+   * AZ ÜZEMELTETŐ ÖSSZEKÖTÉS NÉLKÜL IS VÁLASZTHAT. Eddig a szerverlista az
+   * összekötött fiókból jött, így a `discord.manage`-es üzemeltető üres
+   * választót látott. Most a bot szerverei jönnek — a Discordot a kiszolgáló
+   * `fetch`-jénél hamisítjuk (a kiszolgáló ebben a folyamatban fut).
+   */
+  it('az üzemeltető összekötés nélkül is látja a bot szervereit', async () => {
+    const uzemelteto = 'dpop' + randomBytes(4).toString('hex')
+    await fetch(`${base}/v1/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: `${uzemelteto}@example.com`, username: uzemelteto, password: 'Correct-Horse-Battery-9' })
+    })
+    await pool.query(
+      `INSERT INTO user_roles (user_id, role_id)
+       SELECT u.id, r.id FROM users u, roles r WHERE u.username = $1 AND r.slug = 'admin'`, [uzemelteto])
+    const eredetiFetch = globalThis.fetch
+    const elozoToken = process.env.DISCORD_BOT_TOKEN
+    process.env.DISCORD_BOT_TOKEN = 'e2e-proba-bot-token-NEM-VALODI'
+    const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+    globalThis.fetch = async (url, init) => {
+      const cim = String(url)
+      if (cim.startsWith('https://discord.com/api/v10/users/@me/guilds')) {
+        return json([{ id: GUILD, name: 'Próba szerver' }, { id: '100000000000000888', name: 'Második szerver' }])
+      }
+      if (cim.startsWith('https://discord.com/')) return json({ code: 0, message: 'e2e: nincs a hamis Discordban' }, 404)
+      return await eredetiFetch(url, init)
+    }
+    try {
+      const lap = await belep(uzemelteto)
+      const opciok = await lap.locator('.dc-guild select option').allInnerTexts()
+      assert.deepEqual(opciok.sort(), ['Második szerver', 'Próba szerver'])
+      await lap.close()
+    } finally {
+      globalThis.fetch = eredetiFetch
+      if (elozoToken === undefined) delete process.env.DISCORD_BOT_TOKEN
+      else process.env.DISCORD_BOT_TOKEN = elozoToken
+      await pool.query('DELETE FROM users WHERE username = $1', [uzemelteto])
+    }
   })
 
   it('rossz jelszóra magyar üzenetet ad, nem sémahibát', async () => {
@@ -301,10 +469,57 @@ describe('a Discord vezérlőpult', { skip: REASON }, () => {
     assert.ok(!/^0$/m.test(k.szoveg), 'nullát ír egy nem mért adatra')
   })
 
-  it('a parancsstatisztika megmondja, hogy nincs parancs', async () => {
+  /*
+   * A PARANCSOK NÉZETE eddig azt írta, hogy a botnak nincs egyetlen parancsa
+   * sem — miközben tizenhárom volt. Most a kódban leírt parancsokat mutatja,
+   * és ahol nem tudja lekérdezni a Discordot (itt nincs bot token), azt mondja.
+   */
+  it('a Parancsok nézet a kódban leírt parancsokat mutatja', async () => {
     await nyit('commands')
     const k = await kepernyo()
-    assert.match(k.szoveg, /nincs/i)
+    for (const nev of ['/help', '/next', '/watchlist', '/notifications']) {
+      assert.ok(k.szoveg.includes(nev), `hiányzik: ${nev}`)
+    }
+    assert.match(k.szoveg, /nem kérdezhető le/)
+    assert.doesNotMatch(k.szoveg, /nincs egyetlen slash-parancsa sem/)
+  })
+
+  /*
+   * AMI ÉLESBEN TÖRTÉNT (2026-09-29): a Discord-alkalmazásnál interakció-
+   * végpont volt beállítva, és a Discord minden parancsot oda küldött — a
+   * botig egy sem jutott el. A nézet ezt most pirosan kimondja, a javítás
+   * helyével. A Discordot a kiszolgáló `fetch`-jénél hamisítjuk.
+   */
+  it('a Parancsok nézet kimondja, ha a Discord nem a botnak kézbesít', async () => {
+    const rest = await import('../../apps/api/src/modules/discord/rest-client.ts')
+    const eredetiFetch = globalThis.fetch
+    const elozoToken = process.env.DISCORD_BOT_TOKEN
+    process.env.DISCORD_BOT_TOKEN = 'e2e-proba-bot-token-NEM-VALODI'
+    rest.forgetApplicationInfo()
+    const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+    globalThis.fetch = async (url, init) => {
+      const cim = String(url)
+      if (cim.endsWith('/applications/@me')) {
+        return json({ id: '500000000000000003', interactions_endpoint_url: 'https://regi.example/interactions' })
+      }
+      if (cim.includes('/commands')) return json([{ id: '1', name: 'help', description: 'Mit tud ez a bot?' }])
+      if (cim.startsWith('https://discord.com/')) return json({ code: 0, message: 'e2e' }, 404)
+      return await eredetiFetch(url, init)
+    }
+    try {
+      await nyit('commands')
+      const k = await kepernyo()
+      assert.match(k.szoveg, /A parancsok nem érkeznek meg a bothoz/)
+      assert.match(k.szoveg, /https:\/\/regi\.example\/interactions/)
+      assert.match(k.szoveg, /Interactions Endpoint URL/)
+      // Egy parancs fent van, a többi hiányzik — és ezt parancsonként látni.
+      assert.match(k.szoveg, /nincs fent/)
+    } finally {
+      globalThis.fetch = eredetiFetch
+      if (elozoToken === undefined) delete process.env.DISCORD_BOT_TOKEN
+      else process.env.DISCORD_BOT_TOKEN = elozoToken
+      rest.forgetApplicationInfo()
+    }
   })
 
   it('az előnézet nem küld, és ezt ki is mondja', async () => {
@@ -446,6 +661,90 @@ describe('a Discord vezérlőpult', { skip: REASON }, () => {
     const { rows } = await pool.query(
       'SELECT count(*)::int AS n FROM discord_welcome_log WHERE guild_id = $1', [GUILD])
     assert.equal(rows[0].n, 0, 'az előnézet köszöntőt küldött')
+  })
+
+  // ---- a bot állapota és a napló — a mért adatokból ----
+
+  /*
+   * A KÉSLELTETÉS ÉS A KAPCSOLAT NAPONTA. Eddig csak az látszott, hogy a
+   * gateway fut-e, és hányszor csatlakozott újra összesen. A tétel az egyetlen
+   * állapotsort és a mai napi sort írja — előtte eltesszük, utána visszaáll.
+   */
+  it('a bot állapota megmutatja a késleltetést és a kapcsolat napjait', async () => {
+    const ma = new Date().toISOString().slice(0, 10)
+    const regi = (await pool.query('SELECT heartbeat_rtt_ms FROM discord_gateway_state WHERE id = 1')).rows[0]
+    const volt = (await pool.query('SELECT * FROM discord_gateway_daily WHERE day = $1', [ma])).rows[0]
+    try {
+      await pool.query('UPDATE discord_gateway_state SET heartbeat_rtt_ms = 87 WHERE id = 1')
+      await pool.query(
+        `INSERT INTO discord_gateway_daily (day, reconnects, resumed, identified, rtt_sum_ms, rtt_count, rtt_max_ms)
+         VALUES ($1, 3, 3, 0, 270, 3, 120)
+         ON CONFLICT (day) DO UPDATE SET reconnects = 3, resumed = 3, identified = 0, rtt_sum_ms = 270, rtt_count = 3, rtt_max_ms = 120`,
+        [ma])
+      await nyit('health')
+      const szoveg = (await kepernyo()).szoveg
+      // A kártyacímkét a CSS nagybetűsre írja — az `innerText` úgy adja vissza.
+      assert.match(szoveg, /Discord-késleltetés/i)
+      assert.match(szoveg, /87 ms/, 'a körútidő nem látszik')
+      assert.match(szoveg, /A kapcsolat naponta/)
+      assert.match(szoveg, /3 szakadás · 3 folytatva · 0 új munkamenet · körútidő átlag 90 ms, csúcs 120 ms/)
+      assert.doesNotMatch(szoveg, /NaN|undefined|\[object/)
+    } finally {
+      await pool.query('UPDATE discord_gateway_state SET heartbeat_rtt_ms = $1 WHERE id = 1', [regi?.heartbeat_rtt_ms ?? null])
+      if (volt) {
+        await pool.query(
+          `UPDATE discord_gateway_daily SET reconnects = $2, resumed = $3, identified = $4, rtt_sum_ms = $5, rtt_count = $6, rtt_max_ms = $7
+            WHERE day = $1`, [ma, volt.reconnects, volt.resumed, volt.identified, volt.rtt_sum_ms, volt.rtt_count, volt.rtt_max_ms])
+      } else {
+        await pool.query('DELETE FROM discord_gateway_daily WHERE day = $1', [ma])
+      }
+    }
+  })
+
+  /*
+   * A NAPI HIBÁK A NAPLÓBAN. Az üzenet saját hibaszámlálója egy sikeres
+   * frissítéskor nullázódik; az összesítő az előzményből számol.
+   */
+  it('a napló megmutatja a tartós üzenetek napi hibáit', async () => {
+    // Saját üzenet: a törlési tétel a lista elejéről töröl, és bármelyiket vihette.
+    await pool.query(
+      `INSERT INTO persistent_messages (guild_id, channel_id, message_type) VALUES ($1, $2, 'anime_schedule')
+       ON CONFLICT DO NOTHING`, [GUILD, CSATORNA])
+    const { rows } = await pool.query(
+      "SELECT id FROM persistent_messages WHERE guild_id = $1 AND message_type = 'anime_schedule'", [GUILD])
+    await pool.query(
+      `INSERT INTO persistent_message_events (message_id, event, detail, at)
+       SELECT $1, 'failed', 'forbidden: Missing Permissions', now() - interval '1 day' FROM generate_series(1, 2)`,
+      [rows[0].id])
+    await nyit('audit')
+    const szoveg = (await kepernyo()).szoveg
+    assert.match(szoveg, /Tartós üzenetek — napi hibák/)
+    assert.match(szoveg, /Adásmenetrend/)
+    assert.match(szoveg, /2 hiba 2 frissítésből · utolsó: forbidden: Missing Permissions/)
+  })
+
+  /*
+   * A SZERVER NÉZET. Bot token nélkül a csatornák és a rangok nem kérdezhetők
+   * le — ezt kimondja —, a nyelv és a hírfolyam viszont menthető, és a mentés
+   * a szerver saját beállításába íródik.
+   */
+  it('a Szerver nézet menti a nyelvet és a hírfolyam-szűrőt', async () => {
+    await pool.query('DELETE FROM discord_guild_settings WHERE guild_id = $1', [GUILD])
+    try {
+      await nyit('config')
+      assert.match((await kepernyo()).szoveg, /A Discord most nem kérdezhető le/)
+      await page.locator('.dc-main select').first().selectOption('en')
+      await page.locator('.dc-main button', { hasText: 'Nyelv mentése' }).click()
+      await page.waitForTimeout(1000)
+      await page.locator('.dc-main label', { hasText: 'Csak az aktuális szezon' }).locator('input').check()
+      await page.locator('.dc-main button', { hasText: 'Hírfolyam mentése' }).click()
+      await page.waitForTimeout(1000)
+      const { rows } = await pool.query(
+        'SELECT language, feed_current_season FROM discord_guild_settings WHERE guild_id = $1', [GUILD])
+      assert.deepEqual(rows[0], { language: 'en', feed_current_season: true })
+    } finally {
+      await pool.query('DELETE FROM discord_guild_settings WHERE guild_id = $1', [GUILD])
+    }
   })
 
   for (const width of [1440, 430, 390, 360]) {

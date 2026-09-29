@@ -20,6 +20,7 @@ import { createVisibility } from './controls-visibility.js'
 import { attachGestures } from './gestures.js'
 import { attachKeyboard } from './keyboard.js'
 import { icon } from './icons.js'
+import { trustedHTML } from '../../../shared/lib/trusted.js'
 import { subtitleStyle } from '../subtitles/subtitle-manager.js'
 
 /**
@@ -168,10 +169,10 @@ export function createPlayerUI (player, actions = {}, options = {}) {
 
     if (current.error) {
       errorLayer.classList.remove('yp-hidden')
-      errorLayer.innerHTML =
+      errorLayer.innerHTML = trustedHTML(
         `<div class="yp-error-box">${icon('warning', 28)}` +
         '<p class="yp-error-text"></p>' +
-        '<div class="yp-error-actions"></div></div>'
+        '<div class="yp-error-actions"></div></div>')
       errorLayer.querySelector('.yp-error-text').textContent = current.error.message ?? 'Ismeretlen hiba'
       const buttons = errorLayer.querySelector('.yp-error-actions')
       if (current.error.retryable !== false) {

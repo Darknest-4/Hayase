@@ -21,13 +21,18 @@
 // `select()`-é — nem tud megint széttartani.
 
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const source = readFileSync(join(here, '..', 'src', 'pages', 'admin.js'), 'utf8')
+// A szakaszok kódja a saját moduljában van (features/admin/sections/): az
+// időzítők és az őreik ott. A szabály a panel EGÉSZÉRE szól, ezért mindet nézzük.
+const sectionsDir = join(here, '..', 'src', 'features', 'admin', 'sections')
+const panel = [source, ...readdirSync(sectionsDir).filter(f => f.endsWith('.js')).sort()
+  .map(f => readFileSync(join(sectionsDir, f), 'utf8'))].join('\n')
 
 describe('az adminpanel szekcióváltása', () => {
   /*
@@ -54,7 +59,7 @@ describe('az adminpanel szekcióváltása', () => {
      * talált három időzítőhöz, és emiatt bukott meg. Egy vizsgálat, ami arra
      * pirosodik, hogy leírtuk, mit csinálunk, használhatatlan.
      */
-    const code = source
+    const code = panel
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/(^|[^:])\/\/.*$/gm, '$1')
     const guards = code.match(/document\.body\.contains\(content\)/g) ?? []

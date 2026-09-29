@@ -7,15 +7,10 @@
 //
 // Split out of modules/admin/routes.ts; the URLs are unchanged.
 
-import { query, queryOne, transaction } from '../../infrastructure/database/index.ts'
-import { emitEvent } from '../webhooks/delivery.ts'
+import { query, queryOne } from '../../infrastructure/database/index.ts'
+import { resolveReport, type ResolveAction } from './resolve.ts'
 
 import type { FastifyPluginAsync } from 'fastify'
-
-// which table's hidden_at a report subject maps to
-const HIDEABLE: Record<string, string> = {
-  comment: 'comments', post: 'posts', review: 'reviews'
-}
 
 const routes: FastifyPluginAsync = async fastify => {
   fastify.get('/reports', {
@@ -103,36 +98,16 @@ const routes: FastifyPluginAsync = async fastify => {
     }
   }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const { action, reason } = request.body as { action: string, reason: string }
+    const { action, reason } = request.body as { action: ResolveAction, reason: string }
 
-    const report = await queryOne<{ subject_type: string, subject_id: string }>(
-      `SELECT subject_type, subject_id FROM reports WHERE id = $1 AND status IN ('open', 'reviewing')`,
-      [id]
-    )
-    if (!report) return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
-
-    const table = HIDEABLE[report.subject_type]
-    if (action !== 'dismiss' && !table) {
-      return reply.code(400).send({ type: 'about:blank', title: 'Bad Request', status: 400, detail: `Cannot ${action} a ${report.subject_type}; use user status for accounts` })
+    // The decision itself is shared with the Discord moderator channel — see resolve.ts.
+    const outcome = await resolveReport(id, action, reason, { id: request.user.sub, username: request.user.username })
+    if (!outcome.ok && outcome.reason === 'not_found') {
+      return reply.code(404).send({ type: 'about:blank', title: 'Not Found', status: 404 })
     }
-
-    await transaction(async client => {
-      if (action === 'hide') {
-        await client.query(`UPDATE ${table} SET hidden_at = now() WHERE id = $1`, [report.subject_id])
-      } else if (action === 'restore') {
-        await client.query(`UPDATE ${table} SET hidden_at = NULL WHERE id = $1`, [report.subject_id])
-      }
-      await client.query(
-        `UPDATE reports SET status = $2, resolved_by = $3, resolved_at = now() WHERE id = $1`,
-        [id, action === 'dismiss' ? 'dismissed' : 'resolved', request.user.sub]
-      )
-      await client.query(
-        `INSERT INTO moderation_actions (moderator_id, action, subject_type, subject_id, report_id, reason)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [request.user.sub, action === 'dismiss' ? 'dismiss_report' : action, report.subject_type, report.subject_id, id, reason]
-      )
-    })
-    await emitEvent('report.resolved', { action, moderator: request.user.username, reason })
+    if (!outcome.ok) {
+      return reply.code(400).send({ type: 'about:blank', title: 'Bad Request', status: 400, detail: `Cannot ${action} a ${outcome.subjectType}; use user status for accounts` })
+    }
     return { id, action }
   })
 }

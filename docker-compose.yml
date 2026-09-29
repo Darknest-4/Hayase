@@ -70,6 +70,11 @@ services:
       # A visszairányítási cím. Alapból a vezérlőpult saját neve; felülírni
       # csak akkor kell, ha a telepítés máshol él.
       DISCORD_REDIRECT_URI: ${DISCORD_REDIRECT_URI:-}
+      # BELÉPÉS DISCORDDAL a főoldalon (csak már összekötött fiókba). A főoldal
+      # nevén kell lennie (pl. https://animehub.hu/v1/auth/discord/callback),
+      # és a Developer Portalon is fel kell venni. Üresen a funkció ki van
+      # kapcsolva, és a belépőlap nem is kínálja.
+      DISCORD_LOGIN_REDIRECT_URI: ${DISCORD_LOGIN_REDIRECT_URI:-}
       # HONNAN JÖN A KATALÓGUS KÉPE.
       #
       # Üresen a saját `/media/` útvonalunk, ami külső beállítás nélkül
@@ -125,6 +130,9 @@ services:
       # az blokkolja — az eredmény egy néma hiba, ahol a kapcsoló be van
       # kapcsolva, és mégsem érkezik adat. Ez a sor engedi be az origót.
       CLOUDFLARE_ANALYTICS: ${CLOUDFLARE_ANALYTICS:-}
+      # Trusted Types a CSP-ben: enforce (alap) | report | off. A `report` a
+      # visszalépés telepítés nélkül — lásd middleware/security.ts.
+      CSP_TRUSTED_TYPES: ${CSP_TRUSTED_TYPES:-enforce}
       # A képtükör tárhelye — KÜLÖN VÖDÖR a mentésekétől, mert ezt a
       # tartalmat egy nyilvános útvonal szolgálja ki, a mentéseket soha semmi.
       # Az `app` olvassa (kiszolgálás), a `worker` írja (tükrözés).
@@ -196,6 +204,10 @@ services:
       # szonda csendben kimarad ahelyett, hogy hibát jelentene.
       EDGE_PROBE_URL: ${EDGE_PROBE_URL:-}
       PUBLIC_URL: ${PUBLIC_URL:-}
+      # A Discord-üzenetek (hírfolyam, DM, tartós üzenetek) képei ugyanonnan,
+      # ahonnan az oldalé — lásd az `app` MEDIA_BASE_URL-jét. Üresen a
+      # `PUBLIC_URL/media/` útvonal; a Discord csak abszolút címet fogad el.
+      MEDIA_BASE_URL: ${MEDIA_BASE_URL:-}
 
       # A képtükör tárhelye — KÜLÖN VÖDÖR a mentésekétől, mert ezt a
       # tartalmat egy nyilvános útvonal szolgálja ki, a mentéseket soha semmi.
@@ -272,6 +284,10 @@ services:
       DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
       DISCORD_GATEWAY_ENABLED: ${DISCORD_GATEWAY_ENABLED:-true}
       DISCORD_GUILD_MEMBERS_INTENT: ${DISCORD_GUILD_MEMBERS_INTENT:-false}
+      # A parancsválaszok hivatkozásai és képei (borító, banner) — ugyanaz a
+      # cím és ugyanaz a képforrás, mint az oldalé és a workeré.
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      MEDIA_BASE_URL: ${MEDIA_BASE_URL:-}
     command: ['npm', 'run', 'gateway']
     healthcheck:
       # Ugyanaz, mint a workernél: port nincs, tehát az életjel az, hogy a

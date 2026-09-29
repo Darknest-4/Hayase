@@ -1055,7 +1055,38 @@ I18n.register('hu', {
   'Copy so you can report it': 'Másold ki, hogy jelezni tudd',
   copy: 'másolás',
   'Embedded player': 'Beágyazott lejátszó',
-  'This episode plays in the provider’s own player. The site’s playback controls do not apply to it.': 'Ez a rész a szolgáltató saját lejátszójában fut. Az oldal lejátszásvezérlői itt nem hatnak.'
+  'This episode plays in the provider’s own player. The site’s playback controls do not apply to it.': 'Ez a rész a szolgáltató saját lejátszójában fut. Az oldal lejátszásvezérlői itt nem hatnak.',
+
+  // ---------------------------------------------------------------- Discord-fiók összekötése (Beállítások → Fiók)
+  'Connected accounts': 'Összekötött fiókok',
+  'The Yume bot recognises you in the Discord servers that use it.': 'A YUME-bot felismer azokon a Discord-szervereken, amelyek használják.',
+  'The Discord link could not be checked right now.': 'A Discord-összekötést most nem sikerült ellenőrizni.',
+  'Linked as {name}': 'Összekötve: {name}',
+  Unlink: 'Összekötés bontása',
+  'Discord linking is not set up on this site.': 'Ezen az oldalon nincs beállítva Discord-összekötés.',
+  'Link Discord account': 'Discord-fiók összekötése',
+  'Unlink Discord?': 'Bontod a Discord-összekötést?',
+  'The Yume bot will no longer recognise you in Discord servers. You can link again at any time.': 'A YUME-bot ezután nem ismer fel a Discord-szervereken. Bármikor újra összekötheted.',
+  'Your Discord account is unlinked.': 'A Discord-fiókod összekötése megszűnt.',
+  'Your Discord account is linked.': 'A Discord-fiókod össze van kötve.',
+  'Discord linking was cancelled.': 'A Discord-összekötést megszakítottad.',
+  'The link request expired. Try again.': 'Az összekötési kérés lejárt. Próbáld újra.',
+  'This Discord account is already linked to another Yume account.': 'Ez a Discord-fiók már egy másik YUME-fiókhoz van kötve.',
+  'Discord linking failed. Try again.': 'A Discord-összekötés nem sikerült. Próbáld újra.',
+  'Discord notifications': 'Discord-értesítés',
+  'A direct message from the Yume bot when a new episode of a title on your list comes out. It needs a server you share with the bot, with direct messages from server members allowed.': 'Privát üzenet a YUME-bottól, amikor a listád egyik címéhez új rész jelenik meg. Közös szerver kell a bottal, és engedélyezett privát üzenet a szerver tagjaitól.',
+  'New episodes will arrive as Discord messages.': 'Az új részekről Discord-üzenetben szólunk.',
+  'Discord notifications are off.': 'A Discord-értesítés kikapcsolva.',
+  // ---------------------------------------------------------------- Belépés Discorddal
+  'Sign in with Discord': 'Belépés Discorddal',
+  'For accounts already linked to Discord.': 'Már Discordhoz kötött fiókokhoz.',
+  'The Discord sign-in did not open a session. Try again.': 'A Discord-belépés után nem jött létre munkamenet. Próbáld újra.',
+  'This Discord account is not linked to a Yume account. Sign in with your password, then link Discord under Settings → Account.': 'Ehhez a Discord-fiókhoz nincs YUME-fiók kötve. Lépj be jelszóval, aztán kösd össze a Beállítások → Fiók alatt.',
+  'This account cannot sign in right now.': 'Ez a fiók most nem léphet be.',
+  'This account uses two-step sign-in — sign in with your password.': 'Ez a fiók kétlépcsős belépést használ — lépj be jelszóval.',
+  'Discord sign-in was cancelled.': 'A Discord-belépést megszakítottad.',
+  'The Discord sign-in expired. Try again.': 'A Discord-belépés lejárt. Próbáld újra.',
+  'Discord sign-in failed. Try again.': 'A Discord-belépés nem sikerült. Próbáld újra.'
 })
 
 if (typeof window !== 'undefined' && !I18n) {

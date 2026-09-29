@@ -12,13 +12,14 @@
 
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
-import { after, before, beforeEach, describe, it } from 'node:test'
+import { after, afterEach, before, beforeEach, describe, it, mock } from 'node:test'
 
 const HAS_DB = Boolean(process.env.DATABASE_URL)
 process.env.JWT_SECRET ??= 'discord-routes-test-secret-long-enough-0123456789'
 
 let app: Awaited<ReturnType<typeof import('../src/app.ts')['buildApp']>>
 let pool: typeof import('../src/infrastructure/database/index.ts')['pool']
+let hozzaferes: typeof import('../src/modules/discord/guild-access.ts')
 
 /** Két guild: az egyik a miénk, a másik idegen. */
 const MIENK = '100000000000000001'
@@ -30,6 +31,13 @@ let tagToken = ''
 let adminNev = ''
 let tagNev = ''
 let tagDiscordId = ''
+// 2026-09-29 óta a vezérlőpulthoz YUME-jogosultság is kell (discord.dashboard):
+// a „tag" egy próbaszerepkörön át megkapja, a „külső" nem — neki csak a
+// Discordon van „Szerver kezelése" joga.
+let szerep = ''
+let kulsoNev = ''
+let kulsoToken = ''
+let kulsoDiscordId = ''
 
 describe('a Discord vezérlőpult végpontjai', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
   before(async () => {
@@ -40,6 +48,7 @@ describe('a Discord vezérlőpult végpontjai', { skip: HAS_DB ? false : 'no DAT
     app = await buildApp()
     await app.ready()
     pool = db.pool
+    hozzaferes = await import('../src/modules/discord/guild-access.ts')
 
     const reg = async (nev: string) => {
       const res = await app.inject({
@@ -54,6 +63,17 @@ describe('a Discord vezérlőpult végpontjai', { skip: HAS_DB ? false : 'no DAT
     tagNev = 'dctag' + randomBytes(4).toString('hex')
     adminToken = await reg(adminNev)
     tagToken = await reg(tagNev)
+    kulsoNev = 'dckul' + randomBytes(4).toString('hex')
+    kulsoToken = await reg(kulsoNev)
+
+    szerep = 'dcdash' + randomBytes(4).toString('hex')
+    await pool.query('INSERT INTO roles (slug, name) VALUES ($1, $1)', [szerep])
+    await pool.query(
+      `INSERT INTO role_permissions (role_id, permission_id)
+       SELECT r.id, p.id FROM roles r, permissions p WHERE r.slug = $1 AND p.slug = 'discord.dashboard'`, [szerep])
+    await pool.query(
+      `INSERT INTO user_roles (user_id, role_id)
+       SELECT u.id, r.id FROM users u, roles r WHERE u.username = $1 AND r.slug = $2`, [tagNev, szerep])
 
     await pool.query(
       `INSERT INTO user_roles (user_id, role_id)
@@ -67,21 +87,34 @@ describe('a Discord vezérlőpult végpontjai', { skip: HAS_DB ? false : 'no DAT
     await pool.query(
       'INSERT INTO discord_links (user_id, discord_user_id) SELECT id, $2 FROM users WHERE username = $1',
       [tagNev, tagDiscordId])
+    kulsoDiscordId = '4' + randomBytes(8).toString('hex').replace(/\D/g, '0').padEnd(17, '7').slice(0, 17)
+    await pool.query(
+      'INSERT INTO discord_links (user_id, discord_user_id) SELECT id, $2 FROM users WHERE username = $1',
+      [kulsoNev, kulsoDiscordId])
   })
 
   beforeEach(async () => {
+    // Egy korábbi tétel sikertelen frissítése fél percig visszatartaná a
+    // következőt (lásd `refreshMembership`) — tételenként tiszta lap.
+    hozzaferes.forgetMembershipRefreshes()
     await pool.query('DELETE FROM persistent_messages WHERE guild_id IN ($1, $2)', [MIENK, IDEGEN])
     await pool.query('DELETE FROM discord_guild_members WHERE discord_user_id = $1', [tagDiscordId])
     // MANAGE_GUILD (1 << 5 = 32), frissen lekérdezve.
     await pool.query(
       `INSERT INTO discord_guild_members (discord_user_id, guild_id, owner, permissions, fetched_at)
        VALUES ($1, $2, false, '32', now())`, [tagDiscordId, MIENK])
+    await pool.query('DELETE FROM discord_guild_members WHERE discord_user_id = $1', [kulsoDiscordId])
+    await pool.query(
+      `INSERT INTO discord_guild_members (discord_user_id, guild_id, owner, permissions, fetched_at)
+       VALUES ($1, $2, false, '32', now())`, [kulsoDiscordId, MIENK])
   })
 
   after(async () => {
     await pool?.query('DELETE FROM persistent_messages WHERE guild_id IN ($1, $2)', [MIENK, IDEGEN])
     await pool?.query('DELETE FROM discord_guild_members WHERE discord_user_id = $1', [tagDiscordId])
-    await pool?.query('DELETE FROM users WHERE username IN ($1, $2)', [adminNev, tagNev])
+    await pool?.query('DELETE FROM discord_guild_members WHERE discord_user_id = $1', [kulsoDiscordId])
+    await pool?.query('DELETE FROM users WHERE username IN ($1, $2, $3)', [adminNev, tagNev, kulsoNev])
+    await pool?.query('DELETE FROM roles WHERE slug = $1', [szerep])
     await app?.close()
   })
 
@@ -113,6 +146,21 @@ describe('a Discord vezérlőpult végpontjai', { skip: HAS_DB ? false : 'no DAT
 
   it('a YUME-jogosultság bejuttat a saját rendszerbe', async () => {
     assert.equal((await hivas('GET', `/v1/discord/guilds/${MIENK}/persistent-messages`, adminToken)).statusCode, 200)
+  })
+
+  it('vezérlőpult-jogosultság nélkül a Discord-jog sem elég', async () => {
+    // A „külső" a MIÉNK guildben „Szerver kezelése" joggal bír — eddig ez
+    // egymagában bejuttatott. A vezérlőpult nem nyilvános: YUME-jogosultság kell.
+    const res = await hivas('GET', `/v1/discord/guilds/${MIENK}/persistent-messages`, kulsoToken)
+    assert.equal(res.statusCode, 403)
+    assert.equal(res.json().detail, 'no_dashboard_permission')
+    assert.equal((await hivas('GET', '/v1/discord/status', kulsoToken)).statusCode, 403)
+  })
+
+  it('az összekötés viszont jogosultság nélkül is elérhető — a főoldal is ezt használja', async () => {
+    const res = await hivas('GET', '/v1/discord/oauth/link', kulsoToken)
+    assert.equal(res.statusCode, 200)
+    assert.equal(res.json().linked, true)
   })
 
   it('a Discord MANAGE_GUILD bejuttat a saját guildbe', async () => {
@@ -148,13 +196,20 @@ describe('a Discord vezérlőpult végpontjai', { skip: HAS_DB ? false : 'no DAT
    * engedni — „hát tegnap még admin volt" —, és pont ezért van kimondva a
    * 7.2. pontban.
    */
-  it('a lejárt tagság NEM jogosít', async () => {
-    await pool.query(
-      "UPDATE discord_guild_members SET fetched_at = now() - interval '1 day' WHERE discord_user_id = $1",
-      [tagDiscordId])
-    const res = await hivas('GET', `/v1/discord/guilds/${MIENK}/persistent-messages`, tagToken)
-    assert.equal(res.statusCode, 403)
-    assert.equal(res.json().detail, 'stale')
+  it('a lejárt tagság NEM jogosít, ha a bot sem tudja megerősíteni', async () => {
+    // Bot token nélkül a frissítés nem kérdezhet — a lejárt adat marad lejárt.
+    const elozo = process.env.DISCORD_BOT_TOKEN
+    delete process.env.DISCORD_BOT_TOKEN
+    try {
+      await pool.query(
+        "UPDATE discord_guild_members SET fetched_at = now() - interval '1 day' WHERE discord_user_id = $1",
+        [tagDiscordId])
+      const res = await hivas('GET', `/v1/discord/guilds/${MIENK}/persistent-messages`, tagToken)
+      assert.equal(res.statusCode, 403)
+      assert.equal(res.json().detail, 'stale')
+    } finally {
+      if (elozo !== undefined) process.env.DISCORD_BOT_TOKEN = elozo
+    }
   })
 
   it('a puszta tagság (jogosultság nélkül) nem elég', async () => {
@@ -392,5 +447,273 @@ describe('a Discord vezérlőpult végpontjai', { skip: HAS_DB ? false : 'no DAT
        VALUES ($1, $2, 'provider_status') RETURNING id`, [IDEGEN, CSATORNA])
     assert.equal((await hivas('GET',
       `/v1/discord/guilds/${MIENK}/persistent-messages/${idegen.rows[0]!.id}/history`, adminToken)).statusCode, 404)
+  })
+
+  // ---- a bot állapota: körútidő és a kapcsolat naponta ----
+
+  it('a bot állapota a körútidőt és a kapcsolat napi sorait is megmutatja', async () => {
+    const regi = (await pool.query<{ heartbeat_rtt_ms: number | null }>(
+      'SELECT heartbeat_rtt_ms FROM discord_gateway_state WHERE id = 1')).rows[0]
+    const nap = (await pool.query<{ d: string }>('SELECT (current_date - 13)::text AS d')).rows[0]!.d
+    const volt = (await pool.query('SELECT * FROM discord_gateway_daily WHERE day = $1', [nap])).rows[0]
+    try {
+      await pool.query('UPDATE discord_gateway_state SET heartbeat_rtt_ms = 42 WHERE id = 1')
+      await pool.query(
+        `INSERT INTO discord_gateway_daily (day, reconnects, resumed, identified, rtt_sum_ms, rtt_count, rtt_max_ms)
+         VALUES ($1, 5, 4, 1, 500, 5, 180)
+         ON CONFLICT (day) DO UPDATE SET reconnects = 5, resumed = 4, identified = 1, rtt_sum_ms = 500, rtt_count = 5, rtt_max_ms = 180`,
+        [nap])
+      const res = await hivas('GET', `/v1/discord/guilds/${MIENK}/health`, tagToken)
+      assert.equal(res.statusCode, 200)
+      const gw = res.json().gateway
+      assert.equal(gw.heartbeatRttMs, 42)
+      assert.deepEqual(gw.daily.find((n: { day: string }) => n.day === nap),
+        { day: nap, reconnects: 5, resumed: 4, identified: 1, rttAvgMs: 100, rttMaxMs: 180 })
+    } finally {
+      await pool.query('UPDATE discord_gateway_state SET heartbeat_rtt_ms = $1 WHERE id = 1', [regi?.heartbeat_rtt_ms ?? null])
+      if (volt) {
+        await pool.query(
+          `UPDATE discord_gateway_daily SET reconnects = $2, resumed = $3, identified = $4, rtt_sum_ms = $5, rtt_count = $6, rtt_max_ms = $7
+            WHERE day = $1`,
+          [nap, volt.reconnects, volt.resumed, volt.identified, volt.rtt_sum_ms, volt.rtt_count, volt.rtt_max_ms])
+      } else {
+        await pool.query('DELETE FROM discord_gateway_daily WHERE day = $1', [nap])
+      }
+    }
+  })
+
+  // ---- a tartós üzenetek napi hibaösszesítője ----
+
+  /*
+   * AZ ÜZENET SAJÁT HIBASZÁMLÁLÓJA egy sikeres frissítéskor nullázódik: egy
+   * tegnap órákig hibás üzenet ma hibátlannak látszik. Az összesítő a
+   * frissítési előzményből számol — és csak a saját guild üzeneteiből.
+   */
+  it('a napi hibaösszesítő a saját guild hibás napjait mutatja, kísérletszámmal', async () => {
+    const [mienk, idegen] = await Promise.all([MIENK, IDEGEN].map(async g => (await pool.query<{ id: string }>(
+      `INSERT INTO persistent_messages (guild_id, channel_id, message_type) VALUES ($1, $2, 'yume_statistics') RETURNING id`,
+      [g, CSATORNA])).rows[0]!.id))
+    const esemeny = async (id: string, event: string, n: number, mikor: string, detail: string | null = null) => {
+      await pool.query(
+        `INSERT INTO persistent_message_events (message_id, event, detail, at)
+         SELECT $1, $2, $3, now() - $4::interval FROM generate_series(1, $5)`, [id, event, detail, mikor, n])
+    }
+    await esemeny(mienk!, 'failed', 3, '1 day', 'forbidden: Missing Permissions')
+    await esemeny(mienk!, 'skipped', 10, '1 day')
+    await esemeny(mienk!, 'edited', 2, '1 day')
+    await esemeny(mienk!, 'locked_out', 4, '1 day') // nem kísérlet
+    await esemeny(mienk!, 'skipped', 5, '1 minute') // ma nincs hiba
+    await esemeny(idegen!, 'failed', 4, '1 minute', 'idegen hiba')
+
+    const tegnap = (await pool.query<{ d: string }>(
+      "SELECT ((now() - interval '1 day') AT TIME ZONE 'UTC')::date::text AS d")).rows[0]!.d
+    const res = await hivas('GET', `/v1/discord/guilds/${MIENK}/message-failures`, tagToken)
+    assert.equal(res.statusCode, 200, res.body)
+    assert.deepEqual(res.json().data.map((r: Record<string, unknown>) => ({ ...r, lastFailedAt: typeof r.lastFailedAt })), [{
+      day: tegnap, messageType: 'yume_statistics', failures: 3, attempts: 15,
+      lastError: 'forbidden: Missing Permissions', lastFailedAt: 'string'
+    }])
+  })
+
+  it('a hibaösszesítő ablaka legfeljebb 30 nap, és a vezérlőpulté', async () => {
+    assert.equal((await hivas('GET', `/v1/discord/guilds/${MIENK}/message-failures?days=31`, tagToken)).statusCode, 400)
+    const res = await hivas('GET', `/v1/discord/guilds/${MIENK}/message-failures`, kulsoToken)
+    assert.equal(res.statusCode, 403)
+    assert.equal(res.json().detail, 'no_dashboard_permission')
+    assert.equal((await hivas('GET', `/v1/discord/guilds/${IDEGEN}/message-failures`, tagToken)).statusCode, 403,
+      'idegen guild összesítőjét is kiadta')
+  })
+
+  // ---- a lejárt tagság frissítése és a szerverlista — a bot tokenjével ----
+  //
+  // HAMIS DISCORDDAL, a `fetch` szintjén: a kiszolgáló valódi kódja fut, csak
+  // a Discord válaszait mi adjuk.
+
+  describe('a bot tokenjével', () => {
+    const MOD = '100000000000000009'
+    const HARMADIK = '100000000000000003'
+    let elozoToken: string | undefined
+
+    before(() => {
+      elozoToken = process.env.DISCORD_BOT_TOKEN
+      process.env.DISCORD_BOT_TOKEN = 'routes-proba-token-NEM-VALODI'
+    })
+    after(() => {
+      if (elozoToken === undefined) delete process.env.DISCORD_BOT_TOKEN
+      else process.env.DISCORD_BOT_TOKEN = elozoToken
+    })
+    afterEach(() => { mock.restoreAll() })
+
+    /** A hamis Discord: URL → [státusz, törzs]. Ami nincs benne, arra 404. */
+    const discord = (valasz: (url: string) => [number, unknown] | undefined, kesleltetes = 0): string[] => {
+      const hivasok: string[] = []
+      mock.method(globalThis, 'fetch', async (url: string) => {
+        hivasok.push(String(url))
+        if (kesleltetes) await new Promise(resolve => setTimeout(resolve, kesleltetes))
+        const [status, body] = valasz(String(url)) ?? [404, { code: 0, message: 'nincs a hamis Discordban' }]
+        return { ok: status < 400, status, json: async () => body }
+      })
+      return hivasok
+    }
+
+    /** A MIÉNK guild a Discord szerint: a MOD rang kezelheti. */
+    const guildValasz = (tagRangjai: string[]) => (url: string): [number, unknown] | undefined => {
+      if (url.endsWith(`/guilds/${MIENK}`)) {
+        return [200, {
+          id: MIENK, name: 'Mienk a Discordon', owner_id: '100000000000000999',
+          roles: [{ id: MIENK, permissions: '0' }, { id: MOD, permissions: '32' }]
+        }]
+      }
+      if (url.endsWith(`/guilds/${MIENK}/members/${tagDiscordId}`)) return [200, { roles: tagRangjai }]
+      return undefined
+    }
+
+    const elavit = async (): Promise<void> => {
+      await pool.query(
+        "UPDATE discord_guild_members SET fetched_at = now() - interval '1 day' WHERE discord_user_id = $1",
+        [tagDiscordId])
+    }
+
+    /*
+     * EDDIG ITT KIZÁRÓDOTT: az összekötés után öt perccel a tárolt tagság
+     * lejárt, és újra kellett kötni. Most a bot megkérdezi a Discordot.
+     */
+    it('a lejárt tagságot a bot frissíti — újra-összekötés nélkül', async () => {
+      await elavit()
+      const hivasok = discord(guildValasz([MOD]))
+      const res = await hivas('GET', `/v1/discord/guilds/${MIENK}/persistent-messages`, tagToken)
+      assert.equal(res.statusCode, 200, res.body)
+      assert.equal(hivasok.length, 2, 'a guildet és a tagot kell lekérdeznie, se többet, se kevesebbet')
+      const { rows } = await pool.query<{ friss: boolean, permissions: string, guild_name: string }>(
+        `SELECT fetched_at > now() - interval '1 minute' AS friss, permissions, guild_name
+           FROM discord_guild_members WHERE discord_user_id = $1 AND guild_id = $2`, [tagDiscordId, MIENK])
+      assert.equal(rows[0]?.friss, true, 'a frissítés nem került a sorba')
+      assert.equal(rows[0]?.permissions, '32')
+      assert.equal(rows[0]?.guild_name, 'Mienk a Discordon')
+      // A következő kérés már a friss sorból dönt — nem kérdez újra.
+      assert.equal((await hivas('GET', `/v1/discord/guilds/${MIENK}/persistent-messages`, tagToken)).statusCode, 200)
+      assert.equal(hivasok.length, 2, 'friss adat mellett is a Discordhoz fordult')
+    })
+
+    it('ha a Discordon elvették a jogát, a friss adat dönt', async () => {
+      await elavit()
+      discord(guildValasz([]))
+      const res = await hivas('GET', `/v1/discord/guilds/${MIENK}/persistent-messages`, tagToken)
+      assert.equal(res.statusCode, 403)
+      assert.equal(res.json().detail, 'insufficient')
+    })
+
+    it('ha a bot szerint már nem tag, a tagsága törlődik', async () => {
+      await elavit()
+      discord(url => url.includes('/members/')
+        ? [404, { code: 10007, message: 'Unknown Member' }]
+        : guildValasz([])(url))
+      const res = await hivas('GET', `/v1/discord/guilds/${MIENK}/persistent-messages`, tagToken)
+      assert.equal(res.statusCode, 403)
+      assert.equal(res.json().detail, 'not_member')
+      const { rows } = await pool.query(
+        'SELECT 1 FROM discord_guild_members WHERE discord_user_id = $1 AND guild_id = $2', [tagDiscordId, MIENK])
+      assert.equal(rows.length, 0, 'a megszűnt tagság ott maradt')
+    })
+
+    it('ha a Discord nem válaszol, nem enged be, és fél percig nem is kérdez újra', async () => {
+      await elavit()
+      const hivasok = discord(() => [500, {}])
+      const elso = await hivas('GET', `/v1/discord/guilds/${MIENK}/persistent-messages`, tagToken)
+      assert.equal(elso.statusCode, 403)
+      assert.equal(elso.json().detail, 'stale')
+      const utana = hivasok.length
+      const masodik = await hivas('GET', `/v1/discord/guilds/${MIENK}/persistent-messages`, tagToken)
+      assert.equal(masodik.json().detail, 'stale')
+      assert.equal(hivasok.length, utana, 'egy nem válaszoló Discordot minden kérésnél újra megkérdezett')
+    })
+
+    it('az egyszerre érkező kérések egyetlen frissítésre várnak', async () => {
+      await elavit()
+      const hivasok = discord(guildValasz([MOD]), 50)
+      const valaszok = await Promise.all(Array.from({ length: 4 }, async () =>
+        await hivas('GET', `/v1/discord/guilds/${MIENK}/persistent-messages`, tagToken)))
+      assert.deepEqual(valaszok.map(r => r.statusCode), [200, 200, 200, 200])
+      assert.equal(hivasok.length, 2, `négy kérés ${hivasok.length / 2} frissítést indított`)
+    })
+
+    // ---- a szerverválasztó ----
+
+    const botSzerverei = (url: string): [number, unknown] | undefined =>
+      url.includes('/users/@me/guilds')
+        ? [200, [{ id: IDEGEN, name: 'Idegen' }, { id: MIENK, name: 'Mienk' }]]
+        : undefined
+
+    it('az üzemeltető összekötés nélkül is látja a bot szervereit', async () => {
+      discord(botSzerverei)
+      const res = await hivas('GET', '/v1/discord/guilds', adminToken)
+      assert.equal(res.statusCode, 200)
+      assert.deepEqual(res.json().data.map((g: { id: string }) => g.id).sort(), [MIENK, IDEGEN].sort())
+      assert.equal(res.json().botListAvailable, true)
+    })
+
+    it('a vezérlőpult-jogosult csak a saját, a bot által is ismert szervereit látja', async () => {
+      // A HARMADIK-ban is kezelő, de ott nincs bent a bot; az IDEGEN-ben bent
+      // van a bot, de ott nincs joga.
+      await pool.query(
+        `INSERT INTO discord_guild_members (discord_user_id, guild_id, owner, permissions, fetched_at)
+         VALUES ($1, $2, false, '32', now()), ($1, $3, false, '0', now())`, [tagDiscordId, HARMADIK, IDEGEN])
+      discord(botSzerverei)
+      const res = await hivas('GET', '/v1/discord/guilds', tagToken)
+      assert.equal(res.statusCode, 200)
+      assert.deepEqual(res.json().data, [{ id: MIENK, name: 'Mienk' }])
+    })
+
+    it('ha a bot listája nem kérdezhető le, az összekötött szerverek maradnak', async () => {
+      await pool.query(
+        `INSERT INTO discord_guild_members (discord_user_id, guild_id, owner, permissions, fetched_at)
+         VALUES ($1, $2, false, '32', now())`, [tagDiscordId, HARMADIK])
+      discord(() => [500, {}])
+      const res = await hivas('GET', '/v1/discord/guilds', tagToken)
+      assert.equal(res.statusCode, 200)
+      assert.deepEqual(res.json().data.map((g: { id: string }) => g.id).sort(), [MIENK, HARMADIK].sort())
+      assert.equal(res.json().botListAvailable, false)
+    })
+
+    // ---- a slash parancsok nézete ----
+
+    it('a Parancsok nézet megmondja a kézbesítést, a regisztrációt és a szerver saját használatát', async () => {
+      const jelzo = 'dcuse' + randomBytes(3).toString('hex')
+      await pool.query(
+        `INSERT INTO analytics_events (event_type, visitor_key, subject_type, subject_id, metadata)
+         VALUES ('discord.command.use', $1, 'discord_command', 'anime latest', jsonb_build_object('guildId', $2::text)),
+                ('discord.command.use', $1, 'discord_command', 'anime latest', jsonb_build_object('guildId', $2::text)),
+                ('discord.command.use', $1, 'discord_command', 'help', jsonb_build_object('guildId', $3::text))`,
+        [jelzo, MIENK, IDEGEN])
+      try {
+        const rest = await import('../src/modules/discord/rest-client.ts')
+        rest.forgetApplicationInfo()
+        discord(url => url.endsWith('/applications/@me')
+          ? [200, { id: '500000000000000003', interactions_endpoint_url: 'https://regi.example/interactions' }]
+          : url.includes(`/guilds/${MIENK}/commands`) ? [200, [{ id: '1', name: 'help', description: 'Mit tud ez a bot?' }]] : undefined)
+        const res = await hivas('GET', `/v1/discord/guilds/${MIENK}/commands`, tagToken)
+        assert.equal(res.statusCode, 200, res.body)
+        const d = res.json()
+        assert.deepEqual(d.delivery, { mode: 'http', endpointUrl: 'https://regi.example/interactions' })
+        assert.deepEqual(d.registered, ['help'])
+        assert.equal(d.inSync, false)
+        assert.ok(d.defined.includes('next') && d.defined.includes('watchlist'))
+        // Csak a SAJÁT szerver használata: az idegen guild /help-je nem számít.
+        const sajat = d.usage.filter((u: { command: string }) => u.command === 'anime latest')
+        assert.equal(sajat[0]?.uses, 2)
+        assert.ok(!d.usage.some((u: { command: string }) => u.command === 'help'), 'az idegen szerver használatát is beszámolta')
+        rest.forgetApplicationInfo()
+      } finally {
+        await pool.query("DELETE FROM analytics_events WHERE event_type = 'discord.command.use' AND visitor_key = $1", [jelzo])
+      }
+    })
+
+    it('a szerverlista is a vezérlőpulté: jogosultság és belépés nélkül nincs', async () => {
+      discord(botSzerverei)
+      const res = await hivas('GET', '/v1/discord/guilds', kulsoToken)
+      assert.equal(res.statusCode, 403)
+      assert.equal(res.json().detail, 'no_dashboard_permission')
+      assert.equal((await hivas('GET', '/v1/discord/guilds', null)).statusCode, 401)
+    })
   })
 })

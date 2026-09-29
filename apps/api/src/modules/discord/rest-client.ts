@@ -17,7 +17,7 @@
  * azonosítói csak számjegyek, tehát ez olcsó és teljes védelem.
  */
 
-import { canPostEmbed, missingForEmbed, parsePermissions, PERMISSION_BITS, hasBit } from './permissions.ts'
+import { basePermissions, canPostEmbed, missingForEmbed, parsePermissions, PERMISSION_BITS, hasBit } from './permissions.ts'
 
 import type { DiscordClient, DiscordError, ErrorKind, SentMessage } from './types.ts'
 
@@ -79,12 +79,57 @@ interface DiscordBody {
   code?: number
   message?: string
   retry_after?: number
+  global?: boolean
   [key: string]: unknown
+}
+
+/**
+ * A GLOBÁLIS SEBESSÉGKORLÁT — az egész botra, nem egy végpontra.
+ *
+ * A Discord kétféle 429-et ad: az egyik egy végpont (vagy erőforrás) saját
+ * keretéé, a másik a bot ÖSSZES kéréséé (`global: true`, illetve az
+ * `X-RateLimit-Global` / `X-RateLimit-Scope: global` fejléc). Eddig mindkettőt
+ * ugyanúgy kezeltük: csak az a hívás várt, amelyik a 429-et kapta, a többi —
+ * más végpontra — ment tovább, és sorra 429-et kapott. A Discord az ilyen
+ * elutasított kéréseket számolja: tíz perc alatt tízezer után a bot címét egy
+ * órára kitiltja.
+ *
+ * Most egy globális 429 után EZ A FOLYAMAT minden Discord-hívása megáll a
+ * megadott ideig: ami belefér a várakozási korlátba (`RATE_LIMIT_MAX_WAIT_MS`),
+ * kivár, ami nem, azonnal `rate_limited` hibával tér vissza — a Discordhoz
+ * nem is fordul.
+ *
+ * Az interakciók válasza (callback, `@original`) nem ezen az úton megy, és a
+ * Discord szerint nem is tartozik a globális korlát alá.
+ */
+let globalisSzunetIg = 0
+
+/** Mennyi van még hátra a globális szünetből (ms). */
+export function globalPauseLeft (now: number = Date.now()): number {
+  return Math.max(0, globalisSzunetIg - now)
+}
+
+/** Teszthez: a szünet feloldása. */
+export function resetGlobalPause (): void { globalisSzunetIg = 0 }
+
+function globalis (res: Response, body: DiscordBody): boolean {
+  const fejlec = (nev: string): string | null => {
+    try { return res.headers?.get?.(nev) ?? null } catch { return null }
+  }
+  return body.global === true || fejlec('x-ratelimit-global') === 'true' || fejlec('x-ratelimit-scope') === 'global'
 }
 
 async function request (path: string, init: RequestInit = {}): Promise<{ status: number, body: DiscordBody }> {
   const token = botToken()
   if (!token) throw fail('forbidden', 'nincs beállítva Discord bot token')
+
+  // A globális szünet alatt nem kérdezünk (lásd fent). A korlát konstansa
+  // lejjebb, az író műveleteknél van — futáskor már él.
+  const hatra = globalPauseLeft()
+  if (hatra > 0) {
+    if (hatra > RATE_LIMIT_MAX_WAIT_MS) throw fail('rate_limited', 'a Discord globális sebességkorlátja még tart', hatra)
+    await new Promise(resolve => setTimeout(resolve, hatra))
+  }
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
@@ -104,6 +149,10 @@ async function request (path: string, init: RequestInit = {}): Promise<{ status:
 
     let body: DiscordBody = {}
     try { body = await res.json() as DiscordBody } catch { /* üres törzs is lehet */ }
+    if (res.status === 429 && globalis(res, body)) {
+      const ms = Math.ceil(Number(body.retry_after ?? 1) * 1000)
+      globalisSzunetIg = Math.max(globalisSzunetIg, Date.now() + ms)
+    }
     return { status: res.status, body }
   } catch (error) {
     if ((error as Error)?.name === 'AbortError') throw fail('transient', 'a Discord nem válaszolt időben')
@@ -316,6 +365,96 @@ export async function fetchRoles (guildId: string): Promise<Array<{
   }
 }
 
+export type MemberAccess =
+  | { status: 'ok', owner: boolean, permissions: bigint, guildName: string | null }
+  | { status: 'not_member' }
+  | { status: 'unknown' }
+
+/**
+ * Egy tag jogosultsága egy guildben — a BOT tokenjével, OAuth-token nélkül.
+ *
+ * MIÉRT KELL. A tagságot eddig csak az összekötés pillanatában kérdeztük le,
+ * a felhasználó OAuth-tokenjével, amit szándékosan nem tárolunk. Öt perc után
+ * a tárolt adat lejárt, és semmi nem frissítette: aki nem `discord.manage`-es,
+ * az kizáródott, amíg újra nem kötött. A bot viszont bármikor megkérdezheti a
+ * guild rangjait és tulajdonosát, meg a tag rangjait — a kettőből a jog
+ * ugyanúgy kiszámolható, ahogy a Discord számolja (`basePermissions`).
+ *
+ * PRIVILEGIZÁLT INTENT NÉLKÜL: egyetlen tag lekérése (`/members/{user}`) nem
+ * igényli a `GUILD_MEMBERS` intentet — csak a teljes taglista.
+ *
+ *   `ok`          — frissen kiszámolt jog
+ *   `not_member`  — a Discord szerint nem tagja (10007 Unknown Member)
+ *   `unknown`     — nincs token, a bot nem látja a szervert, vagy a Discord
+ *                   nem válaszolt: NEM TUDJUK, és ez nem jogosít
+ */
+export async function memberAccess (guildId: string, userId: string): Promise<MemberAccess> {
+  if (!isConfigured()) return { status: 'unknown' }
+  try {
+    // MINDKÉT AZONOSÍTÓ ELLENŐRIZVE, MIELŐTT BÁRMI KIMEGY: a tömbben az első
+    // kérés már elindulna, mire a második azonosító ellenőrzése dob.
+    const g = safeId(guildId, 'guild')
+    const u = safeId(userId, 'tag')
+    const [guild, tag] = await Promise.all([
+      request(`/guilds/${g}`),
+      request(`/guilds/${g}/members/${u}`)
+    ])
+    // CSAK A 10007 jelenti, hogy nem tag. Egy 403 vagy egy 10004 (Unknown
+    // Guild) azt, hogy a bot nem látja a szervert — abból tagságra nem
+    // következtethetünk, egyik irányba sem.
+    if (tag.status === 404 && tag.body.code === 10007) return { status: 'not_member' }
+    if (guild.status >= 400 || tag.status >= 400) return { status: 'unknown' }
+
+    const gb = guild.body as { owner_id?: unknown, name?: unknown, roles?: unknown }
+    const tb = tag.body as { roles?: unknown, communication_disabled_until?: unknown }
+    if (!Array.isArray(gb.roles)) return { status: 'unknown' }
+    const rangok = (gb.roles as Array<Record<string, unknown>>).map(r => ({ id: String(r.id ?? ''), permissions: r.permissions }))
+    const korlatozva = typeof tb.communication_disabled_until === 'string' &&
+      Date.parse(tb.communication_disabled_until) > Date.now()
+    return {
+      status: 'ok',
+      owner: typeof gb.owner_id === 'string' && gb.owner_id === userId,
+      permissions: basePermissions(guildId, rangok, Array.isArray(tb.roles) ? tb.roles.map(String) : [],
+        { timedOut: korlatozva }),
+      guildName: typeof gb.name === 'string' ? gb.name.slice(0, 100) : null
+    }
+  } catch {
+    return { status: 'unknown' }
+  }
+}
+
+/**
+ * A szerverek, amelyekben a bot benne van — a vezérlőpult szerverválasztójához.
+ *
+ * NULL, HA NEM TUDJUK (nincs token, a Discord nem válaszolt). A hívó ilyenkor
+ * nem szűr vele: egy üres lista azt állítaná, hogy a bot sehol nincs bent.
+ *
+ * LAPOZVA, mert a Discord egyszerre legfeljebb 200-at ad; tíz lapnál (2000
+ * szerver) megállunk — ekkora botnak már shardolnia kellene.
+ */
+export async function botGuilds (): Promise<Array<{ id: string, name: string }> | null> {
+  if (!isConfigured()) return null
+  try {
+    const out: Array<{ id: string, name: string }> = []
+    let utana = ''
+    for (let lap = 0; lap < 10; lap++) {
+      const { status, body } = await request(`/users/@me/guilds?limit=200${utana ? `&after=${utana}` : ''}`)
+      if (status >= 400 || !Array.isArray(body)) return null
+      const lista = body as unknown as Array<Record<string, unknown>>
+      for (const g of lista) {
+        if (typeof g.id === 'string' && /^\d{17,20}$/.test(g.id)) {
+          out.push({ id: g.id, name: typeof g.name === 'string' ? g.name.slice(0, 100) : g.id })
+        }
+      }
+      if (lista.length < 200 || !out.length) break
+      utana = out[out.length - 1]!.id
+    }
+    return out
+  } catch {
+    return null
+  }
+}
+
 /**
  * ---- A SETUP ÍRÓ MŰVELETEI ----
  *
@@ -505,6 +644,37 @@ export async function addMemberRole (
 }
 
 /**
+ * Egy tag rangjai — a szerepkör-szinkronhoz. `not_member` csak a 10007-re
+ * (Unknown Member); minden más `unknown` (nem tudjuk — nem nyúlunk semmihez).
+ */
+export async function fetchMemberRoles (
+  guildId: string, userId: string
+): Promise<{ status: 'ok', roles: string[] } | { status: 'not_member' } | { status: 'unknown' }> {
+  if (!isConfigured()) return { status: 'unknown' }
+  try {
+    const g = safeId(guildId, 'guild')
+    const u = safeId(userId, 'tag')
+    const { status, body } = await request(`/guilds/${g}/members/${u}`)
+    if (status === 404 && body.code === 10007) return { status: 'not_member' }
+    if (status >= 400) return { status: 'unknown' }
+    const roles = (body as { roles?: unknown }).roles
+    return { status: 'ok', roles: Array.isArray(roles) ? roles.map(String) : [] }
+  } catch {
+    return { status: 'unknown' }
+  }
+}
+
+/** Rang levétele egy tagról. A „nincs is rajta" is a kívánt végállapot. */
+export async function removeMemberRole (
+  guildId: string, userId: string, roleId: string, reason: string
+): Promise<boolean> {
+  const valasz = await ir(
+    `/guilds/${safeId(guildId, 'guild')}/members/${safeId(userId, 'tag')}/roles/${safeId(roleId, 'rang')}`,
+    'DELETE', undefined, reason)
+  return valasz !== null
+}
+
+/**
  * A BOT SAJÁT TAGSÁGA a guildben — ebből derül ki a rang-hierarchiája.
  *
  * MIÉRT KELL. A Discord nem engedi, hogy a bot olyan rangot kezeljen, ami a
@@ -562,17 +732,47 @@ export async function botUser (): Promise<{ id: string, username: string } | nul
 /** Teszthez: felejtse el, amit megjegyzett. */
 export function forgetBotUser (): void { botUserCache = null }
 
-/** A bot saját alkalmazásazonosítója — a parancsregisztrációhoz. */
-export async function applicationId (): Promise<string | null> {
+export interface ApplicationInfo {
+  id: string
+  /**
+   * A fejlesztői portálon beállított interakció-végpont, ha van.
+   *
+   * HA BE VAN ÁLLÍTVA, A DISCORD MINDEN PARANCSOT ODA KÜLD, HTTP-n — a
+   * gatewayre egy sem érkezik. A bot a gatewayen fogadja őket (lásd
+   * `commands.ts`), tehát egy itt hagyott cím az összes parancsot elnémítja.
+   * 2026-09-29-ig pontosan ez történt: a cím egy átirányító névre mutatott, és
+   * egyetlen parancs sem jutott el a botig.
+   */
+  interactionsEndpointUrl: string | null
+}
+
+let appInfoCache: { at: number, info: ApplicationInfo } | null = null
+const APP_INFO_TTL_MS = 5 * 60_000
+
+/** A bot alkalmazásának adatai — öt percig megjegyezve. */
+export async function applicationInfo (now: number = Date.now()): Promise<ApplicationInfo | null> {
   if (!isConfigured()) return null
+  if (appInfoCache && now - appInfoCache.at < APP_INFO_TTL_MS) return appInfoCache.info
   try {
     const { status, body } = await request('/applications/@me')
     if (status >= 400) return null
     const id = (body as { id?: unknown }).id
-    return typeof id === 'string' ? id : null
+    if (typeof id !== 'string') return null
+    const url = (body as { interactions_endpoint_url?: unknown }).interactions_endpoint_url
+    const info = { id, interactionsEndpointUrl: typeof url === 'string' && url.trim() !== '' ? url : null }
+    appInfoCache = { at: now, info }
+    return info
   } catch {
     return null
   }
+}
+
+/** Teszthez: felejtse el az alkalmazás adatait. */
+export function forgetApplicationInfo (): void { appInfoCache = null }
+
+/** A bot saját alkalmazásazonosítója — a parancsregisztrációhoz. */
+export async function applicationId (): Promise<string | null> {
+  return (await applicationInfo())?.id ?? null
 }
 
 /**
@@ -598,6 +798,24 @@ export async function registerCommands (
   // olvassuk ki a hosszát.
   const lista = valasz as unknown
   return { count: Array.isArray(lista) ? lista.length : 0 }
+}
+
+/**
+ * A guildben regisztrált parancsok TELJES leírása, a fordításokkal együtt —
+ * az összehasonlításhoz (`commands.azonos`). A `with_localizations` nélkül a
+ * Discord a fordításokat nem adja vissza, és minden összevetés eltérést mutatna.
+ */
+export async function fetchCommands (guildId: string): Promise<Array<Record<string, unknown>> | null> {
+  const appId = await applicationId()
+  if (!appId) return null
+  try {
+    const { status, body } = await request(
+      `/applications/${safeId(appId, 'alkalmazás')}/guilds/${safeId(guildId, 'guild')}/commands?with_localizations=true`)
+    if (status >= 400 || !Array.isArray(body)) return null
+    return body as unknown as Array<Record<string, unknown>>
+  } catch {
+    return null
+  }
 }
 
 /** A guildben regisztrált parancsok — az állapot kiírásához. */
@@ -638,6 +856,42 @@ export async function respondToInteraction (
           method: 'POST',
           headers: { 'content-type': 'application/json', 'user-agent': 'YumeBot (https://animehub.hu, 1.0)' },
           body: JSON.stringify(payload),
+          signal: controller.signal
+        })
+      return res.status < 400
+    } finally {
+      clearTimeout(timer)
+    }
+  } catch {
+    return false
+  }
+}
+
+/**
+ * A HALASZTOTT VÁLASZ KITÖLTÉSE — `PATCH …/messages/@original`.
+ *
+ * Ha a parancs nem végez a határidőn belül, előbb halasztott választ küldünk
+ * (lásd `commands.respond`), és ez írja bele a végleges tartalmat. Ugyanaz a
+ * hitelesítés, mint a válasznál: az interakció tokenje, nem a bot tokenje.
+ *
+ * A `flags` NEM MEGY: a láthatóság a halasztáskor dőlt el, szerkesztéssel nem
+ * változtatható — a Discord a mezőt ilyenkor el is utasíthatja.
+ */
+export async function editOriginalResponse (
+  applicationId: string, token: string, data: Record<string, unknown>
+): Promise<boolean> {
+  const torzs = { ...data }
+  delete torzs.flags
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+    try {
+      const res = await fetch(
+        `${API_BASE}/webhooks/${safeId(applicationId, 'alkalmazás')}/${encodeURIComponent(token)}/messages/@original`,
+        {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json', 'user-agent': 'YumeBot (https://animehub.hu, 1.0)' },
+          body: JSON.stringify(torzs),
           signal: controller.signal
         })
       return res.status < 400

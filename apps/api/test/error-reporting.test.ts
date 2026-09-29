@@ -168,6 +168,23 @@ describe('reporting a failure', { skip: HAS_DB ? false : 'no DATABASE_URL' }, ()
     assert.ok(!('instance' in body), 'a healthy response grew a request id')
   })
 
+  // The Discord gateway is its own process and reports its unhandled
+  // rejections under its own source. Before 0085 the constraint would have
+  // refused `gateway` — silently, since recording swallows its own failures.
+  test('the gateway process records under its own source', async () => {
+    const { recordError } = await import('../src/errors/reporting.ts')
+    const groupId = await recordError('gateway', new Error('a deliberate gateway failure, for the source test'),
+      { route: 'unhandledRejection' })
+    try {
+      assert.ok(groupId, 'the gateway occurrence was not recorded at all')
+      const { rows } = await pool.query<{ source: string }>(
+        'SELECT source FROM error_logs WHERE group_id = $1 ORDER BY created_at DESC LIMIT 1', [groupId])
+      assert.equal(rows[0]?.source, 'gateway')
+    } finally {
+      if (groupId) await pool.query('DELETE FROM error_groups WHERE id = $1', [groupId])
+    }
+  })
+
   // ---- the whole way through ----
 
   test('a 500 is recorded with the id the caller was shown, and is findable by it', async () => {

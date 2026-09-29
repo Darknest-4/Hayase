@@ -28,6 +28,8 @@ before(async () => {
   install()
   ;({ PageAdmin } = await import('../src/pages/admin.js'))
   ;({ YumeAPI } = await import('../src/shared/api/yume.js'))
+  // Az auditállapot a saját szakaszmodulja: csak betöltés után van a panelen.
+  await PageAdmin.loadSection('audit')
 })
 
 describe('the two audits are kept apart', () => {
@@ -73,8 +75,11 @@ describe('the two audits are kept apart', () => {
     assert.deepEqual(crowded, [], 'groups with more than seven sections')
   })
 
-  it('gives every section a renderer that exists', () => {
+  it('gives every section a renderer that exists', async () => {
+    // A szakaszok kódja lustán töltődik (PageAdmin.loadSection): minden
+    // szakasznak legyen betölthető modulja, és betöltés után ott a renderelője.
     for (const section of PageAdmin.SECTIONS) {
+      await PageAdmin.loadSection(section.key)
       assert.equal(typeof PageAdmin[section.render], 'function',
         `${section.key} names ${section.render}, which is not a method`)
     }
@@ -202,7 +207,7 @@ describe('the list is cards on a phone, not a sideways table', () => {
   const css = readFileSync(fileURLToPath(new URL('../css/admin.css', import.meta.url)), 'utf8')
 
   it('never builds the list out of table elements', () => {
-    const source = readFileSync(fileURLToPath(new URL('../src/pages/admin.js', import.meta.url)), 'utf8')
+    const source = readFileSync(fileURLToPath(new URL('../src/features/admin/sections/audit.js', import.meta.url)), 'utf8')
     const section = source.slice(source.indexOf('auditFindingRow (finding)'), source.indexOf('auditSkeleton ()'))
     for (const tag of ['table', 'thead', 'tbody', 'tr', 'td', 'th']) {
       assert.ok(!section.includes(`U.el('${tag}'`), `the finding row builds a <${tag}>`)

@@ -61,6 +61,95 @@ export function isConfigured (): boolean {
   return clientId() !== null && clientSecret() !== null
 }
 
+/**
+ * A BELÉPÉS visszatérési címe — KÜLÖN az összekötésétől, és nincs
+ * alapértéke.
+ *
+ * Az összekötés a vezérlőpult nevén tér vissza; a belépésnek viszont a
+ * főoldal nevén kell, mert ott kell a frissítő sütinek landolnia. A Discord
+ * csak a fejlesztői portálon regisztrált címre irányít — ezért a funkció
+ * csak akkor él, ha az üzemeltető ezt a címet beállította (és regisztrálta).
+ * Gomb egy nem működő folyamathoz nem jár.
+ */
+export function loginRedirectUri (): string | null {
+  const v = process.env.DISCORD_LOGIN_REDIRECT_URI?.trim()
+  return v || null
+}
+
+export function isLoginConfigured (): boolean {
+  return isConfigured() && loginRedirectUri() !== null
+}
+
+/** A belépés engedélyezési címe: csak `identify` — a szerverek listája ide nem kell. */
+export function loginAuthorizeUrl (state: string): string {
+  const id = clientId()
+  const vissza = loginRedirectUri()
+  if (!id || !vissza) throw new Error('nincs beállítva Discord-belépés')
+  const params = new URLSearchParams({
+    client_id: id, redirect_uri: vissza, response_type: 'code', scope: 'identify', state, prompt: 'none'
+  })
+  return `https://discord.com/oauth2/authorize?${params.toString()}`
+}
+
+/**
+ * A kódból a Discord-azonosító — a belépéshez. A tokent itt sem tároljuk:
+ * egyszer kérdezünk vele, aztán eldobjuk.
+ */
+export async function identify (code: string, vissza: string): Promise<{ discordUserId: string }> {
+  const token = await exchangeCode(code, vissza)
+  const me = await fetchAs<{ id?: string }>(token, '/users/@me')
+  const discordUserId = String(me.id ?? '')
+  if (!/^\d{17,20}$/.test(discordUserId)) throw new Error('a Discord érvénytelen azonosítót adott')
+  return { discordUserId }
+}
+
+/**
+ * A BELÉPÉS ÁLLAPOTA: egy egyszer használható `state` a Discordnak, és egy
+ * `nonce` a böngésző HttpOnly sütijébe. A visszahívás csak akkor érvényes, ha
+ * mindkettő egyezik — lásd a `discord_login_states` táblát (0087).
+ */
+export async function createLoginState (): Promise<{ state: string, nonce: string }> {
+  const state = randomBytes(32).toString('base64url')
+  const nonce = randomBytes(32).toString('base64url')
+  await query(
+    `INSERT INTO discord_login_states (state_hash, nonce_hash, expires_at)
+     VALUES ($1, $2, now() + ($3::int || ' milliseconds')::interval)`,
+    [hashState(state), hashState(nonce), STATE_TTL_MS])
+  return { state, nonce }
+}
+
+/**
+ * A belépés állapotának beváltása — EGYSZER, és csak a kezdeményező
+ * böngészőben (a süti nonce-a). Előbb törlünk, aztán hasonlítunk: egy rossz
+ * nonce-szal próbált állapot sem marad újra felhasználhatónak.
+ */
+export async function consumeLoginState (state: string, nonce: string | undefined): Promise<boolean> {
+  if (!state || state.length < 16) return false
+  const row = await queryOne<{ nonce_hash: string }>(
+    'DELETE FROM discord_login_states WHERE state_hash = $1 AND expires_at > now() RETURNING nonce_hash',
+    [hashState(state)])
+  if (!row || !nonce) return false
+  return safeEqual(row.nonce_hash, hashState(nonce))
+}
+
+/** A Discord-azonosítóhoz kötött YUME-fiók, a belépés döntéséhez szükséges mezőkkel. */
+export async function loginAccount (discordUserId: string): Promise<{
+  id: string, username: string, status: string, token_version: number, mfa: boolean
+} | undefined> {
+  return await queryOne(
+    `SELECT u.id, u.username, u.status, u.token_version, (u.mfa_secret IS NOT NULL) AS mfa
+       FROM discord_links l JOIN users u ON u.id = l.user_id
+      WHERE l.discord_user_id = $1`, [discordUserId])
+}
+
+/** Lejárt belépési állapotok takarítása. A megőrzési feladat hívja. */
+export async function pruneLoginStates (): Promise<number> {
+  const rows = await query<{ n: number }>(
+    `WITH d AS (DELETE FROM discord_login_states WHERE expires_at < now() RETURNING 1)
+     SELECT count(*)::int AS n FROM d`)
+  return rows[0]?.n ?? 0
+}
+
 // ---------------------------------------------------------------- állapot
 
 /**
@@ -81,12 +170,21 @@ function hashState (state: string): string {
   return createHash('sha256').update(state).digest('hex')
 }
 
-export async function createState (userId: string): Promise<string> {
+/**
+ * Hová térjen vissza a böngésző a Discord után: a vezérlőpultra vagy a
+ * főoldalra. ZÁRT LISTA — a cél az induláskor tárolt érték, nem a címsor: egy
+ * a visszahívásban kapott cím nyitott átirányítás volna.
+ */
+export type ReturnTarget = 'dashboard' | 'site'
+export const RETURN_TARGETS: readonly ReturnTarget[] = ['dashboard', 'site']
+
+export async function createState (userId: string, returnTo: ReturnTarget = 'dashboard'): Promise<string> {
+  if (!RETURN_TARGETS.includes(returnTo)) throw new Error(`ismeretlen visszatérési cél: ${String(returnTo)}`)
   const state = randomBytes(32).toString('base64url')
   await query(
-    `INSERT INTO discord_oauth_states (state_hash, user_id, expires_at)
-     VALUES ($1, $2, now() + ($3::int || ' milliseconds')::interval)`,
-    [hashState(state), userId, STATE_TTL_MS])
+    `INSERT INTO discord_oauth_states (state_hash, user_id, expires_at, return_to)
+     VALUES ($1, $2, now() + ($3::int || ' milliseconds')::interval, $4)`,
+    [hashState(state), userId, STATE_TTL_MS, returnTo])
   return state
 }
 
@@ -96,14 +194,20 @@ export async function createState (userId: string): Promise<string> {
  * A törlés és az olvasás EGY utasításban: egy „megnézem, majd törlöm" minta
  * versenyben kétszer is beváltható kódot adna.
  */
-export async function consumeState (state: string): Promise<string | null> {
+export async function consumeStateTarget (state: string): Promise<{ userId: string, returnTo: ReturnTarget } | null> {
   if (!state || state.length < 16) return null
-  const row = await queryOne<{ user_id: string }>(
+  const row = await queryOne<{ user_id: string, return_to: string }>(
     `DELETE FROM discord_oauth_states
       WHERE state_hash = $1 AND expires_at > now()
-      RETURNING user_id`,
+      RETURNING user_id, return_to`,
     [hashState(state)])
-  return row?.user_id ?? null
+  if (!row) return null
+  return { userId: row.user_id, returnTo: row.return_to === 'site' ? 'site' : 'dashboard' }
+}
+
+/** Ugyanaz, csak a felhasználó azonosítójával — a cél nélkül. */
+export async function consumeState (state: string): Promise<string | null> {
+  return (await consumeStateTarget(state))?.userId ?? null
 }
 
 /** Lejárt állapotok takarítása. A megőrzési feladat hívja. */
@@ -148,7 +252,7 @@ interface TokenResponse {
  * kockázat, aminek nincs haszna: a jogosultságot amúgy is frissen kell
  * lekérdezni (7.2. pont), és egy lejárt tokennel az sem megy.
  */
-async function exchangeCode (code: string): Promise<string> {
+async function exchangeCode (code: string, vissza: string = redirectUri()): Promise<string> {
   const id = clientId()
   const secret = clientSecret()
   if (!id || !secret) throw new Error('nincs beállítva Discord OAuth')
@@ -164,7 +268,8 @@ async function exchangeCode (code: string): Promise<string> {
         client_secret: secret,
         grant_type: 'authorization_code',
         code,
-        redirect_uri: redirectUri()
+        // A beváltásnak UGYANAZT a címet kell küldenie, amivel az engedélyezés indult.
+        redirect_uri: vissza
       }),
       signal: controller.signal
     })
@@ -283,12 +388,12 @@ export async function syncGuilds (discordUserId: string, accessToken: string): P
 
 /** A felhasználó összekötött fiókja, ha van. */
 export async function linkOf (userId: string): Promise<{
-  discordUserId: string, username: string | null, linkedAt: Date
+  discordUserId: string, username: string | null, linkedAt: Date, dmNewEpisodes: boolean
 } | null> {
-  const row = await queryOne<{ discord_user_id: string, discord_username: string | null, linked_at: Date }>(
-    'SELECT discord_user_id, discord_username, linked_at FROM discord_links WHERE user_id = $1', [userId])
+  const row = await queryOne<{ discord_user_id: string, discord_username: string | null, linked_at: Date, dm_new_episodes: boolean }>(
+    'SELECT discord_user_id, discord_username, linked_at, dm_new_episodes FROM discord_links WHERE user_id = $1', [userId])
   return row
-    ? { discordUserId: row.discord_user_id, username: row.discord_username, linkedAt: row.linked_at }
+    ? { discordUserId: row.discord_user_id, username: row.discord_username, linkedAt: row.linked_at, dmNewEpisodes: row.dm_new_episodes }
     : null
 }
 

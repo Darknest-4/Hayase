@@ -126,12 +126,24 @@ Exceeding a limit returns RFC 9457 problem+json:
 default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' …;
 img-src 'self' data: blob: https:; media-src 'self' blob: https:;
 connect-src 'self' https:; frame-src <youtube>; object-src 'none';
-base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+base-uri 'self'; form-action 'self'; frame-ancestors 'none';
+require-trusted-types-for 'script'; trusted-types yume yume-inert
 ```
 
 `script-src` stays strict — that is the directive that actually stops XSS.
 `style-src` needs `'unsafe-inline'` because the UI sets inline style attributes
 and injects a `<style>` element for themes.
+
+**Trusted Types** (since 2026-09-28) close the other half: our *own* code writing
+outside text into the page as HTML. Chromium refuses every raw `innerHTML`,
+`DOMParser` parse and `script.src` that did not pass a named policy; the client
+creates exactly two (`yume` for its own static templates, `yume-inert` for
+parsing outside text into an inert document), in one module —
+`apps/web/src/shared/lib/trusted.js` — and `apps/web/test/trusted-sinks.test.mjs`
+fails on any sink that bypasses it. `CSP_TRUSTED_TYPES=report` moves the
+requirement to a report-only header (the console warns, nothing stops) and `off`
+removes it: an operator's way back without a deploy. Why `connect-src` stays
+`https:` is in [token-tarolas.md](token-tarolas.md).
 
 ## 6. CORS
 

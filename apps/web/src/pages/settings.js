@@ -50,6 +50,7 @@ export const PageSettings = {
   },
 
   async render (root, params) {
+    this._discordOutcome(params)
     const wanted = params.get('tab') ?? 'account'
     const active = this.SECTIONS.some(s => s.key === wanted) ? wanted : 'account'
     // Csak a megnyitott fül saját moduljai töltődnek le — a témaválasztó, a
@@ -273,6 +274,8 @@ export const PageSettings = {
       })
       .catch(() => { /* offline or signed out mid-render; the cards stay out */ })
 
+    wrap.append(this._discordGroup())
+
     wrap.append(this._group('Security', [
       this._row('Password', 'Changing it signs you out everywhere else; this device stays signed in.',
         P.button(T('Change password'), { variant: 'secondary', onclick: () => this._changePassword() })),
@@ -285,6 +288,114 @@ export const PageSettings = {
         P.button(T('Delete account'), { variant: 'danger', onclick: () => this._deleteAccount() }))
     ], { danger: true }))
     return wrap
+  },
+
+  /**
+   * A Discord-fiók összekötése.
+   *
+   * A kiszolgáló régóta tudja (/v1/discord/oauth/*), de eddig csak a
+   * Discord-vezérlőpult kínálta — az viszont 2026-09-29 óta jogosultsághoz
+   * kötött, és a bot `/link` parancsa ide küldi a tagokat. Ha a példányon nincs
+   * beállítva Discord OAuth, a sor ezt mondja ki: gomb egy nem működő
+   * folyamathoz nem jár.
+   */
+  _discordGroup () {
+    const slot = U.el('div', { class: 'cluster settings-discord' }, [P.spinner()])
+    // A DM-értesítés sora csak összekötött fióknál jelenik meg — addig üres.
+    const dm = U.el('div', { class: 'settings-discord-dm' })
+    this._fillDiscord(slot, dm)
+    return this._group('Connected accounts', [
+      this._row('Discord', 'The Yume bot recognises you in the Discord servers that use it.', slot),
+      dm
+    ])
+  },
+
+  async _fillDiscord (slot, dm = null) {
+    let link
+    dm?.replaceChildren()
+    try {
+      link = await YumeAPI.discordLink()
+    } catch {
+      slot.replaceChildren(U.el('span', { class: 'setting-row-desc', text: T('The Discord link could not be checked right now.') }))
+      return
+    }
+    if (link?.linked) {
+      slot.replaceChildren(
+        U.el('span', { class: 'settings-discord-who', text: I18n.f(T('Linked as {name}'), { name: '@' + (link.username ?? '?') }) }),
+        P.button(T('Unlink'), { variant: 'secondary', onclick: () => this._discordUnlink(slot, dm) }))
+      /*
+       * DM AZ ÚJ RÉSZEKRŐL — a könyvtár címeiről, bekapcsolás után. A Discord
+       * csak közös szerveren lévő tagnak engedi a botot írni, és csak ha a tag
+       * engedi a szerverről jövő privát üzeneteket; a leírás ezt kimondja.
+       */
+      dm?.replaceChildren(this._row('Discord notifications',
+        'A direct message from the Yume bot when a new episode of a title on your list comes out. It needs a server you share with the bot, with direct messages from server members allowed.',
+        this._switch(link.dmNewEpisodes, async e => {
+          const on = e.target.checked
+          try {
+            await YumeAPI.discordSetDm(on)
+            U.toast(on ? T('New episodes will arrive as Discord messages.') : T('Discord notifications are off.'), 'success')
+          } catch (err) {
+            e.target.checked = !on
+            U.toast(err.message, 'error')
+          }
+        })))
+      return
+    }
+    if (!link?.configured) {
+      slot.replaceChildren(U.el('span', { class: 'setting-row-desc', text: T('Discord linking is not set up on this site.') }))
+      return
+    }
+    const start = P.button(T('Link Discord account'), {
+      variant: 'secondary',
+      onclick: async () => {
+        start.disabled = true
+        try {
+          const { url } = await YumeAPI.discordLinkStart()
+          window.location.assign(url)
+        } catch (e) {
+          start.disabled = false
+          U.toast(e.status === 503 ? T('Discord linking is not set up on this site.') : e.message, 'error')
+        }
+      }
+    })
+    slot.replaceChildren(start)
+  },
+
+  async _discordUnlink (slot, dm = null) {
+    const ok = await C.confirm({
+      title: T('Unlink Discord?'),
+      message: T('The Yume bot will no longer recognise you in Discord servers. You can link again at any time.'),
+      confirmLabel: T('Unlink')
+    })
+    if (!ok) return
+    try {
+      await YumeAPI.discordUnlink()
+      U.toast(T('Your Discord account is unlinked.'), 'success')
+    } catch (e) {
+      U.toast(e.message, 'error')
+    }
+    await this._fillDiscord(slot, dm)
+  },
+
+  /**
+   * A Discordtól visszaérve: a kimenet egy üzenet, és a paraméter kikerül a
+   * címből — egy frissítés vagy egy könyvjelző ne mondja újra.
+   */
+  _discordOutcome (params) {
+    const outcome = params.get('discord')
+    if (!outcome) return
+    const MESSAGES = {
+      ok: ['Your Discord account is linked.', 'success'],
+      cancelled: ['Discord linking was cancelled.', ''],
+      expired: ['The link request expired. Try again.', 'error'],
+      taken: ['This Discord account is already linked to another Yume account.', 'error'],
+      invalid: ['Discord linking failed. Try again.', 'error'],
+      failed: ['Discord linking failed. Try again.', 'error']
+    }
+    const [text, type] = MESSAGES[outcome] ?? MESSAGES.failed
+    U.toast(T(text), type)
+    window.history.replaceState(window.history.state, '', '#/settings?tab=account')
   },
 
   _profileName (settings) {

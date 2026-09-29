@@ -18,24 +18,32 @@
  */
 
 import {
-  allapotIr, elsoSzivveres, esemenyBol, folytathato, Gyujto, intentsFromEnv,
+  AllapotIro, elsoSzivveres, esemenyBol, folytathato, Gyujto, intentsFromEnv,
   konfiguralva, kodMagyarazat, OP, ujAllapot, ujraVaras, vegzetes, botToken
 } from './gateway.ts'
 
 import * as commands from './commands.ts'
+import { rememberLocale } from './guild-settings.ts'
 import * as rest from './rest-client.ts'
 import * as welcome from './welcome.ts'
 
 import type { EngineState } from './gateway.ts'
 import { guardUnhandledRejections } from '../../infrastructure/process/crash-guard.ts'
 
-guardUnhandledRejections('worker')
+// SAJÁT FORRÁSKÉNT: eddig `worker`-ként jelentette a hibáit (másolás maradéka),
+// és a hibanaplóban a worker hibái közé keveredett.
+guardUnhandledRejections('gateway')
 
 const GATEWAY_URL = process.env.DISCORD_GATEWAY_URL ?? 'wss://gateway.discord.gg/?v=10&encoding=json'
 const FLUSH_MS = Number(process.env.DISCORD_GATEWAY_FLUSH_MS ?? 30_000)
 
 const gyujto = new Gyujto()
 const allapot: EngineState = ujAllapot()
+// Az állapotsor írója: az esemény ritkítva, az állapotváltás azonnal — lásd
+// `AllapotIro`. Az írás hibája nem dönti el a folyamatot, de látszik.
+const iro = new AllapotIro(undefined, undefined, error => {
+  naplo('az állapot kiírása nem sikerült', { hiba: String((error as Error)?.message ?? error).slice(0, 200) })
+})
 
 let socket: WebSocket | null = null
 let szivveresTimer: NodeJS.Timeout | undefined
@@ -46,7 +54,9 @@ let leallitva = false
 
 function naplo (uzenet: string, extra: Record<string, unknown> = {}): void {
   // A TOKEN SOHA NEM KERÜL NAPLÓBA. Itt csak állapot és hibakód utazik.
-  console.info(JSON.stringify({ komponens: 'discord-gateway', uzenet, ...extra }))
+  // AZ IDŐ A SORBAN VAN: a Docker saját időbélyege nélkül (egy kimásolt
+  // naplóban, egy `grep` után) különben nem derül ki, mikor történt.
+  console.info(JSON.stringify({ ido: new Date().toISOString(), komponens: 'discord-gateway', uzenet, ...extra }))
 }
 
 function idozitokLe (): void {
@@ -73,6 +83,7 @@ function szivver (): void {
     return
   }
   allapot.acked = false
+  allapot.szivveresKuldve = Date.now()
   kuld({ op: OP.HEARTBEAT, d: allapot.sequence })
 }
 
@@ -134,11 +145,76 @@ async function interakcio (d: unknown): Promise<void> {
     await rest.respondToInteraction(i.id, i.token, { type: commands.RESPONSE.PONG })
     return
   }
+
+  const csatorna = {
+    reply: async (payload: unknown) => await rest.respondToInteraction(i.id, i.token, payload),
+    edit: async (data: Record<string, unknown>) =>
+      i.applicationId !== null && await rest.editOriginalResponse(i.applicationId, i.token, data)
+  }
+
+  // CÍMKIEGÉSZÍTÉS: nem halasztható, azonnal válaszol (lásd `autocomplete`).
+  if (i.type === commands.INTERACTION.AUTOCOMPLETE) {
+    if (!await csatorna.reply(await commands.autocomplete(i))) naplo('a címkiegészítés válasza nem ment el')
+    return
+  }
+
+  // GOMBNYOMÁS: az eredeti üzenetet írja át; halasztva is (6-os típus). A
+  // moderálási gomb kivétel: indoklás-ablakot nyit, az pedig nem halasztható.
+  if (i.type === commands.INTERACTION.COMPONENT) {
+    const gomb = (i.customId ?? '').split(':').slice(0, 2).join(':')
+    if (gomb.startsWith('mod:')) {
+      const e = await commands.handleComponent(i)
+      naplo('gomb', { gomb, kimenet: e.outcome, valasz: await csatorna.reply(e.response), halasztva: false })
+      return
+    }
+    const e = await commands.respond(i, csatorna, undefined, commands.handleComponent, { component: true })
+    naplo('gomb', { gomb, kimenet: e.outcome, valasz: e.delivered, halasztva: e.deferred })
+    return
+  }
+
+  // A BEVITELI ABLAK elküldése (a moderálás indoklása): az üzenetet írja át.
+  if (i.type === commands.INTERACTION.MODAL_SUBMIT) {
+    const e = await commands.respond(i, csatorna, undefined, commands.handleModal, { component: true })
+    naplo('ablak', { ablak: (i.customId ?? '').split(':').slice(0, 2).join(':'), kimenet: e.outcome, valasz: e.delivered, halasztva: e.deferred })
+    return
+  }
+
   if (i.type !== commands.INTERACTION.COMMAND) return
 
-  const eredmeny = await commands.handle(i)
-  const elment = await rest.respondToInteraction(i.id, i.token, eredmeny.response)
-  naplo('parancs', { parancs: i.command, kimenet: eredmeny.outcome, valasz: elment })
+  // Ha a kezelő nem végez időben, előbb halasztott válasz megy — lásd `respond`.
+  const eredmeny = await commands.respond(i, csatorna)
+  naplo('parancs', { parancs: i.command, kimenet: eredmeny.outcome, valasz: eredmeny.delivered, halasztva: eredmeny.deferred })
+}
+
+/**
+ * A PARANCSOK SZINKRONJA szerverenként, folyamatonként egyszer — lásd
+ * `commands.sync`. Kikapcsolható (`DISCORD_COMMAND_SYNC=false`), ha valaki
+ * kézzel akarja kezelni a parancsokat.
+ */
+const szinkronizalva = new Set<string>()
+function parancsSzinkron (guildId: string): void {
+  if (process.env.DISCORD_COMMAND_SYNC === 'false' || szinkronizalva.has(guildId)) return
+  szinkronizalva.add(guildId)
+  void commands.sync(guildId)
+    .then(kimenet => { if (kimenet !== 'unchanged') naplo('parancsok szinkronja', { guild: guildId, kimenet }) })
+    .catch(error => { naplo('a parancsok szinkronja elhasalt', { guild: guildId, hiba: String((error as Error)?.message ?? error).slice(0, 200) }) })
+}
+
+/**
+ * HOVÁ KÜLDI A DISCORD A PARANCSOKAT — induláskor egyszer.
+ *
+ * Ha a fejlesztői portálon interakció-végpont van beállítva, a Discord oda
+ * küld minden parancsot, és ide egy sem érkezik: a felhasználó annyit lát,
+ * hogy „az alkalmazás nem válaszolt". 2026-09-29-ig pontosan ez történt, és a
+ * naplóban semmi nem utalt rá. Most kimondja.
+ */
+function kezbesitesEllenorzes (): void {
+  void commands.deliveryStatus().then(k => {
+    if (k?.mode === 'http') {
+      naplo('FIGYELEM: a Discord a parancsokat egy HTTP-végpontra küldi, a gatewayre egy sem érkezik — ' +
+        'a fejlesztői portálon (General Information → Interactions Endpoint URL) töröld a címet', { vegpont: k.endpointUrl })
+    }
+  }).catch(() => { /* a Discord most nem érhető el — a következő induláskor újra */ })
 }
 
 /** Egy új tag. A köszöntő részleteit a `welcome` modul dönti el. */
@@ -169,7 +245,7 @@ function csatlakoz (): void {
   const url = folytatunk ? `${allapot.resumeUrl!}/?v=10&encoding=json` : GATEWAY_URL
   naplo(folytatunk ? 'folytatás' : 'csatlakozás', { url: folytatunk ? 'resume_url' : 'gateway' })
 
-  void allapotIr({ status: folytatunk ? 'resuming' : 'connecting', intents: intentsFromEnv() })
+  iro.jelez({ status: folytatunk ? 'resuming' : 'connecting', intents: intentsFromEnv() })
 
   socket = new WebSocket(url)
 
@@ -194,6 +270,8 @@ function csatlakoz (): void {
         const d = (uzenet.d ?? {}) as { heartbeat_interval?: number }
         allapot.heartbeatMs = Number(d.heartbeat_interval ?? 41_250)
         allapot.acked = true
+        // Egy előző kapcsolaton elküldött, nyugtázatlan szívverés nem mérhető.
+        allapot.szivveresKuldve = null
         idozitokLe()
         // Az ELSŐ szívverés véletlen késleltetéssel — lásd `elsoSzivveres`.
         elsoTimer = setTimeout(() => {
@@ -207,12 +285,21 @@ function csatlakoz (): void {
 
       case OP.HEARTBEAT:
         // A Discord is KÉRHET szívverést soron kívül. Azonnal válaszolunk.
+        allapot.szivveresKuldve = Date.now()
         kuld({ op: OP.HEARTBEAT, d: allapot.sequence })
         break
 
-      case OP.HEARTBEAT_ACK:
+      case OP.HEARTBEAT_ACK: {
         allapot.acked = true
+        // A KÖRÚTIDŐ: a szívverés elküldésétől a nyugtáig — a Discord felé mért
+        // késleltetés. Csak akkor, ha tudjuk, mikor ment ki.
+        const rtt = allapot.szivveresKuldve === null ? null : Date.now() - allapot.szivveresKuldve
+        allapot.szivveresKuldve = null
+        // ÉLETJEL: a nyugta bizonyítja, hogy a kapcsolat él — csendes szerveren
+        // is, ahol percekig nem jön esemény. Lásd `STALE_MS`.
+        iro.jelez(rtt === null ? { event: true } : { event: true, rtt })
         break
+      }
 
       case OP.RECONNECT:
         naplo('a Discord újracsatlakozást kért')
@@ -243,17 +330,31 @@ function csatlakoz (): void {
           allapot.sessionId = d.session_id ?? null
           allapot.resumeUrl = d.resume_gateway_url ?? null
           naplo('kész')
-          void allapotIr({
-            status: 'ready', ready: true, event: true,
+          kezbesitesEllenorzes()
+          // Új munkamenet: ami a szakadás alatt történt, elveszett — ezért
+          // számoljuk külön a folytatástól (napi összesítő).
+          iro.jelez({
+            status: 'ready', ready: true, event: true, identified: 1,
             sessionId: allapot.sessionId, resumeUrl: allapot.resumeUrl,
             sequence: allapot.sequence, lastError: null
           })
         } else if (t === 'RESUMED') {
           naplo('folytatva')
-          void allapotIr({ status: 'ready', ready: true, event: true, lastError: null })
+          iro.jelez({ status: 'ready', ready: true, event: true, resumed: 1, lastError: null })
         } else {
+          // Szerverhez csatlakozás (induláskor mindegyikre jön): a parancsok
+          // szinkronja, és a szerver nyelve (az „auto" nyelvbeállításhoz).
+          if (t === 'GUILD_CREATE' || t === 'GUILD_UPDATE') {
+            const g = (uzenet.d ?? {}) as { id?: unknown, preferred_locale?: unknown }
+            if (typeof g.id === 'string') {
+              if (t === 'GUILD_CREATE') parancsSzinkron(g.id)
+              if (typeof g.preferred_locale === 'string') {
+                void rememberLocale(g.id, g.preferred_locale).catch(() => { /* a következő eseménynél újra */ })
+              }
+            }
+          }
           void feldolgoz(t, uzenet.d)
-          void allapotIr({ event: true, sequence: allapot.sequence })
+          iro.jelez({ event: true, sequence: allapot.sequence })
         }
         break
       }
@@ -263,6 +364,10 @@ function csatlakoz (): void {
   socket.addEventListener('close', event => {
     idozitokLe()
     socket = null
+    // SZABÁLYOS LEÁLLÁS: nem újracsatlakozás. Eddig minden telepítés egy
+    // „kapcsolat bontva, újracsatlakozás" sort és egy újracsatlakozást
+    // számolt — a napi számláló így a telepítéseket is mérte.
+    if (leallitva) return
     const kod = Number(event.code ?? 0)
 
     if (vegzetes(kod)) {
@@ -273,14 +378,14 @@ function csatlakoz (): void {
        * igazi okot.
        */
       naplo('végzetes lezárás, nem próbálkozunk újra', { kod })
-      void allapotIr({ status: 'failed', lastError: kodMagyarazat(kod) })
+      iro.jelez({ status: 'failed', lastError: kodMagyarazat(kod) })
       return
     }
 
     probalkozas++
     const varas = ujraVaras(probalkozas) + Math.floor(Math.random() * 1000)
     naplo('kapcsolat bontva, újracsatlakozás', { kod, varas })
-    void allapotIr({ status: 'disconnected', reconnect: true, lastError: kodMagyarazat(kod) })
+    iro.jelez({ status: 'disconnected', reconnect: true, lastError: kodMagyarazat(kod) })
     setTimeout(csatlakoz, varas)
   })
 
@@ -308,7 +413,8 @@ async function leall (): Promise<void> {
   // eldobni percnyi mérést.
   await kiir()
   try { socket?.close(1000, 'shutdown') } catch { /* már zárva */ }
-  await allapotIr({ status: 'disconnected' })
+  iro.jelez({ status: 'disconnected' })
+  await iro.kiurit()
   process.exit(0)
 }
 

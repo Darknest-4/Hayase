@@ -125,7 +125,7 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
     document.querySelector('#yp-harness')?.remove()
     const host = document.createElement('div')
     host.id = 'yp-harness'
-    host.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#000;'
+    host.style.cssText = opts.hostStyle ?? 'position:fixed;inset:0;z-index:9999;background:#000;'
     document.body.append(host)
 
     const { createEpisodePlayer } = await import('../../../../src/features/player2/watch/episode-player.js')
@@ -272,6 +272,109 @@ describe('player 2.0 valódi böngészőben', { skip: REASON }, () => {
     // kulcsképkockára igazítás pár másodpercet mozdíthat.
     assert.ok(Math.abs(jumped.after - jumped.duration / 2) < 5,
       `nem a felére ugrott: ${JSON.stringify(jumped)}`)
+    await teardown()
+  })
+
+  it('a lejátszó doboza nem görgethető, így semmi nem tolhatja el benne a videót', async () => {
+    // A háttérfény rétege túlnyúlik a dobozon: 680 képpontnyi vízszintes
+    // túlnyúlás. `overflow: hidden` mellett ez programból görgethető volt —
+    // egy „görgesd láthatóvá" (tesztelő kattintása, keresés, scrollIntoView) a
+    // videót és a vezérlősort a dobozon belül elcsúsztatta, mérve 556 képponttal.
+    // `overflow: clip` mellett a doboz nem görgetőtároló.
+    await mount({ hostStyle: 'position:fixed;left:280px;top:115px;width:760px;z-index:9999;background:#000;' })
+    await page.evaluate(async () => {
+      const video = document.querySelector('.yp video')
+      if (video.readyState < 2) await new Promise(resolve => video.addEventListener('loadeddata', resolve, { once: true }))
+    })
+    await page.waitForSelector('.yp-loader', { state: 'hidden' })
+    await page.mouse.move(600, 300)
+    await page.click('.yp button[aria-label="Beállítások"]')
+    await page.waitForTimeout(400)
+    const shift = await page.evaluate(() => {
+      const shell = document.querySelector('.yp')
+      // Amit egy scrollIntoView tenne: a doboz görgetése. Nem szabad hatnia.
+      shell.scrollLeft = 9999
+      shell.scrollTop = 9999
+      const box = shell.getBoundingClientRect()
+      const video = shell.querySelector('video').getBoundingClientRect()
+      return {
+        open: Boolean(document.querySelector('.yp-menu:not(.yp-hidden)')),
+        dx: Math.round(video.left - box.left),
+        dy: Math.round(video.top - box.top),
+        scrollLeft: shell.scrollLeft,
+        scrollTop: shell.scrollTop
+      }
+    })
+    assert.ok(shift.open, 'a menü nem nyílt ki')
+    assert.deepEqual({ dx: shift.dx, dy: shift.dy, scrollLeft: shift.scrollLeft, scrollTop: shift.scrollTop },
+      { dx: 0, dy: 0, scrollLeft: 0, scrollTop: 0 }, 'a menü megnyitása elmozdította a videót')
+    await teardown()
+  })
+
+  it('a gombsor egyetlen lejátszószélességen sem lóg ki, és nem fed át', async () => {
+    // A telefonos töréspontok a NÉZETABLAKRA figyeltek; asztalon a lejátszó
+    // maga keskeny lehet (1280 px-es laptopon 603 px). Ott az idő a sebesség- és
+    // a feliratgombra csúszott, a teljes képernyő gombja pedig a lejátszón
+    // kívülre, levágva. A kinyitott hangerőcsúszka (egér a némításon) is
+    // szélesebb — azzal együtt is el kell férnie.
+    const measure = () => page.evaluate(() => {
+      const shell = document.querySelector('.yp').getBoundingClientRect()
+      const items = [...document.querySelectorAll('.yp-controls-row > * > *')]
+        .filter(e => e.offsetParent !== null && e.getBoundingClientRect().width > 0)
+        .map(e => { const b = e.getBoundingClientRect(); return { name: e.getAttribute('aria-label') || e.className, l: b.left, r: b.right } })
+      const overlaps = []
+      for (let i = 0; i < items.length; i++) {
+        for (let j = i + 1; j < items.length; j++) {
+          if (items[i].l < items[j].r - 1 && items[j].l < items[i].r - 1) overlaps.push(`${items[i].name} × ${items[j].name}`)
+        }
+      }
+      return { overlaps, outside: items.filter(i => i.r > shell.right + 1 || i.l < shell.left - 1).map(i => i.name) }
+    })
+    for (const width of [760, 700, 640, 603, 560, 527, 480, 420, 376, 330]) {
+      await mount({ hostStyle: `position:fixed;left:40px;top:40px;width:${width}px;z-index:9999;background:#000;` })
+      await page.mouse.move(80, 80)
+      await page.waitForTimeout(150)
+      const idle = await measure()
+      assert.deepEqual(idle, { overlaps: [], outside: [] }, `${width} px széles lejátszó`)
+      const mute = await page.$('.yp-btn-mute')
+      if (mute && await mute.isVisible()) {
+        await mute.hover()
+        await page.waitForTimeout(300)
+        assert.deepEqual(await measure(), { overlaps: [], outside: [] }, `${width} px, kinyitott hangerővel`)
+      }
+      await teardown()
+    }
+  })
+
+  it('keskeny lejátszóban a menü minden sora látszik, és a fejléc bezárja', async () => {
+    // Telefonon, álló helyzetben a lejátszó ~212 px magas: a vezérlősor fölé
+    // nyíló menüből másfél sor látszott, a bezárásnak nem volt érinthető helye.
+    await mount({ hostStyle: 'position:fixed;left:18px;top:120px;width:376px;z-index:9999;background:#000;' })
+    await page.evaluate(async () => {
+      const video = document.querySelector('.yp video')
+      if (video.readyState < 2) await new Promise(resolve => video.addEventListener('loadeddata', resolve, { once: true }))
+    })
+    await page.waitForSelector('.yp-loader', { state: 'hidden' })
+    await page.mouse.move(200, 200)
+    await page.click('.yp button[aria-label="Beállítások"]')
+    await page.waitForTimeout(400)
+    const menu = await page.evaluate(() => {
+      const m = document.querySelector('.yp-menu:not(.yp-hidden)')
+      if (!m) return null
+      const r = m.getBoundingClientRect()
+      const rows = [...m.querySelectorAll('.yp-menu-row')]
+      return {
+        rows: rows.length,
+        visible: rows.filter(row => { const b = row.getBoundingClientRect(); return b.top >= r.top - 1 && b.bottom <= r.bottom + 1 }).length,
+        close: m.querySelector('.yp-menu-back')?.getAttribute('aria-label')
+      }
+    })
+    assert.ok(menu, 'a menü nem nyílt ki')
+    assert.equal(menu.visible, menu.rows, `${menu.rows} sorból ${menu.visible} látszik`)
+    assert.match(menu.close, /bezárása/)
+    await page.click('.yp-menu-back')
+    await page.waitForTimeout(200)
+    assert.ok(await page.evaluate(() => Boolean(document.querySelector('.yp-menu.yp-hidden'))), 'a fejléc gombja nem zárta be')
     await teardown()
   })
 

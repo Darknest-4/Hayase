@@ -20,6 +20,8 @@ before(async () => {
   install()
   ;({ PageAdmin } = await import('../src/pages/admin.js'))
   ;({ YumeAPI } = await import('../src/shared/api/yume.js'))
+  // A kapcsolósor a Beállítások szakasz kódja: csak betöltés után van a panelen.
+  await PageAdmin.loadSection('config')
 })
 
 const FLAG = { key: 'page.community', label: 'Community', enabled: true, access: 'public', required_permission: null }

@@ -374,6 +374,51 @@ export const YumeAPI = {
     this._saveTokens(null)
   },
 
+  // ---- a Discord-fiók összekötése ----
+  //
+  // Ugyanazok a végpontok, mint a Discord-vezérlőpulton (/v1/discord/oauth/*):
+  // az összekötés a fiókhoz tartozik, nem a vezérlőpulthoz. A főoldalról
+  // indítva a kiszolgáló a főoldalra hozza vissza a böngészőt (`returnTo:
+  // 'site'` → #/settings?tab=account&discord=<kimenet>).
+
+  /** Az összekötés állapota: `{ linked, configured, username?, linkedAt? }`. */
+  async discordLink () {
+    return await this._request('/v1/discord/oauth/link', { auth: true })
+  },
+
+  /** A Discord engedélyezési lapjának címe — oda kell navigálni. */
+  async discordLinkStart () {
+    return await this._request('/v1/discord/oauth/start', { method: 'POST', auth: true, body: { returnTo: 'site' } })
+  },
+
+  async discordUnlink () {
+    await this._request('/v1/discord/oauth/link', { method: 'DELETE', auth: true })
+  },
+
+  /**
+   * BELÉPÉS DISCORDDAL — csak már összekötött fiókba. A kiszolgáló egy
+   * böngészőhöz kötött sütit állít be (ezért `credentials`), és a Discord
+   * engedélyezési címét adja vissza.
+   */
+  async discordLoginStart () {
+    return await this._request('/v1/auth/discord/start', { method: 'POST', body: {}, anonymous: true, credentials: 'include', retry: false })
+  },
+
+  /**
+   * A MUNKAMENET FELVÉTELE a frissítő sütiből — a Discord-belépés után: a
+   * visszahívás a sütit állította be, hozzáférési tokent pedig szándékosan
+   * nem tett a címbe. Ugyanaz a csere, mint a lejárt token frissítése.
+   */
+  async resumeSession () {
+    await this._refresh()
+    return this.user()
+  },
+
+  /** DM-értesítés az új részekről — csak összekötött fióknál van mit kapcsolni. */
+  async discordSetDm (on) {
+    return await this._request('/v1/discord/oauth/link', { method: 'PATCH', auth: true, body: { dmNewEpisodes: on } })
+  },
+
   async logout () {
     this._perms = null
     const tokens = this._tokens()

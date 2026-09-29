@@ -12,7 +12,8 @@ import { createHash } from 'node:crypto'
 
 import { query, queryOne } from '../infrastructure/database/index.ts'
 
-export type ErrorSource = 'api' | 'worker' | 'web' | 'desktop' | 'mobile'
+// A `gateway` a Discord-gateway saját folyamata (0085 óta az adatbázis is engedi).
+export type ErrorSource = 'api' | 'worker' | 'gateway' | 'web' | 'desktop' | 'mobile'
 
 export interface ErrorContext {
   route?: string | undefined

@@ -4,9 +4,11 @@
  *
  * MIÉRT KÜLÖN FELÜLET. A Discord-rész kikerült a YUME adminfelületéről, mert
  * más a közönsége és más a jogcíme: ide az is beléphet, akinek a YUME-ban
- * NINCS admin jogosultsága, csak a Discord-szerverén van „Szerver kezelése"
- * joga. Egy ilyen embernek nem kell — és nem is szabad — látnia a katalógust,
- * a felhasználókat vagy a moderációt.
+ * NINCS admin jogosultsága — csak a vezérlőpulté (`discord.dashboard`), a
+ * Discord-szerverén pedig „Szerver kezelése" joga. Egy ilyen embernek nem
+ * kell — és nem is szabad — látnia a katalógust, a felhasználókat vagy a
+ * moderációt. (2026-09-29 óta a Discord-jog egymagában nem elég: a
+ * vezérlőpult nem nyilvános.)
  *
  * AZONOS EREDET, KÜLÖN TÁROLÓ. A kérések ugyanarra az alkalmazásra mennek
  * (a fordított proxy mindkét nevet ide irányítja), tehát nincs CORS. A
@@ -19,6 +21,7 @@ import { Api, ApiError, Auth } from './api.js'
 import { el, svg, toast } from './dom.js'
 import { messages } from './messages.js'
 import { setupView, welcomeView } from './setup.js'
+import { configView } from './config.js'
 import * as Views from './views.js'
 
 const NEZETEK = [
@@ -31,6 +34,7 @@ const NEZETEK = [
   ['channels', 'Csatornák', '<path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/>'],
   ['roles', 'Szerepkörök', '<path d="M12 2 4 7v10l8 5 8-5V7z"/>'],
   ['commands', 'Parancsok', '<path d="m4 17 6-6-6-6"/><path d="M12 19h8"/>'],
+  ['config', 'Szerver', '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>'],
   ['notifications', 'Értesítések', '<path d="m22 2-7 20-4-9-9-4z"/>'],
   ['health', 'Bot állapota', '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>'],
   ['audit', 'Napló', '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>'],
@@ -90,8 +94,9 @@ function belepoLap (uzenet = null) {
     el('p', {
       class: 'list-row-sub',
       style: 'margin:0;',
-      text: 'A YUME-fiókoddal lépj be. A Discord-szervereidhez való jogod ' +
-        'a fiók összekötése után érvényesül.'
+      text: 'A YUME-fiókoddal lépj be. A vezérlőpult nem nyilvános: a belépéshez ' +
+        'külön YUME-jogosultság kell, a szervereidhez való jogodat pedig a ' +
+        'Discord-fiókod összekötése után ellenőrizzük.'
     }),
     email, jelszo, hiba, gomb
   ])
@@ -108,7 +113,7 @@ function fejlec (ujraRajzol) {
     valaszto.append(el('option', { value: g.id, selected: g.id === allapot.guildId }, [g.name ?? g.id]))
   }
   if (!allapot.guildek.length) {
-    valaszto.append(el('option', { value: '' }, ['nincs összekötött szerver']))
+    valaszto.append(el('option', { value: '' }, ['nincs elérhető szerver']))
     valaszto.disabled = true
   }
   valaszto.addEventListener('change', () => {
@@ -118,7 +123,11 @@ function fejlec (ujraRajzol) {
   })
 
   const kilep = el('button', { class: 'btn btn-ghost btn-sm' }, ['Kilépés'])
-  kilep.addEventListener('click', () => {
+  kilep.addEventListener('click', async () => {
+    kilep.disabled = true
+    // A munkamenet a kiszolgálón is véget ér (a frissítő süti is megy vele);
+    // ha az nem sikerül, a helyi kilépés akkor is megtörténik.
+    try { await Api.logout() } catch { /* hálózati hiba: a helyi kilépés marad */ }
     Auth.clear()
     belepoLap()
   })
@@ -190,7 +199,8 @@ async function rajzol () {
     const okok = {
       no_link: 'Ehhez a fiókhoz nincs Discord-fiók kötve. A Beállításoknál kötheted össze.',
       not_member: 'Ez a fiók nem tagja ennek a szervernek.',
-      stale: 'A tárolt jogosultság elavult — kösd össze újra a Discord-fiókodat.',
+      stale: 'A jogosultságodat most nem tudtuk ellenőrizni a Discordnál. Próbáld újra fél perc múlva; ' +
+        'ha nem múlik el, kösd össze újra a Discord-fiókodat.',
       insufficient: 'Ebben a szerverben nincs „Szerver kezelése" jogosultságod.'
     }
     const szoveg = (e instanceof ApiError && okok[e.detail]) ? okok[e.detail] : e.message
@@ -212,7 +222,8 @@ async function nezetTartalom (kulcs, ujraRajzol) {
     case 'activity': return await Views.activity(g)
     case 'channels': return await Views.channels(g)
     case 'roles': return await Views.roles(g)
-    case 'commands': return Views.commands()
+    case 'commands': return await Views.commands(g, ujraRajzol)
+    case 'config': return await configView(g, ujraRajzol)
     case 'notifications': return await Views.notifications(g)
     case 'health': return await Views.health(g)
     case 'audit': return await Views.audit(g)
@@ -230,7 +241,8 @@ const LEIRAS = {
   activity: 'Üzenetforgalom naponta és csatornánként.',
   channels: 'A szerver csatornái, ahogy a Discord látja őket.',
   roles: 'A szerepkörök rangsor szerint.',
-  commands: 'A bot parancsainak használata.',
+  commands: 'A slash parancsok: hová kézbesít a Discord, mi van fent, mit használnak.',
+  config: 'Nyelv, hírfolyam-szűrők, moderálás és rangok ezen a szerveren.',
   notifications: 'A YUME kimenő értesítései és a kézbesítésük.',
   health: 'A bot szondái és a frissítések kimenetele.',
   audit: 'Ki mit csinált ezen a felületen.',
@@ -264,6 +276,10 @@ function osszekotesUzenet () {
   allapot.nezet = 'settings'
 }
 
+// A munkamenet végleg lejárt (a frissítés sem sikerült): vissza a belépéshez,
+// nem egy „nem tölthető be" hiba minden nézetben.
+Auth.onExpired = () => belepoLap('A munkameneted lejárt. Lépj be újra.')
+
 async function indul () {
   if (!Auth.token()) { belepoLap(); return }
 
@@ -278,6 +294,21 @@ async function indul () {
     await Api.status()
   } catch (e) {
     if (e.status === 401) { Auth.clear(); belepoLap('A munkameneted lejárt. Lépj be újra.'); return }
+    /*
+     * NINCS VEZÉRLŐPULT-JOGOSULTSÁG. A kiszolgáló minden nézetet elutasít
+     * (`no_dashboard_permission`); a munkamenetet itt nem tartjuk meg, és
+     * kimondjuk, mi hiányzik — nem egy üres pultot mutatunk hibákkal.
+     */
+    if (e.status === 403 && e.detail === 'no_dashboard_permission') {
+      // A belépés munkamenetet nyitott (frissítő sütivel együtt) — az se
+      // maradjon a kiszolgálón annak, aki ide nem léphet be.
+      try { await Api.logout() } catch { /* a helyi kilépés akkor is megtörténik */ }
+      Auth.clear()
+      belepoLap('Ehhez a vezérlőpulthoz nincs jogosultságod. A belépéshez a YUME ' +
+        'üzemeltetőjétől kell kérni a „Discord-vezérlőpult" jogot. A Discord-fiókodat ' +
+        'a YUME főoldalán, a Beállítások → Fiók alatt kötheted össze.')
+      return
+    }
     throw e
   }
 
@@ -286,11 +317,16 @@ async function indul () {
   const horgony = (window.location.hash || '').replace(/^#\//, '').split('?')[0]
   if (NEZETEK.some(n => n[0] === horgony)) allapot.nezet = horgony
 
-  // A szerverek listája az összekötött fiókból. Ami nincs benne, ahhoz
-  // nincs is jogosultság — a kiszolgáló ugyanezt ellenőrzi.
+  /*
+   * A SZERVEREK LISTÁJA A KISZOLGÁLÓTÓL: az üzemeltetőnek (`discord.manage`)
+   * minden szerver, ahol a bot bent van — összekötött fiók nélkül is; másnak
+   * az összekötött fiók szerverei, ahol „Szerver kezelése" joga van. Eddig
+   * csak az utóbbi volt, és az üzemeltető összekötés nélkül üres választót
+   * látott. A lista kényelem: a jogot minden nézetnél a kiszolgáló dönti el.
+   */
   try {
-    const link = await Api.linkStatus()
-    allapot.guildek = link?.guilds ?? []
+    const lista = await Api.guilds()
+    allapot.guildek = lista?.data ?? []
   } catch {
     allapot.guildek = []
   }

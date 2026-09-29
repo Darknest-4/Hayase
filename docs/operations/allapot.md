@@ -213,10 +213,10 @@ A felhasználó által kért sorrend (a #6 és #1 kész, ezek jönnek „folytas
 1. ~~**#1 — DB library‑sync**~~ ✅ **kész** (lásd fent)
    *Az alerting és a diagnosztika is elkészült — lásd a monitoring szakaszt.*
    *A **Metadata engine (#7)** és a **Search 2.0 (#8)** is kész — lásd fent és [`../database/search.md`](../database/search.md).*
-2. **#2 — Reviews** (értékelések): a `reviews`, `review_votes` táblák megvannak, UI+API hátra
-3. **#3 — Custom lists / Collections**: `custom_lists`, `custom_list_items`, `collections`, `collection_lists` táblák megvannak
-4. **#4 — Follows/Friendships + Forums/Clubs**: `follows`, `friendships`, `forums`, `clubs`, `topics`, `posts`, `club_members` táblák megvannak
-5. **#5 — AI Center / Marketplace / Plugin API**: `ai` jogosultság‑csoport (16) megvan, funkció hátra
+2. **#2 — Reviews** (értékelések): a `reviews` tábla megvan; a `review_votes`-ot a 0083-as migráció kivette (sosem használta kód) — a funkcióval együtt jön vissza. UI+API hátra
+3. **#3 — Custom lists / Collections**: a `custom_lists`, `custom_list_items`, `collection_lists` és `list_likes` táblákat a 0083 kivette (üresek voltak, kód nem használta); a `collections` megvan. A funkcióval együtt jönnek vissza
+4. **#4 — Follows/Friendships + Forums/Clubs**: a fórum (`forums`, `topics`, `posts`) és a `follows` megvan; a `friendships`, `clubs`, `club_members` táblákat a 0083 kivette
+5. **#5 — AI Center / Marketplace / Plugin API**: a hozzájuk előre felvett jogosultságokat a 0083 kivette (a szerepkör-szerkesztőben nem létező funkciót mutattak); a funkcióval együtt jönnek vissza
 6. **Discord bot (gateway)** — **terv kész, kód még nincs**: [`../integrations/discord-bot.md`](../integrations/discord-bot.md).
    Saját **`bot/`** mappa, **saját `package.json`** (a `discord.js` így soha nem
    kerül a szerver függőségei közé), saját `Dockerfile` és **külön compose‑service**,

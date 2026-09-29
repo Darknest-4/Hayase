@@ -16,7 +16,17 @@
   aspect-ratio: 16 / 9;
   background: var(--ink-black);
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  /* `clip`, nem `hidden`. A háttérfény rétege (`.yp-ambient`) a doboz szélein
+     túlnyúlik, és ettől a dobozban 680 képpontnyi vízszintes túlnyúlás van. Egy
+     `hidden` doboz ezt programból GÖRGETHETŐVÉ teszi: bármilyen „görgesd
+     láthatóvá" (scrollIntoView, a böngésző keresése, egy tesztelő kattintása)
+     a videót és a vezérlősort a dobozon belül elcsúsztatja — mérve, egy
+     Playwright-kattintás 556 képpontot. A `clip` ugyanúgy levág, de
+     görgetőtárolót nem hoz létre. Őrzi: tests/e2e/player2.test.mjs. */
+  overflow: clip;
+  /* A menü a lejátszó SAJÁT szélességéhez igazodik (lent, @container), nem a
+     nézetablakéhoz: a lejátszó 1024 px-es lapon is csak ~530 px széles. */
+  container: yp / inline-size;
   /* A lejátszó a SAJÁT tartalmazó blokkja: enélkül a teljes képernyős mód
      előtti `position: absolute` rétegek a lapra pozicionálódnának. */
   contain: layout paint;
@@ -200,6 +210,12 @@
   gap: var(--space-1);
   min-width: 0;
 }
+/* A HELYHIÁNYT AZ IDŐKIJELZÉS NYELI EL, nem a gombok. A jobb oldali csoport
+   (felirat, beállítások, teljes képernyő) soha nem húzódik össze: eddig egy
+   kinyíló hangerőcsúszka a teljes képernyő gombját a lejátszón KÍVÜLRE tolta
+   (mérve, 760 px-es lejátszóban is 8 képponttal). Most a szűkülés az időt
+   vágja — legfeljebb addig, amíg az egér a csúszkán van. */
+.yp-controls-right { flex-shrink: 0; }
 
 .yp-btn {
   display: inline-flex;
@@ -237,6 +253,8 @@
   opacity: 0.85;
   padding: 0 var(--space-2);
   white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
 }
 
 /* ---- hangerő ---- */
@@ -801,3 +819,48 @@
   .yp-controls { padding: var(--space-3) var(--space-1) var(--space-1); }
   .yp-time { padding: 0 var(--space-1); }
 }
+
+/* KESKENY LEJÁTSZÓ (telefon álló helyzetben, kislejátszó): a menü a lejátszó
+   egészét kapja. A vezérlősor fölött egy 212 px magas lejátszóban másfél sor fért
+   ki, a „Felirat" félbevágva. A menü fejlécében ilyenkor a bezárás gomb van. */
+@container yp (max-width: 479px) {
+  .yp-menu { inset: var(--space-2); width: auto; max-height: none; }
+  /* 44 px-es sor (érintési méret) és alacsonyabb fejléc: a három beállítás így
+     egy 212 px magas lejátszóban is görgetés nélkül kifér. */
+  .yp-menu-back { padding-block: var(--space-2); }
+  .yp-menu-body { padding-block: var(--space-1); }
+  .yp-menu-row { min-height: 44px; padding-block: 0; }
+}
+
+/* A GOMBSOR A LEJÁTSZÓ SZÉLESSÉGÉHEZ — nem a nézetablakéhoz.
+ *
+ * A fenti három töréspont (640 / 560 / 400) a TELEFON nézetablakára van
+ * hangolva, és ott jó. Tábla- és asztali lapon viszont maga a lejátszó lehet
+ * keskeny: 1280 px-es laptopon 603, 1024 px-en 527 px. A teljes gombsor 702
+ * px-t kér (mérve: öt 44-es gomb, a lejátszás 52, az idő 82, jobbra hat gomb,
+ * a hézagok és a 16-os szegély) — ott az időkijelzés a sebesség- és a
+ * feliratgombra csúszott, a teljes képernyő gombja pedig a lejátszón KÍVÜLRE,
+ * levágva, kattinthatatlanul. Élesben is így volt.
+ *
+ * Ugyanaz a sorrend, mint telefonon: előbb megy, ami máshol is elérhető (a
+ * sebesség és a kép a képben a beállításmenüben, a részváltás az
+ * epizódlistán), utoljára a gyorsugrás és a némítás (billentyűzettel a nyilak
+ * és az M ugyanezt tudja). A mozi mód sokáig marad: épp a keskeny lejátszót
+ * tágítja. Telefonon (640 px alatt) a fenti szabályok maradnak érvényben.
+ * Őrzi: tests/e2e/player2.test.mjs, „a gombsor…".
+ */
+@media (min-width: 641px) {
+  @container yp (max-width: 719px) {
+    .yp-btn-rate, .yp-btn-prev, .yp-btn-next { display: none; }
+  }
+  @container yp (max-width: 579px) {
+    .yp-btn-pip { display: none; }
+  }
+  @container yp (max-width: 519px) {
+    .yp-btn-back, .yp-btn-fwd, .yp-btn-cinema { display: none; }
+  }
+  @container yp (max-width: 379px) {
+    .yp-btn-mute, .yp-volume { display: none; }
+  }
+}
+
