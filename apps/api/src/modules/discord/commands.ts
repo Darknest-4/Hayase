@@ -389,7 +389,7 @@ async function profile (i: Interaction): Promise<unknown> {
   if (!fiok) {
     return message(
       'Ehhez a Discord-fiókhoz nincs YUME-fiók kötve.\n' +
-      `Összekötheted itt: ${DASHBOARD}/#/settings`)
+      `Összekötheted itt: ${YUME}/#/settings?tab=account`)
   }
   const stat = await queryOne<{ konyvtar: number, kedvenc: number }>(
     `SELECT (SELECT count(*)::int FROM library_entries le
@@ -409,7 +409,7 @@ async function profile (i: Interaction): Promise<unknown> {
 
 async function watchlist (i: Interaction): Promise<unknown> {
   const fiok = await yumeUser(i.userId)
-  if (!fiok) return message(`Kösd össze a fiókodat: ${DASHBOARD}/#/settings`)
+  if (!fiok) return message(`Kösd össze a fiókodat: ${YUME}/#/settings?tab=account`)
   const sorok = await query<{ title: string, status: string }>(
     `SELECT a.canonical_title AS title, le.status
        FROM library_entries le
@@ -430,14 +430,15 @@ async function link (i: Interaction): Promise<unknown> {
   const fiok = await yumeUser(i.userId)
   if (fiok) return message(`Ez a Discord-fiók már össze van kötve ezzel: **${fiok.username}**`)
   /*
-   * AZ ÖSSZEKÖTÉS A VEZÉRLŐPULTON TÖRTÉNIK, nem itt. A folyamathoz
-   * böngésző kell (a Discord engedélyezési lapja), és a YUME-oldali
-   * bejelentkezés is — egy parancs ezt nem tudja elvégezni, és úgy tenni,
-   * mintha igen, félrevezetés volna.
+   * AZ ÖSSZEKÖTÉS A FŐOLDALON TÖRTÉNIK, nem itt. A folyamathoz böngésző kell
+   * (a Discord engedélyezési lapja), és a YUME-oldali bejelentkezés is — egy
+   * parancs ezt nem tudja elvégezni, és úgy tenni, mintha igen, félrevezetés
+   * volna. Eddig a vezérlőpultra küldött; az 2026-09-29 óta csak
+   * jogosultsággal nyílik, egy átlagos tag ott nem jut be.
    */
   return message(
-    'Az összekötés a vezérlőpulton indul, mert böngésző kell hozzá:\n' +
-    `${DASHBOARD}/#/settings`)
+    'Az összekötés a YUME-fiókod beállításaiban indul, mert böngésző kell hozzá:\n' +
+    `${YUME}/#/settings?tab=account`)
 }
 
 async function unlink (i: Interaction): Promise<unknown> {
@@ -445,7 +446,7 @@ async function unlink (i: Interaction): Promise<unknown> {
   if (!fiok) return message('Ehhez a Discord-fiókhoz nincs YUME-fiók kötve.')
   return message(
     `A(z) **${fiok.username}** fiókkal vagy összekötve.\n` +
-    `A bontás a vezérlőpulton, a saját fiókoddal belépve: ${DASHBOARD}/#/settings`)
+    `A bontás a YUME-fiókod beállításaiban: ${YUME}/#/settings?tab=account`)
 }
 
 async function notifications (i: Interaction): Promise<unknown> {

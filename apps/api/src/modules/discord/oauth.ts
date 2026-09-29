@@ -81,12 +81,21 @@ function hashState (state: string): string {
   return createHash('sha256').update(state).digest('hex')
 }
 
-export async function createState (userId: string): Promise<string> {
+/**
+ * Hová térjen vissza a böngésző a Discord után: a vezérlőpultra vagy a
+ * főoldalra. ZÁRT LISTA — a cél az induláskor tárolt érték, nem a címsor: egy
+ * a visszahívásban kapott cím nyitott átirányítás volna.
+ */
+export type ReturnTarget = 'dashboard' | 'site'
+export const RETURN_TARGETS: readonly ReturnTarget[] = ['dashboard', 'site']
+
+export async function createState (userId: string, returnTo: ReturnTarget = 'dashboard'): Promise<string> {
+  if (!RETURN_TARGETS.includes(returnTo)) throw new Error(`ismeretlen visszatérési cél: ${String(returnTo)}`)
   const state = randomBytes(32).toString('base64url')
   await query(
-    `INSERT INTO discord_oauth_states (state_hash, user_id, expires_at)
-     VALUES ($1, $2, now() + ($3::int || ' milliseconds')::interval)`,
-    [hashState(state), userId, STATE_TTL_MS])
+    `INSERT INTO discord_oauth_states (state_hash, user_id, expires_at, return_to)
+     VALUES ($1, $2, now() + ($3::int || ' milliseconds')::interval, $4)`,
+    [hashState(state), userId, STATE_TTL_MS, returnTo])
   return state
 }
 
@@ -96,14 +105,20 @@ export async function createState (userId: string): Promise<string> {
  * A törlés és az olvasás EGY utasításban: egy „megnézem, majd törlöm" minta
  * versenyben kétszer is beváltható kódot adna.
  */
-export async function consumeState (state: string): Promise<string | null> {
+export async function consumeStateTarget (state: string): Promise<{ userId: string, returnTo: ReturnTarget } | null> {
   if (!state || state.length < 16) return null
-  const row = await queryOne<{ user_id: string }>(
+  const row = await queryOne<{ user_id: string, return_to: string }>(
     `DELETE FROM discord_oauth_states
       WHERE state_hash = $1 AND expires_at > now()
-      RETURNING user_id`,
+      RETURNING user_id, return_to`,
     [hashState(state)])
-  return row?.user_id ?? null
+  if (!row) return null
+  return { userId: row.user_id, returnTo: row.return_to === 'site' ? 'site' : 'dashboard' }
+}
+
+/** Ugyanaz, csak a felhasználó azonosítójával — a cél nélkül. */
+export async function consumeState (state: string): Promise<string | null> {
+  return (await consumeStateTarget(state))?.userId ?? null
 }
 
 /** Lejárt állapotok takarítása. A megőrzési feladat hívja. */

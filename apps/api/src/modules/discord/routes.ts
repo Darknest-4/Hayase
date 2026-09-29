@@ -147,6 +147,30 @@ function publicView (row: PersistentMessage): Record<string, unknown> {
 }
 
 const routes: FastifyPluginAsync = async fastify => {
+  // ---- a vezérlőpult kapuja ----------------------------------------------
+
+  /**
+   * A VEZÉRLŐPULT NEM NYILVÁNOS: a nézetei (`/status` és minden
+   * `/guilds/:guildId/…`) YUME-jogosultságot kérnek — `discord.dashboard`-ot,
+   * vagy az üzemeltetői `discord.manage`-et. Eddig a Discordon meglévő
+   * „Szerver kezelése" jog egymagában is bejuttatott; a tulajdonos kérésére
+   * (2026-09-29) már nem. A szerverenkénti kapu (`gate`) ezen FELÜL marad.
+   *
+   * AMI NEM A VEZÉRLŐPULTÉ, AZ NYITVA MARAD: az OAuth-összekötés (`/oauth/…`)
+   * a főoldalról is indul, bármelyik belépett felhasználónak.
+   */
+  fastify.addHook('preHandler', async (request, reply) => {
+    const url = request.routeOptions?.url ?? ''
+    if (url !== '/v1/discord/status' && !url.startsWith('/v1/discord/guilds/')) return
+    if (!request.user) return // a route saját `authenticate`-je már elutasította
+    if (await holds(request, 'discord.dashboard') || await holds(request, 'discord.manage')) return
+    return await reply.code(403).send({
+      type: 'about:blank', title: 'Forbidden', status: 403,
+      // A felület ebből tudja, hogy nem a Discord-oldali jog hiányzik.
+      detail: 'no_dashboard_permission'
+    })
+  })
+
   // ---- a rendszer állapota -----------------------------------------------
 
   /**
@@ -177,8 +201,20 @@ const routes: FastifyPluginAsync = async fastify => {
         detail: 'nincs beállítva Discord OAuth'
       })
     }
+    /*
+     * HOVÁ TÉRJEN VISSZA: `dashboard` (alapból — a vezérlőpult törzs nélkül
+     * hívja) vagy `site` (a főoldal Beállítások → Fiók füle). Zárt lista, és
+     * az állapot mellé tárolódik: a visszahívás nem a címsorból dönt.
+     */
+    const kert = (request.body as { returnTo?: unknown } | null | undefined)?.returnTo
+    if (kert !== undefined && !oauth.RETURN_TARGETS.includes(kert as oauth.ReturnTarget)) {
+      return await reply.code(400).send({
+        type: 'about:blank', title: 'Bad Request', status: 400,
+        detail: 'returnTo: dashboard vagy site'
+      })
+    }
     const userId = (request.user as { sub: string }).sub
-    const state = await oauth.createState(userId)
+    const state = await oauth.createState(userId, (kert as oauth.ReturnTarget | undefined) ?? 'dashboard')
     return { url: oauth.authorizeUrl(state) }
   })
 
@@ -209,7 +245,20 @@ const routes: FastifyPluginAsync = async fastify => {
     }
   }, async (request, reply) => {
     const q = request.query as { code?: string, state?: string, error?: string }
+    /*
+     * AZ ÁLLAPOTOT ELŐSZÖR VÁLTJUK BE — a lemondásnál is. Belőle tudjuk, hová
+     * kell visszaküldeni a böngészőt; egy a főoldalról indított, a Discordnál
+     * visszautasított összekötés eddig a vezérlőpulton kötött volna ki.
+     */
+    const bevaltott = q.state ? await oauth.consumeStateTarget(q.state) : null
     const vissza = (allapot: string): void => {
+      if (bevaltott?.returnTo === 'site') {
+        // A főoldal Beállítások → Fiók füle. A PUBLIC_URL az oldal saját címe
+        // (a visszahívás a vezérlőpult nevén fut); üresen a relatív cím marad.
+        const oldal = (process.env.PUBLIC_URL ?? '').trim().replace(/\/+$/, '')
+        void reply.redirect(`${oldal}/#/settings?tab=account&discord=${encodeURIComponent(allapot)}`)
+        return
+      }
       /*
        * A CÉL A VEZÉRLŐPULT BEÁLLÍTÁSOK FÜLE — ott indult a folyamat, és ott
        * is kell végződnie.
@@ -230,7 +279,7 @@ const routes: FastifyPluginAsync = async fastify => {
     if (q.error) return vissza('cancelled')
     if (!q.code || !q.state) return vissza('invalid')
 
-    const userId = await oauth.consumeState(q.state)
+    const userId = bevaltott?.userId ?? null
     if (!userId) {
       /*
        * ISMERETLEN VAGY LEJÁRT ÁLLAPOT. Nem mondjuk meg, melyik: egy

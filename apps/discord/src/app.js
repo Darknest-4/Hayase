@@ -90,8 +90,9 @@ function belepoLap (uzenet = null) {
     el('p', {
       class: 'list-row-sub',
       style: 'margin:0;',
-      text: 'A YUME-fiókoddal lépj be. A Discord-szervereidhez való jogod ' +
-        'a fiók összekötése után érvényesül.'
+      text: 'A YUME-fiókoddal lépj be. A vezérlőpult nem nyilvános: a belépéshez ' +
+        'külön YUME-jogosultság kell, a szervereidhez való jogodat pedig a ' +
+        'Discord-fiókod összekötése után ellenőrizzük.'
     }),
     email, jelszo, hiba, gomb
   ])
@@ -278,6 +279,18 @@ async function indul () {
     await Api.status()
   } catch (e) {
     if (e.status === 401) { Auth.clear(); belepoLap('A munkameneted lejárt. Lépj be újra.'); return }
+    /*
+     * NINCS VEZÉRLŐPULT-JOGOSULTSÁG. A kiszolgáló minden nézetet elutasít
+     * (`no_dashboard_permission`); a munkamenetet itt nem tartjuk meg, és
+     * kimondjuk, mi hiányzik — nem egy üres pultot mutatunk hibákkal.
+     */
+    if (e.status === 403 && e.detail === 'no_dashboard_permission') {
+      Auth.clear()
+      belepoLap('Ehhez a vezérlőpulthoz nincs jogosultságod. A belépéshez a YUME ' +
+        'üzemeltetőjétől kell kérni a „Discord-vezérlőpult" jogot. A Discord-fiókodat ' +
+        'a YUME főoldalán, a Beállítások → Fiók alatt kötheted össze.')
+      return
+    }
     throw e
   }
 

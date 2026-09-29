@@ -41,6 +41,9 @@ const DISCORD_USER = '300000000000000777'
 describe('a Discord vezérlőpult', { skip: REASON }, () => {
   let server, browser, pool, page, base, account
   const username = 'dpanel' + randomBytes(4).toString('hex')
+  // Egy második fiók, vezérlőpult-jogosultság NÉLKÜL — lásd a lenti tételt.
+  const kulso = 'dpnoperm' + randomBytes(4).toString('hex')
+  const szerep = 'dpdash' + randomBytes(4).toString('hex')
 
   before(async () => {
     process.env.WEB_ROOT = WEB_ROOT
@@ -67,11 +70,25 @@ describe('a Discord vezérlőpult', { skip: REASON }, () => {
     account = await res.json()
 
     /*
-     * A JOGCÍM NEM YUME-ADMIN, HANEM A DISCORD-JOG. Ez a készlet szándékosan
-     * NEM ad admin szerepkört: pontosan azt méri, hogy egy közönséges
-     * YUME-fiók, aminek a Discord-szerverén „Szerver kezelése" joga van,
-     * bejut a vezérlőpultra. Ez a szétválasztás oka.
+     * A JOGCÍM NEM YUME-ADMIN. Ez a készlet szándékosan NEM ad admin
+     * szerepkört: azt méri, hogy egy fiók, aminek a vezérlőpulthoz van
+     * jogosultsága (`discord.dashboard`, egy próbaszerepkörön át), a
+     * Discord-szerverén pedig „Szerver kezelése" joga, bejut — és csak a
+     * saját szerverét látja. 2026-09-29 óta a Discord-jog egymagában nem elég
+     * (a vezérlőpult nem nyilvános); ezt a „jogosultság nélkül" tétel méri.
      */
+    await pool.query('INSERT INTO roles (slug, name) VALUES ($1, $1)', [szerep])
+    await pool.query(
+      `INSERT INTO role_permissions (role_id, permission_id)
+       SELECT r.id, p.id FROM roles r, permissions p WHERE r.slug = $1 AND p.slug = 'discord.dashboard'`, [szerep])
+    await pool.query(
+      `INSERT INTO user_roles (user_id, role_id)
+       SELECT u.id, r.id FROM users u, roles r WHERE u.username = $1 AND r.slug = $2`, [username, szerep])
+    await fetch(`${base}/v1/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: `${kulso}@example.com`, username: kulso, password: 'Correct-Horse-Battery-9' })
+    })
     await pool.query('DELETE FROM discord_links WHERE discord_user_id = $1', [DISCORD_USER])
     await pool.query(
       'INSERT INTO discord_links (user_id, discord_user_id, discord_username) SELECT id, $2, $3 FROM users WHERE username = $1',
@@ -116,7 +133,8 @@ describe('a Discord vezérlőpult', { skip: REASON }, () => {
       await pool?.query('DELETE FROM discord_registry WHERE guild_id = $1', [GUILD])
       await pool?.query('DELETE FROM discord_guild_members WHERE discord_user_id = $1', [DISCORD_USER])
       await pool?.query('DELETE FROM discord_links WHERE discord_user_id = $1', [DISCORD_USER])
-      await pool?.query('DELETE FROM users WHERE username = $1', [username])
+      await pool?.query('DELETE FROM users WHERE username IN ($1, $2)', [username, kulso])
+      await pool?.query('DELETE FROM roles WHERE slug = $1', [szerep])
     } finally {
       await browser?.close()
       await server?.close()
@@ -231,6 +249,27 @@ describe('a Discord vezérlőpult', { skip: REASON }, () => {
       : ''
     assert.equal(hiba, '', `a belépés hibát adott: ${hiba}`)
     assert.equal(await friss.locator('.dc-nav').count(), 1, 'nem jutott be a vezérlőpultra')
+    await friss.close()
+  })
+
+  /*
+   * A VEZÉRLŐPULT NEM NYILVÁNOS. Egy érvényes YUME-fiók jogosultság nélkül
+   * nem jut be: a belépőlap marad, és megmondja, mi hiányzik — a munkamenet
+   * pedig nem marad a böngészőben.
+   */
+  it('vezérlőpult-jogosultság nélkül nem enged be, és megmondja, mi hiányzik', async () => {
+    const friss = await browser.newPage()
+    await friss.route('https://**', r => r.abort())
+    await friss.goto(`${base}/dashboard/`, { waitUntil: 'domcontentloaded' })
+    await friss.waitForSelector('.dc-login-card', { timeout: 15000 })
+    await friss.locator('.dc-login-card input').first().fill(kulso)
+    await friss.locator('.dc-login-card input[type="password"]').fill('Correct-Horse-Battery-9')
+    await friss.locator('.dc-login-card button').click()
+    await friss.waitForTimeout(3000)
+    assert.equal(await friss.locator('.dc-nav').count(), 0, 'jogosultság nélkül is bejutott')
+    assert.match(await friss.locator('.dc-login-card .form-error').innerText(), /nincs jogosultságod/)
+    assert.equal(await friss.evaluate(() => localStorage.getItem('yume-discord-auth')), null,
+      'a munkamenet a böngészőben maradt')
     await friss.close()
   })
 

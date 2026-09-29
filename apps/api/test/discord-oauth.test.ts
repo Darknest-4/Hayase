@@ -349,3 +349,76 @@ describe('a Discord OAuth', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => 
     })
   })
 })
+
+describe('a főoldal is indíthat összekötést', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
+  let token = ''
+  let nev = ''
+  let id = ''
+
+  before(async () => {
+    oauth = await import('../src/modules/discord/oauth.ts')
+    db = await import('../src/infrastructure/database/index.ts')
+    const { buildApp } = await import('../src/app.ts')
+    app = await buildApp()
+    await app.ready()
+    nev = 'oauthS' + randomBytes(4).toString('hex')
+    const res = await app.inject({
+      method: 'POST', url: '/v1/auth/register',
+      payload: { email: `${nev}@example.com`, username: nev, password: 'Correct-Horse-Battery-9' }
+    })
+    token = String(res.json().accessToken ?? res.json().token)
+    id = (await db.queryOne<{ id: string }>('SELECT id FROM users WHERE username = $1', [nev]))!.id
+  })
+
+  after(async () => {
+    await db.query('DELETE FROM users WHERE username = $1', [nev])
+    await app?.close()
+  })
+
+  const indit = async (payload?: unknown) => await beallitva(async () => await app.inject({
+    method: 'POST',
+    url: '/v1/discord/oauth/start',
+    headers: { authorization: `Bearer ${token}` },
+    ...(payload !== undefined ? { payload } : {})
+  }))
+  const allapotBol = (url: string): string => new URL(url).searchParams.get('state') ?? ''
+
+  it('az állapot megjegyzi, hová kell visszatérni', async () => {
+    const site = await oauth.createState(id, 'site')
+    assert.deepEqual(await oauth.consumeStateTarget(site), { userId: id, returnTo: 'site' })
+    const alap = await oauth.createState(id)
+    assert.deepEqual(await oauth.consumeStateTarget(alap), { userId: id, returnTo: 'dashboard' })
+  })
+
+  it('ismeretlen visszatérési célt nem fogad el — a cél nem lehet cím', async () => {
+    await assert.rejects(() => oauth.createState(id, 'https://evil.example' as never))
+    assert.equal((await indit({ returnTo: 'https://evil.example' })).statusCode, 400)
+  })
+
+  it('a főoldalról indított összekötés a főoldalra tér vissza — lemondáskor is', async () => {
+    const elozo = process.env.PUBLIC_URL
+    process.env.PUBLIC_URL = 'https://yume.example.com/'
+    try {
+      const start = await indit({ returnTo: 'site' })
+      assert.equal(start.statusCode, 200)
+      const res = await app.inject({
+        method: 'GET',
+        url: `/v1/discord/oauth/callback?error=access_denied&state=${encodeURIComponent(allapotBol(start.json().url))}`
+      })
+      assert.equal(res.statusCode, 302)
+      assert.equal(res.headers.location, 'https://yume.example.com/#/settings?tab=account&discord=cancelled')
+    } finally {
+      if (elozo === undefined) delete process.env.PUBLIC_URL; else process.env.PUBLIC_URL = elozo
+    }
+  })
+
+  it('a vezérlőpult törzs nélküli indítása a vezérlőpultra tér vissza', async () => {
+    const start = await indit()
+    assert.equal(start.statusCode, 200)
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/discord/oauth/callback?error=access_denied&state=${encodeURIComponent(allapotBol(start.json().url))}`
+    })
+    assert.equal(res.headers.location, '/#/settings?link=cancelled')
+  })
+})

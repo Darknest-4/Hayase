@@ -30,6 +30,13 @@ let tagToken = ''
 let adminNev = ''
 let tagNev = ''
 let tagDiscordId = ''
+// 2026-09-29 óta a vezérlőpulthoz YUME-jogosultság is kell (discord.dashboard):
+// a „tag" egy próbaszerepkörön át megkapja, a „külső" nem — neki csak a
+// Discordon van „Szerver kezelése" joga.
+let szerep = ''
+let kulsoNev = ''
+let kulsoToken = ''
+let kulsoDiscordId = ''
 
 describe('a Discord vezérlőpult végpontjai', { skip: HAS_DB ? false : 'no DATABASE_URL' }, () => {
   before(async () => {
@@ -54,6 +61,17 @@ describe('a Discord vezérlőpult végpontjai', { skip: HAS_DB ? false : 'no DAT
     tagNev = 'dctag' + randomBytes(4).toString('hex')
     adminToken = await reg(adminNev)
     tagToken = await reg(tagNev)
+    kulsoNev = 'dckul' + randomBytes(4).toString('hex')
+    kulsoToken = await reg(kulsoNev)
+
+    szerep = 'dcdash' + randomBytes(4).toString('hex')
+    await pool.query('INSERT INTO roles (slug, name) VALUES ($1, $1)', [szerep])
+    await pool.query(
+      `INSERT INTO role_permissions (role_id, permission_id)
+       SELECT r.id, p.id FROM roles r, permissions p WHERE r.slug = $1 AND p.slug = 'discord.dashboard'`, [szerep])
+    await pool.query(
+      `INSERT INTO user_roles (user_id, role_id)
+       SELECT u.id, r.id FROM users u, roles r WHERE u.username = $1 AND r.slug = $2`, [tagNev, szerep])
 
     await pool.query(
       `INSERT INTO user_roles (user_id, role_id)
@@ -67,6 +85,10 @@ describe('a Discord vezérlőpult végpontjai', { skip: HAS_DB ? false : 'no DAT
     await pool.query(
       'INSERT INTO discord_links (user_id, discord_user_id) SELECT id, $2 FROM users WHERE username = $1',
       [tagNev, tagDiscordId])
+    kulsoDiscordId = '4' + randomBytes(8).toString('hex').replace(/\D/g, '0').padEnd(17, '7').slice(0, 17)
+    await pool.query(
+      'INSERT INTO discord_links (user_id, discord_user_id) SELECT id, $2 FROM users WHERE username = $1',
+      [kulsoNev, kulsoDiscordId])
   })
 
   beforeEach(async () => {
@@ -76,12 +98,18 @@ describe('a Discord vezérlőpult végpontjai', { skip: HAS_DB ? false : 'no DAT
     await pool.query(
       `INSERT INTO discord_guild_members (discord_user_id, guild_id, owner, permissions, fetched_at)
        VALUES ($1, $2, false, '32', now())`, [tagDiscordId, MIENK])
+    await pool.query('DELETE FROM discord_guild_members WHERE discord_user_id = $1', [kulsoDiscordId])
+    await pool.query(
+      `INSERT INTO discord_guild_members (discord_user_id, guild_id, owner, permissions, fetched_at)
+       VALUES ($1, $2, false, '32', now())`, [kulsoDiscordId, MIENK])
   })
 
   after(async () => {
     await pool?.query('DELETE FROM persistent_messages WHERE guild_id IN ($1, $2)', [MIENK, IDEGEN])
     await pool?.query('DELETE FROM discord_guild_members WHERE discord_user_id = $1', [tagDiscordId])
-    await pool?.query('DELETE FROM users WHERE username IN ($1, $2)', [adminNev, tagNev])
+    await pool?.query('DELETE FROM discord_guild_members WHERE discord_user_id = $1', [kulsoDiscordId])
+    await pool?.query('DELETE FROM users WHERE username IN ($1, $2, $3)', [adminNev, tagNev, kulsoNev])
+    await pool?.query('DELETE FROM roles WHERE slug = $1', [szerep])
     await app?.close()
   })
 
@@ -113,6 +141,21 @@ describe('a Discord vezérlőpult végpontjai', { skip: HAS_DB ? false : 'no DAT
 
   it('a YUME-jogosultság bejuttat a saját rendszerbe', async () => {
     assert.equal((await hivas('GET', `/v1/discord/guilds/${MIENK}/persistent-messages`, adminToken)).statusCode, 200)
+  })
+
+  it('vezérlőpult-jogosultság nélkül a Discord-jog sem elég', async () => {
+    // A „külső" a MIÉNK guildben „Szerver kezelése" joggal bír — eddig ez
+    // egymagában bejuttatott. A vezérlőpult nem nyilvános: YUME-jogosultság kell.
+    const res = await hivas('GET', `/v1/discord/guilds/${MIENK}/persistent-messages`, kulsoToken)
+    assert.equal(res.statusCode, 403)
+    assert.equal(res.json().detail, 'no_dashboard_permission')
+    assert.equal((await hivas('GET', '/v1/discord/status', kulsoToken)).statusCode, 403)
+  })
+
+  it('az összekötés viszont jogosultság nélkül is elérhető — a főoldal is ezt használja', async () => {
+    const res = await hivas('GET', '/v1/discord/oauth/link', kulsoToken)
+    assert.equal(res.statusCode, 200)
+    assert.equal(res.json().linked, true)
   })
 
   it('a Discord MANAGE_GUILD bejuttat a saját guildbe', async () => {
