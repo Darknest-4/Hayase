@@ -36,10 +36,16 @@ import * as welcome from './welcome.ts'
 import { allapot as gatewayAllapot, elo as gatewayElo } from './gateway.ts'
 import { PERMISSION_BITS, can, parsePermissions } from './permissions.ts'
 import { idopont, nyelvBol, szovegek, type Nyelv } from './i18n.ts'
+import { DASHBOARD_URL, YUME_URL } from './embed-kit.ts'
+import {
+  allapotSzoveg, animeCard, animeCards, animeEmbed, animeGombok, animeKompakt, cimkek, epizodErtek,
+  episodeWithAnime, gombSor, ido, kartyaSzin, kovetkezoSzoveg, leirasDiscordra, md, mufajSzoveg, nezesUrl,
+  szam, tisztaSzoveg, vag, type AnimeCard, type EpizodAdat
+} from './anime-card.ts'
 
 const SZIN = 0xE4_1E_63
-const YUME = process.env.PUBLIC_URL ?? 'https://animehub.hu'
-const DASHBOARD = process.env.DISCORD_DASHBOARD_URL ?? 'https://discord.animehub.hu'
+const YUME = YUME_URL
+const DASHBOARD = DASHBOARD_URL
 const FIOK = `${YUME}/#/settings?tab=account`
 
 /** Discord interakció-típusok, amiket kezelünk. */
@@ -206,6 +212,22 @@ export function embed (mezok: Record<string, unknown>, ephemeral = true, compone
   }
 }
 
+/**
+ * Több embed egy válaszban (a listák kis kártyái) — a Discord korlátja tíz
+ * embed és összesen 6000 karakter; a kis kártya ennek töredéke.
+ */
+export function embedek (lista: Array<Record<string, unknown>>, content: string | null, ephemeral = true): unknown {
+  return {
+    type: RESPONSE.MESSAGE,
+    data: {
+      ...(content ? { content: content.slice(0, 1900) } : {}),
+      embeds: lista.slice(0, 10),
+      ...(ephemeral ? { flags: EPHEMERAL } : {}),
+      allowed_mentions: { parse: [] }
+    }
+  }
+}
+
 /** Egy gombnyomásra az eredeti üzenet átírása — a gombok eltűnnek. */
 function frissit (content: string): unknown {
   return {
@@ -315,19 +337,25 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
  * EGY CÍM A BEÍRTBÓL: a címkiegészítés az anime AZONOSÍTÓJÁT küldi értékként
  * (pontos találat), a kézzel beírt szöveg a címre keres — a legrövidebb
  * egyező cím nyer, ahogy eddig is.
+ *
+ * FELNŐTT CÍM NINCS A TALÁLATOK KÖZÖTT — ahogy az oldal katalógusában sem
+ * alapból (lásd `anime-card.ts`).
  */
-async function animeFromInput (bemenet: string, limit = 1): Promise<Array<{ id: string, canonical_title: string, status: string | null, season_year: number | null }>> {
+async function animeFromInput (bemenet: string, limit = 1): Promise<Array<{ id: string, canonical_title: string }>> {
   if (UUID.test(bemenet)) {
     return await query(
-      `SELECT id, canonical_title, status, season_year FROM anime
-        WHERE id = $1 AND visibility = 'public'`, [bemenet])
+      `SELECT id, canonical_title FROM anime
+        WHERE id = $1 AND visibility = 'public' AND NOT is_adult`, [bemenet])
   }
   return await query(
-    `SELECT id, canonical_title, status, season_year FROM anime
-      WHERE visibility = 'public' AND canonical_title ILIKE $1
-      ORDER BY length(canonical_title) LIMIT $2`,
+    `SELECT id, canonical_title FROM anime
+      WHERE visibility = 'public' AND NOT is_adult AND canonical_title ILIKE $1
+      ORDER BY length(canonical_title), canonical_title LIMIT $2`,
     [`%${bemenet.replace(/[\\%_]/g, c => '\\' + c)}%`, limit])
 }
+
+/** Ennyi kis kártya megy ki egy listában. */
+const LISTA_MAX = 5
 
 /** A hívó YUME-fiókja (és egyetlen profilja), ha összekötötte. */
 async function yumeUser (discordUserId: string): Promise<{ user_id: string, username: string, profile_id: string | null } | undefined> {
@@ -388,64 +416,78 @@ async function stats (sz: Szotar): Promise<unknown> {
 }
 
 async function animeCommand (i: Interaction, sz: Szotar): Promise<unknown> {
+  const nyelv = nyelvOf(i)
+
   if (i.sub === 'search' || i.sub === 'info') {
     const keresett = (i.options.cim ?? '').trim()
     if (keresett.length < 2) return message(sz.ketKarakter)
 
-    const talalatok = await animeFromInput(keresett, i.sub === 'info' ? 1 : 8)
-    if (!talalatok.length) return message(sz.nincsTalalat(keresett))
+    const talalatok = await animeFromInput(keresett, i.sub === 'info' ? 1 : LISTA_MAX + 1)
+    if (!talalatok.length) return message(sz.nincsTalalat(md(keresett)))
 
+    /*
+     * A KERESÉS kis kártyákat ad (borító, egy sor tény, két sor leírás); ha
+     * több a találat, mint amennyi kifér, kimondja — a pontos cím a
+     * felugró javaslatokból választható.
+     */
     if (i.sub === 'search') {
-      return embed({
-        title: sz.talalatok(keresett),
-        description: talalatok
-          .map(t => `• **${t.canonical_title}**${t.season_year ? ` (${t.season_year})` : ''}\n  ${YUME}/#/anime/${t.id}`)
-          .join('\n')
-      })
+      const kartyak = await animeCards(talalatok.slice(0, LISTA_MAX).map(t => t.id))
+      if (!kartyak.length) return message(sz.nincsTalalat(md(keresett)))
+      return embedek(kartyak.map(k => animeKompakt(k, nyelv)),
+        sz.talalatokFej(md(keresett), kartyak.length, talalatok.length > LISTA_MAX))
     }
 
-    const a = talalatok[0]!
-    const epizodok = await queryOne<{ n: number }>(
-      "SELECT count(*)::int AS n FROM episodes WHERE anime_id = $1 AND visibility = 'public'", [a.id])
-    return embed({
-      title: a.canonical_title,
-      url: `${YUME}/#/anime/${a.id}`,
-      fields: [
-        { name: sz.allapot, value: a.status ?? '—', inline: true },
-        { name: sz.ev, value: a.season_year ? String(a.season_year) : '—', inline: true },
-        { name: sz.epizodok, value: String(epizodok?.n ?? 0), inline: true }
-      ]
-    })
+    // AZ ADATLAP: borító, banner, leírás, minden adat, ami van — és gombok.
+    const k = await animeCard(talalatok[0]!.id)
+    if (!k) return message(sz.nincsTalalat(md(keresett)))
+    return embed(animeEmbed(k, nyelv, { banner: true }), true, [gombSor(animeGombok(k, nyelv))])
   }
 
+  /*
+   * A LEGFRISSEBB RÉSZEK — CÍMENKÉNT EGY. Egy tömeges import egy cím tizenkét
+   * részét hozza be egyszerre; a lista eddig ilyenkor ugyanannak a címnek a
+   * részeiből állt. Most címenként a legújabb rész szerepel.
+   */
   if (i.sub === 'latest') {
-    const sorok = await query<{ title: string, number: string }>(
-      `SELECT a.canonical_title AS title, ${epizodSzam} AS number
-         FROM episodes e JOIN anime a ON a.id = e.anime_id
-        WHERE e.visibility = 'public' AND a.visibility = 'public'
-        ORDER BY e.created_at DESC, e.id DESC LIMIT 8`)
-    return embed({
-      title: sz.legfrissebb,
-      url: YUME,
-      description: sorok.length
-        ? sorok.map(r => `• **${r.title}** — ${sz.resz(r.number)}`).join('\n')
-        : sz.nincsEpizod
+    const sorok = await query<{ id: string, anime_id: string, number: string, ep_cim: string | null, created_at: Date }>(
+      `WITH friss AS (
+         SELECT e.id, e.anime_id, e.number AS num, ${epizodSzam} AS number, e.title AS ep_cim, e.created_at
+           FROM episodes e JOIN anime a ON a.id = e.anime_id
+          WHERE e.visibility = 'public' AND a.visibility = 'public' AND NOT a.is_adult
+          ORDER BY e.created_at DESC, e.id DESC LIMIT 60
+       ), cimenkent AS (
+         SELECT DISTINCT ON (anime_id) id, anime_id, number, ep_cim, created_at
+           FROM friss ORDER BY anime_id, created_at DESC, num DESC
+       )
+       SELECT id, anime_id, number, ep_cim, created_at FROM cimenkent
+        ORDER BY created_at DESC, id DESC LIMIT $1`, [LISTA_MAX])
+    if (!sorok.length) return message(sz.nincsEpizod)
+    const kartyak = new Map((await animeCards(sorok.map(r => r.anime_id))).map(k => [k.id, k]))
+    const lista = sorok.flatMap(r => {
+      const k = kartyak.get(r.anime_id)
+      if (!k) return []
+      return [animeKompakt(k, nyelv, {
+        cim: `${k.cim} — ${sz.resz(r.number)}${r.ep_cim ? `: ${r.ep_cim}` : ''}`,
+        url: nezesUrl(r.id),
+        sorok: [`🆕 ${ido(r.created_at, 'R')}`],
+        leirasHossz: 140
+      })]
     })
+    return embedek(lista, `🆕 **${sz.legfrissebb}**`)
   }
 
   if (i.sub === 'schedule') {
-    const sorok = await query<{ title: string, ep: number | null, at: Date }>(
-      `SELECT canonical_title AS title, next_airing_ep AS ep, next_airing_at AS at
-         FROM anime WHERE visibility = 'public' AND next_airing_at > now()
-        ORDER BY next_airing_at, canonical_title LIMIT 8`)
-    return embed({
-      title: sz.kovetkezok,
-      url: YUME,
-      description: sorok.length
-        // <t:…:R> — a Discord a néző saját időzónájában és nyelvén írja ki.
-        ? sorok.map(r => `• **${r.title}** — ${r.ep !== null ? `${sz.resz(r.ep)} · ` : ''}<t:${Math.floor(new Date(r.at).getTime() / 1000)}:R>`).join('\n')
-        : sz.nincsAdasido
-    })
+    const sorok = await query<{ id: string }>(
+      `SELECT id FROM anime
+        WHERE visibility = 'public' AND NOT is_adult AND next_airing_at > now()
+        ORDER BY next_airing_at, canonical_title LIMIT $1`, [LISTA_MAX])
+    if (!sorok.length) return message(sz.nincsAdasido)
+    const kartyak = await animeCards(sorok.map(r => r.id))
+    return embedek(kartyak.map(k => {
+      // <t:…> — a Discord a néző saját időzónájában és nyelvén írja ki.
+      const mikor = kovetkezoSzoveg(k, nyelv)
+      return animeKompakt(k, nyelv, { sorok: [mikor ? `⏭️ ${mikor}` : null], leirasHossz: 140 })
+    }), `📅 **${sz.kovetkezok}** — ${sz.idozonadban}`)
   }
 
   if (i.sub === 'random') {
@@ -455,97 +497,233 @@ async function animeCommand (i: Interaction, sz: Szotar): Promise<unknown> {
      * sorrendben ugyanolyan jó, és indexet használ.
      */
     const osszes = await queryOne<{ n: number }>(
-      "SELECT count(*)::int AS n FROM anime WHERE visibility = 'public'")
+      "SELECT count(*)::int AS n FROM anime WHERE visibility = 'public' AND NOT is_adult")
     const n = osszes?.n ?? 0
     if (n === 0) return message(sz.uresKatalogus)
-    const sor = await queryOne<{ id: string, canonical_title: string }>(
-      `SELECT id, canonical_title FROM anime WHERE visibility = 'public'
-        ORDER BY created_at OFFSET $1 LIMIT 1`, [Math.floor(Math.random() * n)])
-    return embed({
-      title: sor?.canonical_title ?? sz.veletlenCim,
-      url: sor ? `${YUME}/#/anime/${sor.id}` : YUME,
-      description: sz.veletlenLeiras
-    })
+    const sor = await queryOne<{ id: string }>(
+      `SELECT id FROM anime WHERE visibility = 'public' AND NOT is_adult
+        ORDER BY created_at, id OFFSET $1 LIMIT 1`, [Math.floor(Math.random() * n)])
+    const k = sor ? await animeCard(sor.id) : undefined
+    if (!k) return message(sz.uresKatalogus)
+    return embed(animeEmbed(k, nyelv, { szerzo: sz.veletlenSzerzo, banner: true }), true, [gombSor(animeGombok(k, nyelv))])
   }
 
   return message(sz.ismeretlenAlparancs)
 }
 
+/** A könyvtár állapotai a kijelzés sorrendjében, jellel. */
+const KONYVTAR_JEL: Array<[string, string]> = [
+  ['WATCHING', '👀'], ['REWATCHING', '🔁'], ['PLANNING', '📝'], ['COMPLETED', '✅'], ['PAUSED', '⏸️'], ['DROPPED', '🗑️']
+]
+
+/** A könyvtár állapotonként — minden profiljáé, ahogy a lista is. */
+async function konyvtarOsszesito (userId: string): Promise<Map<string, number>> {
+  const sorok = await query<{ status: string, n: number }>(
+    `SELECT le.status::text AS status, count(*)::int AS n
+       FROM library_entries le JOIN user_profiles p ON p.id = le.profile_id
+      WHERE p.user_id = $1 GROUP BY le.status`, [userId])
+  return new Map(sorok.map(r => [r.status, r.n]))
+}
+
+function osszesitoSor (szamok: Map<string, number>, sz: Szotar): string | null {
+  return KONYVTAR_JEL
+    .filter(([st]) => (szamok.get(st) ?? 0) > 0)
+    .map(([st, jel]) => `${jel} ${sz.statusz[st] ?? st}: **${szamok.get(st)}**`)
+    .join(' · ') || null
+}
+
+/**
+ * A PROFIL — a YUME saját számaiból: szint és XP, nézési idő, megnézett
+ * részek, befejezett címek (`profile_stats`, amit az oldal Statisztika lapja
+ * is mutat), a könyvtár állapotonként, a kedvenc műfajok és a legutóbb
+ * nézett cím. Ami nincs (még nincs statisztika), az kimarad.
+ */
 async function profile (i: Interaction, sz: Szotar): Promise<unknown> {
   const fiok = await yumeUser(i.userId)
   if (!fiok) return nincsFiok(sz)
-  const stat = await queryOne<{ konyvtar: number, kedvenc: number }>(
-    `SELECT (SELECT count(*)::int FROM library_entries le
-               JOIN user_profiles p ON p.id = le.profile_id WHERE p.user_id = $1) AS konyvtar,
-            (SELECT count(*)::int FROM favorites f
-               JOIN user_profiles p ON p.id = f.profile_id WHERE p.user_id = $1) AS kedvenc`,
-    [fiok.user_id])
+  const nyelv = nyelvOf(i)
+  const [alap, szamok, utolso] = await Promise.all([
+    queryOne<{
+      // A bigint oszlopok (xp, percek) szövegként jönnek — a pg így őrzi a pontosságot.
+      tag_ota: Date | null, kedvenc: number, level: number | null, xp_total: string | null,
+      minutes_watched: string | null, episodes_watched: number | null, anime_completed: number | null,
+      mean_score: string | null, genre_breakdown: Record<string, number> | null, updated_at: Date | null
+    }>(
+      `SELECT u.created_at AS tag_ota,
+              (SELECT count(*)::int FROM favorites f
+                 JOIN user_profiles p ON p.id = f.profile_id WHERE p.user_id = u.id) AS kedvenc,
+              ps.level, ps.xp_total, ps.minutes_watched, ps.episodes_watched, ps.anime_completed,
+              ps.mean_score, ps.genre_breakdown, ps.updated_at
+         FROM users u
+         LEFT JOIN profile_stats ps ON ps.profile_id = $2
+        WHERE u.id = $1`, [fiok.user_id, fiok.profile_id]),
+    konyvtarOsszesito(fiok.user_id),
+    fiok.profile_id
+      ? queryOne<{ anime_id: string, at: Date }>(
+        `SELECT wp.anime_id, wp.updated_at AS at FROM watch_progress wp
+           JOIN anime a ON a.id = wp.anime_id AND a.visibility = 'public'
+          WHERE wp.profile_id = $1 ORDER BY wp.updated_at DESC LIMIT 1`, [fiok.profile_id])
+      : Promise.resolve(undefined)
+  ])
+  const legutobb = utolso ? await animeCard(utolso.anime_id) : undefined
+
+  const mezok: Array<{ name: string, value: string, inline: boolean }> = []
+  const tesz = (name: string, value: string | null | undefined, inline = true): void => {
+    if (value) mezok.push({ name, value: value.slice(0, 1024), inline })
+  }
+  const xp = Number(alap?.xp_total ?? 0)
+  if (alap?.level) tesz(sz.szint, `**${alap.level}**${xp > 0 ? ` · ${szam(xp, nyelv)} XP` : ''}`)
+  const perc = Number(alap?.minutes_watched ?? 0)
+  if (perc > 0) tesz(sz.nezesiIdo, `**${sz.oraPerc(Math.floor(perc / 60), perc % 60)}**`)
+  if (alap?.episodes_watched) tesz(sz.megnezettReszek, `**${szam(alap.episodes_watched, nyelv)}**`)
+  if (alap?.anime_completed) tesz(sz.befejezettCimek, `**${szam(alap.anime_completed, nyelv)}**`)
+  if (alap?.mean_score) tesz(sz.atlagpont, `**${Number(alap.mean_score).toFixed(1)}** / 10`)
+  tesz(sz.kedvencek, `**${alap?.kedvenc ?? 0}**`)
+  const osszesen = [...szamok.values()].reduce((a, b) => a + b, 0)
+  tesz(`${sz.konyvtar} (${osszesen})`, osszesitoSor(szamok, sz) ?? sz.uresKonyvtar, false)
+  const mufajok = Object.entries(alap?.genre_breakdown ?? {})
+    .filter(([, p]) => Number(p) > 0).sort((a, b) => Number(b[1]) - Number(a[1])).slice(0, 3).map(([g]) => g)
+  tesz(sz.kedvencMufajok, mufajSzoveg(mufajok, nyelv), false)
+  if (legutobb && utolso) tesz(sz.legutobbNezett, `**${md(legutobb.cim)}** · ${ido(utolso.at, 'R')}`, false)
+  if (alap?.tag_ota) tesz(sz.tagOta, ido(alap.tag_ota, 'D'))
+
   return embed({
+    author: { name: sz.profilSzerzo },
     title: fiok.username,
-    url: YUME,
-    fields: [
-      { name: sz.konyvtar, value: String(stat?.konyvtar ?? 0), inline: true },
-      { name: sz.kedvencek, value: String(stat?.kedvenc ?? 0), inline: true }
-    ]
+    url: `${YUME}/#/profile`,
+    fields: mezok,
+    ...(legutobb?.borito ? { thumbnail: { url: legutobb.borito } } : {}),
+    footer: { text: sz.profilLablec },
+    // A statisztika frissessége: a Discord a néző idejében írja ki a láblécben.
+    ...(alap?.updated_at ? { timestamp: new Date(alap.updated_at).toISOString() } : {})
   })
 }
 
 async function watchlist (i: Interaction, sz: Szotar): Promise<unknown> {
   const fiok = await yumeUser(i.userId)
   if (!fiok) return nincsFiok(sz)
+  const nyelv = nyelvOf(i)
 
   /*
    * HOZZÁADÁS — MEGERŐSÍTÉSSEL. A parancs nem ír azonnal: megmutatja, melyik
    * címet találta (egy elgépelt névre a legrövidebb egyezés nem feltétlenül
-   * az, amit keresett), és két gombot ad. A gomb a hívó SAJÁT könyvtárába ír,
-   * és az üzenet csak neki látszik.
+   * az, amit keresett) — a teljes adatlapjával, borítóval —, és két gombot
+   * ad. A gomb a hívó SAJÁT könyvtárába ír, és az üzenet csak neki látszik.
    */
   if (i.sub === 'add') {
     const keresett = (i.options.cim ?? '').trim()
     if (keresett.length < 2) return message(sz.ketKarakter)
     const [a] = await animeFromInput(keresett)
-    if (!a) return message(sz.nincsTalalat(keresett))
-    return embed({
-      title: a.canonical_title,
-      url: `${YUME}/#/anime/${a.id}`,
-      description: sz.hozzaadjam,
-      ...(a.season_year ? { fields: [{ name: sz.ev, value: String(a.season_year), inline: true }] } : {})
-    }, true, [{
-      type: 1,
-      components: [
-        { type: 2, style: 3, label: sz.hozzaadGomb, custom_id: `wl:add:${a.id}` },
-        { type: 2, style: 2, label: sz.megseGomb, custom_id: 'wl:cancel' }
-      ]
-    }])
+    const k = a ? await animeCard(a.id) : undefined
+    if (!k) return message(sz.nincsTalalat(md(keresett)))
+    return embed(animeEmbed(k, nyelv, { elotag: `**${sz.hozzaadjam}**`, leirasHossz: 350 }), true, [
+      {
+        type: 1,
+        components: [
+          { type: 2, style: 3, label: sz.hozzaadGomb, custom_id: `wl:add:${k.id}` },
+          { type: 2, style: 2, label: sz.megseGomb, custom_id: 'wl:cancel' }
+        ]
+      },
+      gombSor(animeGombok(k, nyelv))
+    ])
   }
 
-  const sorok = await query<{ title: string, status: string }>(
-    `SELECT a.canonical_title AS title, le.status
-       FROM library_entries le
-       JOIN user_profiles p ON p.id = le.profile_id
-       JOIN anime a ON a.id = le.anime_id
-      WHERE p.user_id = $1
-      ORDER BY le.updated_at DESC LIMIT 10`, [fiok.user_id])
+  const [sorok, szamok] = await Promise.all([
+    query<{ anime_id: string, title: string, status: string, progress: number, score: string | null, episode_count: number | null, felnott: boolean }>(
+      `SELECT le.anime_id, a.canonical_title AS title, le.status::text AS status, le.progress, le.score,
+              a.episode_count, a.is_adult AS felnott
+         FROM library_entries le
+         JOIN user_profiles p ON p.id = le.profile_id
+         JOIN anime a ON a.id = le.anime_id
+        WHERE p.user_id = $1
+        ORDER BY le.updated_at DESC LIMIT 10`, [fiok.user_id]),
+    konyvtarOsszesito(fiok.user_id)
+  ])
+  if (!sorok.length) return message(sz.uresKonyvtar)
+
+  // A borító a legutóbb változott címé — felnőtt címé soha (lásd anime-card.ts).
+  const elso = sorok.find(r => !r.felnott)
+  const boritos = elso ? await animeCard(elso.anime_id) : undefined
+  const jel = new Map(KONYVTAR_JEL)
+  const osszesen = [...szamok.values()].reduce((a, b) => a + b, 0)
   return embed({
-    title: sz.konyvtarCim,
+    title: `📚 ${sz.konyvtarCim} (${osszesen})`,
     url: `${YUME}/#/list`,
-    description: sorok.length
-      ? sorok.map(r => `• **${r.title}** — ${sz.statusz[r.status] ?? r.status}`).join('\n')
-      : sz.uresKonyvtar
+    description: sorok.map(r => {
+      const reszek = r.progress > 0 || r.episode_count
+        ? sz.haladas(r.progress, r.episode_count)
+        : null
+      return [
+        `${jel.get(r.status) ?? '•'} **${md(r.title)}**`,
+        sz.statusz[r.status] ?? r.status,
+        reszek,
+        r.score !== null && Number(r.score) > 0 ? `⭐ ${Number(r.score)}/10` : null
+      ].filter(Boolean).join(' · ')
+    }).join('\n'),
+    fields: [{ name: sz.allapotonkent, value: osszesitoSor(szamok, sz) ?? '—', inline: false }],
+    ...(boritos?.borito ? { thumbnail: { url: boritos.borito } } : {}),
+    footer: { text: sz.konyvtarLablec }
   })
 }
 
+/** Haladásjelző: ▰▰▰▱▱▱▱▱▱▱ 30% */
+function sav (arany: number): string {
+  const a = Math.min(1, Math.max(0, arany))
+  const tele = Math.round(a * 10)
+  return `${'▰'.repeat(tele)}${'▱'.repeat(10 - tele)} ${Math.round(a * 100)}%`
+}
+
+/**
+ * EGY RÉSZ KÁRTYÁJA a /next-hez: a rész címe és leírása, a rész képe (ha
+ * nincs, a banner), a borító, és ahol abbahagytad.
+ */
+function reszKartya (
+  ep: EpizodAdat, k: AnimeCard, nyelv: Nyelv, cim: string, sorok: Array<string | null>
+): Record<string, unknown> {
+  const c = cimkek(nyelv)
+  const reszLeiras = k.felnott ? '' : leirasDiscordra(ep.leiras, 350)
+  const description = [
+    ...sorok,
+    ep.cim ? `*${md(tisztaSzoveg(ep.cim))}*` : null,
+    k.felnott ? c.felnott : null,
+    reszLeiras || null
+  ].filter(Boolean).join('\n')
+  const hossz = ep.hossz ?? k.hossz
+  const nagyKep = ep.kep ?? k.banner
+  const allapot = allapotSzoveg(k.status, nyelv)
+  return {
+    color: kartyaSzin(k.felnott ? null : k.szin),
+    title: vag(cim, 250),
+    url: nezesUrl(ep.id),
+    ...(description ? { description: description.slice(0, 4000) } : {}),
+    fields: [
+      { name: c.epizod, value: epizodErtek(ep, k, nyelv), inline: true },
+      ...(hossz ? [{ name: c.hossz, value: c.perc(hossz), inline: true }] : []),
+      ...(allapot ? [{ name: c.allapot, value: allapot, inline: true }] : [])
+    ],
+    ...(k.borito ? { thumbnail: { url: k.borito } } : {}),
+    ...(nagyKep ? { image: { url: nagyKep } } : {})
+  }
+}
+
+/** A /next gombjai: a rész, az adatlap, és az előzetes, ha van. */
+const nextGombok = (ep: EpizodAdat, k: AnimeCard, nyelv: Nyelv, sz: Szotar): unknown[] =>
+  [gombSor([{ label: sz.megnezem, url: nezesUrl(ep.id), emoji: '▶️' }, ...animeGombok(k, nyelv, { nezes: false })])]
+
 /**
  * A KÖVETKEZŐ RÉSZ: előbb a félbehagyott (a lejátszó pozíciója), ha nincs,
- * a „nézem" állapotú címek közül a legutóbbi következő része.
+ * a „nézem" állapotú címek közül a legutóbbi következő része — a rész
+ * kártyájával (kép, cím, leírás), és ha még nincs kint, azzal, hogy mikor
+ * várható (ha a menetrend tudja).
  */
 async function next (i: Interaction, sz: Szotar): Promise<unknown> {
   const fiok = await yumeUser(i.userId)
   if (!fiok) return nincsFiok(sz)
   if (!fiok.profile_id) return message(sz.nincsFolyamatban)
+  const nyelv = nyelvOf(i)
 
-  const felbe = await queryOne<{ episode_id: string, title: string, number: string, position_sec: string }>(
-    `SELECT wp.episode_id, a.canonical_title AS title, ${epizodSzam} AS number, wp.position_sec
+  const felbe = await queryOne<{ episode_id: string, title: string, number: string, position_sec: string, duration_sec: string | null }>(
+    `SELECT wp.episode_id, a.canonical_title AS title, ${epizodSzam} AS number, wp.position_sec, wp.duration_sec
        FROM watch_progress wp
        JOIN episodes e ON e.id = wp.episode_id
        JOIN anime a ON a.id = wp.anime_id
@@ -553,16 +731,23 @@ async function next (i: Interaction, sz: Szotar): Promise<unknown> {
         AND e.visibility = 'public' AND a.visibility = 'public'
       ORDER BY wp.updated_at DESC LIMIT 1`, [fiok.profile_id])
   if (felbe) {
-    const url = `${YUME}/#/watch/${felbe.episode_id}`
-    return embed({
-      title: sz.folytasd(felbe.title, felbe.number).replace(/\*\*/g, ''),
-      url,
-      description: Number(felbe.position_sec) > 0 ? sz.ahol(idopont(Number(felbe.position_sec))) : undefined
-    }, true, [{ type: 1, components: [linkGomb(sz.megnezem, url)] }])
+    const url = nezesUrl(felbe.episode_id)
+    const cim = sz.folytasd(felbe.title, felbe.number).replace(/\*\*/g, '')
+    const hol = Number(felbe.position_sec)
+    const hossz = Number(felbe.duration_sec ?? 0)
+    const sorok = [
+      hol > 0 ? sz.ahol(idopont(hol)) + (hossz > 0 ? ` / ${idopont(hossz)}` : '') : null,
+      hol > 0 && hossz > 0 ? sav(hol / hossz) : null
+    ]
+    const adat = await episodeWithAnime(felbe.episode_id)
+    if (adat) return embed(reszKartya(adat.ep, adat.anime, nyelv, cim, sorok), true, nextGombok(adat.ep, adat.anime, nyelv, sz))
+    return embed({ title: cim, url, description: sorok.filter(Boolean).join('\n') || undefined },
+      true, [{ type: 1, components: [linkGomb(sz.megnezem, url)] }])
   }
 
-  const nezem = await queryOne<{ anime_id: string, title: string, progress: number }>(
-    `SELECT le.anime_id, a.canonical_title AS title, le.progress
+  const nezem = await queryOne<{ anime_id: string, title: string, progress: number, next_at: Date | null, next_ep: number | null }>(
+    `SELECT le.anime_id, a.canonical_title AS title, le.progress,
+            a.next_airing_at AS next_at, a.next_airing_ep AS next_ep
        FROM library_entries le JOIN anime a ON a.id = le.anime_id
       WHERE le.profile_id = $1 AND le.status IN ('WATCHING', 'REWATCHING') AND a.visibility = 'public'
       ORDER BY le.updated_at DESC LIMIT 1`, [fiok.profile_id])
@@ -573,12 +758,18 @@ async function next (i: Interaction, sz: Szotar): Promise<unknown> {
     `SELECT e.id FROM episodes e
       WHERE e.anime_id = $1 AND e.number = $2 AND e.visibility = 'public' LIMIT 1`,
     [nezem.anime_id, nezem.progress + 1])
-  if (!ep) return message(sz.megNemJelent(nezem.title, kovetkezo))
-  const url = `${YUME}/#/watch/${ep.id}`
-  return embed({
-    title: sz.kovetkezik(nezem.title, kovetkezo).replace(/\*\*/g, ''),
-    url
-  }, true, [{ type: 1, components: [linkGomb(sz.megnezem, url)] }])
+  if (!ep) {
+    // HA A MENETREND TUDJA, mikor jön — csak akkor, ha pontosan erről a részről szól.
+    const varhato = nezem.next_at && new Date(nezem.next_at) > new Date() && nezem.next_ep === nezem.progress + 1
+      ? `\n⏭️ ${sz.varhato(ido(nezem.next_at, 'F'), ido(nezem.next_at, 'R'))}`
+      : ''
+    return message(sz.megNemJelent(nezem.title, kovetkezo) + varhato)
+  }
+  const cim = sz.kovetkezik(nezem.title, kovetkezo).replace(/\*\*/g, '')
+  const adat = await episodeWithAnime(ep.id)
+  if (adat) return embed(reszKartya(adat.ep, adat.anime, nyelv, cim, []), true, nextGombok(adat.ep, adat.anime, nyelv, sz))
+  const url = nezesUrl(ep.id)
+  return embed({ title: cim, url }, true, [{ type: 1, components: [linkGomb(sz.megnezem, url)] }])
 }
 
 async function link (i: Interaction, sz: Szotar): Promise<unknown> {
@@ -911,15 +1102,16 @@ export async function autocomplete (i: Interaction): Promise<unknown> {
   const beirt = (i.focused ? i.options[i.focused] : '')?.trim() ?? ''
   let sorok: Array<{ id: string, canonical_title: string, season_year: number | null }> = []
   try {
+    // Felnőtt cím nélkül — ahogy a találatok között sincs (`animeFromInput`).
     sorok = beirt.length >= 1
       ? await query(
         `SELECT id, canonical_title, season_year FROM anime
-          WHERE visibility = 'public' AND canonical_title ILIKE $1
+          WHERE visibility = 'public' AND NOT is_adult AND canonical_title ILIKE $1
           ORDER BY (canonical_title ILIKE $2) DESC, length(canonical_title) LIMIT 25`,
         [`%${beirt.replace(/[\\%_]/g, c => '\\' + c)}%`, `${beirt.replace(/[\\%_]/g, c => '\\' + c)}%`])
       : await query(
         `SELECT id, canonical_title, season_year FROM anime
-          WHERE visibility = 'public' ORDER BY created_at DESC LIMIT 25`)
+          WHERE visibility = 'public' AND NOT is_adult ORDER BY created_at DESC LIMIT 25`)
   } catch {
     sorok = []
   }

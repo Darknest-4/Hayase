@@ -204,6 +204,10 @@ services:
       # szonda csendben kimarad ahelyett, hogy hibát jelentene.
       EDGE_PROBE_URL: ${EDGE_PROBE_URL:-}
       PUBLIC_URL: ${PUBLIC_URL:-}
+      # A Discord-üzenetek (hírfolyam, DM, tartós üzenetek) képei ugyanonnan,
+      # ahonnan az oldalé — lásd az `app` MEDIA_BASE_URL-jét. Üresen a
+      # `PUBLIC_URL/media/` útvonal; a Discord csak abszolút címet fogad el.
+      MEDIA_BASE_URL: ${MEDIA_BASE_URL:-}
 
       # A képtükör tárhelye — KÜLÖN VÖDÖR a mentésekétől, mert ezt a
       # tartalmat egy nyilvános útvonal szolgálja ki, a mentéseket soha semmi.
@@ -280,6 +284,10 @@ services:
       DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
       DISCORD_GATEWAY_ENABLED: ${DISCORD_GATEWAY_ENABLED:-true}
       DISCORD_GUILD_MEMBERS_INTENT: ${DISCORD_GUILD_MEMBERS_INTENT:-false}
+      # A parancsválaszok hivatkozásai és képei (borító, banner) — ugyanaz a
+      # cím és ugyanaz a képforrás, mint az oldalé és a workeré.
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      MEDIA_BASE_URL: ${MEDIA_BASE_URL:-}
     command: ['npm', 'run', 'gateway']
     healthcheck:
       # Ugyanaz, mint a workernél: port nincs, tehát az életjel az, hogy a

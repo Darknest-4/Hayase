@@ -27,6 +27,7 @@ import {
   DASHBOARD_URL, LABLEC, NAPOK, SZIN, YUME_URL, alapGombok, fejlec, mezo,
   oszlopok, rovidit, toltelek, trend, uzenet
 } from './embed-kit.ts'
+import { animeCard, animeCards, cimkek, md, pontSzoveg, tenyekSora, type AnimeCard } from './anime-card.ts'
 
 /** Amit a felület felkínálhat. A 10.2. pont listája. */
 export const MESSAGE_TYPES = [
@@ -112,10 +113,13 @@ async function latestReleases (config: Record<string, unknown>): Promise<unknown
             e.title AS ep_cim, e.created_at
        FROM episodes e JOIN anime a ON a.id = e.anime_id
       WHERE e.visibility = 'public' AND a.visibility = 'public'
+        -- Felnott cim nem megy ki a csatornaba (lasd anime-card.ts).
+        AND NOT a.is_adult
       -- A masodlagos rendezes nem disz: azonos created_at eseten a Postgres
       -- sorrendje nem determinisztikus, tehat ket egymas utani lekerdezes MAS
       -- sorrendet adhat -- es attol a tartalom ujjlenyomata is mas lesz.
       ORDER BY e.created_at DESC, e.id DESC LIMIT $1`, [limit])
+  const kartyak = new Map((await animeCards(rows.map(r => r.anime_id))).map(k => [k.id, k]))
 
   /*
    * A SORSZÁM HELYETT IDŐBÉLYEG-JELÖLŐ. A Discord `<t:…:R>` alakja a NÉZŐ
@@ -125,14 +129,21 @@ async function latestReleases (config: Record<string, unknown>): Promise<unknown
    */
   const sorok = rows.map(r => {
     const mikor = Math.floor(new Date(r.created_at).getTime() / 1000)
-    const cim = r.ep_cim ? ` — ${rovidit(r.ep_cim, 60)}` : ''
-    return `**${r.title}**\n\`${r.number}. rész\`${cim} · <t:${mikor}:R>\n${YUME_URL}/#/anime/${r.anime_id}`
+    const cim = r.ep_cim ? ` — ${md(rovidit(r.ep_cim, 60))}` : ''
+    // A cím tényei egy sorban (formátum, szezon, részek, pontszám) — a közös kártyából.
+    const k = kartyak.get(r.anime_id)
+    const tenyek = k ? tenyekSora(k, 'hu') : ''
+    return `**${md(r.title)}**\n\`${r.number}. rész\`${cim} · <t:${mikor}:R>` +
+      (tenyek ? `\n${tenyek}` : '') + `\n${YUME_URL}/#/anime/${r.anime_id}`
   })
+  // A LEGFRISSEBB CÍM BORÍTÓJA az üzenet sarkában.
+  const elso = rows[0] ? kartyak.get(rows[0].anime_id) : undefined
 
   return uzenet({
     author: fejlec('Új epizódok'),
     title: 'Most elérhető legfrissebb részek',
-    description: sorok.length ? sorok.join('\n\n') : 'Még nincs publikus epizód a katalógusban.',
+    description: sorok.length ? sorok.join('\n\n').slice(0, 4000) : 'Még nincs publikus epizód a katalógusban.',
+    ...(elso?.borito ? { thumbnail: { url: elso.borito } } : {}),
     ...(rows[0]?.native ? { footer: { text: `${LABLEC.text} • legfrissebb: ${rows[0].native}` } } : {})
   }, alapGombok([{ label: 'Összes epizód', url: `${YUME_URL}/#/home`, emoji: '📺' }]))
 }
@@ -309,10 +320,12 @@ async function animeSchedule (config: Record<string, unknown>): Promise<unknown>
   const rows = await query<{ id: string, title: string, ep: number | null, at: Date }>(
     `SELECT id, canonical_title AS title, next_airing_ep AS ep, next_airing_at AS at
        FROM anime
-      WHERE visibility = 'public' AND next_airing_at > now()
+      WHERE visibility = 'public' AND NOT is_adult AND next_airing_at > now()
       -- Azonos időpontnál a cím dönt; enélkül a sorrend futásonként más
       -- lehetne, es az ujjlenyomat is (lasd a latestReleases-t).
       ORDER BY next_airing_at, canonical_title LIMIT $1`, [limit])
+  // A legközelebbi adás borítója az üzenet sarkában.
+  const kovetkezo: AnimeCard | undefined = rows[0] ? await animeCard(rows[0].id) : undefined
 
   /** Napokra bontva, ahogy a tervrajz mutatja. */
   const napok = new Map<string, typeof rows>()
@@ -330,7 +343,7 @@ async function animeSchedule (config: Record<string, unknown>): Promise<unknown>
       name: `📅 ${nap} — ${HETNAP[d.getUTCDay()]}`,
       value: lista.map(r => {
         const mikor = Math.floor(new Date(r.at).getTime() / 1000)
-        return `<t:${mikor}:t> · **${rovidit(r.title, 45)}**${r.ep !== null ? ` \`${r.ep}. rész\`` : ''}`
+        return `<t:${mikor}:t> · **${md(rovidit(r.title, 45))}**${r.ep !== null ? ` \`${r.ep}. rész\`` : ''}`
       }).join('\n').slice(0, 1024),
       inline: false
     }
@@ -342,7 +355,8 @@ async function animeSchedule (config: Record<string, unknown>): Promise<unknown>
     description: rows.length
       ? 'Az időpontok a te időzónádban jelennek meg.'
       : 'A katalógusban egyetlen animéhez sincs jövőbeli adásidő.',
-    fields: mezok
+    fields: mezok,
+    ...(kovetkezo?.borito ? { thumbnail: { url: kovetkezo.borito } } : {})
   }, alapGombok([{ label: 'Teljes menetrend', url: `${YUME_URL}/#/home`, emoji: '📅' }]))
 }
 
@@ -366,23 +380,34 @@ async function popularAnime (config: Record<string, unknown>): Promise<unknown> 
             a.episode_count AS ep
        FROM anime_stats_daily s
        JOIN anime a ON a.id = s.anime_id
-      WHERE s.day >= current_date - $2::int AND a.visibility = 'public'
+      WHERE s.day >= current_date - $2::int AND a.visibility = 'public' AND NOT a.is_adult
       GROUP BY a.id, a.canonical_title, a.episode_count
      HAVING sum(s.views) > 0
       ORDER BY sum(s.views) DESC, a.canonical_title
       LIMIT $1`, [limit, days])
 
   const HELYEZES = ['🥇', '🥈', '🥉']
+  // A cím formátuma és pontszáma a sor végén; az első helyezett borítója a sarokban.
+  const kartyak = new Map((await animeCards(rows.map(r => r.id))).map(k => [k.id, k]))
+  const c = cimkek('hu')
+  const elso = rows[0] ? kartyak.get(rows[0].id) : undefined
 
   return uzenet({
     author: fejlec('Népszerű animék'),
     title: `A legnézettebb címek — elmúlt ${days} nap`,
     description: rows.length
-      ? rows.map((r, i) =>
-        `${HELYEZES[i] ?? `\`${String(i + 1).padStart(2, ' ')}.\``} **${rovidit(r.title, 42)}**\n` +
-        `　👁️ ${r.views.toLocaleString('hu-HU')} megtekintés · 👤 ${r.viewers.toLocaleString('hu-HU')} néző` +
-        (r.ep ? ` · \`${r.ep} rész\`` : '')).join('\n')
+      ? rows.map((r, i) => {
+        const k = kartyak.get(r.id)
+        const extra = [
+          k?.format ? `📺 ${c.format[k.format] ?? k.format}` : null,
+          k && k.pontszam !== null ? `⭐ ${pontSzoveg(k.pontszam)}` : null
+        ].filter(Boolean).join(' · ')
+        return `${HELYEZES[i] ?? `\`${String(i + 1).padStart(2, ' ')}.\``} **${md(rovidit(r.title, 42))}**\n` +
+          `　👁️ ${r.views.toLocaleString('hu-HU')} megtekintés · 👤 ${r.viewers.toLocaleString('hu-HU')} néző` +
+          (r.ep ? ` · \`${r.ep} rész\`` : '') + (extra ? ` · ${extra}` : '')
+      }).join('\n')
       : 'Ebben az időszakban egyetlen címnél sem mértünk megtekintést.',
+    ...(elso?.borito ? { thumbnail: { url: elso.borito } } : {}),
     footer: { text: `${LABLEC.text} • forrás: napi összesítő, ${days} nap` }
   }, alapGombok([{ label: 'Katalógus', url: `${YUME_URL}/#/home`, emoji: '🔥' }]))
 }

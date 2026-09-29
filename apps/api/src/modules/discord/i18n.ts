@@ -74,17 +74,18 @@ const HU = {
   // /anime
   ketKarakter: 'Adj meg legalább két karaktert.',
   nincsTalalat: (q: string) => `Nincs találat erre: **${q}**`,
-  talalatok: (q: string) => `Találatok: ${q}`,
+  talalatokFej: (q: string, n: number, tobb: boolean) =>
+    `🔎 Találatok erre: **${q}** — ${n} cím${tobb ? ' (van több is: pontosíts, vagy válassz a felugró javaslatokból)' : ''}`,
   allapot: 'Állapot',
   ev: 'Év',
   legfrissebb: 'Legfrissebb epizódok',
   resz: (n: string | number) => `${n}. rész`,
   nincsEpizod: 'Még nincs publikus epizód.',
   kovetkezok: 'Következő epizódok',
+  idozonadban: 'az időpontok a te időzónádban',
   nincsAdasido: 'Egyetlen címhez sincs jövőbeli adásidő.',
   uresKatalogus: 'A katalógus üres.',
-  veletlenCim: 'Véletlen cím',
-  veletlenLeiras: 'Véletlenül választva a katalógusból.',
+  veletlenSzerzo: 'YUME • 🎲 Véletlen választás',
 
   // fiók
   nincsKotve: 'Ehhez a Discord-fiókhoz nincs YUME-fiók kötve.',
@@ -93,6 +94,9 @@ const HU = {
   kedvencek: 'Kedvencek',
   konyvtarCim: 'A könyvtárad',
   uresKonyvtar: 'A könyvtárad üres. Hozzáadni: /watchlist add',
+  allapotonkent: 'Állapotonként',
+  konyvtarLablec: 'A legutóbb változott tíz cím · a teljes lista a YUME-n',
+  haladas: (n: number, ossz: number | null) => `${n} / ${ossz ?? '?'} rész`,
   marKotve: (nev: string) => `Ez a Discord-fiók már össze van kötve ezzel: **${nev}**`,
   osszekotesItt: (url: string) => `Az összekötés a YUME-fiókod beállításaiban indul, mert böngésző kell hozzá:\n${url}`,
   kotveVagy: (nev: string, url: string) =>
@@ -101,6 +105,19 @@ const HU = {
     WATCHING: 'nézem', PLANNING: 'tervezem', COMPLETED: 'befejeztem',
     PAUSED: 'szünetel', DROPPED: 'abbahagytam', REWATCHING: 'újranézem'
   } as Record<string, string>,
+
+  // /profile
+  profilSzerzo: 'YUME • Profil',
+  szint: '🏅 Szint',
+  nezesiIdo: '⏱️ Nézési idő',
+  oraPerc: (ora: number, perc: number) => ora > 0 ? `${ora} óra ${perc} perc` : `${perc} perc`,
+  megnezettReszek: '🎬 Megnézett részek',
+  befejezettCimek: '✅ Befejezett címek',
+  atlagpont: '⭐ Átlagpontszámod',
+  kedvencMufajok: '🏷️ Kedvenc műfajaid',
+  legutobbNezett: '📺 Legutóbb nézted',
+  tagOta: '🗓️ Tag óta',
+  profilLablec: 'A YUME saját méréséből · a statisztika frissítése',
 
   // /watchlist add
   hozzaadjam: 'Hozzáadjam a könyvtáradhoz?',
@@ -116,6 +133,7 @@ const HU = {
   ahol: (hol: string) => `Ott folytatod, ahol abbahagytad: ${hol}`,
   kovetkezik: (cim: string, n: string) => `▶️ Következik: **${cim}** — ${n}. rész`,
   megNemJelent: (cim: string, n: string) => `**${cim}**: a(z) ${n}. rész még nem jelent meg.`,
+  varhato: (mikor: string, relativ: string) => `Várható: ${mikor} (${relativ})`,
   nincsFolyamatban: 'Nincs folyamatban lévő sorozatod. Nézz körül: /anime latest',
   megnezem: 'Megnézem',
 
@@ -198,17 +216,18 @@ const EN: Szotar = {
 
   ketKarakter: 'Type at least two characters.',
   nincsTalalat: (q: string) => `No results for: **${q}**`,
-  talalatok: (q: string) => `Results: ${q}`,
+  talalatokFej: (q: string, n: number, tobb: boolean) =>
+    `🔎 Results for **${q}** — ${n} title${n === 1 ? '' : 's'}${tobb ? ' (there are more: narrow it down, or pick from the suggestions)' : ''}`,
   allapot: 'Status',
   ev: 'Year',
   legfrissebb: 'Latest episodes',
   resz: (n: string | number) => `episode ${n}`,
   nincsEpizod: 'No public episodes yet.',
   kovetkezok: 'Upcoming episodes',
+  idozonadban: 'times are in your time zone',
   nincsAdasido: 'No title has an upcoming air date.',
   uresKatalogus: 'The catalogue is empty.',
-  veletlenCim: 'Random title',
-  veletlenLeiras: 'Picked at random from the catalogue.',
+  veletlenSzerzo: 'YUME • 🎲 Random pick',
 
   nincsKotve: 'No YUME account is linked to this Discord account.',
   kosdOssze: (url: string) => `You can link it here: ${url}`,
@@ -216,6 +235,9 @@ const EN: Szotar = {
   kedvencek: 'Favourites',
   konyvtarCim: 'Your library',
   uresKonyvtar: 'Your library is empty. To add: /watchlist add',
+  allapotonkent: 'By status',
+  konyvtarLablec: 'The ten most recently changed titles · the full list is on YUME',
+  haladas: (n: number, ossz: number | null) => `${n} / ${ossz ?? '?'} ep`,
   marKotve: (nev: string) => `This Discord account is already linked to **${nev}**`,
   osszekotesItt: (url: string) => `Linking starts in your YUME account settings, because it needs a browser:\n${url}`,
   kotveVagy: (nev: string, url: string) =>
@@ -224,6 +246,18 @@ const EN: Szotar = {
     WATCHING: 'watching', PLANNING: 'planning', COMPLETED: 'completed',
     PAUSED: 'paused', DROPPED: 'dropped', REWATCHING: 'rewatching'
   },
+
+  profilSzerzo: 'YUME • Profile',
+  szint: '🏅 Level',
+  nezesiIdo: '⏱️ Watch time',
+  oraPerc: (ora: number, perc: number) => ora > 0 ? `${ora} h ${perc} min` : `${perc} min`,
+  megnezettReszek: '🎬 Episodes watched',
+  befejezettCimek: '✅ Titles completed',
+  atlagpont: '⭐ Your mean score',
+  kedvencMufajok: '🏷️ Your top genres',
+  legutobbNezett: '📺 Last watched',
+  tagOta: '🗓️ Member since',
+  profilLablec: 'Measured by YUME · stats updated',
 
   hozzaadjam: 'Add it to your library?',
   hozzaadGomb: 'Add it',
@@ -237,6 +271,7 @@ const EN: Szotar = {
   ahol: (hol: string) => `You pick up where you left off: ${hol}`,
   kovetkezik: (cim: string, n: string) => `▶️ Up next: **${cim}** — episode ${n}`,
   megNemJelent: (cim: string, n: string) => `**${cim}**: episode ${n} is not out yet.`,
+  varhato: (mikor: string, relativ: string) => `Expected: ${mikor} (${relativ})`,
   nincsFolyamatban: 'You have nothing in progress. Have a look around: /anime latest',
   megnezem: 'Watch',
 

@@ -21,26 +21,19 @@ import { query, queryOne } from '../../infrastructure/database/index.ts'
 import { createRestClient, isConfigured } from './rest-client.ts'
 import * as registry from './registry.ts'
 import { guildLanguage, settingsOf } from './guild-settings.ts'
+import { YUME_URL } from './embed-kit.ts'
 import {
-  DASHBOARD_URL, SZIN, YUME_URL, gombok, rovidit
-} from './embed-kit.ts'
+  allapotSzoveg, animeGombok, cimkek, epizodErtek, episodeWithAnime, gombSor, ido, kartyaSzin,
+  leirasDiscordra, masodlagosCimek, md, mufajSzoveg, nezesUrl, pontSzoveg, szezonSzoveg, tisztaSzoveg, vag,
+  type AnimeCard, type EpizodAdat, type Mezo
+} from './anime-card.ts'
 
 import type { Nyelv } from './i18n.ts'
 
-/** A bejelentés szövegei — a szerver nyelvén (lásd `guild-settings.ts`). */
+/** A bejelentés saját szövegei — a szerver nyelvén (lásd `guild-settings.ts`). */
 const FELIRAT = {
-  hu: {
-    szerzo: 'YUME • Új epizód', epizod: '🎬 Epizód', resz: (n: string) => `${n}. rész`, hossz: '⏱️ Hossz',
-    perc: (n: number) => `${n} perc`, pont: '⭐ Pontszám', allapot: '📡 Állapot', ev: '📅 Év', adas: '🗓️ Adás',
-    errol: '📝 Erről a részről', lablec: 'YUME • Anime • Közösség • új rész elérhető',
-    megnezem: 'Megnézem', adatlap: 'Adatlap', vezerlopult: 'Vezérlőpult'
-  },
-  en: {
-    szerzo: 'YUME • New episode', epizod: '🎬 Episode', resz: (n: string) => `Episode ${n}`, hossz: '⏱️ Length',
-    perc: (n: number) => `${n} min`, pont: '⭐ Score', allapot: '📡 Status', ev: '📅 Year', adas: '🗓️ Aired',
-    errol: '📝 About this episode', lablec: 'YUME • Anime • Community • new episode out',
-    megnezem: 'Watch', adatlap: 'Details', vezerlopult: 'Dashboard'
-  }
+  hu: { szerzo: 'YUME • Új epizód', lablec: 'YUME • Anime • Közösség • új rész elérhető' },
+  en: { szerzo: 'YUME • New episode', lablec: 'YUME • Anime • Community • new episode out' }
 }
 
 /** A mostani anime-szezon: a hírfolyam „csak az aktuális szezon" szűrőjéhez. */
@@ -58,49 +51,20 @@ const MAX_KOR_ORA = Number(process.env.DISCORD_EPISODE_MAX_AGE_HOURS ?? 48)
 /** Hány epizód mehet ki egy körben. A Discord korlátait tiszteletben tartva. */
 const KOTEG = Number(process.env.DISCORD_EPISODE_BATCH ?? 5)
 
+/** Egy rész, a hozzá tartozó cím teljes adatlapjával (`anime-card.ts`). */
 export interface EpisodeRow {
-  id: string
-  anime_id: string
-  number: string
-  ep_cim: string | null
-  ep_leiras: string | null
-  air_date: Date | null
-  duration: number | null
-  cim: string
-  romaji: string | null
-  english: string | null
-  native: string | null
-  leiras: string | null
-  borito: string | null
-  banner: string | null
-  status: string | null
-  ev: number | null
-  pontszam: string | null
-  osszes_ep: number | null
+  ep: EpizodAdat
+  anime: AnimeCard
 }
 
 /**
- * A TELJES ADATLAP EGY LEKÉRDEZÉSBŐL.
- *
- * A címek és a képek külön táblában élnek (`anime_titles`, `anime_images`),
- * mert egy animének több neve és többféle képe van. Aloldalas
- * lekérdezésekkel egyetlen körben megvan mind — epizódonként öt külön
- * kérdés helyett.
+ * A TELJES ADATLAP. A rész és a cím minden adata (nevek, képek, műfajok,
+ * stúdió, előzetes) — a közös kártyabetöltőből, amit a parancsok is
+ * használnak. A láthatóságot NEM szűri: a kiválasztás (`announceNew`, DM)
+ * már csak nyilvánosat vesz.
  */
 export async function episodeDetails (episodeId: string): Promise<EpisodeRow | undefined> {
-  return await queryOne<EpisodeRow>(
-    `SELECT e.id, e.anime_id,
-            CASE WHEN e.number = trunc(e.number) THEN trunc(e.number)::int::text ELSE e.number::text END AS number,
-            e.title AS ep_cim, e.synopsis AS ep_leiras, e.air_date, e.duration,
-            a.canonical_title AS cim, a.synopsis AS leiras, a.status,
-            a.season_year AS ev, a.average_score AS pontszam, a.episode_count AS osszes_ep,
-            (SELECT t.title FROM anime_titles t WHERE t.anime_id = a.id AND t.kind = 'romaji')  AS romaji,
-            (SELECT t.title FROM anime_titles t WHERE t.anime_id = a.id AND t.kind = 'english') AS english,
-            (SELECT t.title FROM anime_titles t WHERE t.anime_id = a.id AND t.kind = 'native')  AS native,
-            (SELECT i.object_key FROM anime_images i WHERE i.anime_id = a.id AND i.kind = 'cover'  LIMIT 1) AS borito,
-            (SELECT i.object_key FROM anime_images i WHERE i.anime_id = a.id AND i.kind = 'banner' LIMIT 1) AS banner
-       FROM episodes e JOIN anime a ON a.id = e.anime_id
-      WHERE e.id = $1`, [episodeId])
+  return await episodeWithAnime(episodeId, { csakNyilvanos: false })
 }
 
 /**
@@ -110,49 +74,42 @@ export async function episodeDetails (episodeId: string): Promise<EpisodeRow | u
  * japán cím, borító vagy leírás; ilyenkor az a rész egyszerűen kimarad, nem
  * jelenik meg üresen vagy kitalált tartalommal.
  *
- * A KÉPEK A SZOLGÁLTATÓ CDN-JÉRŐL jönnek (`object_key` teljes URL-t tárol),
- * tehát a Discord közvetlenül tölti be őket — nem mi szolgáljuk ki.
+ * A BORÍTÓ KICSIBEN, a rész saját képe nagyban (ha nincs, a banner). A
+ * pontszám egész százalék, ahogy az oldalon (eddig „82.0" állt itt); az
+ * állapot a néző nyelvén (eddig nyersen: „RELEASING").
+ *
+ * FELNŐTT CÍMNÉL (csak DM-ben fordulhat elő — a csatornába nem megy ki)
+ * nincs kép és leírás, lásd `anime-card.ts`.
  */
 export function buildEpisodeEmbed (r: EpisodeRow, nyelv: Nyelv = 'hu', emlitett: string | null = null): unknown {
   const f = FELIRAT[nyelv]
-  const link = `${YUME_URL}/#/anime/${r.anime_id}`
-  const nezd = `${YUME_URL}/#/watch/${r.id}`
+  const c = cimkek(nyelv)
+  const { ep, anime: k } = r
+  const nezd = nezesUrl(ep.id)
+
+  const mezok: Mezo[] = [{ name: c.epizod, value: epizodErtek(ep, k, nyelv), inline: true }]
+  const tesz = (name: string, value: string | null, inline = true): void => {
+    if (value) mezok.push({ name, value: value.slice(0, 1024), inline })
+  }
+  const hossz = ep.hossz ?? k.hossz
+  tesz(c.hossz, hossz ? `**${c.perc(hossz)}**` : null)
+  tesz(c.pont, k.pontszam !== null ? `**${pontSzoveg(k.pontszam)}**` : null)
+  tesz(c.formatum, [k.format ? (c.format[k.format] ?? k.format) : null, szezonSzoveg(k, nyelv)].filter(Boolean).join(' · ') || null)
+  tesz(c.allapot, allapotSzoveg(k.status, nyelv))
+  tesz(c.adas, ep.adas ? ido(ep.adas, 'D') : null)
+  tesz(c.studio, k.studiok.length ? k.studiok.map(md).join(', ') : null)
+  tesz(c.mufajok, mufajSzoveg(k.mufajok, nyelv), false)
+  // AZ EPIZÓD SAJÁT LEÍRÁSA külön mezőben — ez az, ami erről a RÉSZRŐL szól.
+  tesz(c.errol, k.felnott ? null : leirasDiscordra(ep.leiras, 600) || null, false)
 
   /*
    * A MÁSODLAGOS CÍMEK. A japán (native) az, amit kértél; az angol csak
    * akkor kerül oda, ha tényleg más, mint a kanonikus — különben ugyanazt
    * írnánk ki kétszer.
    */
-  const alcimek = [
-    r.native,
-    r.english && r.english !== r.cim ? r.english : null,
-    r.romaji && r.romaji !== r.cim && r.romaji !== r.english ? r.romaji : null
-  ].filter(Boolean)
-
-  const mezok: Array<Record<string, unknown>> = [
-    {
-      name: f.epizod,
-      value: `**${f.resz(r.number)}**${r.osszes_ep ? ` / ${r.osszes_ep}` : ''}`,
-      inline: true
-    }
-  ]
-
-  if (r.duration) mezok.push({ name: f.hossz, value: `**${f.perc(r.duration)}**`, inline: true })
-  if (r.pontszam) mezok.push({ name: f.pont, value: `**${Number(r.pontszam).toFixed(1)}**`, inline: true })
-  if (r.status) mezok.push({ name: f.allapot, value: String(r.status), inline: true })
-  if (r.ev) mezok.push({ name: f.ev, value: String(r.ev), inline: true })
-  if (r.air_date) {
-    const mikor = Math.floor(new Date(r.air_date).getTime() / 1000)
-    mezok.push({ name: f.adas, value: `<t:${mikor}:D>`, inline: true })
-  }
-
-  // AZ EPIZÓD SAJÁT LEÍRÁSA külön mezőben — ez az, ami erről a RÉSZRŐL szól.
-  const epLeiras = rovidit(r.ep_leiras, 900)
-  if (epLeiras) {
-    mezok.push({ name: f.errol, value: epLeiras, inline: false })
-  }
-
-  const sorozatLeiras = rovidit(r.leiras, 600)
+  const alcimek = masodlagosCimek(k)
+  const sorozatLeiras = k.felnott ? '' : leirasDiscordra(k.leiras, 500)
+  const nagyKep = ep.kep ?? k.banner
 
   return {
     /*
@@ -163,25 +120,26 @@ export function buildEpisodeEmbed (r: EpisodeRow, nyelv: Nyelv = 'hu', emlitett:
      */
     ...(emlitett ? { content: `<@&${emlitett}>` } : {}),
     embeds: [{
-      color: SZIN,
+      color: kartyaSzin(k.felnott ? null : k.szin),
       author: { name: f.szerzo, icon_url: `${YUME_URL}/assets/yume.svg`, url: YUME_URL },
-      title: rovidit(r.ep_cim ? `${r.cim} — ${r.ep_cim}` : r.cim, 250),
+      title: vag(ep.cim ? `${k.cim} — ${tisztaSzoveg(ep.cim)}` : k.cim, 250),
       url: nezd,
       description: [
-        alcimek.length ? `*${alcimek.join(' · ')}*` : null,
+        alcimek.length ? `*${alcimek.map(a => md(vag(a, 120))).join(' · ')}*` : null,
+        k.felnott ? c.felnott : null,
         sorozatLeiras || null
       ].filter(Boolean).join('\n\n') || undefined,
       fields: mezok,
-      // A BORÍTÓ KICSIBEN, a banner nagyban — ahogy egy adatlap kinéz.
-      ...(r.borito ? { thumbnail: { url: r.borito } } : {}),
-      ...(r.banner ? { image: { url: r.banner } } : {}),
+      ...(k.borito ? { thumbnail: { url: k.borito } } : {}),
+      ...(nagyKep ? { image: { url: nagyKep } } : {}),
       footer: { text: f.lablec }
     }],
-    components: gombok([
-      { label: f.megnezem, url: nezd, emoji: '▶️' },
-      { label: f.adatlap, url: link, emoji: '📖' },
-      { label: f.vezerlopult, url: DASHBOARD_URL, emoji: '⚙️' }
-    ]),
+    // A VEZÉRLŐPULT GOMBJA KIMARADT: 2026-09-29 óta csak jogosultsággal
+    // nyílik, egy átlagos tagnak zsákutca. Helyette az előzetes, ha van.
+    components: [gombSor([
+      { label: c.megnezem, url: nezd, emoji: '▶️' },
+      ...animeGombok(k, nyelv, { nezes: false })
+    ])],
     allowed_mentions: emlitett ? { parse: [], roles: [emlitett] } : { parse: [] }
   }
 }
@@ -220,6 +178,9 @@ export async function announceNew (guildId: string): Promise<AnnounceResult> {
     `SELECT e.id, e.anime_id
        FROM episodes e JOIN anime a ON a.id = e.anime_id
       WHERE e.visibility = 'public' AND a.visibility = 'public'
+        -- FELNŐTT CÍM NEM MEGY KI A CSATORNÁBA (a borítója sem) — lásd
+        -- anime-card.ts; az oldal katalógusa is alapból elrejti.
+        AND NOT a.is_adult
         AND e.created_at > now() - ($2::int || ' hours')::interval
         AND NOT EXISTS (
           SELECT 1 FROM discord_episode_announcements d
