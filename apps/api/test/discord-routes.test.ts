@@ -449,6 +449,81 @@ describe('a Discord vezérlőpult végpontjai', { skip: HAS_DB ? false : 'no DAT
       `/v1/discord/guilds/${MIENK}/persistent-messages/${idegen.rows[0]!.id}/history`, adminToken)).statusCode, 404)
   })
 
+  // ---- a bot állapota: körútidő és a kapcsolat naponta ----
+
+  it('a bot állapota a körútidőt és a kapcsolat napi sorait is megmutatja', async () => {
+    const regi = (await pool.query<{ heartbeat_rtt_ms: number | null }>(
+      'SELECT heartbeat_rtt_ms FROM discord_gateway_state WHERE id = 1')).rows[0]
+    const nap = (await pool.query<{ d: string }>('SELECT (current_date - 13)::text AS d')).rows[0]!.d
+    const volt = (await pool.query('SELECT * FROM discord_gateway_daily WHERE day = $1', [nap])).rows[0]
+    try {
+      await pool.query('UPDATE discord_gateway_state SET heartbeat_rtt_ms = 42 WHERE id = 1')
+      await pool.query(
+        `INSERT INTO discord_gateway_daily (day, reconnects, resumed, identified, rtt_sum_ms, rtt_count, rtt_max_ms)
+         VALUES ($1, 5, 4, 1, 500, 5, 180)
+         ON CONFLICT (day) DO UPDATE SET reconnects = 5, resumed = 4, identified = 1, rtt_sum_ms = 500, rtt_count = 5, rtt_max_ms = 180`,
+        [nap])
+      const res = await hivas('GET', `/v1/discord/guilds/${MIENK}/health`, tagToken)
+      assert.equal(res.statusCode, 200)
+      const gw = res.json().gateway
+      assert.equal(gw.heartbeatRttMs, 42)
+      assert.deepEqual(gw.daily.find((n: { day: string }) => n.day === nap),
+        { day: nap, reconnects: 5, resumed: 4, identified: 1, rttAvgMs: 100, rttMaxMs: 180 })
+    } finally {
+      await pool.query('UPDATE discord_gateway_state SET heartbeat_rtt_ms = $1 WHERE id = 1', [regi?.heartbeat_rtt_ms ?? null])
+      if (volt) {
+        await pool.query(
+          `UPDATE discord_gateway_daily SET reconnects = $2, resumed = $3, identified = $4, rtt_sum_ms = $5, rtt_count = $6, rtt_max_ms = $7
+            WHERE day = $1`,
+          [nap, volt.reconnects, volt.resumed, volt.identified, volt.rtt_sum_ms, volt.rtt_count, volt.rtt_max_ms])
+      } else {
+        await pool.query('DELETE FROM discord_gateway_daily WHERE day = $1', [nap])
+      }
+    }
+  })
+
+  // ---- a tartós üzenetek napi hibaösszesítője ----
+
+  /*
+   * AZ ÜZENET SAJÁT HIBASZÁMLÁLÓJA egy sikeres frissítéskor nullázódik: egy
+   * tegnap órákig hibás üzenet ma hibátlannak látszik. Az összesítő a
+   * frissítési előzményből számol — és csak a saját guild üzeneteiből.
+   */
+  it('a napi hibaösszesítő a saját guild hibás napjait mutatja, kísérletszámmal', async () => {
+    const [mienk, idegen] = await Promise.all([MIENK, IDEGEN].map(async g => (await pool.query<{ id: string }>(
+      `INSERT INTO persistent_messages (guild_id, channel_id, message_type) VALUES ($1, $2, 'yume_statistics') RETURNING id`,
+      [g, CSATORNA])).rows[0]!.id))
+    const esemeny = async (id: string, event: string, n: number, mikor: string, detail: string | null = null) => {
+      await pool.query(
+        `INSERT INTO persistent_message_events (message_id, event, detail, at)
+         SELECT $1, $2, $3, now() - $4::interval FROM generate_series(1, $5)`, [id, event, detail, mikor, n])
+    }
+    await esemeny(mienk!, 'failed', 3, '1 day', 'forbidden: Missing Permissions')
+    await esemeny(mienk!, 'skipped', 10, '1 day')
+    await esemeny(mienk!, 'edited', 2, '1 day')
+    await esemeny(mienk!, 'locked_out', 4, '1 day') // nem kísérlet
+    await esemeny(mienk!, 'skipped', 5, '1 minute') // ma nincs hiba
+    await esemeny(idegen!, 'failed', 4, '1 minute', 'idegen hiba')
+
+    const tegnap = (await pool.query<{ d: string }>(
+      "SELECT ((now() - interval '1 day') AT TIME ZONE 'UTC')::date::text AS d")).rows[0]!.d
+    const res = await hivas('GET', `/v1/discord/guilds/${MIENK}/message-failures`, tagToken)
+    assert.equal(res.statusCode, 200, res.body)
+    assert.deepEqual(res.json().data.map((r: Record<string, unknown>) => ({ ...r, lastFailedAt: typeof r.lastFailedAt })), [{
+      day: tegnap, messageType: 'yume_statistics', failures: 3, attempts: 15,
+      lastError: 'forbidden: Missing Permissions', lastFailedAt: 'string'
+    }])
+  })
+
+  it('a hibaösszesítő ablaka legfeljebb 30 nap, és a vezérlőpulté', async () => {
+    assert.equal((await hivas('GET', `/v1/discord/guilds/${MIENK}/message-failures?days=31`, tagToken)).statusCode, 400)
+    const res = await hivas('GET', `/v1/discord/guilds/${MIENK}/message-failures`, kulsoToken)
+    assert.equal(res.statusCode, 403)
+    assert.equal(res.json().detail, 'no_dashboard_permission')
+    assert.equal((await hivas('GET', `/v1/discord/guilds/${IDEGEN}/message-failures`, tagToken)).statusCode, 403,
+      'idegen guild összesítőjét is kiadta')
+  })
+
   // ---- a lejárt tagság frissítése és a szerverlista — a bot tokenjével ----
   //
   // HAMIS DISCORDDAL, a `fetch` szintjén: a kiszolgáló valódi kódja fut, csak

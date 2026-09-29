@@ -364,6 +364,11 @@ export async function notifications (guildId) {
 export async function health (guildId) {
   const d = await Api.health(guildId)
   const kepes = d.capabilities ?? {}
+  const gw = d.gateway ?? null
+  const napok = gw?.daily ?? []
+  // A mai nap UTC-ben — a gateway is így számol.
+  const ma = napok.find(n => n.day === new Date().toISOString().slice(0, 10)) ?? null
+  const rtt = gw?.heartbeatRttMs ?? null
 
   const jel = s => s === 'green' ? 'ok' : s === 'not_configured' ? '' : s === 'unknown' ? 'warn' : 'bad'
 
@@ -379,11 +384,46 @@ export async function health (guildId) {
         display: kepes.gateway ? 'fut' : 'nem fut',
         icon: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>'
       }),
+      /*
+       * A DISCORD FELÉ MÉRT KÉSLELTETÉS: a legutóbbi szívverés körútideje. A
+       * „—" nem nulla: azt jelenti, hogy még nem mértük (a gateway nem fut,
+       * vagy még nem jött nyugta).
+       */
+      kpi('Discord-késleltetés', 0, {
+        tone: rtt === null ? 'blue' : rtt < 300 ? 'green' : rtt < 1000 ? 'amber' : 'red',
+        display: rtt === null ? '—' : `${szam(rtt)} ms`,
+        meta: 'a legutóbbi szívverés körútideje',
+        icon: '<path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="10"/>'
+      }),
+      kpi('Újracsatlakozás ma', 0, {
+        tone: !gw ? 'blue' : (ma?.identified ?? 0) > 1 ? 'amber' : 'green',
+        display: gw ? szam(ma?.reconnects ?? 0) : '—',
+        meta: gw ? `${szam(ma?.resumed ?? 0)} folytatva · ${szam(ma?.identified ?? 0)} új munkamenet` : null,
+        icon: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>'
+      }),
       kpi('Hibás üzenet', (d.failing ?? []).length, {
         tone: (d.failing ?? []).length > 0 ? 'red' : 'green',
         icon: '<path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="10"/>'
       })
     ]),
+
+    /*
+     * A KAPCSOLAT NAPONTA. A szakadás önmagában nem baj — a Discord maga is
+     * kér újracsatlakozást —, ha FOLYTATÓDIK: akkor egy esemény sem veszett
+     * el. Az ÚJ MUNKAMENET a jel: ami a szakadás alatt történt, az elveszett
+     * (egy telepítés is ilyen). A gateway egy kapcsolat az összes szerverre.
+     */
+    panel('A kapcsolat naponta', 'szakadás · folytatva (nem veszett el esemény) · új munkamenet (elveszett, ami közben történt)',
+      sorok(napok.map(n => ({
+        label: n.day,
+        tone: '',
+        detail: [
+          `${szam(n.reconnects)} szakadás`,
+          `${szam(n.resumed)} folytatva`,
+          `${szam(n.identified)} új munkamenet`,
+          n.rttAvgMs !== null ? `körútidő átlag ${szam(n.rttAvgMs)} ms, csúcs ${szam(n.rttMaxMs)} ms` : null
+        ].filter(Boolean).join(' · ')
+      })), 'Még nincs napi mérés — a gateway az első szívveréssel kezdi gyűjteni.')),
 
     panel('Szondák', 'a kiszolgáló saját ellenőrzéseiből',
       sorok((d.probes ?? []).map(p => ({
@@ -424,7 +464,8 @@ export async function health (guildId) {
 // ---------------------------------------------------------------- napló
 
 export async function audit (guildId) {
-  const d = await Api.audit(guildId)
+  // Az összesítő hibája nem vihet el a naplót: nélküle a műveletek még látszanak.
+  const [d, hibak] = await Promise.all([Api.audit(guildId), Api.messageFailures(guildId).catch(() => null)])
   return el('div', {}, [
     el('p', {
       class: 'list-row-sub',
@@ -432,6 +473,7 @@ export async function audit (guildId) {
       text: 'Ez a MI naplónk: ki mit csinált ezen a felületen. A Discord saját audit logja — ki bannolt, ki nevezett át ' +
         'csatornát — külön jogosultság, és nem ezen a felületen él.'
     }),
+    hibak ? uzenetHibak(hibak) : null,
     panel('Műveletek', 'legfrissebb elöl',
       sorok((d.data ?? []).map(a => ({
         label: a.action.replace('discord.', ''),
@@ -439,6 +481,26 @@ export async function audit (guildId) {
         detail: [a.actor ?? 'ismeretlen', a.subject_id, ido(a.created_at)].filter(Boolean).join(' · ')
       })), 'Ebben a szerverben még nem történt művelet.'))
   ])
+}
+
+/*
+ * A TARTÓS ÜZENETEK NAPI HIBÁI. Az üzenet saját hibaszámlálója egy sikeres
+ * frissítéskor nullázódik — egy naponta órákra elromló üzenet este már
+ * hibátlannak látszott. Ez a frissítési előzményből számol: melyik nap,
+ * melyik üzenet, hány kísérletből hány hibázott, és mi volt az utolsó hiba.
+ */
+function uzenetHibak (h) {
+  const napok = h.window?.days ?? 14
+  return panel('Tartós üzenetek — napi hibák', `az elmúlt ${napok} nap; csak a napok, amelyeken hiba volt`,
+    sorok((h.data ?? []).map(r => ({
+      label: `${r.day} · ${UZENET_TIPUS[r.messageType] ?? r.messageType}`,
+      tone: 'bad',
+      detail: [
+        `${szam(r.failures)} hiba ${szam(r.attempts)} frissítésből`,
+        `utolsó: ${r.lastError ?? 'ismeretlen hiba'}`,
+        ido(r.lastFailedAt)
+      ].join(' · ')
+    })), `Az elmúlt ${napok} napban egyetlen frissítés sem hibázott.`))
 }
 
 // ---------------------------------------------------------------- beállítások

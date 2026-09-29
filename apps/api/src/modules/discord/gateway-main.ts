@@ -82,6 +82,7 @@ function szivver (): void {
     return
   }
   allapot.acked = false
+  allapot.szivveresKuldve = Date.now()
   kuld({ op: OP.HEARTBEAT, d: allapot.sequence })
 }
 
@@ -206,6 +207,8 @@ function csatlakoz (): void {
         const d = (uzenet.d ?? {}) as { heartbeat_interval?: number }
         allapot.heartbeatMs = Number(d.heartbeat_interval ?? 41_250)
         allapot.acked = true
+        // Egy előző kapcsolaton elküldött, nyugtázatlan szívverés nem mérhető.
+        allapot.szivveresKuldve = null
         idozitokLe()
         // Az ELSŐ szívverés véletlen késleltetéssel — lásd `elsoSzivveres`.
         elsoTimer = setTimeout(() => {
@@ -219,15 +222,21 @@ function csatlakoz (): void {
 
       case OP.HEARTBEAT:
         // A Discord is KÉRHET szívverést soron kívül. Azonnal válaszolunk.
+        allapot.szivveresKuldve = Date.now()
         kuld({ op: OP.HEARTBEAT, d: allapot.sequence })
         break
 
-      case OP.HEARTBEAT_ACK:
+      case OP.HEARTBEAT_ACK: {
         allapot.acked = true
+        // A KÖRÚTIDŐ: a szívverés elküldésétől a nyugtáig — a Discord felé mért
+        // késleltetés. Csak akkor, ha tudjuk, mikor ment ki.
+        const rtt = allapot.szivveresKuldve === null ? null : Date.now() - allapot.szivveresKuldve
+        allapot.szivveresKuldve = null
         // ÉLETJEL: a nyugta bizonyítja, hogy a kapcsolat él — csendes szerveren
         // is, ahol percekig nem jön esemény. Lásd `STALE_MS`.
-        iro.jelez({ event: true })
+        iro.jelez(rtt === null ? { event: true } : { event: true, rtt })
         break
+      }
 
       case OP.RECONNECT:
         naplo('a Discord újracsatlakozást kért')
@@ -258,14 +267,16 @@ function csatlakoz (): void {
           allapot.sessionId = d.session_id ?? null
           allapot.resumeUrl = d.resume_gateway_url ?? null
           naplo('kész')
+          // Új munkamenet: ami a szakadás alatt történt, elveszett — ezért
+          // számoljuk külön a folytatástól (napi összesítő).
           iro.jelez({
-            status: 'ready', ready: true, event: true,
+            status: 'ready', ready: true, event: true, identified: 1,
             sessionId: allapot.sessionId, resumeUrl: allapot.resumeUrl,
             sequence: allapot.sequence, lastError: null
           })
         } else if (t === 'RESUMED') {
           naplo('folytatva')
-          iro.jelez({ status: 'ready', ready: true, event: true, lastError: null })
+          iro.jelez({ status: 'ready', ready: true, event: true, resumed: 1, lastError: null })
         } else {
           void feldolgoz(t, uzenet.d)
           iro.jelez({ event: true, sequence: allapot.sequence })

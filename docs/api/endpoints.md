@@ -359,6 +359,7 @@
 | GET | `/v1/discord/guilds/:guildId/channels/:channelId/diagnose` |
 | POST | `/v1/discord/guilds/:guildId/commands/register` |
 | GET | `/v1/discord/guilds/:guildId/health` |
+| GET | `/v1/discord/guilds/:guildId/message-failures` |
 | GET | `/v1/discord/guilds/:guildId/notifications` |
 | GET | `/v1/discord/guilds/:guildId/overview` |
 | GET | `/v1/discord/guilds/:guildId/persistent-messages` |

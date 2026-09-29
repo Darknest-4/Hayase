@@ -167,6 +167,32 @@ describe('az állapotsor írója', () => {
     assert.deepEqual(m, { status: 'ready', sequence: 4, reconnect: 2, event: true, lastError: null })
   })
 
+  it('a körútidő-minták összeadódnak, a csúcs a nagyobbik, a legutóbbi marad', () => {
+    const m = gw.osszevon(gw.osszevon(null, { event: true, rtt: 100 }), { event: true, rtt: 300 })
+    assert.deepEqual(m, { event: true, rtt: 300, rttMinta: { sum: 400, count: 2, max: 300 } })
+    // Egy már összevont bejegyzés mintája nem számolódik kétszer.
+    const tovabb = gw.osszevon(m, gw.osszevon(null, { rtt: 50 }))
+    assert.deepEqual(tovabb.rttMinta, { sum: 450, count: 3, max: 300 })
+  })
+
+  it('a folytatás és az új munkamenet is összeadódik', () => {
+    const m = gw.osszevon(gw.osszevon(null, { identified: 1 }), { resumed: 1, identified: 1 })
+    assert.equal(m.identified, 2)
+    assert.equal(m.resumed, 1)
+  })
+
+  // A nyugta ~41 másodpercenként jön; a körútideje nem ok arra, hogy
+  // azonnal írjunk — az eseményekkel együtt, ritkítva megy.
+  it('a körútidő nem sürgős: a nyugta nem ír azonnal', async () => {
+    const irasok: Mezok[] = []
+    const iro = new gw.AllapotIro(async m => { irasok.push(m) }, 60_000)
+    iro.jelez({ event: true })
+    await var_(20)
+    iro.jelez({ event: true, rtt: 87 })
+    await var_(30)
+    assert.equal(irasok.length, 1, 'a körútidő azonnali írást váltott ki')
+  })
+
   /*
    * EDDIG MINDEN ESEMÉNY EGY ÍRÁS VOLT. Egy forgalmas szerveren ez
    * másodpercenként tucatnyi UPDATE ugyanarra a sorra.
@@ -360,17 +386,72 @@ describe('a gateway gyűjtője', { skip: HAS_DB ? false : 'no DATABASE_URL' }, (
     assert.equal(sorok.length, 1, 'egynél több gateway-állapotsor van')
   })
 
+  // ---- az állapotsor és a napi sor ----
+  //
+  // A két tétel az EGYETLEN állapotsort és a mai napi sort írja; előtte
+  // mindkettőt eltesszük, utána visszaállítjuk.
+
+  type Napi = { reconnects: number, resumed: number, identified: number, rtt_sum_ms: string, rtt_count: number, rtt_max_ms: number | null }
+  const MA = () => new Date().toISOString().slice(0, 10)
+  const napiSor = async (): Promise<Napi | undefined> => (await db.query<Napi>(
+    'SELECT reconnects, resumed, identified, rtt_sum_ms, rtt_count, rtt_max_ms FROM discord_gateway_daily WHERE day = $1', [MA()]))[0]
+  const megorizve = async (fn: () => Promise<void>): Promise<void> => {
+    const allapot = (await db.query<{ reconnects: string, heartbeat_rtt_ms: number | null }>(
+      'SELECT reconnects, heartbeat_rtt_ms FROM discord_gateway_state WHERE id = 1'))[0]!
+    const napi = await napiSor()
+    try {
+      await fn()
+    } finally {
+      await db.query('UPDATE discord_gateway_state SET reconnects = $1, heartbeat_rtt_ms = $2 WHERE id = 1',
+        [allapot.reconnects, allapot.heartbeat_rtt_ms])
+      if (napi) {
+        await db.query(
+          `UPDATE discord_gateway_daily SET reconnects = $2, resumed = $3, identified = $4, rtt_sum_ms = $5, rtt_count = $6, rtt_max_ms = $7
+            WHERE day = $1`,
+          [MA(), napi.reconnects, napi.resumed, napi.identified, napi.rtt_sum_ms, napi.rtt_count, napi.rtt_max_ms])
+      } else {
+        await db.query('DELETE FROM discord_gateway_daily WHERE day = $1', [MA()])
+      }
+    }
+  }
+
   // Az összevont írás több újracsatlakozást visz egyszerre — egy sem veszhet el.
   it('az újracsatlakozások száma összeadódik, nem csak eggyel nő', async () => {
-    const elotte = await db.query<{ reconnects: number }>('SELECT reconnects FROM discord_gateway_state WHERE id = 1')
-    const alap = Number(elotte[0]!.reconnects)
-    try {
+    await megorizve(async () => {
+      const alap = Number((await db.query<{ reconnects: string }>('SELECT reconnects FROM discord_gateway_state WHERE id = 1'))[0]!.reconnects)
       await gw.allapotIr({ reconnect: 3 })
       await gw.allapotIr({ reconnect: true })
-      const utana = await db.query<{ reconnects: number }>('SELECT reconnects FROM discord_gateway_state WHERE id = 1')
+      const utana = await db.query<{ reconnects: string }>('SELECT reconnects FROM discord_gateway_state WHERE id = 1')
       assert.equal(Number(utana[0]!.reconnects), alap + 4)
-    } finally {
-      await db.query('UPDATE discord_gateway_state SET reconnects = $1 WHERE id = 1', [alap])
-    }
+    })
+  })
+
+  /*
+   * A NAPI SOR: szakadás, folytatás, új munkamenet és a körútidő — ugyanabban
+   * az utasításban, mint az állapotsor, hogy egy újrapróbált írás se
+   * számoljon kétszer.
+   */
+  it('a napi sor a szakadást, a folytatást, az új munkamenetet és a körútidőt is gyűjti', async () => {
+    await megorizve(async () => {
+      const elotte = await napiSor()
+      await gw.allapotIr({ reconnect: 2, resumed: 1, identified: 1, rtt: 120, rttMinta: { sum: 300, count: 2, max: 180 } })
+      const utana = (await napiSor())!
+      assert.equal(utana.reconnects - (elotte?.reconnects ?? 0), 2)
+      assert.equal(utana.resumed - (elotte?.resumed ?? 0), 1)
+      assert.equal(utana.identified - (elotte?.identified ?? 0), 1)
+      assert.equal(Number(utana.rtt_sum_ms) - Number(elotte?.rtt_sum_ms ?? 0), 300)
+      assert.equal(utana.rtt_count - (elotte?.rtt_count ?? 0), 2)
+      assert.ok(Number(utana.rtt_max_ms) >= 180)
+      const allapot = await db.query<{ heartbeat_rtt_ms: number }>('SELECT heartbeat_rtt_ms FROM discord_gateway_state WHERE id = 1')
+      assert.equal(allapot[0]!.heartbeat_rtt_ms, 120, 'a legutóbbi körútidő nem került az állapotsorba')
+    })
+  })
+
+  it('egy puszta esemény nem ír napi sort', async () => {
+    await megorizve(async () => {
+      const elotte = await napiSor()
+      await gw.allapotIr({ event: true, sequence: 7 })
+      assert.deepEqual(await napiSor(), elotte)
+    })
   })
 })

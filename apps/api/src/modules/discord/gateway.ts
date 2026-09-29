@@ -106,10 +106,12 @@ export interface EngineState {
   acked: boolean
   heartbeatMs: number
   reconnects: number
+  /** Mikor ment ki a legutóbbi szívverés — a nyugtáig eltelt idő a körútidő. */
+  szivveresKuldve: number | null
 }
 
 export function ujAllapot (): EngineState {
-  return { sessionId: null, resumeUrl: null, sequence: null, acked: true, heartbeatMs: 0, reconnects: 0 }
+  return { sessionId: null, resumeUrl: null, sequence: null, acked: true, heartbeatMs: 0, reconnects: 0, szivveresKuldve: null }
 }
 
 /**
@@ -324,23 +326,61 @@ export interface AllapotMezok {
   event?: boolean
   /** Hány újracsatlakozást számoljon hozzá (`true` = egyet). */
   reconnect?: boolean | number
+  /** Hány munkamenet folytatódott (RESUMED) — a napi összesítőbe. */
+  resumed?: number
+  /** Hány új munkamenet indult (READY) — a napi összesítőbe. */
+  identified?: number
+  /** Egy szívverés körútideje (ms): a legutóbbi az állapotsorba, mind a napi átlagba. */
+  rtt?: number
+  /** Az összevont körútidő-minták — az `osszevon` állítja elő. */
+  rttMinta?: { sum: number, count: number, max: number }
   intents?: number
 }
 
+/** Egy számláló értéke: `true` = egy. */
+const darab = (v: boolean | number | undefined): number => typeof v === 'number' ? v : (v === true ? 1 : 0)
+
+/** A mai nap, UTC-ben — ugyanúgy, mint a `Gyujto`-ban. */
+const maNap = (): string => new Date().toISOString().slice(0, 10)
+
+/**
+ * AZ ÁLLAPOTSOR ÉS A NAPI SOR — EGY UTASÍTÁSBAN.
+ *
+ * Nem kettőben: ha a második elbukna, az `AllapotIro` az egészet újra
+ * beküldené, és az első (az újracsatlakozás-számláló) kétszer nőne. Egy
+ * adatmódosító `WITH` egyben fut le, vagy sehogy.
+ */
 export async function allapotIr (mezok: AllapotMezok): Promise<void> {
+  const minta = mezok.rttMinta ?? (typeof mezok.rtt === 'number' ? { sum: mezok.rtt, count: 1, max: mezok.rtt } : null)
+  const ujra = darab(mezok.reconnect)
+  const folytatva = darab(mezok.resumed)
+  const uj = darab(mezok.identified)
   await query(
-    `UPDATE discord_gateway_state
-        SET status        = coalesce($1, status),
-            session_id    = CASE WHEN $2::boolean THEN $3 ELSE session_id END,
-            resume_url    = CASE WHEN $4::boolean THEN $5 ELSE resume_url END,
-            sequence      = CASE WHEN $6::boolean THEN $7 ELSE sequence END,
-            last_error    = CASE WHEN $8::boolean THEN $9 ELSE last_error END,
-            last_ready_at = CASE WHEN $10 THEN now() ELSE last_ready_at END,
-            last_event_at = CASE WHEN $11 THEN now() ELSE last_event_at END,
-            reconnects    = reconnects + $12::int,
-            intents       = coalesce($13, intents),
-            updated_at    = now()
-      WHERE id = 1`,
+    `WITH allapot AS (
+       UPDATE discord_gateway_state
+          SET status           = coalesce($1, status),
+              session_id       = CASE WHEN $2::boolean THEN $3 ELSE session_id END,
+              resume_url       = CASE WHEN $4::boolean THEN $5 ELSE resume_url END,
+              sequence         = CASE WHEN $6::boolean THEN $7 ELSE sequence END,
+              last_error       = CASE WHEN $8::boolean THEN $9 ELSE last_error END,
+              last_ready_at    = CASE WHEN $10 THEN now() ELSE last_ready_at END,
+              last_event_at    = CASE WHEN $11 THEN now() ELSE last_event_at END,
+              reconnects       = reconnects + $12::int,
+              intents          = coalesce($13, intents),
+              heartbeat_rtt_ms = coalesce($14::int, heartbeat_rtt_ms),
+              updated_at       = now()
+        WHERE id = 1
+        RETURNING 1)
+     INSERT INTO discord_gateway_daily (day, reconnects, resumed, identified, rtt_sum_ms, rtt_count, rtt_max_ms)
+     SELECT $15::date, $12::int, $16::int, $17::int, $18::bigint, $19::int, $20::int
+      WHERE $12::int + $16::int + $17::int + $19::int > 0
+     ON CONFLICT (day) DO UPDATE
+        SET reconnects = discord_gateway_daily.reconnects + excluded.reconnects,
+            resumed    = discord_gateway_daily.resumed + excluded.resumed,
+            identified = discord_gateway_daily.identified + excluded.identified,
+            rtt_sum_ms = discord_gateway_daily.rtt_sum_ms + excluded.rtt_sum_ms,
+            rtt_count  = discord_gateway_daily.rtt_count + excluded.rtt_count,
+            rtt_max_ms = GREATEST(discord_gateway_daily.rtt_max_ms, excluded.rtt_max_ms)`,
     [
       mezok.status ?? null,
       mezok.sessionId !== undefined, mezok.sessionId ?? null,
@@ -349,24 +389,37 @@ export async function allapotIr (mezok: AllapotMezok): Promise<void> {
       mezok.lastError !== undefined, mezok.lastError ?? null,
       mezok.ready === true,
       mezok.event === true,
-      typeof mezok.reconnect === 'number' ? mezok.reconnect : (mezok.reconnect === true ? 1 : 0),
-      mezok.intents ?? null
+      ujra,
+      mezok.intents ?? null,
+      typeof mezok.rtt === 'number' ? Math.round(mezok.rtt) : null,
+      maNap(), folytatva, uj,
+      Math.round(minta?.sum ?? 0), minta?.count ?? 0, minta ? Math.round(minta.max) : null
     ])
 }
 
-/** Két bejegyzés összevonása: ami később jött, az nyer; a számlálók összeadódnak. */
+/**
+ * Két bejegyzés összevonása: ami később jött, az nyer; a számlálók és a
+ * körútidő-minták összeadódnak (a csúcs a nagyobbik), hogy egy összevont
+ * írás se veszítsen el semmit.
+ */
 export function osszevon (a: AllapotMezok | null, b: AllapotMezok): AllapotMezok {
-  if (!a) return { ...b }
-  const szam = (m: AllapotMezok): number =>
-    typeof m.reconnect === 'number' ? m.reconnect : (m.reconnect === true ? 1 : 0)
-  const out: AllapotMezok = { ...a }
-  for (const kulcs of ['status', 'sessionId', 'resumeUrl', 'sequence', 'lastError', 'intents'] as const) {
+  const out: AllapotMezok = { ...(a ?? {}) }
+  for (const kulcs of ['status', 'sessionId', 'resumeUrl', 'sequence', 'lastError', 'intents', 'rtt'] as const) {
     if (b[kulcs] !== undefined) (out as Record<string, unknown>)[kulcs] = b[kulcs]
   }
   if (b.ready === true) out.ready = true
   if (b.event === true) out.event = true
-  const ujra = szam(a) + szam(b)
-  if (ujra > 0) out.reconnect = ujra
+  for (const kulcs of ['reconnect', 'resumed', 'identified'] as const) {
+    const n = darab(a?.[kulcs]) + darab(b[kulcs])
+    if (n > 0) out[kulcs] = n
+  }
+  const minta = b.rttMinta ?? (typeof b.rtt === 'number' ? { sum: b.rtt, count: 1, max: b.rtt } : undefined)
+  if (minta) {
+    const eddig = a?.rttMinta
+    out.rttMinta = eddig
+      ? { sum: eddig.sum + minta.sum, count: eddig.count + minta.count, max: Math.max(eddig.max, minta.max) }
+      : { ...minta }
+  }
   return out
 }
 
@@ -409,10 +462,10 @@ export class AllapotIro {
     this.hiba = hiba
   }
 
-  /** Bejegyzés: az esemény és a sorszám ritkítva, minden más azonnal. */
+  /** Bejegyzés: az esemény, a sorszám és a körútidő ritkítva, minden más azonnal. */
   jelez (m: AllapotMezok): void {
     this.fuggo = osszevon(this.fuggo, m)
-    if (Object.keys(m).some(k => k !== 'event' && k !== 'sequence')) this.surgos = true
+    if (Object.keys(m).some(k => k !== 'event' && k !== 'sequence' && k !== 'rtt')) this.surgos = true
     this.utemez()
   }
 

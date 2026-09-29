@@ -220,6 +220,7 @@ export const Api = {
   health: g => kerd(`/v1/discord/guilds/${g}/health`),
   activity: (g, days = 30) => kerd(`/v1/discord/guilds/${g}/activity?days=${days}`),
   audit: g => kerd(`/v1/discord/guilds/${g}/audit?limit=100`),
+  messageFailures: g => kerd(`/v1/discord/guilds/${g}/message-failures?days=14`),
   notifications: g => kerd(`/v1/discord/guilds/${g}/notifications?limit=25`),
 
   messages: g => kerd(`/v1/discord/guilds/${g}/persistent-messages`),

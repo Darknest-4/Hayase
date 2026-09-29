@@ -616,6 +616,66 @@ describe('a Discord vezérlőpult', { skip: REASON }, () => {
     assert.equal(rows[0].n, 0, 'az előnézet köszöntőt küldött')
   })
 
+  // ---- a bot állapota és a napló — a mért adatokból ----
+
+  /*
+   * A KÉSLELTETÉS ÉS A KAPCSOLAT NAPONTA. Eddig csak az látszott, hogy a
+   * gateway fut-e, és hányszor csatlakozott újra összesen. A tétel az egyetlen
+   * állapotsort és a mai napi sort írja — előtte eltesszük, utána visszaáll.
+   */
+  it('a bot állapota megmutatja a késleltetést és a kapcsolat napjait', async () => {
+    const ma = new Date().toISOString().slice(0, 10)
+    const regi = (await pool.query('SELECT heartbeat_rtt_ms FROM discord_gateway_state WHERE id = 1')).rows[0]
+    const volt = (await pool.query('SELECT * FROM discord_gateway_daily WHERE day = $1', [ma])).rows[0]
+    try {
+      await pool.query('UPDATE discord_gateway_state SET heartbeat_rtt_ms = 87 WHERE id = 1')
+      await pool.query(
+        `INSERT INTO discord_gateway_daily (day, reconnects, resumed, identified, rtt_sum_ms, rtt_count, rtt_max_ms)
+         VALUES ($1, 3, 3, 0, 270, 3, 120)
+         ON CONFLICT (day) DO UPDATE SET reconnects = 3, resumed = 3, identified = 0, rtt_sum_ms = 270, rtt_count = 3, rtt_max_ms = 120`,
+        [ma])
+      await nyit('health')
+      const szoveg = (await kepernyo()).szoveg
+      // A kártyacímkét a CSS nagybetűsre írja — az `innerText` úgy adja vissza.
+      assert.match(szoveg, /Discord-késleltetés/i)
+      assert.match(szoveg, /87 ms/, 'a körútidő nem látszik')
+      assert.match(szoveg, /A kapcsolat naponta/)
+      assert.match(szoveg, /3 szakadás · 3 folytatva · 0 új munkamenet · körútidő átlag 90 ms, csúcs 120 ms/)
+      assert.doesNotMatch(szoveg, /NaN|undefined|\[object/)
+    } finally {
+      await pool.query('UPDATE discord_gateway_state SET heartbeat_rtt_ms = $1 WHERE id = 1', [regi?.heartbeat_rtt_ms ?? null])
+      if (volt) {
+        await pool.query(
+          `UPDATE discord_gateway_daily SET reconnects = $2, resumed = $3, identified = $4, rtt_sum_ms = $5, rtt_count = $6, rtt_max_ms = $7
+            WHERE day = $1`, [ma, volt.reconnects, volt.resumed, volt.identified, volt.rtt_sum_ms, volt.rtt_count, volt.rtt_max_ms])
+      } else {
+        await pool.query('DELETE FROM discord_gateway_daily WHERE day = $1', [ma])
+      }
+    }
+  })
+
+  /*
+   * A NAPI HIBÁK A NAPLÓBAN. Az üzenet saját hibaszámlálója egy sikeres
+   * frissítéskor nullázódik; az összesítő az előzményből számol.
+   */
+  it('a napló megmutatja a tartós üzenetek napi hibáit', async () => {
+    // Saját üzenet: a törlési tétel a lista elejéről töröl, és bármelyiket vihette.
+    await pool.query(
+      `INSERT INTO persistent_messages (guild_id, channel_id, message_type) VALUES ($1, $2, 'anime_schedule')
+       ON CONFLICT DO NOTHING`, [GUILD, CSATORNA])
+    const { rows } = await pool.query(
+      "SELECT id FROM persistent_messages WHERE guild_id = $1 AND message_type = 'anime_schedule'", [GUILD])
+    await pool.query(
+      `INSERT INTO persistent_message_events (message_id, event, detail, at)
+       SELECT $1, 'failed', 'forbidden: Missing Permissions', now() - interval '1 day' FROM generate_series(1, 2)`,
+      [rows[0].id])
+    await nyit('audit')
+    const szoveg = (await kepernyo()).szoveg
+    assert.match(szoveg, /Tartós üzenetek — napi hibák/)
+    assert.match(szoveg, /Adásmenetrend/)
+    assert.match(szoveg, /2 hiba 2 frissítésből · utolsó: forbidden: Missing Permissions/)
+  })
+
   for (const width of [1440, 430, 390, 360]) {
     it(`${width} képponton nem lóg túl`, async () => {
       await nyit('overview', width)

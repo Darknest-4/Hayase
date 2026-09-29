@@ -485,7 +485,7 @@ const routes: FastifyPluginAsync = async fastify => {
     const guildId = await gate(request, reply, 'view_stats')
     if (!guildId) return
 
-    const [szondak, esemenyek, hibasak, gw] = await Promise.all([
+    const [szondak, esemenyek, hibasak, gw, napok] = await Promise.all([
       query<{ service: string, status: string, latency_ms: string | null, detail: string | null, checked_at: Date }>(
         `SELECT service, status, latency_ms, left(detail, 200) AS detail, checked_at
            FROM service_status WHERE service LIKE 'discord%' ORDER BY service`),
@@ -499,7 +499,16 @@ const routes: FastifyPluginAsync = async fastify => {
         `SELECT message_type, failure_count, left(last_error, 200) AS last_error
            FROM persistent_messages WHERE guild_id = $1 AND failure_count > 0
           ORDER BY failure_count DESC`, [guildId]),
-      gatewayAllapot()
+      gatewayAllapot(),
+      // A kapcsolat naponta: szakadás, folytatás, új munkamenet, körútidő.
+      // A gateway EGY kapcsolat a bot összes szerveréhez — nem guildenkénti adat.
+      query<{ day: string, reconnects: number, resumed: number, identified: number, rtt_avg_ms: number | null, rtt_max_ms: number | null }>(
+        `SELECT day::text, reconnects, resumed, identified,
+                CASE WHEN rtt_count > 0 THEN round(rtt_sum_ms::numeric / rtt_count)::int END AS rtt_avg_ms,
+                rtt_max_ms
+           FROM discord_gateway_daily
+          WHERE day > current_date - 14
+          ORDER BY day DESC`)
     ])
 
     /*
@@ -529,7 +538,20 @@ const routes: FastifyPluginAsync = async fastify => {
             reconnects: Number(gw.reconnects ?? 0),
             lastError: gw.last_error ?? null,
             memberIntent: tagIntent,
-            wantedIntents: intentsFromEnv()
+            wantedIntents: intentsFromEnv(),
+            // A Discord felé mért késleltetés: a legutóbbi szívverés körútideje.
+            // `null` = még nem mértük (nem „nulla ezredmásodperc").
+            heartbeatRttMs: gw.heartbeat_rtt_ms === null || gw.heartbeat_rtt_ms === undefined
+              ? null
+              : Number(gw.heartbeat_rtt_ms),
+            daily: napok.map(n => ({
+              day: n.day,
+              reconnects: Number(n.reconnects),
+              resumed: Number(n.resumed),
+              identified: Number(n.identified),
+              rttAvgMs: n.rtt_avg_ms === null ? null : Number(n.rtt_avg_ms),
+              rttMaxMs: n.rtt_max_ms === null ? null : Number(n.rtt_max_ms)
+            }))
           },
       capabilities: {
         rest: isConfigured(),
@@ -638,6 +660,62 @@ const routes: FastifyPluginAsync = async fastify => {
         ORDER BY a.created_at DESC LIMIT $2`,
       [`discord:${guildId}:%`, limit ?? 50])
     return { data: sorok }
+  })
+
+  /**
+   * A TARTÓS ÜZENETEK NAPI HIBAÖSSZESÍTŐJE — a Napló nézethez.
+   *
+   * A hibát eddig csak az üzenet saját számlálója (`failure_count`) mutatta,
+   * és az egy sikeres frissítéskor nullázódik: egy naponta órákra elromló
+   * üzenet este már hibátlannak látszott, és csak egy panaszból derült ki.
+   * Ez a frissítési előzményből számol, napra és üzenettípusra bontva: hány
+   * kísérletből hány hibázott, és mi volt az utolsó hiba.
+   *
+   * CSAK AZ A NAP JELENIK MEG, AMELYEN HIBA VOLT. Az előzmény megőrzése a
+   * workeré (alapból 30 nap) — ennél régebbre az ablak sem nyúlhat.
+   */
+  fastify.get('/guilds/:guildId/message-failures', {
+    onRequest: fastify.authenticate,
+    schema: {
+      params: GUILD_PARAMS,
+      querystring: {
+        type: 'object', additionalProperties: false,
+        properties: { days: { type: 'integer', minimum: 1, maximum: 30 } }
+      }
+    }
+  }, async (request, reply) => {
+    const guildId = await gate(request, reply, 'view_stats')
+    if (!guildId) return
+    const { days } = request.query as { days?: number }
+    const ablak = days ?? 14
+
+    const sorok = await query<{
+      day: string, message_type: string, failures: number, attempts: number,
+      last_error: string | null, last_failed_at: Date | null
+    }>(
+      `SELECT (e.at AT TIME ZONE 'UTC')::date::text AS day, m.message_type,
+              count(*) FILTER (WHERE e.event = 'failed')::int AS failures,
+              count(*) FILTER (WHERE e.event IN ('created', 'edited', 'skipped', 'recreated', 'failed'))::int AS attempts,
+              (array_agg(left(e.detail, 200) ORDER BY e.at DESC) FILTER (WHERE e.event = 'failed'))[1] AS last_error,
+              max(e.at) FILTER (WHERE e.event = 'failed') AS last_failed_at
+         FROM persistent_message_events e
+         JOIN persistent_messages m ON m.id = e.message_id
+        WHERE m.guild_id = $1 AND e.at >= now() - ($2::int || ' days')::interval
+        GROUP BY 1, 2
+       HAVING count(*) FILTER (WHERE e.event = 'failed') > 0
+        ORDER BY 1 DESC, 3 DESC`, [guildId, ablak])
+
+    return {
+      window: { days: ablak },
+      data: sorok.map(s => ({
+        day: s.day,
+        messageType: s.message_type,
+        failures: s.failures,
+        attempts: s.attempts,
+        lastError: s.last_error,
+        lastFailedAt: s.last_failed_at
+      }))
+    }
   })
 
   /**
