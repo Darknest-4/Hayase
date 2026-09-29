@@ -1072,7 +1072,21 @@ I18n.register('hu', {
   'Discord linking was cancelled.': 'A Discord-összekötést megszakítottad.',
   'The link request expired. Try again.': 'Az összekötési kérés lejárt. Próbáld újra.',
   'This Discord account is already linked to another Yume account.': 'Ez a Discord-fiók már egy másik YUME-fiókhoz van kötve.',
-  'Discord linking failed. Try again.': 'A Discord-összekötés nem sikerült. Próbáld újra.'
+  'Discord linking failed. Try again.': 'A Discord-összekötés nem sikerült. Próbáld újra.',
+  'Discord notifications': 'Discord-értesítés',
+  'A direct message from the Yume bot when a new episode of a title on your list comes out. It needs a server you share with the bot, with direct messages from server members allowed.': 'Privát üzenet a YUME-bottól, amikor a listád egyik címéhez új rész jelenik meg. Közös szerver kell a bottal, és engedélyezett privát üzenet a szerver tagjaitól.',
+  'New episodes will arrive as Discord messages.': 'Az új részekről Discord-üzenetben szólunk.',
+  'Discord notifications are off.': 'A Discord-értesítés kikapcsolva.',
+  // ---------------------------------------------------------------- Belépés Discorddal
+  'Sign in with Discord': 'Belépés Discorddal',
+  'For accounts already linked to Discord.': 'Már Discordhoz kötött fiókokhoz.',
+  'The Discord sign-in did not open a session. Try again.': 'A Discord-belépés után nem jött létre munkamenet. Próbáld újra.',
+  'This Discord account is not linked to a Yume account. Sign in with your password, then link Discord under Settings → Account.': 'Ehhez a Discord-fiókhoz nincs YUME-fiók kötve. Lépj be jelszóval, aztán kösd össze a Beállítások → Fiók alatt.',
+  'This account cannot sign in right now.': 'Ez a fiók most nem léphet be.',
+  'This account uses two-step sign-in — sign in with your password.': 'Ez a fiók kétlépcsős belépést használ — lépj be jelszóval.',
+  'Discord sign-in was cancelled.': 'A Discord-belépést megszakítottad.',
+  'The Discord sign-in expired. Try again.': 'A Discord-belépés lejárt. Próbáld újra.',
+  'Discord sign-in failed. Try again.': 'A Discord-belépés nem sikerült. Próbáld újra.'
 })
 
 if (typeof window !== 'undefined' && !I18n) {

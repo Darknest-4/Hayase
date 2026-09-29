@@ -301,14 +301,18 @@ export const PageSettings = {
    */
   _discordGroup () {
     const slot = U.el('div', { class: 'cluster settings-discord' }, [P.spinner()])
-    this._fillDiscord(slot)
+    // A DM-értesítés sora csak összekötött fióknál jelenik meg — addig üres.
+    const dm = U.el('div', { class: 'settings-discord-dm' })
+    this._fillDiscord(slot, dm)
     return this._group('Connected accounts', [
-      this._row('Discord', 'The Yume bot recognises you in the Discord servers that use it.', slot)
+      this._row('Discord', 'The Yume bot recognises you in the Discord servers that use it.', slot),
+      dm
     ])
   },
 
-  async _fillDiscord (slot) {
+  async _fillDiscord (slot, dm = null) {
     let link
+    dm?.replaceChildren()
     try {
       link = await YumeAPI.discordLink()
     } catch {
@@ -318,7 +322,24 @@ export const PageSettings = {
     if (link?.linked) {
       slot.replaceChildren(
         U.el('span', { class: 'settings-discord-who', text: I18n.f(T('Linked as {name}'), { name: '@' + (link.username ?? '?') }) }),
-        P.button(T('Unlink'), { variant: 'secondary', onclick: () => this._discordUnlink(slot) }))
+        P.button(T('Unlink'), { variant: 'secondary', onclick: () => this._discordUnlink(slot, dm) }))
+      /*
+       * DM AZ ÚJ RÉSZEKRŐL — a könyvtár címeiről, bekapcsolás után. A Discord
+       * csak közös szerveren lévő tagnak engedi a botot írni, és csak ha a tag
+       * engedi a szerverről jövő privát üzeneteket; a leírás ezt kimondja.
+       */
+      dm?.replaceChildren(this._row('Discord notifications',
+        'A direct message from the Yume bot when a new episode of a title on your list comes out. It needs a server you share with the bot, with direct messages from server members allowed.',
+        this._switch(link.dmNewEpisodes, async e => {
+          const on = e.target.checked
+          try {
+            await YumeAPI.discordSetDm(on)
+            U.toast(on ? T('New episodes will arrive as Discord messages.') : T('Discord notifications are off.'), 'success')
+          } catch (err) {
+            e.target.checked = !on
+            U.toast(err.message, 'error')
+          }
+        })))
       return
     }
     if (!link?.configured) {
@@ -341,7 +362,7 @@ export const PageSettings = {
     slot.replaceChildren(start)
   },
 
-  async _discordUnlink (slot) {
+  async _discordUnlink (slot, dm = null) {
     const ok = await C.confirm({
       title: T('Unlink Discord?'),
       message: T('The Yume bot will no longer recognise you in Discord servers. You can link again at any time.'),
@@ -354,7 +375,7 @@ export const PageSettings = {
     } catch (e) {
       U.toast(e.message, 'error')
     }
-    await this._fillDiscord(slot)
+    await this._fillDiscord(slot, dm)
   },
 
   /**

@@ -130,6 +130,20 @@ describe('a Discord-fiók összekötése a főoldalról', { skip: REASON }, () =
       [username, '5' + randomBytes(8).toString('hex').replace(/\D/g, '0').padEnd(17, '1').slice(0, 17)])
     await nyit()
     assert.match(await page.locator('.settings-discord').innerText(), /@probauser/)
+
+    /*
+     * A DM-KAPCSOLÓ csak összekötött fióknál jelenik meg, és a kapcsolás a
+     * fiókra íródik (a bekapcsolás pillanatával együtt — lásd dm-notify.ts).
+     */
+    const kapcsolo = page.locator('.settings-discord-dm input[role="switch"]')
+    await kapcsolo.waitFor({ timeout: 10000 })
+    assert.equal(await kapcsolo.isChecked(), false)
+    await kapcsolo.click({ force: true })
+    await page.waitForTimeout(1200)
+    const dm = await pool.query(
+      `SELECT l.dm_new_episodes, l.dm_enabled_at IS NOT NULL AS mikor
+         FROM discord_links l JOIN users u ON u.id = l.user_id WHERE u.username = $1`, [username])
+    assert.deepEqual(dm.rows[0], { dm_new_episodes: true, mikor: true }, 'a kapcsoló nem íródott a fiókra')
     await page.locator('.settings-discord button').click()
     await page.waitForSelector('.dialog[role="dialog"]')
     await page.locator('.dialog-foot button').last().click()
@@ -138,6 +152,7 @@ describe('a Discord-fiók összekötése a főoldalról', { skip: REASON }, () =
       'SELECT 1 FROM discord_links l JOIN users u ON u.id = l.user_id WHERE u.username = $1', [username])
     assert.equal(rows.length, 0, 'a bontás után is összekötve maradt')
     assert.equal(await page.locator('.settings-discord button').count(), 1, 'az összekötés gombja nem jött vissza')
+    assert.equal(await page.locator('.settings-discord-dm input').count(), 0, 'bontás után is kínálja a DM-kapcsolót')
   })
 
   it('beállítatlan OAuth mellett nincs gomb, csak kimondja', async () => {
