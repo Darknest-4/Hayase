@@ -11,7 +11,7 @@
 //      válaszba. Ezt nem elég „odafigyeléssel" megoldani, mérni kell.
 
 import assert from 'node:assert/strict'
-import { before, describe, it, mock } from 'node:test'
+import { after, afterEach, before, beforeEach, describe, it, mock } from 'node:test'
 
 let perms: typeof import('../src/modules/discord/permissions.ts')
 let rest: typeof import('../src/modules/discord/rest-client.ts')
@@ -323,6 +323,69 @@ describe('a guild-szintű jog a rangokból', () => {
   // átnevezés után nem nyithat semmit.
   it('a régi képességnév már nem nyit kaput', () => {
     assert.equal(perms.can({ owner: false, permissions: P().MANAGE_GUILD }, 'manage_messages' as never), false)
+  })
+})
+
+describe('a globális sebességkorlát', () => {
+  const TITOK = 'ez-egy-proba-token-NEM-VALODI-0123456789'
+  const GUILD = '850000000000000001'
+  let elozo: string | undefined
+
+  before(() => { elozo = process.env.DISCORD_BOT_TOKEN; process.env.DISCORD_BOT_TOKEN = TITOK })
+  after(() => {
+    if (elozo === undefined) delete process.env.DISCORD_BOT_TOKEN
+    else process.env.DISCORD_BOT_TOKEN = elozo
+  })
+  beforeEach(() => { rest.resetGlobalPause() })
+  afterEach(() => { mock.restoreAll(); rest.resetGlobalPause() })
+
+  /** Az első válasz a megadott 429, utána minden 200; a hívások ideje naplózva. */
+  const korlat = (body: Record<string, unknown>, fejlecek: Record<string, string> = {}) => {
+    const hivasok: number[] = []
+    mock.method(globalThis, 'fetch', async () => {
+      hivasok.push(Date.now())
+      if (hivasok.length === 1) {
+        return { ok: false, status: 429, headers: { get: (n: string) => fejlecek[n.toLowerCase()] ?? null }, json: async () => body }
+      }
+      return { ok: true, status: 200, headers: { get: () => null }, json: async () => [] }
+    })
+    return hivasok
+  }
+
+  /*
+   * EDDIG CSAK AZ A HÍVÁS VÁRT, amelyik a 429-et kapta; a többi — más
+   * végpontra — ment tovább, és sorra 429-et kapott.
+   */
+  it('globális 429 után a többi végpont is kivárja a szünetet', async () => {
+    const hivasok = korlat({ global: true, retry_after: 0.08, message: 'You are being rate limited.' })
+    assert.equal(await rest.fetchGuild(GUILD), null)
+    await rest.fetchChannels(GUILD)
+    assert.equal(hivasok.length, 2)
+    assert.ok(hivasok[1]! - hivasok[0]! >= 70, `a második hívás nem várt: ${hivasok[1]! - hivasok[0]!} ms`)
+  })
+
+  it('a hosszú szünet alatt a Discordhoz sem fordul, azonnal hibázik', async () => {
+    const hivasok = korlat({ global: true, retry_after: 60 })
+    await rest.fetchGuild(GUILD)
+    await assert.rejects(() => rest.createRestClient().send('850000000000000002', { content: 'x' }),
+      (e: Error & { kind?: string, retryAfterMs?: number }) => {
+        assert.equal(e.kind, 'rate_limited')
+        assert.ok(Number(e.retryAfterMs) > 15_000)
+        return true
+      })
+    assert.equal(hivasok.length, 1, 'a szünet alatt is a Discordhoz fordult')
+  })
+
+  it('a fejléc is jelezheti a globális korlátot', async () => {
+    korlat({ retry_after: 5 }, { 'x-ratelimit-scope': 'global' })
+    await rest.fetchGuild(GUILD)
+    assert.ok(rest.globalPauseLeft() > 4000)
+  })
+
+  it('a végpontszintű 429 nem állít meg mindent', async () => {
+    korlat({ global: false, retry_after: 5 }, { 'x-ratelimit-scope': 'user' })
+    await rest.fetchGuild(GUILD)
+    assert.equal(rest.globalPauseLeft(), 0)
   })
 })
 

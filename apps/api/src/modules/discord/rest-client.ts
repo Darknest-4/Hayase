@@ -79,12 +79,57 @@ interface DiscordBody {
   code?: number
   message?: string
   retry_after?: number
+  global?: boolean
   [key: string]: unknown
+}
+
+/**
+ * A GLOBÁLIS SEBESSÉGKORLÁT — az egész botra, nem egy végpontra.
+ *
+ * A Discord kétféle 429-et ad: az egyik egy végpont (vagy erőforrás) saját
+ * keretéé, a másik a bot ÖSSZES kéréséé (`global: true`, illetve az
+ * `X-RateLimit-Global` / `X-RateLimit-Scope: global` fejléc). Eddig mindkettőt
+ * ugyanúgy kezeltük: csak az a hívás várt, amelyik a 429-et kapta, a többi —
+ * más végpontra — ment tovább, és sorra 429-et kapott. A Discord az ilyen
+ * elutasított kéréseket számolja: tíz perc alatt tízezer után a bot címét egy
+ * órára kitiltja.
+ *
+ * Most egy globális 429 után EZ A FOLYAMAT minden Discord-hívása megáll a
+ * megadott ideig: ami belefér a várakozási korlátba (`RATE_LIMIT_MAX_WAIT_MS`),
+ * kivár, ami nem, azonnal `rate_limited` hibával tér vissza — a Discordhoz
+ * nem is fordul.
+ *
+ * Az interakciók válasza (callback, `@original`) nem ezen az úton megy, és a
+ * Discord szerint nem is tartozik a globális korlát alá.
+ */
+let globalisSzunetIg = 0
+
+/** Mennyi van még hátra a globális szünetből (ms). */
+export function globalPauseLeft (now: number = Date.now()): number {
+  return Math.max(0, globalisSzunetIg - now)
+}
+
+/** Teszthez: a szünet feloldása. */
+export function resetGlobalPause (): void { globalisSzunetIg = 0 }
+
+function globalis (res: Response, body: DiscordBody): boolean {
+  const fejlec = (nev: string): string | null => {
+    try { return res.headers?.get?.(nev) ?? null } catch { return null }
+  }
+  return body.global === true || fejlec('x-ratelimit-global') === 'true' || fejlec('x-ratelimit-scope') === 'global'
 }
 
 async function request (path: string, init: RequestInit = {}): Promise<{ status: number, body: DiscordBody }> {
   const token = botToken()
   if (!token) throw fail('forbidden', 'nincs beállítva Discord bot token')
+
+  // A globális szünet alatt nem kérdezünk (lásd fent). A korlát konstansa
+  // lejjebb, az író műveleteknél van — futáskor már él.
+  const hatra = globalPauseLeft()
+  if (hatra > 0) {
+    if (hatra > RATE_LIMIT_MAX_WAIT_MS) throw fail('rate_limited', 'a Discord globális sebességkorlátja még tart', hatra)
+    await new Promise(resolve => setTimeout(resolve, hatra))
+  }
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
@@ -104,6 +149,10 @@ async function request (path: string, init: RequestInit = {}): Promise<{ status:
 
     let body: DiscordBody = {}
     try { body = await res.json() as DiscordBody } catch { /* üres törzs is lehet */ }
+    if (res.status === 429 && globalis(res, body)) {
+      const ms = Math.ceil(Number(body.retry_after ?? 1) * 1000)
+      globalisSzunetIg = Math.max(globalisSzunetIg, Date.now() + ms)
+    }
     return { status: res.status, body }
   } catch (error) {
     if ((error as Error)?.name === 'AbortError') throw fail('transient', 'a Discord nem válaszolt időben')
