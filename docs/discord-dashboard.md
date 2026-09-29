@@ -148,7 +148,15 @@ szerver rangjai között van, nem az `@everyone`, és nem integráció kezeli).
   parancsválasz ettől függetlenül a hívó kliensének nyelvén megy.
 * **Hírfolyam-szűrők** — műfaj (ha egy sincs bejelölve: minden) és „csak az
   aktuális szezon". Ami kiesik, azt nem foglaljuk le: ha a szűrő 48 órán
-  belül bővül, még kimehet.
+  belül bővül, még kimehet. **Felnőtt cím (`is_adult`) része soha nem megy
+  ki a csatornába** (a borítója sem) — ahogy az oldal katalógusa is alapból
+  elrejti; lásd `discord-commands.md`, Az animekártya.
+* **A bejelentés tartalma** — a közös animekártyából: borító, a rész saját
+  képe (ha nincs, a banner), másodlagos címek, leírás, rész / összes, hossz,
+  pontszám egész százalékban, formátum és szezon, állapot a szerver nyelvén,
+  adás napja, stúdió, műfajok, a rész leírása; gombok: Megnézem, Adatlap,
+  Előzetes (ha az oldalon is látszik). A vezérlőpult gombja kimaradt: 2026-09-29
+  óta csak jogosultsággal nyílik, egy tagnak zsákutca volt.
 * **Animénként megszólítható rang** — az új rész bejelentése megemlíti, és
   CSAK azt (`allowed_mentions.roles` pontosan az az egy rang).
 * **Moderálás** — lásd lent.
@@ -211,6 +219,7 @@ adminfelületen döntöttek, a Discord-üzenet a következő körben frissül.
 | `DISCORD_ROLE_SYNC_MS` / `DISCORD_ROLE_SYNC_BATCH` | a szerepkör-szinkron üteme (alap: 10 perc) és kötege (25 tag) | nem |
 | `DISCORD_DM_BATCH` / `DISCORD_DM_MAX_AGE_HOURS` | DM-köteg körönként (20) és a részek kora (48 óra) | nem |
 | `DISCORD_MODERATION_BATCH` / `DISCORD_MODERATION_MAX_AGE_DAYS` | bejelentések körönként (10) és a hátralék kora (7 nap) | nem |
+| `PUBLIC_URL` / `MEDIA_BASE_URL` | a hivatkozások és a képek (borító, banner) címe — ugyanaz, mint az `app`-é; a `gateway` és a `worker` is megkapja (üres `MEDIA_BASE_URL`: `PUBLIC_URL/media/`) | nem |
 
 A Discord fejlesztői portálon a visszairányítási címet is regisztrálni kell:
 `https://discord.animehub.hu/v1/discord/oauth/callback`.

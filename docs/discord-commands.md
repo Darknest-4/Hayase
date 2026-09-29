@@ -34,16 +34,16 @@ felhasználó nyelvén mutatja).
 | `/help` | a parancsok listája |
 | `/status` | a rendszer és a gateway állapota |
 | `/stats` | a YUME számokban |
-| `/anime search` | keresés cím szerint — **címkiegészítéssel** |
-| `/anime info` | egy cím adatai — **címkiegészítéssel** |
-| `/anime latest` | a legfrissebb epizódok |
-| `/anime schedule` | a következő adások (a néző saját időzónájában) |
-| `/anime random` | egy véletlen cím |
-| `/next` | a következő rész, amit nézni fogsz: a félbehagyott (a pozícióval), vagy a „nézem" cím következő része |
-| `/profile` | a YUME-fiókod |
+| `/anime search` | keresés cím szerint — **címkiegészítéssel**; legföljebb öt kis kártya (borító, tények, rövid leírás) |
+| `/anime info` | egy cím **teljes adatlapja** (lásd lent) — **címkiegészítéssel** |
+| `/anime latest` | a legfrissebb részek, **címenként egy**, borítóval |
+| `/anime schedule` | a következő adások borítóval (a néző saját időzónájában) |
+| `/anime random` | egy véletlen cím teljes adatlapja |
+| `/next` | a következő rész, amit nézni fogsz: a félbehagyott (a pozícióval és haladásjelzővel), vagy a „nézem" cím következő része — a rész képével, címével, leírásával; ha még nincs kint, mikor várható |
+| `/profile` | a YUME-fiókod: szint és XP, nézési idő, megnézett részek, befejezett címek, átlagpontszám, kedvencek, a könyvtár állapotonként, kedvenc műfajok, legutóbb nézett cím |
 | `/link`, `/unlink` | fiók-összekötés (a főoldal Beállítások → Fiók fülére küld) |
-| `/watchlist list` | a könyvtárad |
-| `/watchlist add` | cím a könyvtáradba — **megerősítéssel** (gombok) |
+| `/watchlist list` | a könyvtárad legutóbb változott tíz címe: állapot, haladás, pontszám, és összesítő állapotonként |
+| `/watchlist add` | cím a könyvtáradba — **megerősítéssel** (gombok), a cím adatlapjával |
 | `/notifications` | értesítési rang **be- és kikapcsolása** |
 | `/setup`, `/config`, `/logs` | állapot — **admin** |
 | `/announce` | bejelentés egy csatornába — **admin**, csak EZEN a szerveren |
@@ -51,6 +51,42 @@ felhasználó nyelvén mutatja).
 **A címkiegészítés** gépelés közben a katalógusból javasol; a kiválasztott
 javaslat értéke az anime azonosítója, tehát pontos találat, nem egy újabb
 keresés.
+
+### Az animekártya
+
+Minden cím ugyanazzal az adatlappal jelenik meg — a parancsokban, az
+epizód-bejelentésben, a DM-ben és a tartós üzenetekben is
+(`anime-card.ts`, egyetlen lekérdezés):
+
+* **borító** (kicsiben) és **banner** / a rész saját képe (nagyban), a
+  borító uralkodó színével az embed szélén;
+* **másodlagos címek** (japán, angol, romaji — ami tényleg más), és a
+  **leírás**: HTML és entitások nélkül, az AniList-spoiler Discord-spoiler
+  (`||…||`), a szöveg jelölése kikapcsolva (egy `*` vagy `<@…>` a leírásban
+  nem formáz és nem említ);
+* **tények**: formátum és részhossz, állapot, szezon, elérhető / összes rész,
+  pontszám **egész százalékban** (ahogy az oldalon — a hírfolyam eddig
+  „82.0"-t írt), népszerűség, stúdió, forrás, vetítés, műfajok (magyarul,
+  az oldal szavaival), a következő adás;
+* **gombok**: Megnézem (az első elérhető rész), Adatlap, Előzetes (YouTube).
+
+**Ami nincs, az kimarad** — nem „—", és nem kitalált tartalom.
+
+**A képek abszolút címmel mennek ki, a saját tükrünkből** (ugyanaz a szabály,
+mint az oldalon: `MEDIA_BASE_URL`, üresen `PUBLIC_URL/media/`; csak ha nincs
+tükör, a forrás CDN-je). Ezért kapta meg a `gateway` és a `worker` is a
+`MEDIA_BASE_URL`-t. A forrásadatbázis „nincs kép" helyőrzője nem kép.
+
+**Az előzetes gombja** csak akkor jelenik meg, ha az oldalon is mindenkinek
+látszik (`feature.trailers` bekapcsolva, `public` hozzáféréssel).
+
+**Felnőtt cím (`is_adult`)**: a nyilvános kimenetekből (keresés,
+címkiegészítés, véletlen, legfrissebb, menetrend, a csatorna hírfolyama, a
+tartós üzenetek) **kimarad** — ahogy az oldal katalógusa is alapból elrejti.
+A Discord szabályai szerint szexuális tartalom csak korhatáros csatornába
+mehet, és egy borítókép egy általános csatornában épp ez volna. A saját
+könyvtárad címe (`/watchlist list`, `/next`, DM) a nevével megjelenik, **kép
+és leírás nélkül**, 🔞 jelzéssel.
 
 **A `/watchlist add` nem ír azonnal**: megmutatja, melyik címet találta, és két
 gombot ad (Hozzáadom / Mégse). A gomb a gombnyomó SAJÁT könyvtárába ír, és ami
@@ -157,7 +193,8 @@ A hívó **saját** Discord-fiókjára megy, nem egy tetszőleges azonosítóra 
 | Mi | Hol |
 |---|---|
 | Parancsok | `apps/api/src/modules/discord/commands.ts` |
+| Animekártya (adatlap, képek, feliratok) | `apps/api/src/modules/discord/anime-card.ts` |
 | Köszöntő | `apps/api/src/modules/discord/welcome.ts` |
 | Gateway-bekötés | `apps/api/src/modules/discord/gateway-main.ts` |
 | Felület | `apps/discord/src/setup.js` → Köszöntő |
-| Tesztek | `test/discord-commands.test.ts`, `test/discord-welcome.test.ts` |
+| Tesztek | `test/discord-commands.test.ts`, `test/discord-welcome.test.ts`, `test/discord-anime-card.test.ts`, `test/discord-anime-lists.exclusive.ts` (`npm run test:exclusive`) |
