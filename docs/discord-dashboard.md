@@ -86,8 +86,8 @@ munkamenetet, és törli a sütit.
 | **Szerepkörök** | Discord REST | bot token |
 | **Parancsok** | — | **nincs implementált parancs** |
 | **Értesítések** | `webhook_deliveries` | — |
-| **Bot állapota** | szondák + saját DB | — |
-| **Napló** | `audit_logs` | — |
+| **Bot állapota** | szondák + saját DB; késleltetés és a kapcsolat naponta (`discord_gateway_daily`) | a napi adathoz futó gateway |
+| **Napló** | `audit_logs`; a tartós üzenetek napi hibái (`persistent_message_events`) | — |
 | **Beállítások** | OAuth-összekötés | `DISCORD_CLIENT_ID`/`SECRET` |
 
 **Ami nincs, arról azt írja ki.** A tagstatisztika gateway nélkül nem üres
@@ -105,6 +105,15 @@ mérünk, és senki nem csatlakozott.
 | hány üzenet ment ma | **gateway** | nem |
 | ki lépett be, ki ki | **gateway** | **igen** (`GUILD_MEMBERS`) |
 | mit írtak | — | **nem gyűjtjük** |
+
+**A sebességkorlát.** Egy végpont 429-ére csak az a hívás vár (a Discord
+`retry_after`-je szerint). A **globális** 429 (`global: true`,
+`X-RateLimit-Global`, `X-RateLimit-Scope: global`) viszont a bot összes
+kérését érinti: utána az adott folyamat minden Discord-hívása megáll a
+megadott ideig — ami belefér 15 másodpercbe, kivár, ami nem, azonnal
+`rate_limited` hibával tér vissza, a Discordhoz nem is fordulva. Az
+elutasított kéréseket a Discord számolja, és tömegesen a bot címének
+kitiltásához vezetnek.
 
 Az **online létszám tízre kerekítve** megy ki mindenhová, ahol tartós üzenetbe
 kerül: a jelenlét percenként ingadozik, és nyersen minden körben új

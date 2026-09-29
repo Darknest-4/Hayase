@@ -91,13 +91,16 @@ Minden új tétel mutációval ellenőrizve: a javítás kivételére elbukik.
 
 ## Javítandók (nem hibák, de számítanak)
 
-* **A bot állapota nézet** mutassa a szívverés-nyugta körútidejét (a Discord
-  felé mért késleltetés) és a napi újracsatlakozást — ma csak az állapot és a
-  darabszám látszik.
-* **A globális sebességkorlát** (`X-RateLimit-Global`) külön kezelése: most
-  minden 429 ugyanúgy vár.
-* **A tartós üzenetek** hibánál ma helyben számolnak (`failure_count`); egy
-  napi összesítő a vezérlőpult Napló nézetében előbb szólna, mint egy panasz.
+Az első három elkészült (2026-09-29, harmadik kör):
+
+| Mi | Hogyan | Teszt |
+|---|---|---|
+| **A bot állapota nézet:** késleltetés és napi újracsatlakozás | A gateway méri a szívverés körútidejét (elküldés → nyugta), és naponta gyűjti a szakadásokat, a folytatásokat (RESUMED — nem veszett el esemény) és az új munkameneteket (READY — ami közben történt, elveszett), a körútidő átlagával és csúcsával (`0086`: `discord_gateway_state.heartbeat_rtt_ms`, `discord_gateway_daily`). Az állapotsorral EGY utasításban írja, hogy egy újrapróbált írás se számoljon kétszer. A nézet két új kártyát (késleltetés, mai újracsatlakozás) és egy napi panelt kapott. | `discord-gateway` (összevonás, a nyugta nem sürgős, a napi sor), `discord-routes` (a végpont), E2E (a nézet) |
+| **A globális sebességkorlát** külön kezelése | Egy globális 429 (`global: true`, `X-RateLimit-Global`, `X-RateLimit-Scope: global`) után a folyamat MINDEN Discord-hívása megáll a megadott ideig: ami belefér a várakozási korlátba (15 s), kivár, ami nem, azonnal `rate_limited` — a Discordhoz nem is fordul. A végpontszintű 429 marad, ahogy volt. | `discord-permissions` (a többi végpont is vár, hosszú szünetnél nem kérdez, fejlécből is, a végpontszintű nem állít meg mindent) |
+| **Napi hibaösszesítő** a tartós üzenetekről | `GET /guilds/:guildId/message-failures`: a frissítési előzményből napra és üzenettípusra bontva, hány kísérletből hány hibázott, és mi volt az utolsó hiba — csak a hibás napok, legfeljebb 30 nap (az előzmény megőrzése). A Napló nézet tetején. | `discord-routes` (számolás, guild-határ, ablak), E2E (a nézet) |
+
+Nyitva:
+
 * **Tagság az összekötés után csatlakozott szerverekhez:** a bot csak a már
   tárolt tagságot frissíti; egy később csatlakozott szerver az újra-összekötésig
   nem jelenik meg a nem-üzemeltetőnek (szándékosan: különben bárki bármelyik
