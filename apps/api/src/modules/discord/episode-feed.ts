@@ -20,9 +20,37 @@
 import { query, queryOne } from '../../infrastructure/database/index.ts'
 import { createRestClient, isConfigured } from './rest-client.ts'
 import * as registry from './registry.ts'
+import { guildLanguage, settingsOf } from './guild-settings.ts'
 import {
-  DASHBOARD_URL, LABLEC, SZIN, YUME_URL, gombok, rovidit
+  DASHBOARD_URL, SZIN, YUME_URL, gombok, rovidit
 } from './embed-kit.ts'
+
+import type { Nyelv } from './i18n.ts'
+
+/** A bejelentés szövegei — a szerver nyelvén (lásd `guild-settings.ts`). */
+const FELIRAT = {
+  hu: {
+    szerzo: 'YUME • Új epizód', epizod: '🎬 Epizód', resz: (n: string) => `${n}. rész`, hossz: '⏱️ Hossz',
+    perc: (n: number) => `${n} perc`, pont: '⭐ Pontszám', allapot: '📡 Állapot', ev: '📅 Év', adas: '🗓️ Adás',
+    errol: '📝 Erről a részről', lablec: 'YUME • Anime • Közösség • új rész elérhető',
+    megnezem: 'Megnézem', adatlap: 'Adatlap', vezerlopult: 'Vezérlőpult'
+  },
+  en: {
+    szerzo: 'YUME • New episode', epizod: '🎬 Episode', resz: (n: string) => `Episode ${n}`, hossz: '⏱️ Length',
+    perc: (n: number) => `${n} min`, pont: '⭐ Score', allapot: '📡 Status', ev: '📅 Year', adas: '🗓️ Aired',
+    errol: '📝 About this episode', lablec: 'YUME • Anime • Community • new episode out',
+    megnezem: 'Watch', adatlap: 'Details', vezerlopult: 'Dashboard'
+  }
+}
+
+/** A mostani anime-szezon: a hírfolyam „csak az aktuális szezon" szűrőjéhez. */
+export function currentSeason (most: Date = new Date()): { year: number, season: 'WINTER' | 'SPRING' | 'SUMMER' | 'FALL' } {
+  const ho = most.getUTCMonth()
+  return {
+    year: most.getUTCFullYear(),
+    season: ho < 3 ? 'WINTER' : ho < 6 ? 'SPRING' : ho < 9 ? 'SUMMER' : 'FALL'
+  }
+}
 
 /** Meddig visszamenőleg jelentünk be. Egy hét után már nem újdonság. */
 const MAX_KOR_ORA = Number(process.env.DISCORD_EPISODE_MAX_AGE_HOURS ?? 48)
@@ -85,7 +113,8 @@ export async function episodeDetails (episodeId: string): Promise<EpisodeRow | u
  * A KÉPEK A SZOLGÁLTATÓ CDN-JÉRŐL jönnek (`object_key` teljes URL-t tárol),
  * tehát a Discord közvetlenül tölti be őket — nem mi szolgáljuk ki.
  */
-export function buildEpisodeEmbed (r: EpisodeRow): unknown {
+export function buildEpisodeEmbed (r: EpisodeRow, nyelv: Nyelv = 'hu', emlitett: string | null = null): unknown {
+  const f = FELIRAT[nyelv]
   const link = `${YUME_URL}/#/anime/${r.anime_id}`
   const nezd = `${YUME_URL}/#/watch/${r.id}`
 
@@ -102,33 +131,40 @@ export function buildEpisodeEmbed (r: EpisodeRow): unknown {
 
   const mezok: Array<Record<string, unknown>> = [
     {
-      name: '🎬 Epizód',
-      value: `**${r.number}. rész**${r.osszes_ep ? ` / ${r.osszes_ep}` : ''}`,
+      name: f.epizod,
+      value: `**${f.resz(r.number)}**${r.osszes_ep ? ` / ${r.osszes_ep}` : ''}`,
       inline: true
     }
   ]
 
-  if (r.duration) mezok.push({ name: '⏱️ Hossz', value: `**${r.duration} perc**`, inline: true })
-  if (r.pontszam) mezok.push({ name: '⭐ Pontszám', value: `**${Number(r.pontszam).toFixed(1)}**`, inline: true })
-  if (r.status) mezok.push({ name: '📡 Állapot', value: String(r.status), inline: true })
-  if (r.ev) mezok.push({ name: '📅 Év', value: String(r.ev), inline: true })
+  if (r.duration) mezok.push({ name: f.hossz, value: `**${f.perc(r.duration)}**`, inline: true })
+  if (r.pontszam) mezok.push({ name: f.pont, value: `**${Number(r.pontszam).toFixed(1)}**`, inline: true })
+  if (r.status) mezok.push({ name: f.allapot, value: String(r.status), inline: true })
+  if (r.ev) mezok.push({ name: f.ev, value: String(r.ev), inline: true })
   if (r.air_date) {
     const mikor = Math.floor(new Date(r.air_date).getTime() / 1000)
-    mezok.push({ name: '🗓️ Adás', value: `<t:${mikor}:D>`, inline: true })
+    mezok.push({ name: f.adas, value: `<t:${mikor}:D>`, inline: true })
   }
 
   // AZ EPIZÓD SAJÁT LEÍRÁSA külön mezőben — ez az, ami erről a RÉSZRŐL szól.
   const epLeiras = rovidit(r.ep_leiras, 900)
   if (epLeiras) {
-    mezok.push({ name: '📝 Erről a részről', value: epLeiras, inline: false })
+    mezok.push({ name: f.errol, value: epLeiras, inline: false })
   }
 
   const sorozatLeiras = rovidit(r.leiras, 600)
 
   return {
+    /*
+     * AZ ANIMÉNKÉNTI RANG — és CSAK az. Ha a szerveren ehhez a címhez rang
+     * van beállítva, a bejelentés megemlíti; az `allowed_mentions` pontosan
+     * ezt az egy rangot engedi, semmi mást (egy címben vagy leírásban álló
+     * `@everyone` így sem szólna senkinek).
+     */
+    ...(emlitett ? { content: `<@&${emlitett}>` } : {}),
     embeds: [{
       color: SZIN,
-      author: { name: 'YUME • Új epizód', icon_url: `${YUME_URL}/assets/yume.svg`, url: YUME_URL },
+      author: { name: f.szerzo, icon_url: `${YUME_URL}/assets/yume.svg`, url: YUME_URL },
       title: rovidit(r.ep_cim ? `${r.cim} — ${r.ep_cim}` : r.cim, 250),
       url: nezd,
       description: [
@@ -139,14 +175,14 @@ export function buildEpisodeEmbed (r: EpisodeRow): unknown {
       // A BORÍTÓ KICSIBEN, a banner nagyban — ahogy egy adatlap kinéz.
       ...(r.borito ? { thumbnail: { url: r.borito } } : {}),
       ...(r.banner ? { image: { url: r.banner } } : {}),
-      footer: { text: `${LABLEC.text} • új rész elérhető` }
+      footer: { text: f.lablec }
     }],
     components: gombok([
-      { label: 'Megnézem', url: nezd, emoji: '▶️' },
-      { label: 'Adatlap', url: link, emoji: '📖' },
-      { label: 'Vezérlőpult', url: DASHBOARD_URL, emoji: '⚙️' }
+      { label: f.megnezem, url: nezd, emoji: '▶️' },
+      { label: f.adatlap, url: link, emoji: '📖' },
+      { label: f.vezerlopult, url: DASHBOARD_URL, emoji: '⚙️' }
     ]),
-    allowed_mentions: { parse: [] }
+    allowed_mentions: emlitett ? { parse: [], roles: [emlitett] } : { parse: [] }
   }
 }
 
@@ -173,26 +209,42 @@ export async function announceNew (guildId: string): Promise<AnnounceResult> {
     return { sent: 0, failed: 0, skipped: 0, reason: 'nincs „uj-epizodok" csatorna — futtasd a setupot' }
   }
 
-  const ujak = await query<{ id: string }>(
-    `SELECT e.id
+  /*
+   * A SZERVER SZŰRŐI: műfaj (ha meg van adva, legalább az egyik) és „csak az
+   * aktuális szezon". Ami kiesik, azt nem jelentjük be — és nem is foglaljuk
+   * le: ha a szűrő 48 órán belül bővül, még kimehet.
+   */
+  const beall = await settingsOf(guildId)
+  const szezon = currentSeason()
+  const ujak = await query<{ id: string, anime_id: string }>(
+    `SELECT e.id, e.anime_id
        FROM episodes e JOIN anime a ON a.id = e.anime_id
       WHERE e.visibility = 'public' AND a.visibility = 'public'
         AND e.created_at > now() - ($2::int || ' hours')::interval
         AND NOT EXISTS (
           SELECT 1 FROM discord_episode_announcements d
            WHERE d.guild_id = $1 AND d.episode_id = e.id)
+        AND (cardinality($4::text[]) = 0 OR EXISTS (
+          SELECT 1 FROM anime_genres ag JOIN genres g ON g.id = ag.genre_id
+           WHERE ag.anime_id = a.id AND g.slug = ANY($4::text[])))
+        AND (NOT $5::boolean OR (a.season_year = $6 AND a.season::text = $7))
       ORDER BY e.created_at, e.id
       LIMIT $3`,
-    [guildId, MAX_KOR_ORA, KOTEG])
+    [guildId, MAX_KOR_ORA, KOTEG, beall.feedGenres, beall.feedCurrentSeason, szezon.year, szezon.season])
 
   if (!ujak.length) return { sent: 0, failed: 0, skipped: 0 }
+
+  const nyelv = await guildLanguage(guildId)
+  const rangok = new Map((await query<{ anime_id: string, discord_role_id: string }>(
+    'SELECT anime_id, discord_role_id FROM discord_anime_mentions WHERE guild_id = $1', [guildId]))
+    .map(r => [r.anime_id, r.discord_role_id]))
 
   const kliens = createRestClient()
   let sent = 0
   let failed = 0
   let skipped = 0
 
-  for (const { id } of ujak) {
+  for (const { id, anime_id: animeId } of ujak) {
     /*
      * ELŐBB FOGLALUNK. Az `ON CONFLICT DO NOTHING` azt jelenti: ha közben
      * egy másik példány már elkezdte, mi kihagyjuk. Így két worker sem tud
@@ -214,7 +266,8 @@ export async function announceNew (guildId: string): Promise<AnnounceResult> {
     }
 
     try {
-      const kuldott = await kliens.send(csatorna.discord_object_id, buildEpisodeEmbed(reszletek))
+      const kuldott = await kliens.send(csatorna.discord_object_id,
+        buildEpisodeEmbed(reszletek, nyelv, rangok.get(animeId) ?? null))
       await query(
         'UPDATE discord_episode_announcements SET message_id = $3 WHERE guild_id = $1 AND episode_id = $2',
         [guildId, id, kuldott.id])

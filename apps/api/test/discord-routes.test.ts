@@ -675,6 +675,39 @@ describe('a Discord vezérlőpult végpontjai', { skip: HAS_DB ? false : 'no DAT
       assert.equal(res.json().botListAvailable, false)
     })
 
+    // ---- a slash parancsok nézete ----
+
+    it('a Parancsok nézet megmondja a kézbesítést, a regisztrációt és a szerver saját használatát', async () => {
+      const jelzo = 'dcuse' + randomBytes(3).toString('hex')
+      await pool.query(
+        `INSERT INTO analytics_events (event_type, visitor_key, subject_type, subject_id, metadata)
+         VALUES ('discord.command.use', $1, 'discord_command', 'anime latest', jsonb_build_object('guildId', $2::text)),
+                ('discord.command.use', $1, 'discord_command', 'anime latest', jsonb_build_object('guildId', $2::text)),
+                ('discord.command.use', $1, 'discord_command', 'help', jsonb_build_object('guildId', $3::text))`,
+        [jelzo, MIENK, IDEGEN])
+      try {
+        const rest = await import('../src/modules/discord/rest-client.ts')
+        rest.forgetApplicationInfo()
+        discord(url => url.endsWith('/applications/@me')
+          ? [200, { id: '500000000000000003', interactions_endpoint_url: 'https://regi.example/interactions' }]
+          : url.includes(`/guilds/${MIENK}/commands`) ? [200, [{ id: '1', name: 'help', description: 'Mit tud ez a bot?' }]] : undefined)
+        const res = await hivas('GET', `/v1/discord/guilds/${MIENK}/commands`, tagToken)
+        assert.equal(res.statusCode, 200, res.body)
+        const d = res.json()
+        assert.deepEqual(d.delivery, { mode: 'http', endpointUrl: 'https://regi.example/interactions' })
+        assert.deepEqual(d.registered, ['help'])
+        assert.equal(d.inSync, false)
+        assert.ok(d.defined.includes('next') && d.defined.includes('watchlist'))
+        // Csak a SAJÁT szerver használata: az idegen guild /help-je nem számít.
+        const sajat = d.usage.filter((u: { command: string }) => u.command === 'anime latest')
+        assert.equal(sajat[0]?.uses, 2)
+        assert.ok(!d.usage.some((u: { command: string }) => u.command === 'help'), 'az idegen szerver használatát is beszámolta')
+        rest.forgetApplicationInfo()
+      } finally {
+        await pool.query("DELETE FROM analytics_events WHERE event_type = 'discord.command.use' AND visitor_key = $1", [jelzo])
+      }
+    })
+
     it('a szerverlista is a vezérlőpulté: jogosultság és belépés nélkül nincs', async () => {
       discord(botSzerverei)
       const res = await hivas('GET', '/v1/discord/guilds', kulsoToken)

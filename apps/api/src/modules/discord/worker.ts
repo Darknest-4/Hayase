@@ -21,9 +21,12 @@
 import { createRestClient, isConfigured } from './rest-client.ts'
 import { due, syncMessage } from './persistent-messages.ts'
 import { renderMessage } from './render.ts'
-import { pruneStates } from './oauth.ts'
+import { pruneLoginStates, pruneStates } from './oauth.ts'
 import { query } from '../../infrastructure/database/index.ts'
 import { announceNew } from './episode-feed.ts'
+import { notifyNew } from './dm-notify.ts'
+import { syncModeration } from './moderation-feed.ts'
+import { syncRoles } from './role-sync.ts'
 
 import type { Job } from '../../infrastructure/queue/index.ts'
 
@@ -97,7 +100,7 @@ export async function handleDiscordJob (job: Job): Promise<void> {
     if (n > 0) console.info(`[discord] ${n} régi frissítési esemény törölve`)
     // A lejárt OAuth-állapotok beváltása már úgyis lehetetlen; a sorok
     // csak a táblát hizlalnák. Ez nem függ a bot-tokentől.
-    const s = await pruneStates()
+    const s = await pruneStates() + await pruneLoginStates()
     if (s > 0) console.info(`[discord] ${s} lejárt OAuth-állapot törölve`)
     return
   }
@@ -126,5 +129,40 @@ export async function handleDiscordJob (job: Job): Promise<void> {
       console.warn('[discord] az epizódbejelentés elhasalt:',
         String((error as Error)?.message ?? error).slice(0, 200))
     }
+  }
+
+  /*
+   * A TOVÁBBI FELADATOK — ugyanabban a körben, mind KÜLÖN hibázik: egy
+   * elakadt DM-kézbesítés nem viheti el a moderálási csatornát, és fordítva.
+   */
+  await kulon('DM-értesítés', async () => {
+    const d = await notifyNew()
+    return d.sent || d.failed || d.disabled ? d : null
+  })
+  await kulon('moderálás', async () => {
+    const m = await syncModeration()
+    return m.posted || m.updated || m.failed ? m : null
+  })
+  // A SZEREPKÖR-SZINKRON ritkábban: tagonként egy Discord-hívás, és a rang
+  // percre pontosan nem számít.
+  if (Date.now() - utolsoRangSzinkron >= ROLE_SYNC_MS) {
+    utolsoRangSzinkron = Date.now()
+    await kulon('szerepkör-szinkron', async () => {
+      const r = await syncRoles()
+      return r.added || r.removed || r.failed ? r : null
+    })
+  }
+}
+
+const ROLE_SYNC_MS = Number(process.env.DISCORD_ROLE_SYNC_MS ?? 10 * 60_000)
+let utolsoRangSzinkron = 0
+
+/** Egy részfeladat a körben: a hibája naplóba kerül, a kört nem szakítja meg. */
+async function kulon (nev: string, fn: () => Promise<unknown>): Promise<void> {
+  try {
+    const kimenet = await fn()
+    if (kimenet) console.info(`[discord] ${nev}:`, JSON.stringify(kimenet))
+  } catch (error) {
+    console.warn(`[discord] ${nev} elhasalt:`, String((error as Error)?.message ?? error).slice(0, 200))
   }
 }

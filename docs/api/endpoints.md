@@ -300,6 +300,8 @@
 
 | Method | Path |
 |---|---|
+| GET | `/v1/auth/discord/callback` |
+| POST | `/v1/auth/discord/start` |
 | POST | `/v1/auth/forgot` |
 | POST | `/v1/auth/login` |
 | POST | `/v1/auth/logout` |
@@ -357,7 +359,13 @@
 | GET | `/v1/discord/guilds/:guildId/audit` |
 | GET | `/v1/discord/guilds/:guildId/channels` |
 | GET | `/v1/discord/guilds/:guildId/channels/:channelId/diagnose` |
+| GET | `/v1/discord/guilds/:guildId/commands` |
 | POST | `/v1/discord/guilds/:guildId/commands/register` |
+| GET | `/v1/discord/guilds/:guildId/config` |
+| PATCH | `/v1/discord/guilds/:guildId/config` |
+| DELETE | `/v1/discord/guilds/:guildId/config/anime-mentions/:animeId` |
+| PUT | `/v1/discord/guilds/:guildId/config/anime-mentions/:animeId` |
+| PUT | `/v1/discord/guilds/:guildId/config/role-mappings` |
 | GET | `/v1/discord/guilds/:guildId/health` |
 | GET | `/v1/discord/guilds/:guildId/message-failures` |
 | GET | `/v1/discord/guilds/:guildId/notifications` |
@@ -387,6 +395,7 @@
 | GET | `/v1/discord/oauth/callback` |
 | DELETE | `/v1/discord/oauth/link` |
 | GET | `/v1/discord/oauth/link` |
+| PATCH | `/v1/discord/oauth/link` |
 | POST | `/v1/discord/oauth/start` |
 | GET | `/v1/discord/status` |
 

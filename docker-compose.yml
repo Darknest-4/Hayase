@@ -70,6 +70,11 @@ services:
       # A visszairányítási cím. Alapból a vezérlőpult saját neve; felülírni
       # csak akkor kell, ha a telepítés máshol él.
       DISCORD_REDIRECT_URI: ${DISCORD_REDIRECT_URI:-}
+      # BELÉPÉS DISCORDDAL a főoldalon (csak már összekötött fiókba). A főoldal
+      # nevén kell lennie (pl. https://animehub.hu/v1/auth/discord/callback),
+      # és a Developer Portalon is fel kell venni. Üresen a funkció ki van
+      # kapcsolva, és a belépőlap nem is kínálja.
+      DISCORD_LOGIN_REDIRECT_URI: ${DISCORD_LOGIN_REDIRECT_URI:-}
       # HONNAN JÖN A KATALÓGUS KÉPE.
       #
       # Üresen a saját `/media/` útvonalunk, ami külső beállítás nélkül

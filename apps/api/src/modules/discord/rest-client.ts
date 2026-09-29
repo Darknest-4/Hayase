@@ -644,6 +644,37 @@ export async function addMemberRole (
 }
 
 /**
+ * Egy tag rangjai — a szerepkör-szinkronhoz. `not_member` csak a 10007-re
+ * (Unknown Member); minden más `unknown` (nem tudjuk — nem nyúlunk semmihez).
+ */
+export async function fetchMemberRoles (
+  guildId: string, userId: string
+): Promise<{ status: 'ok', roles: string[] } | { status: 'not_member' } | { status: 'unknown' }> {
+  if (!isConfigured()) return { status: 'unknown' }
+  try {
+    const g = safeId(guildId, 'guild')
+    const u = safeId(userId, 'tag')
+    const { status, body } = await request(`/guilds/${g}/members/${u}`)
+    if (status === 404 && body.code === 10007) return { status: 'not_member' }
+    if (status >= 400) return { status: 'unknown' }
+    const roles = (body as { roles?: unknown }).roles
+    return { status: 'ok', roles: Array.isArray(roles) ? roles.map(String) : [] }
+  } catch {
+    return { status: 'unknown' }
+  }
+}
+
+/** Rang levétele egy tagról. A „nincs is rajta" is a kívánt végállapot. */
+export async function removeMemberRole (
+  guildId: string, userId: string, roleId: string, reason: string
+): Promise<boolean> {
+  const valasz = await ir(
+    `/guilds/${safeId(guildId, 'guild')}/members/${safeId(userId, 'tag')}/roles/${safeId(roleId, 'rang')}`,
+    'DELETE', undefined, reason)
+  return valasz !== null
+}
+
+/**
  * A BOT SAJÁT TAGSÁGA a guildben — ebből derül ki a rang-hierarchiája.
  *
  * MIÉRT KELL. A Discord nem engedi, hogy a bot olyan rangot kezeljen, ami a
@@ -701,17 +732,47 @@ export async function botUser (): Promise<{ id: string, username: string } | nul
 /** Teszthez: felejtse el, amit megjegyzett. */
 export function forgetBotUser (): void { botUserCache = null }
 
-/** A bot saját alkalmazásazonosítója — a parancsregisztrációhoz. */
-export async function applicationId (): Promise<string | null> {
+export interface ApplicationInfo {
+  id: string
+  /**
+   * A fejlesztői portálon beállított interakció-végpont, ha van.
+   *
+   * HA BE VAN ÁLLÍTVA, A DISCORD MINDEN PARANCSOT ODA KÜLD, HTTP-n — a
+   * gatewayre egy sem érkezik. A bot a gatewayen fogadja őket (lásd
+   * `commands.ts`), tehát egy itt hagyott cím az összes parancsot elnémítja.
+   * 2026-09-29-ig pontosan ez történt: a cím egy átirányító névre mutatott, és
+   * egyetlen parancs sem jutott el a botig.
+   */
+  interactionsEndpointUrl: string | null
+}
+
+let appInfoCache: { at: number, info: ApplicationInfo } | null = null
+const APP_INFO_TTL_MS = 5 * 60_000
+
+/** A bot alkalmazásának adatai — öt percig megjegyezve. */
+export async function applicationInfo (now: number = Date.now()): Promise<ApplicationInfo | null> {
   if (!isConfigured()) return null
+  if (appInfoCache && now - appInfoCache.at < APP_INFO_TTL_MS) return appInfoCache.info
   try {
     const { status, body } = await request('/applications/@me')
     if (status >= 400) return null
     const id = (body as { id?: unknown }).id
-    return typeof id === 'string' ? id : null
+    if (typeof id !== 'string') return null
+    const url = (body as { interactions_endpoint_url?: unknown }).interactions_endpoint_url
+    const info = { id, interactionsEndpointUrl: typeof url === 'string' && url.trim() !== '' ? url : null }
+    appInfoCache = { at: now, info }
+    return info
   } catch {
     return null
   }
+}
+
+/** Teszthez: felejtse el az alkalmazás adatait. */
+export function forgetApplicationInfo (): void { appInfoCache = null }
+
+/** A bot saját alkalmazásazonosítója — a parancsregisztrációhoz. */
+export async function applicationId (): Promise<string | null> {
+  return (await applicationInfo())?.id ?? null
 }
 
 /**
@@ -737,6 +798,24 @@ export async function registerCommands (
   // olvassuk ki a hosszát.
   const lista = valasz as unknown
   return { count: Array.isArray(lista) ? lista.length : 0 }
+}
+
+/**
+ * A guildben regisztrált parancsok TELJES leírása, a fordításokkal együtt —
+ * az összehasonlításhoz (`commands.azonos`). A `with_localizations` nélkül a
+ * Discord a fordításokat nem adja vissza, és minden összevetés eltérést mutatna.
+ */
+export async function fetchCommands (guildId: string): Promise<Array<Record<string, unknown>> | null> {
+  const appId = await applicationId()
+  if (!appId) return null
+  try {
+    const { status, body } = await request(
+      `/applications/${safeId(appId, 'alkalmazás')}/guilds/${safeId(guildId, 'guild')}/commands?with_localizations=true`)
+    if (status >= 400 || !Array.isArray(body)) return null
+    return body as unknown as Array<Record<string, unknown>>
+  } catch {
+    return null
+  }
 }
 
 /** A guildben regisztrált parancsok — az állapot kiírásához. */

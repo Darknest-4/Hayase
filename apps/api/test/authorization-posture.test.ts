@@ -167,13 +167,14 @@ describe('a jogosultsági állás', { skip: HAS_DB ? false : 'no DATABASE_URL' }
    * szemét között.
    *
    * A 503 EGY DOLOGRA MENTESÜL: a külső szolgáltatáshoz kötött végpontok
-   * (Discord OAuth) beállítatlan környezetben — és a tesztkörnyezet ilyen —
-   * jogosan mondják, hogy nincs mit kiszolgálniuk. Ez nem általános „az 5xx
-   * rendben van" engedmény: a mentesség útvonalhoz kötött, és alább külön
-   * megköveteljük, hogy a válasz szabályos, szándékos hibatest legyen — egy
-   * elhasalt kérésből sosem lesz olyan.
+   * (Discord OAuth: a fiók-összekötés és a Discordos belépés indítása)
+   * beállítatlan környezetben — és a tesztkörnyezet ilyen — jogosan mondják,
+   * hogy nincs mit kiszolgálniuk. Ez nem általános „az 5xx rendben van"
+   * engedmény: a mentesség útvonalhoz kötött, és alább külön megköveteljük,
+   * hogy a válasz szabályos, szándékos hibatest legyen — egy elhasalt
+   * kérésből sosem lesz olyan.
    */
-  const KULSO_FUGGES = new Set(['POST /v1/discord/oauth/start'])
+  const KULSO_FUGGES = new Set(['POST /v1/discord/oauth/start', 'POST /v1/auth/discord/start'])
 
   it('egy elrontott azonosítótól egyetlen végpont sem hasal el', () => {
     const elhasalt = [...nevtelen, ...felhasznalo]

@@ -21,6 +21,7 @@ import { authRepository as accounts } from './repository.ts'
 import { hashPassword, verifyPassword } from './password.ts'
 import { deliverReset } from './reset-delivery.ts'
 import * as turnstile from './turnstile.ts'
+import * as discordOauth from '../discord/oauth.ts'
 import { settings as siteSettings } from '../settings/site-settings.ts'
 import { emitEvent } from '../webhooks/delivery.ts'
 
@@ -375,6 +376,114 @@ const routes: FastifyPluginAsync = async fastify => {
     await recordAccountEvent('LOGIN', { userId: user.id, ...fromRequest(request) })
 
     return issueTokens(user, reply, request.ip, request.headers['user-agent'])
+  })
+
+  /*
+   * BELÉPÉS DISCORDDAL — csak MÁR ÖSSZEKÖTÖTT fiókba.
+   *
+   * Nem regisztráció és nem fiók-összekötés: az összekötést a felhasználó
+   * jelszavas belépés után, a saját beállításaiban végzi el, és csak utána
+   * léphet be ezen az úton. Egy összekötetlen Discord-fiók nem hoz létre
+   * fiókot, és nem jut be semmibe.
+   *
+   * UGYANAZOK A KAPUK, mint a jelszavas belépésnél: csak aktív fiók, fiók-
+   * esemény és napló minden kimenetről. A kétlépcsős titokkal védett fiók
+   * ezen az úton NEM jut be — a Discord-belépés nem kerülheti meg a második
+   * lépést —, jelszóval kell belépnie.
+   *
+   * LOGIN CSRF ELLEN: az indításkor kapott `state` egyszer használható, és a
+   * kezdeményező böngésző HttpOnly sütijéhez kötött (a süti csak a
+   * `/v1/auth/discord` útvonalon utazik; `Lax`, mert a Discordtól érkező
+   * visszairányítás oldalak közötti navigáció).
+   *
+   * A HOZZÁFÉRÉSI TOKEN NEM KERÜL A CÍMBE: a visszahívás a frissítő sütit
+   * állítja be (ugyanúgy, mint a jelszavas belépés), és a főoldal a
+   * `#/login?discord=ok` jelzésre azzal kér magának tokent.
+   */
+  const DISCORD_LOGIN_COOKIE = 'yume_dlogin'
+  const discordLoginCookie = {
+    httpOnly: true,
+    secure: config.isProd,
+    sameSite: 'lax' as const,
+    path: '/v1/auth/discord',
+    maxAge: 600
+  }
+
+  fastify.post('/discord/start', { config: AUTH_LIMIT }, async (_request, reply) => {
+    if (!discordOauth.isLoginConfigured()) {
+      return reply.code(503).send({
+        type: 'about:blank', title: 'Service Unavailable', status: 503,
+        detail: 'Discord sign-in is not set up on this instance'
+      })
+    }
+    const { state, nonce } = await discordOauth.createLoginState()
+    reply.setCookie(DISCORD_LOGIN_COOKIE, nonce, discordLoginCookie)
+    return { url: discordOauth.loginAuthorizeUrl(state) }
+  })
+
+  fastify.get('/discord/callback', {
+    config: AUTH_LIMIT,
+    schema: {
+      querystring: {
+        type: 'object',
+        additionalProperties: true,
+        properties: {
+          code: { type: 'string', maxLength: 512 },
+          state: { type: 'string', maxLength: 512 },
+          error: { type: 'string', maxLength: 128 }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const q = request.query as { code?: string, state?: string, error?: string }
+    const nonce = request.cookies[DISCORD_LOGIN_COOKIE]
+    // A VÁLASZ MINDIG ÁTIRÁNYÍTÁS a főoldal belépőlapjára, egy kimenettel —
+    // és a süti mindig törlődik: egy állapot egyszer használható.
+    const vissza = async (kimenet: string): Promise<FastifyReply> => {
+      reply.clearCookie(DISCORD_LOGIN_COOKIE, { path: discordLoginCookie.path })
+      return await reply.redirect(`/#/login?discord=${encodeURIComponent(kimenet)}`)
+    }
+
+    // Előbb az állapot beváltása — a lemondásnál is, hogy ne maradjon élő.
+    const ervenyes = q.state ? await discordOauth.consumeLoginState(q.state, nonce) : false
+    if (q.error) return await vissza('cancelled')
+    if (!ervenyes) return await vissza('expired')
+    const visszaCim = discordOauth.loginRedirectUri()
+    if (!q.code || !visszaCim) return await vissza('invalid')
+
+    let discordUserId: string
+    try {
+      discordUserId = (await discordOauth.identify(q.code, visszaCim)).discordUserId
+    } catch {
+      return await vissza('failed')
+    }
+
+    const user = await discordOauth.loginAccount(discordUserId)
+    if (!user) {
+      await recordAccountEvent('LOGIN_FAILED', {
+        userId: null, result: 'failed', ...fromRequest(request), metadata: { reason: 'discord_not_linked', method: 'discord' }
+      })
+      return await vissza('not_linked')
+    }
+    if (user.status !== 'active') {
+      await recordAccountEvent('LOGIN', {
+        userId: user.id, result: 'blocked', ...fromRequest(request), metadata: { status: user.status, method: 'discord' }
+      })
+      return await vissza('blocked')
+    }
+    if (user.mfa) {
+      await recordAccountEvent('LOGIN', {
+        userId: user.id, result: 'blocked', ...fromRequest(request), metadata: { reason: 'mfa', method: 'discord' }
+      })
+      return await vissza('mfa')
+    }
+
+    await accounts.markLoggedIn(user.id)
+    await accounts.log(user.id, 'login', request.ip, request.headers['user-agent'] ?? null)
+    await recordAccountEvent('LOGIN', { userId: user.id, ...fromRequest(request), metadata: { method: 'discord' } })
+    // A frissítő süti itt kerül a böngészőbe; a token a törzsben sem megy vissza.
+    await issueTokens(user, reply, request.ip, request.headers['user-agent'])
+    return await vissza('ok')
   })
 
   /**

@@ -68,6 +68,17 @@ export type AuditAction =
    */
   | 'discord.account.link'
   | 'discord.account.unlink'
+  // A saját DM-értesítés kapcsolója (a főoldal Beállítások → Fiók fülén).
+  | 'discord.account.dm'
+  /*
+   * A szerver-beállítások: nyelv, hírfolyam-szűrők, moderátori csatorna,
+   * rangok. Naplózott, mert a moderátori csatorna dönti el, hová kerül a
+   * bejelentett tartalom, a rangok pedig, ki mit kap a szerveren.
+   */
+  | 'discord.config.update'
+  | 'discord.config.role_mappings'
+  | 'discord.config.anime_mention'
+  | 'discord.config.anime_mention_remove'
   /*
    * Forrásszolgáltató ki- vagy bekapcsolása, sorrendjének átállítása.
    *

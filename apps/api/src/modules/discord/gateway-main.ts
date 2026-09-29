@@ -23,6 +23,7 @@ import {
 } from './gateway.ts'
 
 import * as commands from './commands.ts'
+import { rememberLocale } from './guild-settings.ts'
 import * as rest from './rest-client.ts'
 import * as welcome from './welcome.ts'
 
@@ -144,14 +145,76 @@ async function interakcio (d: unknown): Promise<void> {
     await rest.respondToInteraction(i.id, i.token, { type: commands.RESPONSE.PONG })
     return
   }
+
+  const csatorna = {
+    reply: async (payload: unknown) => await rest.respondToInteraction(i.id, i.token, payload),
+    edit: async (data: Record<string, unknown>) =>
+      i.applicationId !== null && await rest.editOriginalResponse(i.applicationId, i.token, data)
+  }
+
+  // CÍMKIEGÉSZÍTÉS: nem halasztható, azonnal válaszol (lásd `autocomplete`).
+  if (i.type === commands.INTERACTION.AUTOCOMPLETE) {
+    if (!await csatorna.reply(await commands.autocomplete(i))) naplo('a címkiegészítés válasza nem ment el')
+    return
+  }
+
+  // GOMBNYOMÁS: az eredeti üzenetet írja át; halasztva is (6-os típus). A
+  // moderálási gomb kivétel: indoklás-ablakot nyit, az pedig nem halasztható.
+  if (i.type === commands.INTERACTION.COMPONENT) {
+    const gomb = (i.customId ?? '').split(':').slice(0, 2).join(':')
+    if (gomb.startsWith('mod:')) {
+      const e = await commands.handleComponent(i)
+      naplo('gomb', { gomb, kimenet: e.outcome, valasz: await csatorna.reply(e.response), halasztva: false })
+      return
+    }
+    const e = await commands.respond(i, csatorna, undefined, commands.handleComponent, { component: true })
+    naplo('gomb', { gomb, kimenet: e.outcome, valasz: e.delivered, halasztva: e.deferred })
+    return
+  }
+
+  // A BEVITELI ABLAK elküldése (a moderálás indoklása): az üzenetet írja át.
+  if (i.type === commands.INTERACTION.MODAL_SUBMIT) {
+    const e = await commands.respond(i, csatorna, undefined, commands.handleModal, { component: true })
+    naplo('ablak', { ablak: (i.customId ?? '').split(':').slice(0, 2).join(':'), kimenet: e.outcome, valasz: e.delivered, halasztva: e.deferred })
+    return
+  }
+
   if (i.type !== commands.INTERACTION.COMMAND) return
 
   // Ha a kezelő nem végez időben, előbb halasztott válasz megy — lásd `respond`.
-  const eredmeny = await commands.respond(i, {
-    reply: async payload => await rest.respondToInteraction(i.id, i.token, payload),
-    edit: async data => i.applicationId !== null && await rest.editOriginalResponse(i.applicationId, i.token, data)
-  })
+  const eredmeny = await commands.respond(i, csatorna)
   naplo('parancs', { parancs: i.command, kimenet: eredmeny.outcome, valasz: eredmeny.delivered, halasztva: eredmeny.deferred })
+}
+
+/**
+ * A PARANCSOK SZINKRONJA szerverenként, folyamatonként egyszer — lásd
+ * `commands.sync`. Kikapcsolható (`DISCORD_COMMAND_SYNC=false`), ha valaki
+ * kézzel akarja kezelni a parancsokat.
+ */
+const szinkronizalva = new Set<string>()
+function parancsSzinkron (guildId: string): void {
+  if (process.env.DISCORD_COMMAND_SYNC === 'false' || szinkronizalva.has(guildId)) return
+  szinkronizalva.add(guildId)
+  void commands.sync(guildId)
+    .then(kimenet => { if (kimenet !== 'unchanged') naplo('parancsok szinkronja', { guild: guildId, kimenet }) })
+    .catch(error => { naplo('a parancsok szinkronja elhasalt', { guild: guildId, hiba: String((error as Error)?.message ?? error).slice(0, 200) }) })
+}
+
+/**
+ * HOVÁ KÜLDI A DISCORD A PARANCSOKAT — induláskor egyszer.
+ *
+ * Ha a fejlesztői portálon interakció-végpont van beállítva, a Discord oda
+ * küld minden parancsot, és ide egy sem érkezik: a felhasználó annyit lát,
+ * hogy „az alkalmazás nem válaszolt". 2026-09-29-ig pontosan ez történt, és a
+ * naplóban semmi nem utalt rá. Most kimondja.
+ */
+function kezbesitesEllenorzes (): void {
+  void commands.deliveryStatus().then(k => {
+    if (k?.mode === 'http') {
+      naplo('FIGYELEM: a Discord a parancsokat egy HTTP-végpontra küldi, a gatewayre egy sem érkezik — ' +
+        'a fejlesztői portálon (General Information → Interactions Endpoint URL) töröld a címet', { vegpont: k.endpointUrl })
+    }
+  }).catch(() => { /* a Discord most nem érhető el — a következő induláskor újra */ })
 }
 
 /** Egy új tag. A köszöntő részleteit a `welcome` modul dönti el. */
@@ -267,6 +330,7 @@ function csatlakoz (): void {
           allapot.sessionId = d.session_id ?? null
           allapot.resumeUrl = d.resume_gateway_url ?? null
           naplo('kész')
+          kezbesitesEllenorzes()
           // Új munkamenet: ami a szakadás alatt történt, elveszett — ezért
           // számoljuk külön a folytatástól (napi összesítő).
           iro.jelez({
@@ -278,6 +342,17 @@ function csatlakoz (): void {
           naplo('folytatva')
           iro.jelez({ status: 'ready', ready: true, event: true, resumed: 1, lastError: null })
         } else {
+          // Szerverhez csatlakozás (induláskor mindegyikre jön): a parancsok
+          // szinkronja, és a szerver nyelve (az „auto" nyelvbeállításhoz).
+          if (t === 'GUILD_CREATE' || t === 'GUILD_UPDATE') {
+            const g = (uzenet.d ?? {}) as { id?: unknown, preferred_locale?: unknown }
+            if (typeof g.id === 'string') {
+              if (t === 'GUILD_CREATE') parancsSzinkron(g.id)
+              if (typeof g.preferred_locale === 'string') {
+                void rememberLocale(g.id, g.preferred_locale).catch(() => { /* a következő eseménynél újra */ })
+              }
+            }
+          }
           void feldolgoz(t, uzenet.d)
           iro.jelez({ event: true, sequence: allapot.sequence })
         }
