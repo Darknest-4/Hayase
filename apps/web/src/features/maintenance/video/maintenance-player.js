@@ -1,5 +1,7 @@
 /* global document */
 
+import { trustedHTML } from '../../../shared/lib/trusted.js'
+
 const ICON = {
   play: '<path d="M6 4l14 8-14 8z" fill="currentColor" stroke="none"/>',
   pause: '<path d="M7 4h4v16H7zM13 4h4v16h-4z" fill="currentColor" stroke="none"/>',
@@ -124,7 +126,7 @@ export function createMaintenancePlayer (asset, options = {}) {
     element.className = 'mnt-btn'
     element.setAttribute('aria-label', label)
     element.title = label
-    element.innerHTML = svg(name)
+    element.innerHTML = trustedHTML(svg(name))
 
     element.addEventListener('click', onClick)
 
@@ -284,9 +286,9 @@ export function createMaintenancePlayer (asset, options = {}) {
    * UI render
    */
   const render = () => {
-    play.innerHTML = svg(
+    play.innerHTML = trustedHTML(svg(
       video.paused ? 'play' : 'pause'
-    )
+    ))
 
     play.setAttribute(
       'aria-label',
@@ -300,9 +302,9 @@ export function createMaintenancePlayer (asset, options = {}) {
       video.muted ||
       video.volume === 0
 
-    mute.innerHTML = svg(
+    mute.innerHTML = trustedHTML(svg(
       muted ? 'muted' : 'volume'
-    )
+    ))
 
     mute.setAttribute(
       'aria-label',

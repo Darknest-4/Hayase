@@ -11,6 +11,8 @@
 // szól valami, amit nem talál.
 
 /** Ennyi képpontnyi rész mindig a képernyőn belül marad. */
+import { trustedHTML } from '../../../shared/lib/trusted.js'
+
 export const KEEP_VISIBLE_PX = 80
 export const MIN_WIDTH = 220
 export const MAX_WIDTH = 640
@@ -55,7 +57,7 @@ export function createMiniPlayer (player, shell, options = {}) {
 
   const bar = document.createElement('div')
   bar.className = 'yp-mini-bar'
-  bar.innerHTML = '<span class="yp-mini-grip" aria-hidden="true"></span>'
+  bar.innerHTML = trustedHTML('<span class="yp-mini-grip" aria-hidden="true"></span>')
 
   const close = document.createElement('button')
   close.type = 'button'

@@ -125,6 +125,9 @@ services:
       # az blokkolja — az eredmény egy néma hiba, ahol a kapcsoló be van
       # kapcsolva, és mégsem érkezik adat. Ez a sor engedi be az origót.
       CLOUDFLARE_ANALYTICS: ${CLOUDFLARE_ANALYTICS:-}
+      # Trusted Types a CSP-ben: enforce (alap) | report | off. A `report` a
+      # visszalépés telepítés nélkül — lásd middleware/security.ts.
+      CSP_TRUSTED_TYPES: ${CSP_TRUSTED_TYPES:-enforce}
       # A képtükör tárhelye — KÜLÖN VÖDÖR a mentésekétől, mert ezt a
       # tartalmat egy nyilvános útvonal szolgálja ki, a mentéseket soha semmi.
       # Az `app` olvassa (kiszolgálás), a `worker` írja (tükrözés).

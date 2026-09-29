@@ -7,6 +7,7 @@
 // the pool has to be released, or the process outlives the test run.
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { after, describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
@@ -53,6 +54,22 @@ describe('security headers', () => {
     assert.match(csp, /object-src 'none'/)
     // the UI genuinely needs inline style attributes, so this one is expected
     assert.match(csp, /style-src[^;]*'unsafe-inline'/)
+    await app.close()
+  })
+
+  it('requires Trusted Types, naming exactly the policies the client creates', async () => {
+    // A szabályokat a kliens EGYETLEN modulja hozza létre (trusted.js). Ha a két
+    // lista szétcsúszik, a böngésző megtagadja a szabály létrehozását, és onnan
+    // minden `innerHTML` hibát dob — egy üres lejátszó, egy üres lábléc.
+    const app = await freshApp()
+    const res = await app.inject({ method: 'GET', url: '/v1/health' })
+    const csp = String(res.headers['content-security-policy'])
+    assert.match(csp, /require-trusted-types-for 'script'/)
+    const client = readFileSync(fileURLToPath(new URL('../../web/src/shared/lib/trusted.js', import.meta.url)), 'utf8')
+    const names = /POLICY_NAMES = \[([^\]]*)\]/.exec(client)?.[1].match(/'([^']+)'/g)?.map(name => name.slice(1, -1))
+    assert.ok(names?.length, 'the client module no longer declares its policy names')
+    assert.match(csp, new RegExp(`trusted-types ${names.join(' ')}(;|$)`))
+    assert.equal(res.headers['content-security-policy-report-only'], undefined)
     await app.close()
   })
 })

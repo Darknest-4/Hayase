@@ -11,6 +11,7 @@
 // válasz.
 
 import { formatTime } from '../ui/format.js'
+import { trustedHTML } from '../../../shared/lib/trusted.js'
 
 /** Ilyen sűrűn frissül. Fél másodperc: olvasható, és nem terhel. */
 export const REFRESH_MS = 500
@@ -97,11 +98,11 @@ export function createDebugOverlay (player, options = {}) {
 
   const render = () => {
     if (!visible) return
-    node.innerHTML =
+    node.innerHTML = trustedHTML(
       '<table class="yp-debug-table">' +
       rows().map(([key, value]) => `<tr><th>${escape(key)}</th><td>${escape(String(value))}</td></tr>`).join('') +
       '</table>' +
-      `<pre class="yp-debug-log">${escape(recent.join('\n'))}</pre>`
+      `<pre class="yp-debug-log">${escape(recent.join('\n'))}</pre>`)
   }
 
   player.interval(render, REFRESH_MS)

@@ -57,6 +57,34 @@ const TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com'
 const ANALYTICS_ORIGIN = 'https://static.cloudflareinsights.com'
 const cloudflareAnalytics = (): boolean => process.env.CLOUDFLARE_ANALYTICS === 'true'
 
+/**
+ * TRUSTED TYPES — a DOM-alapú XSS ellen.
+ *
+ * A `script-src 'self'` megállítja az idegen szkriptet, de azt nem, amikor a
+ * SAJÁT kódunk ír egy külső szöveget HTML-ként a lapra (`innerHTML`,
+ * `DOMParser`, `script.src`). Ezt zárja a Trusted Types: a böngésző minden
+ * ilyen írást megtagad, ami nem egy megnevezett szabályon (policy) ment át. A
+ * kliensben egyetlen modul hozza létre a szabályokat
+ * (apps/web/src/shared/lib/trusted.js), és a web/test/trusted-sinks.test.mjs
+ * őrzi, hogy minden nyelő azon menjen át.
+ *
+ * A névlista ZÁRT (`trusted-types yume yume-inert`): harmadik szabályt csak az
+ * hozhat létre, akit ide beírunk — egy befecskendezett szkript nem.
+ *
+ * KAPCSOLÓ, telepítés nélküli visszalépéshez: CSP_TRUSTED_TYPES =
+ *   enforce (alap) — a CSP része, a böngésző megtagadja a nyers írást;
+ *   report         — a Content-Security-Policy-Report-Only fejlécben: a konzol
+ *                    jelez, de semmi nem áll meg;
+ *   off            — nincs.
+ * A Chromium-alapú böngészők kényszerítik ki; a többi figyelmen kívül hagyja.
+ */
+export const TRUSTED_TYPES_POLICIES = ['yume', 'yume-inert']
+const TRUSTED_TYPES = ["require-trusted-types-for 'script'", `trusted-types ${TRUSTED_TYPES_POLICIES.join(' ')}`]
+const trustedTypesMode = (): 'enforce' | 'report' | 'off' => {
+  const mode = (process.env.CSP_TRUSTED_TYPES ?? 'enforce').trim().toLowerCase()
+  return mode === 'report' || mode === 'off' ? mode : 'enforce'
+}
+
 const CSP = [
   "default-src 'self'",
   // No blob: any more. It was there for the extension sandbox, which imported
@@ -97,7 +125,8 @@ const CSP = [
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
-  "frame-ancestors 'none'"                  // no embedding Yume itself
+  "frame-ancestors 'none'",                 // no embedding Yume itself
+  ...(trustedTypesMode() === 'enforce' ? TRUSTED_TYPES : [])
 ].join('; ')
 
 const HEADERS: Record<string, string> = {
@@ -106,7 +135,8 @@ const HEADERS: Record<string, string> = {
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Cross-Origin-Opener-Policy': 'same-origin',
   'X-Permitted-Cross-Domain-Policies': 'none',
-  'Content-Security-Policy': CSP
+  'Content-Security-Policy': CSP,
+  ...(trustedTypesMode() === 'report' ? { 'Content-Security-Policy-Report-Only': TRUSTED_TYPES.join('; ') } : {})
 }
 
 /** Strict limit for credential endpoints: password hashing is deliberately

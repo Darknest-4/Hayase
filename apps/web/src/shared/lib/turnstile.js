@@ -17,6 +17,7 @@
 // újrarajzolunk, lejáratkor pedig eldobjuk, amink van.
 
 import { site } from './site-config.js'
+import { trustedScriptURL } from './trusted.js'
 
 const SCRIPT_URL = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
 
@@ -58,7 +59,7 @@ function load () {
     window[READY_CALLBACK] = () => resolve(window.turnstile)
 
     const script = document.createElement('script')
-    script.src = SCRIPT_URL + '&onload=' + READY_CALLBACK
+    script.src = trustedScriptURL(SCRIPT_URL + '&onload=' + READY_CALLBACK)
     script.async = true
     script.defer = true
     script.onerror = () => reject(new Error('az emberpróba nem tölthető be'))

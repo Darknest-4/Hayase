@@ -7,6 +7,7 @@
 
 import { formatRate, formatTime, ratioFromPointer } from './format.js'
 import { icon } from './icons.js'
+import { trustedHTML } from '../../../shared/lib/trusted.js'
 
 function button (name, label, onClick, extraClass = '') {
   const node = document.createElement('button')
@@ -16,7 +17,7 @@ function button (name, label, onClick, extraClass = '') {
   // felolvasó megmondja, mit csinál. Enélkül „gomb, gomb, gomb" hangzik el.
   node.setAttribute('aria-label', label)
   node.title = label
-  node.innerHTML = icon(name)
+  node.innerHTML = trustedHTML(icon(name))
   node.addEventListener('click', onClick)
   return node
 }
@@ -53,7 +54,7 @@ export function createControls (player, actions = {}, options = {}) {
   volume.setAttribute('aria-label', 'Hangerő')
   volume.setAttribute('aria-valuemin', '0')
   volume.setAttribute('aria-valuemax', '100')
-  volume.innerHTML = '<div class="yp-volume-rail"><div class="yp-volume-fill"></div></div>'
+  volume.innerHTML = trustedHTML('<div class="yp-volume-rail"><div class="yp-volume-fill"></div></div>')
   const volumeFill = volume.querySelector('.yp-volume-fill')
 
   let volumeDragging = false
@@ -103,7 +104,7 @@ export function createControls (player, actions = {}, options = {}) {
   const render = (current) => {
     const { playing, currentTime, duration, volume: level, muted, rate: speed } = current.playback
 
-    play.innerHTML = icon(playing ? 'pause' : 'play', 26)
+    play.innerHTML = trustedHTML(icon(playing ? 'pause' : 'play', 26))
     const playLabel = playing ? 'Szünet' : 'Lejátszás'
     play.setAttribute('aria-label', playLabel)
     play.title = playLabel
@@ -113,7 +114,7 @@ export function createControls (player, actions = {}, options = {}) {
       : formatTime(currentTime)
 
     const effective = muted ? 0 : level
-    mute.innerHTML = icon(effective === 0 ? 'muted' : effective < 0.5 ? 'volumeLow' : 'volume')
+    mute.innerHTML = trustedHTML(icon(effective === 0 ? 'muted' : effective < 0.5 ? 'volumeLow' : 'volume'))
     mute.setAttribute('aria-label', muted ? 'Némítás feloldása' : 'Némítás')
     volumeFill.style.width = `${effective * 100}%`
     volume.setAttribute('aria-valuenow', String(Math.round(effective * 100)))
@@ -130,7 +131,7 @@ export function createControls (player, actions = {}, options = {}) {
     subtitles.disabled = current.subtitles.tracks.length === 0
     subtitles.title = subtitles.disabled ? 'Ehhez a részhez nincs felirat' : 'Felirat'
 
-    fullscreen.innerHTML = icon(current.ui.fullscreen ? 'exitFullscreen' : 'fullscreen')
+    fullscreen.innerHTML = trustedHTML(icon(current.ui.fullscreen ? 'exitFullscreen' : 'fullscreen'))
     fullscreen.setAttribute('aria-label', current.ui.fullscreen ? 'Kilépés a teljes képernyőből' : 'Teljes képernyő')
     pip.classList.toggle('yp-on', current.ui.pip)
     cinema.classList.toggle('yp-on', current.ui.cinema)

@@ -16,6 +16,7 @@
 // egérrel kötelező, és ez a hozzáférhetőség első számú bukása a lejátszókban.
 
 import { bufferedRanges, formatTime, ratioFromPointer, spokenTime } from './format.js'
+import { trustedHTML } from '../../../shared/lib/trusted.js'
 
 export function createSeekBar (player, options = {}) {
   const { video, state } = player
@@ -27,13 +28,13 @@ export function createSeekBar (player, options = {}) {
   node.setAttribute('tabindex', '0')
   node.setAttribute('aria-label', 'Videó pozíciója')
   node.setAttribute('aria-valuemin', '0')
-  node.innerHTML =
+  node.innerHTML = trustedHTML(
     `<div class="yp-seek-rail">
        <div class="yp-seek-buffer"></div>
        <div class="yp-seek-played"></div>
        <div class="yp-seek-head"></div>
      </div>
-     <div class="yp-seek-tip" hidden></div>`
+     <div class="yp-seek-tip" hidden></div>`)
 
   const buffer = node.querySelector('.yp-seek-buffer')
   const played = node.querySelector('.yp-seek-played')

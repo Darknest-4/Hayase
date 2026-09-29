@@ -11,6 +11,7 @@
 
 import { formatRate } from './format.js'
 import { icon } from './icons.js'
+import { trustedHTML } from '../../../shared/lib/trusted.js'
 import { RATES } from '../playback/playback-controller.js'
 
 function row (label, value, onClick, selected = false) {
@@ -19,10 +20,10 @@ function row (label, value, onClick, selected = false) {
   node.className = 'yp-menu-row'
   node.setAttribute('role', 'menuitemradio')
   node.setAttribute('aria-checked', String(selected))
-  node.innerHTML =
+  node.innerHTML = trustedHTML(
     `<span class="yp-menu-label">${escape(label)}</span>` +
     (value ? `<span class="yp-menu-value">${escape(value)}</span>` : '') +
-    `<span class="yp-menu-tick">${selected ? icon('check', 16) : ''}</span>`
+    `<span class="yp-menu-tick">${selected ? icon('check', 16) : ''}</span>`)
   node.addEventListener('click', onClick)
   return node
 }
@@ -43,7 +44,7 @@ export function createSettingsMenu (player, actions = {}) {
   const backButton = document.createElement('button')
   backButton.type = 'button'
   backButton.className = 'yp-menu-back'
-  backButton.innerHTML = `${icon('back', 16)}<span></span>`
+  backButton.innerHTML = trustedHTML(`${icon('back', 16)}<span></span>`)
   backButton.addEventListener('click', () => show('root'))
   header.append(backButton)
 
